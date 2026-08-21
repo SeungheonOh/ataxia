@@ -414,7 +414,8 @@
     (prog1
         (behavior-move-view
          policy view (move-action-x action) (move-action-y action) context)
-      (schedule-presentation (compositor-presentation compositor)))))
+      (schedule-presentation-subject
+       (compositor-presentation compositor) view))))
 
 (defmethod execute-control-action
     ((control control-system) (action place-view-action))
@@ -440,7 +441,8 @@
        :identity
        (control-principal-identity (control-action-principal action)))
       :phase :apply))
-    (schedule-presentation (compositor-presentation compositor))
+    (schedule-presentation-subject
+     (compositor-presentation compositor) view)
     new-placement))
 
 (defmethod execute-control-action

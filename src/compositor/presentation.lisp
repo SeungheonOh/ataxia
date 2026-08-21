@@ -33,6 +33,7 @@
    (redraw-pending-p :initform t :accessor output-redraw-pending-p)
    (full-damage-p :initform t :accessor output-full-damage-p)
    (damage-boxes :initform nil :accessor output-damage-boxes)
+   (damage-subjects :initform nil :accessor output-damage-subjects)
    (frame-timer :initform nil :accessor output-frame-timer)
    (frame-timer-armed-p :initform nil
                         :accessor output-frame-timer-armed-p)
@@ -142,6 +143,9 @@
 (defgeneric project-presentation-item-damage (item rectangle)
   (:documentation
    "Project one surface-local damage rectangle into conservative output-local damage."))
+(defgeneric presentation-item-belongs-to-subject-p (item subject)
+  (:documentation
+   "Return true when ITEM contributes pixels to SUBJECT's visible region."))
 
 (defclass mesh-geometry (presentation-geometry)
   ((vertices :initarg :vertices :reader mesh-geometry-vertices)
@@ -626,6 +630,7 @@
     ((presentation presentation-system) (output compositor-output)
      (snapshot presentation-snapshot) timestamp)
   "Implement BUILD-FRAME-PLAN while preserving frame ordering and damage correctness. Never retain transient render data past the documented frame boundary."
+  (resolve-output-damage-subjects output snapshot)
   (let ((plan
           (behavior-compose-frame
            (compositor-behavior-policy (component-compositor presentation))
@@ -829,6 +834,62 @@
         (when boxes
           (schedule-presentation presentation output boxes)))))
   presentation)
+
+(defmethod presentation-item-belongs-to-subject-p
+    ((item presentation-item) subject)
+  "Associate ordinary presentation items with their direct owner."
+  (eq (presentation-item-owner item) subject))
+
+(defmethod presentation-item-belongs-to-subject-p
+    ((item presentation-item) (subject view))
+  "Include a view's decorations, effects, subsurfaces, and popup tree."
+  (let ((owner (presentation-item-owner item)))
+    (or (eq owner subject)
+        (and (typep owner 'popup-view)
+             (eq subject (popup-parent-view owner))))))
+
+(defun presentation-item-damage-box (item)
+  "Return conservative output bounds for every pixel emitted by ITEM."
+  (multiple-value-bind (x y width height)
+      (let ((geometry (presentation-item-geometry item)))
+        (if (typep geometry 'mesh-geometry)
+            (mesh-geometry-bounds geometry)
+            (values (presentation-item-x item)
+                    (presentation-item-y item)
+                    (presentation-item-width item)
+                    (presentation-item-height item))))
+    (let ((left (floor (- x 1d0)))
+          (top (floor (- y 1d0)))
+          (right (ceiling (+ x width 1d0)))
+          (bottom (ceiling (+ y height 1d0))))
+      (make-damage-box left top (- right left) (- bottom top)))))
+
+(defun snapshot-subject-damage-boxes (snapshot subject)
+  "Collect visible output bounds owned by SUBJECT in SNAPSHOT."
+  (when snapshot
+    (loop for item in (snapshot-items snapshot)
+          when (presentation-item-belongs-to-subject-p item subject)
+            collect (presentation-item-damage-box item))))
+
+(defun queue-output-damage-subject (output subject)
+  "Retain SUBJECT until the next snapshot supplies its new bounds."
+  (pushnew subject (output-damage-subjects output) :test #'eq)
+  (let ((old-boxes
+          (snapshot-subject-damage-boxes
+           (output-last-snapshot output) subject)))
+    (when old-boxes
+      (accumulate-output-damage output old-boxes)))
+  (setf (output-redraw-pending-p output) t)
+  output)
+
+(defun resolve-output-damage-subjects (output snapshot)
+  "Add queued subjects' new bounds after policy builds the next snapshot."
+  (dolist (subject (output-damage-subjects output))
+    (let ((new-boxes (snapshot-subject-damage-boxes snapshot subject)))
+      (when new-boxes
+        (accumulate-output-damage output new-boxes))))
+  (setf (output-damage-subjects output) nil)
+  output)
 
 (defun presentation-item-live-p (item)
   "Reject geometry that still references a surface retired after the snapshot."
@@ -1131,11 +1192,19 @@
          (ataxia.runtime:output-name (output-native output))
          (output-frame-revision output)
          (ataxia.runtime:output-frame-pending-p (output-native output)))
-        (when (or (frame-plan-continuous-p plan)
-                  (active-animations-p
-                   (presentation-animation-engine presentation)))
-          (accumulate-output-damage output :full)
-          (setf (output-redraw-pending-p output) t))
+        (let* ((animation-engine
+                 (presentation-animation-engine presentation))
+               (animation-subjects
+                 (remove-duplicates
+                  (mapcar #'animation-instance-subject
+                          (animation-engine-active animation-engine))
+                  :test #'eq)))
+          (when (frame-plan-continuous-p plan)
+            (accumulate-output-damage output :full))
+          (dolist (subject animation-subjects)
+            (queue-output-damage-subject output subject))
+          (when (or (frame-plan-continuous-p plan) animation-subjects)
+            (setf (output-redraw-pending-p output) t)))
         snapshot)
     (serious-condition (condition)
       (format *error-output* "[compositor] frame failed on ~A: ~A~%"
@@ -1185,6 +1254,21 @@
         0))))
   output)
 
+(defun mark-output-presentation-pending (presentation output)
+  "Request one refresh-paced frame without deciding its damage policy."
+  (setf (output-redraw-pending-p output) t)
+  (trace-output
+   "[output] request ~A lisp-pending=~A native-pending=~A~%"
+   (ataxia.runtime:output-name (output-native output))
+   (output-commit-pending-p output)
+   (ataxia.runtime:output-frame-pending-p (output-native output)))
+  ;; Once the backend frame cycle has produced a snapshot, it owns pacing.
+  (if (null (output-last-snapshot output))
+      (unless (output-scanout-pending-p output)
+        (request-output-frame-now output))
+      (arm-output-frame output))
+  presentation)
+
 (defmethod schedule-presentation
     ((presentation presentation-system) &optional output (damage :full))
   "Implement SCHEDULE-PRESENTATION while preserving frame ordering and damage correctness. Never retain transient render data past the documented frame boundary."
@@ -1195,17 +1279,15 @@
                   (compositor-outputs-list outputs)))
       (when (output-available-p candidate)
         (accumulate-output-damage candidate damage)
-        (setf (output-redraw-pending-p candidate) t)
-        (trace-output
-         "[output] request ~A lisp-pending=~A native-pending=~A~%"
-         (ataxia.runtime:output-name (output-native candidate))
-         (output-commit-pending-p candidate)
-         (ataxia.runtime:output-frame-pending-p (output-native candidate)))
-        ;; Once the backend frame cycle has produced a snapshot, it owns
-        ;; pacing. Manual scheduling here would create idle frames faster than
-        ;; DRM refresh and can race a just-presented page flip.
-        (if (null (output-last-snapshot candidate))
-            (unless (output-scanout-pending-p candidate)
-              (request-output-frame-now candidate))
-            (arm-output-frame candidate)))))
+        (mark-output-presentation-pending presentation candidate))))
+  presentation)
+
+(defun schedule-presentation-subject (presentation subject)
+  "Damage SUBJECT's old and next bounds on every output."
+  (dolist (output
+            (compositor-outputs-list
+             (compositor-outputs (component-compositor presentation))))
+    (when (output-available-p output)
+      (queue-output-damage-subject output subject)
+      (mark-output-presentation-pending presentation output)))
   presentation)

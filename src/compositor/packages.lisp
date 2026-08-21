@@ -355,6 +355,7 @@
    #:map-presentation-point
    #:unmap-presentation-point
    #:project-presentation-item-damage
+   #:presentation-item-belongs-to-subject-p
    #:mesh-geometry
    #:mesh-geometry-vertices
    #:mesh-geometry-vertex-count
@@ -418,6 +419,7 @@
    #:present-output
    #:schedule-presentation
    #:schedule-surface-damage
+   #:schedule-presentation-subject
    #:frame-context
    #:frame-context-output
    #:frame-context-plan

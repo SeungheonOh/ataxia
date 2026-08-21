@@ -757,8 +757,8 @@
         (synchronize-seat-pointer-constraint interaction seat)
         (start-interaction-animation
          interaction view (interactive-operation-kind operation) nil)
-        (schedule-presentation
-         (compositor-presentation (component-compositor interaction)))))
+        (schedule-presentation-subject
+         (compositor-presentation (component-compositor interaction)) view)))
     operation))
 
 (defmethod update-interactive-operation
@@ -774,8 +774,9 @@
         (when (typep decision 'view-configuration-decision)
           (apply-view-configuration-decision
            (interactive-operation-view operation) decision)))
-      (schedule-presentation
-       (compositor-presentation (component-compositor interaction))))
+      (schedule-presentation-subject
+       (compositor-presentation (component-compositor interaction))
+       (interactive-operation-view operation)))
     operation))
 
 (defmethod interaction-handle-pointer-motion

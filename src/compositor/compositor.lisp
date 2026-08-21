@@ -418,7 +418,8 @@
       (trace-output "[output] needs-frame ~A~%"
                     (ataxia.runtime:output-name native-output))
       (unless (or (output-full-damage-p output)
-                  (output-damage-boxes output))
+                  (output-damage-boxes output)
+                  (output-damage-subjects output))
         (accumulate-output-damage output :full))
       (setf (output-redraw-pending-p output) t)
       (unless (output-scanout-pending-p output)

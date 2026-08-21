@@ -385,9 +385,9 @@
            output
            (make-instance
             'portable-output-state
-            :horizontal (camera-longitude camera)
-            :vertical (camera-latitude camera)
-            :zoom (/ 1d0 (camera-field-of-view camera))))))
+            :horizontal (/ (camera-longitude camera) +two-pi+)
+            :vertical (/ (camera-latitude camera) pi)
+            :zoom (/ 1.45d0 (camera-field-of-view camera))))))
       (compositor-outputs-list (compositor-outputs compositor)))
      :seat-states
      (mapcar
@@ -408,12 +408,14 @@
                  (make-instance
                   'spherical-camera
                   :longitude
-                  (normalize-longitude (portable-output-horizontal state))
-                  :latitude (clamp-latitude (portable-output-vertical state))
+                  (normalize-longitude
+                   (* (portable-output-horizontal state) +two-pi+))
+                  :latitude
+                  (clamp-latitude (* (portable-output-vertical state) pi))
                   :field-of-view
                   (max 0.35d0
                        (min 2.7d0
-                            (/ 1d0
+                            (/ 1.45d0
                                (max 0.05d0
                                     (portable-output-zoom state)))))))))
             (portable-state-output-states portable)))

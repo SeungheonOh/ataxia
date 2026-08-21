@@ -275,14 +275,27 @@
      :output-states
      (mapcar
       (lambda (output)
-        (let ((viewport (output-behavior-state output)))
+        (let* ((viewport (output-behavior-state output))
+               (scale (planar-viewport-scale viewport))
+               (width
+                 (max 1d0
+                      (coerce
+                       (ataxia.runtime:output-width (output-native output))
+                       'double-float)))
+               (height
+                 (max 1d0
+                      (coerce
+                       (ataxia.runtime:output-height (output-native output))
+                       'double-float))))
           (cons
            output
            (make-instance
             'portable-output-state
-            :horizontal (planar-viewport-camera-x viewport)
-            :vertical (planar-viewport-camera-y viewport)
-            :zoom (planar-viewport-scale viewport)))))
+            :horizontal (/ (* (planar-viewport-camera-x viewport) scale)
+                           width)
+            :vertical (/ (* (planar-viewport-camera-y viewport) scale)
+                         height)
+            :zoom scale))))
       (compositor-outputs-list (compositor-outputs compositor)))
      :seat-states
      (mapcar
@@ -297,14 +310,30 @@
   (let* ((output-states
            (mapcar
             (lambda (entry)
-              (let ((state (cdr entry)))
+              (let* ((output (car entry))
+                     (state (cdr entry))
+                     (scale (max 0.05d0 (portable-output-zoom state)))
+                     (width
+                       (max 1d0
+                            (coerce
+                             (ataxia.runtime:output-width
+                              (output-native output))
+                             'double-float)))
+                     (height
+                       (max 1d0
+                            (coerce
+                             (ataxia.runtime:output-height
+                              (output-native output))
+                             'double-float))))
                 (cons
-                 (car entry)
+                 output
                  (make-instance
                   'planar-viewport
-                  :camera-x (portable-output-horizontal state)
-                  :camera-y (portable-output-vertical state)
-                  :scale (max 0.05d0 (portable-output-zoom state))))))
+                  :camera-x (/ (* (portable-output-horizontal state) width)
+                               scale)
+                  :camera-y (/ (* (portable-output-vertical state) height)
+                               scale)
+                  :scale scale))))
             (portable-state-output-states portable)))
          (projection-output (caar output-states))
          (viewport (and projection-output

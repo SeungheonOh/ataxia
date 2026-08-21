@@ -305,8 +305,11 @@ void main() {
     (renderer output-width output-height x y width height)
   (let* ((left (- (* 2d0 (/ x output-width)) 1d0))
          (right (- (* 2d0 (/ (+ x width) output-width)) 1d0))
-         (top (- 1d0 (* 2d0 (/ y output-height))))
-         (bottom (- 1d0 (* 2d0 (/ (+ y height) output-height))))
+         ;; wlroots exposes an FBO whose scanout orientation is inverted from
+         ;; the conventional GLES viewport. Keep compositor coordinates
+         ;; top-left based and invert once, here, for every draw path.
+         (top (- (* 2d0 (/ y output-height)) 1d0))
+         (bottom (- (* 2d0 (/ (+ y height) output-height)) 1d0))
          (scratch (renderer-vertex-scratch renderer)))
     (put-vertex scratch 0 left top 0d0 0d0)
     (put-vertex scratch 1 right top 1d0 0d0)

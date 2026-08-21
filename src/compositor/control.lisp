@@ -20,9 +20,7 @@
 (defclass control-principal ()
   ((identity :initarg :identity :reader control-principal-identity)
    (capabilities :initarg :capabilities :initform nil
-                 :reader control-principal-capabilities))
-  (:documentation
-   "Represents compositor control principal. Mutate it only on the compositor owner thread and preserve the ownership invariants exposed by its accessors."))
+                 :reader control-principal-capabilities)))
 
 (defclass control-action ()
   ((principal :initarg :principal :reader control-action-principal)
@@ -37,100 +35,70 @@
    #+sb-thread
    (completion-waitqueue :initform (sb-thread:make-waitqueue
                                     :name "control action")
-                         :reader control-action-completion-waitqueue))
-  (:documentation
-   "Represents the typed control action request. Validate capabilities and object ownership before executing it on the compositor owner thread."))
+                         :reader control-action-completion-waitqueue)))
 
-(defclass observe-compositor-action (control-action) ()
-  (:documentation
-   "Represents the typed observe compositor action request. Validate capabilities and object ownership before executing it on the compositor owner thread."))
+(defclass observe-compositor-action (control-action) ())
 
 (defclass focus-view-action (control-action)
   ((seat :initarg :seat :reader focus-action-seat)
-   (view :initarg :view :reader focus-action-view))
-  (:documentation
-   "Represents the typed focus view action request. Validate capabilities and object ownership before executing it on the compositor owner thread."))
+   (view :initarg :view :reader focus-action-view)))
 
 (defclass move-view-action (control-action)
   ((view :initarg :view :reader move-action-view)
    (x :initarg :x :reader move-action-x)
-   (y :initarg :y :reader move-action-y))
-  (:documentation
-   "Represents the typed move view action request. Validate capabilities and object ownership before executing it on the compositor owner thread."))
+   (y :initarg :y :reader move-action-y)))
 
 (defclass place-view-action (control-action)
   ((view :initarg :view :reader place-action-view)
-   (placement :initarg :placement :reader place-action-placement))
-  (:documentation
-   "Represents the typed place view action request. Validate capabilities and object ownership before executing it on the compositor owner thread."))
+   (placement :initarg :placement :reader place-action-placement)))
 
 (defclass create-seat-action (control-action)
   ((name :initarg :name :reader create-seat-action-name)
    (pointer-x :initarg :pointer-x :initform 160d0
               :reader create-seat-action-pointer-x)
    (pointer-y :initarg :pointer-y :initform 100d0
-              :reader create-seat-action-pointer-y))
-  (:documentation
-   "Represents the typed create seat action request. Validate capabilities and object ownership before executing it on the compositor owner thread."))
+              :reader create-seat-action-pointer-y)))
 
 (defclass destroy-seat-action (control-action)
-  ((seat :initarg :seat :reader destroy-seat-action-seat))
-  (:documentation
-   "Represents the typed destroy seat action request. Validate capabilities and object ownership before executing it on the compositor owner thread."))
+  ((seat :initarg :seat :reader destroy-seat-action-seat)))
 
 (defclass assign-input-device-action (control-action)
   ((device :initarg :device :reader assign-device-action-device)
-   (seat :initarg :seat :reader assign-device-action-seat))
-  (:documentation
-   "Represents the typed assign input device action request. Validate capabilities and object ownership before executing it on the compositor owner thread."))
+   (seat :initarg :seat :reader assign-device-action-seat)))
 
 (defclass replace-behavior-policy-action (control-action)
-  ((policy :initarg :policy :reader replace-policy-action-policy))
-  (:documentation
-   "Represents the typed replace behavior policy action request. Validate capabilities and object ownership before executing it on the compositor owner thread."))
+  ((policy :initarg :policy :reader replace-policy-action-policy)))
 
 (defclass pan-viewport-action (control-action)
   ((output :initarg :output :reader pan-viewport-action-output)
    (delta-x :initarg :delta-x :reader pan-viewport-action-delta-x)
-   (delta-y :initarg :delta-y :reader pan-viewport-action-delta-y))
-  (:documentation
-   "Represents the typed pan viewport action request. Validate capabilities and object ownership before executing it on the compositor owner thread."))
+   (delta-y :initarg :delta-y :reader pan-viewport-action-delta-y)))
 
 (defclass zoom-viewport-action (control-action)
   ((output :initarg :output :reader zoom-viewport-action-output)
    (factor :initarg :factor :reader zoom-viewport-action-factor)
    (anchor-x :initarg :anchor-x :reader zoom-viewport-action-anchor-x)
-   (anchor-y :initarg :anchor-y :reader zoom-viewport-action-anchor-y))
-  (:documentation
-   "Represents the typed zoom viewport action request. Validate capabilities and object ownership before executing it on the compositor owner thread."))
+   (anchor-y :initarg :anchor-y :reader zoom-viewport-action-anchor-y)))
 
 (defclass launch-application-action (control-action)
-  ((command :initarg :command :reader launch-action-command))
-  (:documentation
-   "Represents the typed launch application action request. Validate capabilities and object ownership before executing it on the compositor owner thread."))
+  ((command :initarg :command :reader launch-action-command)))
 
 (defclass set-view-animation-action (control-action)
   ((view :initarg :view :reader animation-action-view)
    (descriptor-class :initarg :descriptor-class
                      :reader animation-action-descriptor-class)
-   (definition :initarg :definition :reader animation-action-definition))
-  (:documentation
-   "Represents the typed set view animation action request. Validate capabilities and object ownership before executing it on the compositor owner thread."))
+   (definition :initarg :definition :reader animation-action-definition)))
 
 (defclass install-shader-program-action (control-action)
   ((name :initarg :name :reader install-shader-action-name)
-   (descriptor :initarg :descriptor :reader install-shader-action-descriptor))
-  (:documentation
-   "Represents the typed install shader program action request. Validate capabilities and object ownership before executing it on the compositor owner thread."))
+   (descriptor :initarg :descriptor :reader install-shader-action-descriptor)))
 
 (defclass configure-view-shader-action (control-action)
   ((view :initarg :view :reader configure-shader-action-view)
    (program-name :initarg :program-name
                  :reader configure-shader-action-program-name)
    (uniforms :initarg :uniforms :initform nil
-             :reader configure-shader-action-uniforms))
-  (:documentation
-   "Represents the typed configure view shader action request. Validate capabilities and object ownership before executing it on the compositor owner thread."))
+             :reader configure-shader-action-uniforms)))
 
 (defclass set-damage-debug-action (control-action)
   ((enabled-p :initarg :enabled-p :reader damage-debug-action-enabled-p))
@@ -165,65 +133,45 @@
      :capabilities
      '(:observe :focus :move :seat :behavior-policy :viewport :launch
        :animation :shader :debug))
-    :reader control-local-principal))
-  (:documentation
-   "Owns control system subsystem state. Attach and detach it on the owner thread, and keep its tables synchronized with object lifecycle events."))
+    :reader control-local-principal)))
 
-(defgeneric required-control-capability (action)
-  (:documentation
-   "Implement REQUIRED-CONTROL-CAPABILITY after validating the principal and referenced objects. Execute mutations only at an owner-thread safe point."))
-(defgeneric execute-control-action (control action)
-  (:documentation
-   "Implement EXECUTE-CONTROL-ACTION after validating the principal and referenced objects. Execute mutations only at an owner-thread safe point."))
+(defgeneric required-control-capability (action))
+(defgeneric execute-control-action (control action))
 
 (defmethod required-control-capability
     ((action observe-compositor-action))
-  "Implement REQUIRED-CONTROL-CAPABILITY after validating the principal and referenced objects. Execute mutations only at an owner-thread safe point."
   :observe)
 (defmethod required-control-capability ((action focus-view-action))
-  "Implement REQUIRED-CONTROL-CAPABILITY after validating the principal and referenced objects. Execute mutations only at an owner-thread safe point."
   :focus)
 (defmethod required-control-capability ((action move-view-action))
-  "Implement REQUIRED-CONTROL-CAPABILITY after validating the principal and referenced objects. Execute mutations only at an owner-thread safe point."
   :move)
 (defmethod required-control-capability ((action place-view-action))
-  "Implement REQUIRED-CONTROL-CAPABILITY after validating the principal and referenced objects. Execute mutations only at an owner-thread safe point."
   :move)
 (defmethod required-control-capability ((action create-seat-action))
-  "Implement REQUIRED-CONTROL-CAPABILITY after validating the principal and referenced objects. Execute mutations only at an owner-thread safe point."
   :seat)
 (defmethod required-control-capability ((action destroy-seat-action))
-  "Implement REQUIRED-CONTROL-CAPABILITY after validating the principal and referenced objects. Execute mutations only at an owner-thread safe point."
   :seat)
 (defmethod required-control-capability
     ((action assign-input-device-action))
-  "Implement REQUIRED-CONTROL-CAPABILITY after validating the principal and referenced objects. Execute mutations only at an owner-thread safe point."
   :seat)
 (defmethod required-control-capability
     ((action replace-behavior-policy-action))
-  "Implement REQUIRED-CONTROL-CAPABILITY after validating the principal and referenced objects. Execute mutations only at an owner-thread safe point."
   :behavior-policy)
 (defmethod required-control-capability ((action pan-viewport-action))
-  "Implement REQUIRED-CONTROL-CAPABILITY after validating the principal and referenced objects. Execute mutations only at an owner-thread safe point."
   :viewport)
 (defmethod required-control-capability ((action zoom-viewport-action))
-  "Implement REQUIRED-CONTROL-CAPABILITY after validating the principal and referenced objects. Execute mutations only at an owner-thread safe point."
   :viewport)
 (defmethod required-control-capability
     ((action launch-application-action))
-  "Implement REQUIRED-CONTROL-CAPABILITY after validating the principal and referenced objects. Execute mutations only at an owner-thread safe point."
   :launch)
 (defmethod required-control-capability
     ((action set-view-animation-action))
-  "Implement REQUIRED-CONTROL-CAPABILITY after validating the principal and referenced objects. Execute mutations only at an owner-thread safe point."
   :animation)
 (defmethod required-control-capability
     ((action install-shader-program-action))
-  "Implement REQUIRED-CONTROL-CAPABILITY after validating the principal and referenced objects. Execute mutations only at an owner-thread safe point."
   :shader)
 (defmethod required-control-capability
     ((action configure-view-shader-action))
-  "Implement REQUIRED-CONTROL-CAPABILITY after validating the principal and referenced objects. Execute mutations only at an owner-thread safe point."
   :shader)
 (defmethod required-control-capability ((action set-damage-debug-action))
   "Require explicit debug authority before changing diagnostic rendering."
@@ -283,7 +231,6 @@
   0)
 
 (defmethod attach-component :after ((control control-system))
-  "Extend ATTACH-COMPONENT after primary dispatch. Preserve the primary result and perform only the documented follow-up obligation."
   (let ((file-descriptor
           (%eventfd 0 (logior +eventfd-nonblock+ +eventfd-cloexec+))))
     (when (minusp file-descriptor)
@@ -305,7 +252,6 @@
   (start-control-transport control))
 
 (defmethod detach-component :before ((control control-system) reason)
-  "Prepare or validate DETACH-COMPONENT before primary dispatch. Do not consume ownership or perform the primary operation early."
   (declare (ignore reason))
   (stop-control-transport control)
   (when (and (control-event-source control)
@@ -368,26 +314,22 @@
 
 (defmethod execute-control-action :before
     ((control control-system) (action control-action))
-  "Prepare or validate EXECUTE-CONTROL-ACTION before primary dispatch. Do not consume ownership or perform the primary operation early."
   (assert-compositor-owner (component-compositor control)
                            :execute-control-action)
   (validate-control-action action))
 
 (defmethod execute-control-action
     ((control control-system) (action observe-compositor-action))
-  "Implement EXECUTE-CONTROL-ACTION after validating the principal and referenced objects. Execute mutations only at an owner-thread safe point."
   (observe-compositor control (control-action-principal action)))
 
 (defmethod execute-control-action
     ((control control-system) (action focus-view-action))
-  "Implement EXECUTE-CONTROL-ACTION after validating the principal and referenced objects. Execute mutations only at an owner-thread safe point."
   (focus-view
    (compositor-interaction (component-compositor control))
    (focus-action-seat action) (focus-action-view action)))
 
 (defmethod execute-control-action
     ((control control-system) (action move-view-action))
-  "Implement EXECUTE-CONTROL-ACTION after validating the principal and referenced objects. Execute mutations only at an owner-thread safe point."
   (let* ((compositor (component-compositor control))
          (view (move-action-view action))
          (policy (compositor-behavior-policy compositor))
@@ -419,7 +361,6 @@
 
 (defmethod execute-control-action
     ((control control-system) (action place-view-action))
-  "Implement EXECUTE-CONTROL-ACTION after validating the principal and referenced objects. Execute mutations only at an owner-thread safe point."
   (let* ((compositor (component-compositor control))
          (policy (compositor-behavior-policy compositor))
          (view (place-action-view action))
@@ -447,7 +388,6 @@
 
 (defmethod execute-control-action
     ((control control-system) (action create-seat-action))
-  "Implement EXECUTE-CONTROL-ACTION after validating the principal and referenced objects. Execute mutations only at an owner-thread safe point."
   (create-logical-seat
    (compositor-interaction (component-compositor control))
    (create-seat-action-name action)
@@ -456,14 +396,12 @@
 
 (defmethod execute-control-action
     ((control control-system) (action destroy-seat-action))
-  "Implement EXECUTE-CONTROL-ACTION after validating the principal and referenced objects. Execute mutations only at an owner-thread safe point."
   (destroy-logical-seat
    (compositor-interaction (component-compositor control))
    (destroy-seat-action-seat action)))
 
 (defmethod execute-control-action
     ((control control-system) (action assign-input-device-action))
-  "Implement EXECUTE-CONTROL-ACTION after validating the principal and referenced objects. Execute mutations only at an owner-thread safe point."
   (assign-input-device
    (compositor-interaction (component-compositor control))
    (assign-device-action-device action)
@@ -471,13 +409,11 @@
 
 (defmethod execute-control-action
     ((control control-system) (action replace-behavior-policy-action))
-  "Implement EXECUTE-CONTROL-ACTION after validating the principal and referenced objects. Execute mutations only at an owner-thread safe point."
   (replace-behavior-policy
    (component-compositor control) (replace-policy-action-policy action)))
 
 (defmethod execute-control-action
     ((control control-system) (action pan-viewport-action))
-  "Implement EXECUTE-CONTROL-ACTION after validating the principal and referenced objects. Execute mutations only at an owner-thread safe point."
   (let* ((compositor (component-compositor control))
          (output (pan-viewport-action-output action)))
     (unless (eq output
@@ -494,7 +430,6 @@
 
 (defmethod execute-control-action
     ((control control-system) (action zoom-viewport-action))
-  "Implement EXECUTE-CONTROL-ACTION after validating the principal and referenced objects. Execute mutations only at an owner-thread safe point."
   (let* ((compositor (component-compositor control))
          (output (zoom-viewport-action-output action)))
     (unless (eq output
@@ -512,13 +447,11 @@
 
 (defmethod execute-control-action
     ((control control-system) (action launch-application-action))
-  "Implement EXECUTE-CONTROL-ACTION after validating the principal and referenced objects. Execute mutations only at an owner-thread safe point."
   (launch-application
    (component-compositor control) (launch-action-command action)))
 
 (defmethod execute-control-action
     ((control control-system) (action set-view-animation-action))
-  "Implement EXECUTE-CONTROL-ACTION after validating the principal and referenced objects. Execute mutations only at an owner-thread safe point."
   (let* ((view (animation-action-view action))
          (compositor (component-compositor control)))
     (behavior-set-view-animation-definition
@@ -528,7 +461,6 @@
 
 (defmethod execute-control-action
     ((control control-system) (action install-shader-program-action))
-  "Implement EXECUTE-CONTROL-ACTION after validating the principal and referenced objects. Execute mutations only at an owner-thread safe point."
   ;; Compilation happens on the owner thread with the wlroots EGL context.
   ;; replace-shader-program activates only after the candidate links cleanly.
   (replace-shader-program
@@ -538,7 +470,6 @@
 
 (defmethod execute-control-action
     ((control control-system) (action configure-view-shader-action))
-  "Implement EXECUTE-CONTROL-ACTION after validating the principal and referenced objects. Execute mutations only at an owner-thread safe point."
   (let ((renderer (compositor-graphics (component-compositor control)))
         (view (configure-shader-action-view action)))
     (dolist (uniform (configure-shader-action-uniforms action))

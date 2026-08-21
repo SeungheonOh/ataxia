@@ -175,30 +175,22 @@
 
 (defconstant +xdg-shell-version+ 6)
 
-(defclass wlr-xdg-shell (native-object) ()
-  (:documentation
-   "Wraps the native wlr xdg shell object. Runtime owns its listener registration and must invalidate the wrapper before the corresponding native object is destroyed."))
+(defclass wlr-xdg-shell (native-object) ())
 
 (defclass wlr-xdg-surface (native-object)
-  ((surface :initarg :surface :reader %xdg-surface-core-surface))
-  (:documentation
-   "Wraps the native wlr xdg surface object. Runtime owns its listener registration and must invalidate the wrapper before the corresponding native object is destroyed."))
+  ((surface :initarg :surface :reader %xdg-surface-core-surface)))
 
 (defclass wlr-xdg-toplevel (native-object)
   ((base :initarg :base :reader %xdg-toplevel-base-object)
    (surface :initarg :surface :reader xdg-toplevel-surface)
    (title :initform nil :accessor xdg-toplevel-title)
-   (app-id :initform nil :accessor xdg-toplevel-app-id))
-  (:documentation
-   "Wraps the native wlr xdg toplevel object. Runtime owns its listener registration and must invalidate the wrapper before the corresponding native object is destroyed."))
+   (app-id :initform nil :accessor xdg-toplevel-app-id)))
 
 (defclass wlr-xdg-popup (native-object)
   ((base :initarg :base :reader %xdg-popup-base-object)
    (surface :initarg :surface :reader xdg-popup-surface)
    (parent-surface :initarg :parent-surface
-                   :reader xdg-popup-parent-surface))
-  (:documentation
-   "Wraps the native wlr xdg popup object. Runtime owns its listener registration and must invalidate the wrapper before the corresponding native object is destroyed."))
+                   :reader xdg-popup-parent-surface)))
 
 (defstruct (xdg-move-event
              (:constructor %make-xdg-move-event
@@ -235,154 +227,90 @@
   (requested-p nil :type boolean :read-only t)
   (output nil :type (or null wlr-output) :read-only t))
 
-(defgeneric xdg-new-toplevel (sink toplevel)
-  (:documentation
-   "Implement XDG-NEW-TOPLEVEL for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."))
-(defgeneric xdg-new-popup (sink popup)
-  (:documentation
-   "Implement XDG-NEW-POPUP for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."))
-(defgeneric xdg-toplevel-mapped (sink toplevel)
-  (:documentation
-   "Implement XDG-TOPLEVEL-MAPPED for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."))
-(defgeneric xdg-toplevel-unmapped (sink toplevel)
-  (:documentation
-   "Implement XDG-TOPLEVEL-UNMAPPED for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."))
+(defgeneric xdg-new-toplevel (sink toplevel))
+(defgeneric xdg-new-popup (sink popup))
+(defgeneric xdg-toplevel-mapped (sink toplevel))
+(defgeneric xdg-toplevel-unmapped (sink toplevel))
 (defgeneric xdg-toplevel-committed
-    (sink toplevel commit initial-commit-p configured-p)
-  (:documentation
-   "Implement XDG-TOPLEVEL-COMMITTED for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."))
-(defgeneric xdg-toplevel-destroying (sink toplevel)
-  (:documentation
-   "Implement XDG-TOPLEVEL-DESTROYING idempotently. Release owned listeners and resources exactly once, and invalidate wrappers before native teardown."))
-(defgeneric xdg-toplevel-request-move (sink event)
-  (:documentation
-   "Implement XDG-TOPLEVEL-REQUEST-MOVE for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."))
-(defgeneric xdg-toplevel-request-resize (sink event)
-  (:documentation
-   "Implement XDG-TOPLEVEL-REQUEST-RESIZE for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."))
-(defgeneric xdg-toplevel-request-maximize (sink toplevel requested-p)
-  (:documentation
-   "Implement XDG-TOPLEVEL-REQUEST-MAXIMIZE for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."))
-(defgeneric xdg-toplevel-request-minimize (sink toplevel requested-p)
-  (:documentation
-   "Implement XDG-TOPLEVEL-REQUEST-MINIMIZE for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."))
-(defgeneric xdg-toplevel-request-fullscreen (sink request)
-  (:documentation
-   "Implement XDG-TOPLEVEL-REQUEST-FULLSCREEN for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."))
-(defgeneric xdg-toplevel-request-show-window-menu (sink event)
-  (:documentation
-   "Implement XDG-TOPLEVEL-REQUEST-SHOW-WINDOW-MENU for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."))
-(defgeneric xdg-toplevel-parent-changed (sink toplevel)
-  (:documentation
-   "Implement XDG-TOPLEVEL-PARENT-CHANGED for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."))
-(defgeneric xdg-toplevel-title-changed (sink toplevel title)
-  (:documentation
-   "Implement XDG-TOPLEVEL-TITLE-CHANGED for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."))
-(defgeneric xdg-toplevel-app-id-changed (sink toplevel app-id)
-  (:documentation
-   "Implement XDG-TOPLEVEL-APP-ID-CHANGED for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."))
-(defgeneric xdg-popup-mapped (sink popup)
-  (:documentation
-   "Implement XDG-POPUP-MAPPED for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."))
-(defgeneric xdg-popup-unmapped (sink popup)
-  (:documentation
-   "Implement XDG-POPUP-UNMAPPED for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."))
+    (sink toplevel commit initial-commit-p configured-p))
+(defgeneric xdg-toplevel-destroying (sink toplevel))
+(defgeneric xdg-toplevel-request-move (sink event))
+(defgeneric xdg-toplevel-request-resize (sink event))
+(defgeneric xdg-toplevel-request-maximize (sink toplevel requested-p))
+(defgeneric xdg-toplevel-request-minimize (sink toplevel requested-p))
+(defgeneric xdg-toplevel-request-fullscreen (sink request))
+(defgeneric xdg-toplevel-request-show-window-menu (sink event))
+(defgeneric xdg-toplevel-parent-changed (sink toplevel))
+(defgeneric xdg-toplevel-title-changed (sink toplevel title))
+(defgeneric xdg-toplevel-app-id-changed (sink toplevel app-id))
+(defgeneric xdg-popup-mapped (sink popup))
+(defgeneric xdg-popup-unmapped (sink popup))
 (defgeneric xdg-popup-committed
-    (sink popup commit initial-commit-p configured-p)
-  (:documentation
-   "Implement XDG-POPUP-COMMITTED for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."))
-(defgeneric xdg-popup-repositioned (sink popup)
-  (:documentation
-   "Implement XDG-POPUP-REPOSITIONED for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."))
-(defgeneric xdg-popup-destroying (sink popup)
-  (:documentation
-   "Implement XDG-POPUP-DESTROYING idempotently. Release owned listeners and resources exactly once, and invalidate wrappers before native teardown."))
+    (sink popup commit initial-commit-p configured-p))
+(defgeneric xdg-popup-repositioned (sink popup))
+(defgeneric xdg-popup-destroying (sink popup))
 
 (defmethod xdg-new-toplevel ((sink runtime-sink) toplevel)
-  "Implement XDG-NEW-TOPLEVEL for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
   (declare (ignore sink toplevel)))
 (defmethod xdg-new-popup ((sink runtime-sink) popup)
-  "Implement XDG-NEW-POPUP for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
   (declare (ignore sink popup)))
 (defmethod xdg-toplevel-mapped ((sink runtime-sink) toplevel)
-  "Implement XDG-TOPLEVEL-MAPPED for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
   (declare (ignore sink toplevel)))
 (defmethod xdg-toplevel-unmapped ((sink runtime-sink) toplevel)
-  "Implement XDG-TOPLEVEL-UNMAPPED for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
   (declare (ignore sink toplevel)))
 (defmethod xdg-toplevel-committed
     ((sink runtime-sink) toplevel commit initial-commit-p configured-p)
-  "Implement XDG-TOPLEVEL-COMMITTED for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
   (declare (ignore sink toplevel commit initial-commit-p configured-p)))
 (defmethod xdg-toplevel-destroying ((sink runtime-sink) toplevel)
-  "Implement XDG-TOPLEVEL-DESTROYING idempotently. Release owned listeners and resources exactly once, and invalidate wrappers before native teardown."
   (declare (ignore sink toplevel)))
 (defmethod xdg-toplevel-request-move ((sink runtime-sink) event)
-  "Implement XDG-TOPLEVEL-REQUEST-MOVE for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
   (declare (ignore sink event)))
 (defmethod xdg-toplevel-request-resize ((sink runtime-sink) event)
-  "Implement XDG-TOPLEVEL-REQUEST-RESIZE for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
   (declare (ignore sink event)))
 (defmethod xdg-toplevel-request-maximize
     ((sink runtime-sink) toplevel requested-p)
-  "Implement XDG-TOPLEVEL-REQUEST-MAXIMIZE for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
   (declare (ignore sink toplevel requested-p)))
 (defmethod xdg-toplevel-request-minimize
     ((sink runtime-sink) toplevel requested-p)
-  "Implement XDG-TOPLEVEL-REQUEST-MINIMIZE for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
   (declare (ignore sink toplevel requested-p)))
 (defmethod xdg-toplevel-request-fullscreen ((sink runtime-sink) request)
-  "Implement XDG-TOPLEVEL-REQUEST-FULLSCREEN for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
   (declare (ignore sink request)))
 (defmethod xdg-toplevel-request-show-window-menu
     ((sink runtime-sink) event)
-  "Implement XDG-TOPLEVEL-REQUEST-SHOW-WINDOW-MENU for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
   (declare (ignore sink event)))
 (defmethod xdg-toplevel-parent-changed ((sink runtime-sink) toplevel)
-  "Implement XDG-TOPLEVEL-PARENT-CHANGED for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
   (declare (ignore sink toplevel)))
 (defmethod xdg-toplevel-title-changed ((sink runtime-sink) toplevel title)
-  "Implement XDG-TOPLEVEL-TITLE-CHANGED for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
   (declare (ignore sink toplevel title)))
 (defmethod xdg-toplevel-app-id-changed ((sink runtime-sink) toplevel app-id)
-  "Implement XDG-TOPLEVEL-APP-ID-CHANGED for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
   (declare (ignore sink toplevel app-id)))
 (defmethod xdg-popup-mapped ((sink runtime-sink) popup)
-  "Implement XDG-POPUP-MAPPED for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
   (declare (ignore sink popup)))
 (defmethod xdg-popup-unmapped ((sink runtime-sink) popup)
-  "Implement XDG-POPUP-UNMAPPED for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
   (declare (ignore sink popup)))
 (defmethod xdg-popup-committed
     ((sink runtime-sink) popup commit initial-commit-p configured-p)
-  "Implement XDG-POPUP-COMMITTED for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
   (declare (ignore sink popup commit initial-commit-p configured-p)))
 (defmethod xdg-popup-repositioned ((sink runtime-sink) popup)
-  "Implement XDG-POPUP-REPOSITIONED for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
   (declare (ignore sink popup)))
 (defmethod xdg-popup-destroying ((sink runtime-sink) popup)
-  "Implement XDG-POPUP-DESTROYING idempotently. Release owned listeners and resources exactly once, and invalidate wrappers before native teardown."
   (declare (ignore sink popup)))
 
 (defmethod xdg-new-toplevel ((sink diagnostic-sink) toplevel)
-  "Implement XDG-NEW-TOPLEVEL for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
   (%diagnostic-line sink "[runtime] xdg-new-toplevel app-id=~A title=~A"
                     (or (xdg-toplevel-app-id toplevel) "none")
                     (or (xdg-toplevel-title toplevel) "none")))
 
 (defmethod xdg-new-popup ((sink diagnostic-sink) popup)
-  "Implement XDG-NEW-POPUP for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
   (%diagnostic-line sink "[runtime] xdg-new-popup address=~X"
                     (native-object-address popup)))
 
 (defmethod xdg-toplevel-destroying ((sink diagnostic-sink) toplevel)
-  "Implement XDG-TOPLEVEL-DESTROYING idempotently. Release owned listeners and resources exactly once, and invalidate wrappers before native teardown."
   (%diagnostic-line sink "[runtime] xdg-toplevel-destroy app-id=~A"
                     (or (xdg-toplevel-app-id toplevel) "none")))
 
 (defmethod xdg-toplevel-committed
     ((sink diagnostic-sink) toplevel commit initial-commit-p configured-p)
-  "Implement XDG-TOPLEVEL-COMMITTED for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
   (when (and initial-commit-p (not configured-p))
     (xdg-toplevel-set-size toplevel 900 700))
   (when (surface-commit-mapped-p commit)
@@ -403,7 +331,6 @@
   commit)
 
 (defmethod xdg-popup-destroying ((sink diagnostic-sink) popup)
-  "Implement XDG-POPUP-DESTROYING idempotently. Release owned listeners and resources exactly once, and invalidate wrappers before native teardown."
   (%diagnostic-line sink "[runtime] xdg-popup-destroy address=~X"
                     (native-object-address popup)))
 

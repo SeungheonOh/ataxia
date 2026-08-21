@@ -16,25 +16,17 @@
    (mode :initarg :mode :reader hook-point-mode)
    (limit :initarg :limit :initform 64 :reader hook-point-limit)
    (handlers :initform nil :accessor hook-point-handlers)
-   (next-sequence :initform 0 :accessor hook-point-next-sequence))
-  (:documentation
-   "Represents compositor hook point. Mutate it only on the compositor owner thread and preserve the ownership invariants exposed by its accessors."))
+   (next-sequence :initform 0 :accessor hook-point-next-sequence)))
 
 (defclass hook-registry ()
   ((points :initform (make-hash-table :test #'eq)
-           :reader hook-registry-points))
-  (:documentation
-   "Owns hook registry subsystem state. Attach and detach it on the owner thread, and keep its tables synchronized with object lifecycle events."))
+           :reader hook-registry-points)))
 
 (defclass extension-system (compositor-component)
   ((hooks :initform (make-instance 'hook-registry)
-          :reader extension-hooks))
-  (:documentation
-   "Owns extension system subsystem state. Attach and detach it on the owner thread, and keep its tables synchronized with object lifecycle events."))
+          :reader extension-hooks)))
 
-(defclass hook-context (operation-context) ()
-  (:documentation
-   "Describes hook context without performing it. Hooks and policies may inspect or replace it only within the declared operation phase."))
+(defclass hook-context (operation-context) ())
 
 (defparameter *standard-hook-points*
   '((before-interactive-operation :veto 64)
@@ -56,7 +48,6 @@
                            :name name :mode mode :limit limit))))
 
 (defmethod attach-component :after ((extensions extension-system))
-  "Extend ATTACH-COMPONENT after primary dispatch. Preserve the primary result and perform only the documented follow-up obligation."
   ;; Predeclaring framework hooks prevents the first plugin from accidentally
   ;; selecting incompatible dispatch semantics for a public hook point.
   (dolist (specification *standard-hook-points*)

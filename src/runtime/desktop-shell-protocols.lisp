@@ -57,19 +57,13 @@
 
 (in-package #:ataxia.runtime)
 
-(defclass wlr-xdg-decoration-manager-v1 (native-object) ()
-  (:documentation
-   "Wraps the native wlr xdg decoration manager v1 object. Runtime owns its listener registration and must invalidate the wrapper before the corresponding native object is destroyed."))
+(defclass wlr-xdg-decoration-manager-v1 (native-object) ())
 
 (defclass wlr-xdg-toplevel-decoration-v1 (native-object)
   ((toplevel :initarg :toplevel :reader xdg-decoration-toplevel)
-   (requested-mode :initform :none :accessor xdg-decoration-requested-mode))
-  (:documentation
-   "Wraps the native wlr xdg toplevel decoration v1 object. Runtime owns its listener registration and must invalidate the wrapper before the corresponding native object is destroyed."))
+   (requested-mode :initform :none :accessor xdg-decoration-requested-mode)))
 
-(defclass wlr-xdg-activation-v1 (native-object) ()
-  (:documentation
-   "Wraps the native wlr xdg activation v1 object. Runtime owns its listener registration and must invalidate the wrapper before the corresponding native object is destroyed."))
+(defclass wlr-xdg-activation-v1 (native-object) ())
 
 (defstruct (xdg-activation-request
              (:constructor %make-xdg-activation-request
@@ -78,37 +72,25 @@
   (serial 0 :type (unsigned-byte 32) :read-only t)
   app-id)
 
-(defgeneric xdg-new-toplevel-decoration (sink runtime decoration)
-  (:documentation
-   "Implement XDG-NEW-TOPLEVEL-DECORATION for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."))
-(defgeneric xdg-toplevel-decoration-request-mode (sink decoration)
-  (:documentation
-   "Implement XDG-TOPLEVEL-DECORATION-REQUEST-MODE for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."))
-(defgeneric xdg-toplevel-decoration-destroying (sink decoration)
-  (:documentation
-   "Implement XDG-TOPLEVEL-DECORATION-DESTROYING idempotently. Release owned listeners and resources exactly once, and invalidate wrappers before native teardown."))
-(defgeneric xdg-activation-requested (sink runtime request)
-  (:documentation
-   "Implement XDG-ACTIVATION-REQUESTED for Runtime implementations. Consume callback data synchronously and preserve native object and listener ownership."))
+(defgeneric xdg-new-toplevel-decoration (sink runtime decoration))
+(defgeneric xdg-toplevel-decoration-request-mode (sink decoration))
+(defgeneric xdg-toplevel-decoration-destroying (sink decoration))
+(defgeneric xdg-activation-requested (sink runtime request))
 
 (defmethod xdg-new-toplevel-decoration
     ((sink runtime-sink) runtime decoration)
-  "Implement XDG-NEW-TOPLEVEL-DECORATION for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
   (declare (ignore runtime decoration))
   nil)
 (defmethod xdg-toplevel-decoration-request-mode
     ((sink runtime-sink) decoration)
-  "Implement XDG-TOPLEVEL-DECORATION-REQUEST-MODE for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
   (declare (ignore decoration))
   nil)
 (defmethod xdg-toplevel-decoration-destroying
     ((sink runtime-sink) decoration)
-  "Implement XDG-TOPLEVEL-DECORATION-DESTROYING idempotently. Release owned listeners and resources exactly once, and invalidate wrappers before native teardown."
   (declare (ignore decoration))
   nil)
 (defmethod xdg-activation-requested
     ((sink runtime-sink) runtime request)
-  "Implement XDG-ACTIVATION-REQUESTED for this Runtime specialization. Consume callback data synchronously and preserve native object and listener ownership."
   (declare (ignore runtime request))
   nil)
 

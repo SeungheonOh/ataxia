@@ -5,9 +5,7 @@
 
 (in-package #:ataxia.runtime)
 
-(define-condition runtime-error (error) ()
-  (:documentation
-   "Signals runtime error. Signalers must include enough context for callers to reject, unwind, or roll back the failed operation safely."))
+(define-condition runtime-error (error) ())
 
 (define-condition native-call-failed (runtime-error)
   ((name :initarg :name :reader native-call-name)
@@ -16,9 +14,7 @@
    (lambda (condition stream)
      (format stream "Native operation ~A failed~@[ (~A)~]"
              (native-call-name condition)
-             (native-call-detail condition))))
-  (:documentation
-   "Signals native call failed. Signalers must include enough context for callers to reject, unwind, or roll back the failed operation safely."))
+             (native-call-detail condition)))))
 
 (define-condition native-abi-mismatch (runtime-error)
   ((expected :initarg :expected :reader native-abi-expected)
@@ -29,27 +25,21 @@
      (format stream "Native ABI mismatch for ~A: expected ~A, got ~A"
              (native-abi-subject condition)
              (native-abi-expected condition)
-             (native-abi-actual condition))))
-  (:documentation
-   "Signals native abi mismatch. Signalers must include enough context for callers to reject, unwind, or roll back the failed operation safely."))
+             (native-abi-actual condition)))))
 
 (define-condition dead-native-object (runtime-error)
   ((object :initarg :object :reader dead-native-object-value))
   (:report
    (lambda (condition stream)
      (format stream "Native ~A wrapper is no longer live"
-             (class-name (class-of (dead-native-object-value condition))))))
-  (:documentation
-   "Signals dead native object. Signalers must include enough context for callers to reject, unwind, or roll back the failed operation safely."))
+             (class-name (class-of (dead-native-object-value condition)))))))
 
 (define-condition wrong-owner-thread (runtime-error)
   ((operation :initarg :operation :reader wrong-owner-operation))
   (:report
    (lambda (condition stream)
      (format stream "~A must execute on the Runtime owner thread"
-             (wrong-owner-operation condition))))
-  (:documentation
-   "Signals wrong owner thread. Signalers must include enough context for callers to reject, unwind, or roll back the failed operation safely."))
+             (wrong-owner-operation condition)))))
 
 (define-condition callback-fault (runtime-error)
   ((signal :initarg :signal :reader callback-fault-signal)
@@ -58,6 +48,4 @@
    (lambda (condition stream)
      (format stream "Runtime callback ~A failed: ~A"
              (callback-fault-signal condition)
-             (callback-fault-cause condition))))
-  (:documentation
-   "Signals callback fault. Signalers must include enough context for callers to reject, unwind, or roll back the failed operation safely."))
+             (callback-fault-cause condition)))))

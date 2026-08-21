@@ -25,13 +25,10 @@
    (original-height :initarg :original-height
                     :reader interactive-operation-original-height)
    (original-placement :initarg :original-placement
-                       :reader interactive-operation-original-placement))
-  (:documentation
-   "Represents behavior implementation interactive operation. It may own policy-specific state but must remain replaceable through the compositor behavior protocol."))
+                       :reader interactive-operation-original-placement)))
 
 (defmethod behavior-build-view-items
     ((policy planar-behavior-policy) items output view timestamp titlebar-height)
-  "Implement BEHAVIOR-BUILD-VIEW-ITEMS for this policy specialization. Mutate only behavior-owned state and return a value the compositor can validate and apply synchronously."
   (let ((record (view-surface view)))
     (when (and (view-mapped-p view)
                (not (view-minimized-p view))
@@ -110,7 +107,6 @@
 
 (defmethod behavior-begin-operation
     ((policy planar-behavior-policy) interaction seat view kind edges button)
-  "Implement BEHAVIOR-BEGIN-OPERATION for this policy specialization. Mutate only behavior-owned state and return a value the compositor can validate and apply synchronously."
   (declare (ignore interaction))
   (make-instance
    'interactive-operation :kind kind :seat seat :view view
@@ -181,7 +177,6 @@
 (defmethod behavior-update-operation
     ((policy planar-behavior-policy) interaction
      (operation interactive-operation))
-  "Implement BEHAVIOR-UPDATE-OPERATION for this policy specialization. Mutate only behavior-owned state and return a value the compositor can validate and apply synchronously."
   (declare (ignore interaction))
   (ecase (interactive-operation-kind operation)
     (:move (update-planar-move policy operation))
@@ -189,7 +184,6 @@
 
 (defmethod behavior-restore-view
     ((policy planar-behavior-policy) compositor view)
-  "Implement BEHAVIOR-RESTORE-VIEW for this policy specialization. Mutate only behavior-owned state and return a value the compositor can validate and apply synchronously."
   (declare (ignore compositor))
   (let ((restore (view-restore-placement view)))
     (when restore
@@ -203,7 +197,6 @@
 
 (defmethod behavior-configure-view-for-output
     ((policy planar-behavior-policy) compositor view output fullscreen-p)
-  "Implement BEHAVIOR-CONFIGURE-VIEW-FOR-OUTPUT for this policy specialization. Mutate only behavior-owned state and return a value the compositor can validate and apply synchronously."
   (let ((output (or output (default-compositor-output compositor))))
     (if (null output)
         (make-instance 'view-configuration-decision
@@ -242,7 +235,6 @@
 
 (defmethod behavior-move-view
     ((policy planar-behavior-policy) view x y context)
-  "Implement BEHAVIOR-MOVE-VIEW for this policy specialization. Mutate only behavior-owned state and return a value the compositor can validate and apply synchronously."
   (let* ((placement (view-placement view))
          (old-placement (copy-planar-placement placement)))
     (check-type placement planar-placement)
@@ -254,7 +246,6 @@
 
 (defmethod behavior-focus-changed
     ((policy behavior-policy) seat previous view)
-  "Implement BEHAVIOR-FOCUS-CHANGED for this policy specialization. Mutate only behavior-owned state and return a value the compositor can validate and apply synchronously."
   (declare (ignore seat previous))
   (when view
     (desktop-raise-view
@@ -281,7 +272,6 @@
 
 (defmethod behavior-handle-pointer-button
     ((policy behavior-policy) interaction seat hit button state time)
-  "Implement BEHAVIOR-HANDLE-POINTER-BUTTON for this policy specialization. Mutate only behavior-owned state and return a value the compositor can validate and apply synchronously."
   (declare (ignore policy interaction time))
   (let ((view (and hit (seat-hit-view hit))))
     (if (and (eq state :pressed) view)
@@ -307,7 +297,6 @@
 
 (defmethod behavior-observe-output
     ((policy planar-behavior-policy) output)
-  "Implement BEHAVIOR-OBSERVE-OUTPUT for this policy specialization. Mutate only behavior-owned state and return a value the compositor can validate and apply synchronously."
   (declare (ignore policy))
   (let ((viewport (output-viewport output)))
     (list :camera-x (viewport-camera-x viewport)
@@ -316,7 +305,6 @@
 
 (defmethod behavior-observe-view
     ((policy planar-behavior-policy) view)
-  "Implement BEHAVIOR-OBSERVE-VIEW for this policy specialization. Mutate only behavior-owned state and return a value the compositor can validate and apply synchronously."
   (declare (ignore policy))
   (let ((placement (view-placement view)))
     (list :x (placement-x placement) :y (placement-y placement)

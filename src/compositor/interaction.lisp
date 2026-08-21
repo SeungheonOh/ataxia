@@ -21,9 +21,7 @@
    (pointer-constraints :initform nil :accessor interaction-pointer-constraints)
    (active-pointer-constraints :initform (make-hash-table :test #'eq)
                                :reader interaction-active-pointer-constraints)
-   (default-seat :initform nil :accessor interaction-default-seat))
-  (:documentation
-   "Owns interaction system subsystem state. Attach and detach it on the owner thread, and keep its tables synchronized with object lifecycle events."))
+   (default-seat :initform nil :accessor interaction-default-seat)))
 
 (defclass logical-seat ()
   ((name :initarg :name :reader seat-name)
@@ -52,79 +50,36 @@
    (cursor-hotspot-y :initform 0d0 :accessor seat-cursor-hotspot-y)
    (pressed-buttons :initform (make-hash-table :test #'eql)
                     :reader seat-pressed-buttons)
-   (operation :initform nil :accessor seat-operation))
-  (:documentation
-   "Represents compositor logical seat. Mutate it only on the compositor owner thread and preserve the ownership invariants exposed by its accessors."))
+   (operation :initform nil :accessor seat-operation)))
 
 (defgeneric create-logical-seat
-    (interaction name &key pointer-x pointer-y)
-  (:documentation
-   "Implement CREATE-LOGICAL-SEAT for compositor implementations. Preserve component ownership, protocol ordering, and the generic function's return contract."))
-(defgeneric destroy-logical-seat (interaction seat)
-  (:documentation
-   "Implement DESTROY-LOGICAL-SEAT idempotently. Release owned listeners and resources exactly once, and invalidate wrappers before native teardown."))
+    (interaction name &key pointer-x pointer-y))
+(defgeneric destroy-logical-seat (interaction seat))
 (defgeneric interaction-add-input-device
-    (interaction device &optional seat)
-  (:documentation
-   "Implement INTERACTION-ADD-INPUT-DEVICE for implementations. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."))
-(defgeneric interaction-remove-input-device (interaction device)
-  (:documentation
-   "Implement INTERACTION-REMOVE-INPUT-DEVICE for implementations. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."))
-(defgeneric assign-input-device (interaction device seat)
-  (:documentation
-   "Implement ASSIGN-INPUT-DEVICE for compositor implementations. Preserve component ownership, protocol ordering, and the generic function's return contract."))
-(defgeneric unassign-input-device (interaction device)
-  (:documentation
-   "Implement UNASSIGN-INPUT-DEVICE for compositor implementations. Preserve component ownership, protocol ordering, and the generic function's return contract."))
-(defgeneric focus-view (interaction seat view)
-  (:documentation
-   "Implement FOCUS-VIEW for compositor implementations. Preserve component ownership, protocol ordering, and the generic function's return contract."))
+    (interaction device &optional seat))
+(defgeneric interaction-remove-input-device (interaction device))
+(defgeneric assign-input-device (interaction device seat))
+(defgeneric unassign-input-device (interaction device))
+(defgeneric focus-view (interaction seat view))
 (defgeneric begin-interactive-operation
-    (interaction seat view kind edges &key button)
-  (:documentation
-   "Implement BEGIN-INTERACTIVE-OPERATION for compositor implementations. Preserve component ownership, protocol ordering, and the generic function's return contract."))
+    (interaction seat view kind edges &key button))
 (defgeneric begin-interactive-move
-    (interaction seat view &key serial button)
-  (:documentation
-   "Implement BEGIN-INTERACTIVE-MOVE for compositor implementations. Preserve component ownership, protocol ordering, and the generic function's return contract."))
+    (interaction seat view &key serial button))
 (defgeneric begin-interactive-resize
-    (interaction seat view edges &key serial button)
-  (:documentation
-   "Implement BEGIN-INTERACTIVE-RESIZE for compositor implementations. Preserve component ownership, protocol ordering, and the generic function's return contract."))
-(defgeneric cancel-interactive-operation (interaction seat)
-  (:documentation
-   "Implement CANCEL-INTERACTIVE-OPERATION for compositor implementations. Preserve component ownership, protocol ordering, and the generic function's return contract."))
-(defgeneric update-interactive-operation (interaction seat)
-  (:documentation
-   "Implement UPDATE-INTERACTIVE-OPERATION for compositor implementations. Preserve component ownership, protocol ordering, and the generic function's return contract."))
-(defgeneric interaction-handle-pointer-motion (interaction event)
-  (:documentation
-   "Implement INTERACTION-HANDLE-POINTER-MOTION for implementations. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."))
-(defgeneric interaction-handle-pointer-motion-absolute (interaction event)
-  (:documentation
-   "Implement INTERACTION-HANDLE-POINTER-MOTION-ABSOLUTE for implementations. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."))
-(defgeneric interaction-handle-pointer-button (interaction event)
-  (:documentation
-   "Implement INTERACTION-HANDLE-POINTER-BUTTON for implementations. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."))
-(defgeneric interaction-handle-pointer-axis (interaction event)
-  (:documentation
-   "Implement INTERACTION-HANDLE-POINTER-AXIS for implementations. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."))
-(defgeneric interaction-handle-pointer-frame (interaction pointer)
-  (:documentation
-   "Implement INTERACTION-HANDLE-POINTER-FRAME for implementations. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."))
-(defgeneric interaction-handle-keyboard-key (interaction event)
-  (:documentation
-   "Implement INTERACTION-HANDLE-KEYBOARD-KEY for implementations. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."))
-(defgeneric interaction-handle-keyboard-modifiers (interaction event)
-  (:documentation
-   "Implement INTERACTION-HANDLE-KEYBOARD-MODIFIERS for implementations. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."))
-(defgeneric interaction-handle-cursor-request (interaction request)
-  (:documentation
-   "Implement INTERACTION-HANDLE-CURSOR-REQUEST for implementations. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."))
+    (interaction seat view edges &key serial button))
+(defgeneric cancel-interactive-operation (interaction seat))
+(defgeneric update-interactive-operation (interaction seat))
+(defgeneric interaction-handle-pointer-motion (interaction event))
+(defgeneric interaction-handle-pointer-motion-absolute (interaction event))
+(defgeneric interaction-handle-pointer-button (interaction event))
+(defgeneric interaction-handle-pointer-axis (interaction event))
+(defgeneric interaction-handle-pointer-frame (interaction pointer))
+(defgeneric interaction-handle-keyboard-key (interaction event))
+(defgeneric interaction-handle-keyboard-modifiers (interaction event))
+(defgeneric interaction-handle-cursor-request (interaction request))
 
 (defmethod detach-component :before
     ((interaction interaction-system) reason)
-  "Prepare or validate DETACH-COMPONENT before primary dispatch. Do not consume ownership or perform the primary operation early."
   (declare (ignore reason))
   (let ((constraints
           (loop for constraint being the hash-values
@@ -205,7 +160,6 @@
 (defmethod create-logical-seat
     ((interaction interaction-system) name
      &key (pointer-x 160d0) (pointer-y 100d0))
-  "Implement CREATE-LOGICAL-SEAT for this compositor specialization. Preserve component ownership, protocol ordering, and the generic function's return contract."
   (check-type interaction interaction-system)
   (when (find name (interaction-seats interaction)
               :key #'seat-name :test #'string=)
@@ -228,7 +182,6 @@
 
 (defmethod destroy-logical-seat
     ((interaction interaction-system) (seat logical-seat))
-  "Implement DESTROY-LOGICAL-SEAT idempotently. Release owned listeners and resources exactly once, and invalidate wrappers before native teardown."
   (check-type interaction interaction-system)
   (check-type seat logical-seat)
   (unless (interaction-owns-seat-p interaction seat)
@@ -259,7 +212,6 @@
 
 (defmethod detach-component :before
     ((interaction interaction-system) reason)
-  "Prepare or validate DETACH-COMPONENT before primary dispatch. Do not consume ownership or perform the primary operation early."
   (declare (ignore reason))
   (dolist (seat (copy-list (interaction-seats interaction)))
     (destroy-logical-seat interaction seat))
@@ -291,7 +243,6 @@
 
 (defmethod interaction-add-input-device
     ((interaction interaction-system) device &optional seat)
-  "Implement INTERACTION-ADD-INPUT-DEVICE for this specialization. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."
   (let ((current (interaction-seat-for-device interaction device))
         (target (or seat (interaction-default-seat interaction))))
     (unless target
@@ -317,7 +268,6 @@
 
 (defmethod interaction-remove-input-device
     ((interaction interaction-system) device)
-  "Implement INTERACTION-REMOVE-INPUT-DEVICE for this specialization. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."
   (let ((seat (interaction-seat-for-device interaction device)))
     (when seat
       (let ((active-keyboard-p (eq device (seat-active-keyboard seat))))
@@ -350,7 +300,6 @@
 
 (defmethod unassign-input-device
     ((interaction interaction-system) device)
-  "Implement UNASSIGN-INPUT-DEVICE for this compositor specialization. Preserve component ownership, protocol ordering, and the generic function's return contract."
   (check-type interaction interaction-system)
   (check-type device ataxia.runtime:wlr-input-device)
   (interaction-remove-input-device interaction device))
@@ -616,7 +565,6 @@
 
 (defmethod focus-view
     ((interaction interaction-system) (seat logical-seat) view)
-  "Implement FOCUS-VIEW for this compositor specialization. Preserve component ownership, protocol ordering, and the generic function's return contract."
   (check-type interaction interaction-system)
   (check-type seat logical-seat)
   (unless (and (interaction-owns-seat-p interaction seat)
@@ -686,7 +634,6 @@
 (defmethod begin-interactive-operation
     ((interaction interaction-system) (seat logical-seat) (view view)
      kind edges &key button)
-  "Implement BEGIN-INTERACTIVE-OPERATION for this compositor specialization. Preserve component ownership, protocol ordering, and the generic function's return contract."
   (unless (and (interaction-owns-seat-p interaction seat)
                (interaction-owns-view-p interaction view))
     (error 'invalid-compositor-state
@@ -720,7 +667,6 @@
 (defmethod begin-interactive-move
     ((interaction interaction-system) (seat logical-seat) (view view)
      &key serial button)
-  "Implement BEGIN-INTERACTIVE-MOVE for this compositor specialization. Preserve component ownership, protocol ordering, and the generic function's return contract."
   (when (and serial
              (not (and (seat-pointer-focus-surface seat)
                        (ataxia.runtime:seat-validate-pointer-grab-serial
@@ -733,7 +679,6 @@
 (defmethod begin-interactive-resize
     ((interaction interaction-system) (seat logical-seat) (view view) edges
      &key serial button)
-  "Implement BEGIN-INTERACTIVE-RESIZE for this compositor specialization. Preserve component ownership, protocol ordering, and the generic function's return contract."
   (when (zerop edges)
     (return-from begin-interactive-resize nil))
   (when (and serial
@@ -747,7 +692,6 @@
 
 (defmethod cancel-interactive-operation
     ((interaction interaction-system) (seat logical-seat))
-  "Implement CANCEL-INTERACTIVE-OPERATION for this compositor specialization. Preserve component ownership, protocol ordering, and the generic function's return contract."
   (let ((operation (seat-operation seat)))
     (when operation
       (let ((view (interactive-operation-view operation)))
@@ -763,7 +707,6 @@
 
 (defmethod update-interactive-operation
     ((interaction interaction-system) (seat logical-seat))
-  "Implement UPDATE-INTERACTIVE-OPERATION for this compositor specialization. Preserve component ownership, protocol ordering, and the generic function's return contract."
   (let ((operation (seat-operation seat)))
     (when operation
       (let ((decision
@@ -781,7 +724,6 @@
 
 (defmethod interaction-handle-pointer-motion
     ((interaction interaction-system) event)
-  "Implement INTERACTION-HANDLE-POINTER-MOTION for this specialization. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."
   (let ((seat
           (interaction-seat-for-device
            interaction (ataxia.runtime:pointer-motion-pointer event))))
@@ -815,7 +757,6 @@
 
 (defmethod interaction-handle-pointer-motion-absolute
     ((interaction interaction-system) event)
-  "Implement INTERACTION-HANDLE-POINTER-MOTION-ABSOLUTE for this specialization. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."
   (let* ((seat
            (interaction-seat-for-device
             interaction
@@ -856,7 +797,6 @@
 
 (defmethod interaction-handle-pointer-button
     ((interaction interaction-system) event)
-  "Implement INTERACTION-HANDLE-POINTER-BUTTON for this specialization. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."
   (let ((seat
           (interaction-seat-for-device
            interaction (ataxia.runtime:pointer-button-pointer event))))
@@ -903,7 +843,6 @@
 
 (defmethod interaction-handle-pointer-axis
     ((interaction interaction-system) event)
-  "Implement INTERACTION-HANDLE-POINTER-AXIS for this specialization. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."
   (let ((seat
           (interaction-seat-for-device
            interaction (ataxia.runtime:pointer-axis-pointer event))))
@@ -938,7 +877,6 @@
 
 (defmethod interaction-handle-pointer-frame
     ((interaction interaction-system) pointer)
-  "Implement INTERACTION-HANDLE-POINTER-FRAME for this specialization. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."
   (let ((seat (interaction-seat-for-device interaction pointer)))
     (when seat
       (ataxia.runtime:seat-pointer-notify-frame (seat-native seat)))
@@ -946,7 +884,6 @@
 
 (defmethod interaction-handle-keyboard-key
     ((interaction interaction-system) event)
-  "Implement INTERACTION-HANDLE-KEYBOARD-KEY for this specialization. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."
   (let* ((keyboard (ataxia.runtime:keyboard-key-keyboard event))
          (seat (interaction-seat-for-device interaction keyboard)))
     (when seat
@@ -981,7 +918,6 @@
 
 (defmethod interaction-handle-keyboard-modifiers
     ((interaction interaction-system) event)
-  "Implement INTERACTION-HANDLE-KEYBOARD-MODIFIERS for this specialization. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."
   (let* ((keyboard (ataxia.runtime:keyboard-modifiers-keyboard event))
          (seat (interaction-seat-for-device interaction keyboard)))
     (when seat
@@ -1001,7 +937,6 @@
 
 (defmethod interaction-handle-cursor-request
     ((interaction interaction-system) request)
-  "Implement INTERACTION-HANDLE-CURSOR-REQUEST for this specialization. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."
   (let* ((seat
            (interaction-seat-for-native
             interaction (ataxia.runtime:seat-cursor-request-seat request)))

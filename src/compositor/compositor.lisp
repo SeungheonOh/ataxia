@@ -17,9 +17,7 @@
    (extensions :reader compositor-extensions)
    (control :reader compositor-control)
    (owner-thread :reader compositor-owner-thread)
-   (state :initform :constructing :accessor compositor-state))
-  (:documentation
-   "Represents compositor compositor. Mutate it only on the compositor owner thread and preserve the ownership invariants exposed by its accessors."))
+   (state :initform :constructing :accessor compositor-state)))
 
 (defun compositor-components (compositor)
   (remove nil
@@ -43,86 +41,71 @@
                      (compositor-control compositor)))))
 
 (defgeneric make-compositor-component
-    (compositor role &rest initialization-arguments)
-  (:documentation
-   "Implement MAKE-COMPOSITOR-COMPONENT for compositor implementations. Preserve component ownership, protocol ordering, and the generic function's return contract."))
+    (compositor role &rest initialization-arguments))
 
 (defmethod make-compositor-component
     ((compositor compositor) (role (eql :animation))
      &rest initialization-arguments)
-  "Implement MAKE-COMPOSITOR-COMPONENT for this compositor specialization. Preserve component ownership, protocol ordering, and the generic function's return contract."
   (apply #'make-instance 'animation-engine
          :compositor compositor initialization-arguments))
 
 (defmethod make-compositor-component
     ((compositor compositor) (role (eql :presentation))
      &rest initialization-arguments)
-  "Implement MAKE-COMPOSITOR-COMPONENT for this compositor specialization. Preserve component ownership, protocol ordering, and the generic function's return contract."
   (apply #'make-instance 'presentation-system
          :compositor compositor initialization-arguments))
 
 (defmethod make-compositor-component
     ((compositor compositor) (role (eql :behavior-policy))
      &rest initialization-arguments)
-  "Implement MAKE-COMPOSITOR-COMPONENT for this compositor specialization. Preserve component ownership, protocol ordering, and the generic function's return contract."
   (apply #'make-instance 'planar-behavior-policy
          :compositor compositor initialization-arguments))
 
 (defmethod make-compositor-component
     ((compositor compositor) (role (eql :graphics))
      &rest initialization-arguments)
-  "Implement MAKE-COMPOSITOR-COMPONENT for this compositor specialization. Preserve component ownership, protocol ordering, and the generic function's return contract."
   (apply #'make-instance 'direct-gles-renderer
          :compositor compositor initialization-arguments))
 
 (defmethod make-compositor-component
     ((compositor compositor) (role (eql :outputs))
      &rest initialization-arguments)
-  "Implement MAKE-COMPOSITOR-COMPONENT for this compositor specialization. Preserve component ownership, protocol ordering, and the generic function's return contract."
   (apply #'make-instance 'output-system
          :compositor compositor initialization-arguments))
 
 (defmethod make-compositor-component
     ((compositor compositor) (role (eql :surfaces))
      &rest initialization-arguments)
-  "Implement MAKE-COMPOSITOR-COMPONENT for this compositor specialization. Preserve component ownership, protocol ordering, and the generic function's return contract."
   (apply #'make-instance 'surface-system
          :compositor compositor initialization-arguments))
 
 (defmethod make-compositor-component
     ((compositor compositor) (role (eql :desktop))
      &rest initialization-arguments)
-  "Implement MAKE-COMPOSITOR-COMPONENT for this compositor specialization. Preserve component ownership, protocol ordering, and the generic function's return contract."
   (apply #'make-instance 'desktop-system
          :compositor compositor initialization-arguments))
 
 (defmethod make-compositor-component
     ((compositor compositor) (role (eql :extensions))
      &rest initialization-arguments)
-  "Implement MAKE-COMPOSITOR-COMPONENT for this compositor specialization. Preserve component ownership, protocol ordering, and the generic function's return contract."
   (apply #'make-instance 'extension-system
          :compositor compositor initialization-arguments))
 
 (defmethod make-compositor-component
     ((compositor compositor) (role (eql :interaction))
      &rest initialization-arguments)
-  "Implement MAKE-COMPOSITOR-COMPONENT for this compositor specialization. Preserve component ownership, protocol ordering, and the generic function's return contract."
   (apply #'make-instance 'interaction-system
          :compositor compositor initialization-arguments))
 
 (defmethod make-compositor-component
     ((compositor compositor) (role (eql :control))
      &rest initialization-arguments)
-  "Implement MAKE-COMPOSITOR-COMPONENT for this compositor specialization. Preserve component ownership, protocol ordering, and the generic function's return contract."
   (apply #'make-instance 'control-system
          :compositor compositor initialization-arguments))
 
-(defgeneric construct-compositor-components (compositor)
-  (:documentation
-   "Implement CONSTRUCT-COMPOSITOR-COMPONENTS for compositor implementations. Preserve component ownership, protocol ordering, and the generic function's return contract."))
+(defgeneric construct-compositor-components (compositor))
 
 (defmethod construct-compositor-components ((compositor compositor))
-  "Implement CONSTRUCT-COMPOSITOR-COMPONENTS for this compositor specialization. Preserve component ownership, protocol ordering, and the generic function's return contract."
   (let* ((animation
            (make-compositor-component compositor :animation))
          (presentation
@@ -253,13 +236,11 @@
 
 (defmethod ataxia.runtime:runtime-started
     ((compositor compositor) runtime)
-  "Implement ATAXIA.RUNTIME:RUNTIME-STARTED for this compositor specialization. Preserve component ownership, protocol ordering, and the generic function's return contract."
   (declare (ignore runtime))
   (setf (compositor-state compositor) :running))
 
 (defmethod ataxia.runtime:runtime-stopping
     ((compositor compositor) runtime reason)
-  "Implement ATAXIA.RUNTIME:RUNTIME-STOPPING idempotently. Release owned listeners and resources exactly once, and invalidate wrappers before native teardown."
   (declare (ignore runtime reason))
   (unless (eq (compositor-state compositor) :stopped)
     (setf (compositor-state compositor) :stopping)))
@@ -289,24 +270,20 @@
 
 (defmethod ataxia.runtime:xdg-new-toplevel-decoration
     ((compositor compositor) runtime decoration)
-  "Implement ATAXIA.RUNTIME:XDG-NEW-TOPLEVEL-DECORATION for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
   (declare (ignore runtime))
   (apply-xdg-decoration-policy compositor decoration))
 
 (defmethod ataxia.runtime:xdg-toplevel-decoration-request-mode
     ((compositor compositor) decoration)
-  "Implement ATAXIA.RUNTIME:XDG-TOPLEVEL-DECORATION-REQUEST-MODE for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
   (apply-xdg-decoration-policy compositor decoration))
 
 (defmethod ataxia.runtime:xdg-toplevel-decoration-destroying
     ((compositor compositor) decoration)
-  "Implement ATAXIA.RUNTIME:XDG-TOPLEVEL-DECORATION-DESTROYING idempotently. Release owned listeners and resources exactly once, and invalidate wrappers before native teardown."
   (declare (ignore compositor decoration))
   nil)
 
 (defmethod ataxia.runtime:xdg-activation-requested
     ((compositor compositor) runtime request)
-  "Implement ATAXIA.RUNTIME:XDG-ACTIVATION-REQUESTED for this compositor specialization. Preserve component ownership, protocol ordering, and the generic function's return contract."
   (declare (ignore runtime))
   (let* ((interaction (compositor-interaction compositor))
          (native-seat (ataxia.runtime:xdg-activation-request-seat request))
@@ -327,14 +304,12 @@
 
 (defmethod ataxia.runtime:pointer-constraint-created
     ((compositor compositor) runtime constraint)
-  "Implement ATAXIA.RUNTIME:POINTER-CONSTRAINT-CREATED for this specialization. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."
   (declare (ignore runtime))
   (interaction-add-pointer-constraint
    (compositor-interaction compositor) constraint))
 
 (defmethod ataxia.runtime:pointer-constraint-region-changed
     ((compositor compositor) constraint)
-  "Implement ATAXIA.RUNTIME:POINTER-CONSTRAINT-REGION-CHANGED for this specialization. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."
   (let* ((interaction (compositor-interaction compositor))
          (seat (constraint-logical-seat interaction constraint)))
     (when seat
@@ -342,13 +317,11 @@
 
 (defmethod ataxia.runtime:pointer-constraint-destroying
     ((compositor compositor) constraint)
-  "Implement ATAXIA.RUNTIME:POINTER-CONSTRAINT-DESTROYING for this specialization. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."
   (interaction-remove-pointer-constraint
    (compositor-interaction compositor) constraint))
 
 (defmethod ataxia.runtime:backend-new-output
     ((compositor compositor) runtime native-output)
-  "Implement ATAXIA.RUNTIME:BACKEND-NEW-OUTPUT for this output specialization. Respect output membership, layout, scale, and hotplug lifetime when updating state."
   (let ((output
           (register-compositor-output
            (compositor-outputs compositor) runtime native-output)))
@@ -364,7 +337,6 @@
 
 (defmethod ataxia.runtime:output-frame
     ((compositor compositor) native-output)
-  "Implement ATAXIA.RUNTIME:OUTPUT-FRAME while preserving frame ordering and damage correctness. Never retain transient render data past the documented frame boundary."
   (let ((output
           (find-compositor-output
            (compositor-outputs compositor) native-output)))
@@ -390,7 +362,6 @@
 
 (defmethod ataxia.runtime:output-present
     ((compositor compositor) event)
-  "Implement ATAXIA.RUNTIME:OUTPUT-PRESENT while preserving frame ordering and damage correctness. Never retain transient render data past the documented frame boundary."
   (let ((output
           (find-compositor-output
            (compositor-outputs compositor)
@@ -409,7 +380,6 @@
 
 (defmethod ataxia.runtime:output-needs-frame
     ((compositor compositor) native-output)
-  "Implement ATAXIA.RUNTIME:OUTPUT-NEEDS-FRAME while preserving frame ordering and damage correctness. Never retain transient render data past the documented frame boundary."
   ;; NEEDS-FRAME marks work; only FRAME acquires and commits a scanout buffer.
   (let ((output
           (find-compositor-output
@@ -427,7 +397,6 @@
 
 (defmethod ataxia.runtime:output-damaged
     ((compositor compositor) event)
-  "Implement ATAXIA.RUNTIME:OUTPUT-DAMAGED while preserving frame ordering and damage correctness. Never retain transient render data past the documented frame boundary."
   (let* ((native (ataxia.runtime:output-damage-output event))
          (output (find-compositor-output (compositor-outputs compositor)
                                          native)))
@@ -448,13 +417,11 @@
 
 (defmethod ataxia.runtime:output-request-state
     ((compositor compositor) output state)
-  "Implement ATAXIA.RUNTIME:OUTPUT-REQUEST-STATE for this output specialization. Respect output membership, layout, scale, and hotplug lifetime when updating state."
   (declare (ignore compositor))
   (ataxia.runtime:output-commit-state output state))
 
 (defmethod ataxia.runtime:output-destroying
     ((compositor compositor) native-output)
-  "Implement ATAXIA.RUNTIME:OUTPUT-DESTROYING idempotently. Release owned listeners and resources exactly once, and invalidate wrappers before native teardown."
   (let ((output
           (find-compositor-output
            (compositor-outputs compositor) native-output)))
@@ -495,67 +462,56 @@
 
 (defmethod ataxia.runtime:backend-new-input
     ((compositor compositor) runtime device)
-  "Implement ATAXIA.RUNTIME:BACKEND-NEW-INPUT for this compositor specialization. Preserve component ownership, protocol ordering, and the generic function's return contract."
   (declare (ignore runtime))
   (interaction-add-input-device (compositor-interaction compositor) device))
 
 (defmethod ataxia.runtime:input-device-destroying
     ((compositor compositor) device)
-  "Implement ATAXIA.RUNTIME:INPUT-DEVICE-DESTROYING idempotently. Release owned listeners and resources exactly once, and invalidate wrappers before native teardown."
   (interaction-remove-input-device
    (compositor-interaction compositor) device))
 
 (defmethod ataxia.runtime:pointer-motion
     ((compositor compositor) event)
-  "Implement ATAXIA.RUNTIME:POINTER-MOTION for this specialization. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."
   (interaction-handle-pointer-motion
    (compositor-interaction compositor) event))
 
 (defmethod ataxia.runtime:pointer-motion-absolute
     ((compositor compositor) event)
-  "Implement ATAXIA.RUNTIME:POINTER-MOTION-ABSOLUTE for this specialization. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."
   (interaction-handle-pointer-motion-absolute
    (compositor-interaction compositor) event))
 
 (defmethod ataxia.runtime:pointer-button
     ((compositor compositor) event)
-  "Implement ATAXIA.RUNTIME:POINTER-BUTTON for this specialization. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."
   (interaction-handle-pointer-button
    (compositor-interaction compositor) event))
 
 (defmethod ataxia.runtime:pointer-axis
     ((compositor compositor) event)
-  "Implement ATAXIA.RUNTIME:POINTER-AXIS for this specialization. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."
   (interaction-handle-pointer-axis
    (compositor-interaction compositor) event))
 
 (defmethod ataxia.runtime:pointer-frame
     ((compositor compositor) pointer)
-  "Implement ATAXIA.RUNTIME:POINTER-FRAME for this specialization. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."
   (interaction-handle-pointer-frame
    (compositor-interaction compositor) pointer))
 
 (defmethod ataxia.runtime:keyboard-key
     ((compositor compositor) event)
-  "Implement ATAXIA.RUNTIME:KEYBOARD-KEY for this specialization. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."
   (interaction-handle-keyboard-key
    (compositor-interaction compositor) event))
 
 (defmethod ataxia.runtime:keyboard-modifiers
     ((compositor compositor) event)
-  "Implement ATAXIA.RUNTIME:KEYBOARD-MODIFIERS for this specialization. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."
   (interaction-handle-keyboard-modifiers
    (compositor-interaction compositor) event))
 
 (defmethod ataxia.runtime:seat-request-set-cursor
     ((compositor compositor) request)
-  "Implement ATAXIA.RUNTIME:SEAT-REQUEST-SET-CURSOR for this specialization. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."
   (interaction-handle-cursor-request
    (compositor-interaction compositor) request))
 
 (defmethod ataxia.runtime:seat-destroying
     ((compositor compositor) native-seat)
-  "Implement ATAXIA.RUNTIME:SEAT-DESTROYING for this specialization. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."
   (let* ((interaction (compositor-interaction compositor))
          (seat (interaction-seat-for-native interaction native-seat)))
     (when seat
@@ -564,13 +520,11 @@
 
 (defmethod ataxia.runtime:compositor-new-surface
     ((compositor compositor) runtime surface)
-  "Implement ATAXIA.RUNTIME:COMPOSITOR-NEW-SURFACE for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
   (declare (ignore runtime))
   (ensure-surface-record (compositor-surfaces compositor) surface))
 
 (defmethod ataxia.runtime:surface-committed
     ((compositor compositor) surface commit)
-  "Implement ATAXIA.RUNTIME:SURFACE-COMMITTED for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
   (let* ((record
            (ensure-surface-record (compositor-surfaces compositor) surface))
          (old-width (surface-record-width record))
@@ -589,7 +543,6 @@
 
 (defmethod ataxia.runtime:surface-mapped
     ((compositor compositor) surface)
-  "Implement ATAXIA.RUNTIME:SURFACE-MAPPED for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
   (let ((record
           (ensure-surface-record (compositor-surfaces compositor) surface)))
     (setf (surface-record-mapped-p record) t)
@@ -597,7 +550,6 @@
 
 (defmethod ataxia.runtime:surface-unmapped
     ((compositor compositor) surface)
-  "Implement ATAXIA.RUNTIME:SURFACE-UNMAPPED for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
   (let ((record
           (ensure-surface-record (compositor-surfaces compositor) surface)))
     (setf (surface-record-mapped-p record) nil)
@@ -607,7 +559,6 @@
 
 (defmethod ataxia.runtime:surface-destroying
     ((compositor compositor) surface)
-  "Implement ATAXIA.RUNTIME:SURFACE-DESTROYING idempotently. Release owned listeners and resources exactly once, and invalidate wrappers before native teardown."
   (dolist (seat (interaction-seats (compositor-interaction compositor)))
     (when (eq surface (seat-pointer-focus-surface seat))
       (ataxia.runtime:seat-pointer-notify-clear-focus (seat-native seat))
@@ -623,7 +574,6 @@
 
 (defmethod ataxia.runtime:surface-new-subsurface
     ((compositor compositor) parent subsurface)
-  "Implement ATAXIA.RUNTIME:SURFACE-NEW-SUBSURFACE for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
   (ensure-surface-record
    (compositor-surfaces compositor)
    (ataxia.runtime:subsurface-surface subsurface))
@@ -632,13 +582,11 @@
 
 (defmethod ataxia.runtime:subsurface-state-changed
     ((compositor compositor) subsurface)
-  "Implement ATAXIA.RUNTIME:SUBSURFACE-STATE-CHANGED for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
   (declare (ignore subsurface))
   (schedule-presentation (compositor-presentation compositor)))
 
 (defmethod ataxia.runtime:subsurface-destroying
     ((compositor compositor) subsurface)
-  "Implement ATAXIA.RUNTIME:SUBSURFACE-DESTROYING idempotently. Release owned listeners and resources exactly once, and invalidate wrappers before native teardown."
   (unregister-subsurface (compositor-surfaces compositor) subsurface)
   (schedule-presentation (compositor-presentation compositor)))
 
@@ -659,7 +607,6 @@
 
 (defmethod ataxia.runtime:xdg-new-toplevel
     ((compositor compositor) toplevel)
-  "Implement ATAXIA.RUNTIME:XDG-NEW-TOPLEVEL for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
   (let* ((surface (ataxia.runtime:xdg-toplevel-surface toplevel))
          (record (ensure-surface-record
                   (compositor-surfaces compositor) surface))
@@ -673,7 +620,6 @@
 
 (defmethod ataxia.runtime:xdg-toplevel-committed
     ((compositor compositor) toplevel commit initial-commit-p configured-p)
-  "Implement ATAXIA.RUNTIME:XDG-TOPLEVEL-COMMITTED for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
   (let ((view (desktop-find-view (compositor-desktop compositor) toplevel)))
     (when view
       (let ((width (ataxia.runtime:surface-commit-width commit))
@@ -732,7 +678,6 @@
 
 (defmethod ataxia.runtime:xdg-toplevel-mapped
     ((compositor compositor) toplevel)
-  "Implement ATAXIA.RUNTIME:XDG-TOPLEVEL-MAPPED for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
   (let ((view (desktop-find-view (compositor-desktop compositor) toplevel)))
     (when view
       (setf (view-mapped-p view) t
@@ -751,7 +696,6 @@
 
 (defmethod ataxia.runtime:xdg-toplevel-unmapped
     ((compositor compositor) toplevel)
-  "Implement ATAXIA.RUNTIME:XDG-TOPLEVEL-UNMAPPED for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
   (let ((view (desktop-find-view (compositor-desktop compositor) toplevel)))
     (when view
       (setf (view-mapped-p view) nil
@@ -773,7 +717,6 @@
 
 (defmethod ataxia.runtime:xdg-toplevel-destroying
     ((compositor compositor) toplevel)
-  "Implement ATAXIA.RUNTIME:XDG-TOPLEVEL-DESTROYING idempotently. Release owned listeners and resources exactly once, and invalidate wrappers before native teardown."
   (let ((view (desktop-find-view (compositor-desktop compositor) toplevel)))
     (when view
       (cancel-animations-for-subject
@@ -787,7 +730,6 @@
 
 (defmethod ataxia.runtime:xdg-toplevel-title-changed
     ((compositor compositor) toplevel title)
-  "Implement ATAXIA.RUNTIME:XDG-TOPLEVEL-TITLE-CHANGED for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
   (let ((view (desktop-find-view (compositor-desktop compositor) toplevel)))
     (when view
       (desktop-update-view-identity
@@ -797,7 +739,6 @@
 
 (defmethod ataxia.runtime:xdg-toplevel-app-id-changed
     ((compositor compositor) toplevel app-id)
-  "Implement ATAXIA.RUNTIME:XDG-TOPLEVEL-APP-ID-CHANGED for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
   (let ((view (desktop-find-view (compositor-desktop compositor) toplevel)))
     (when view
       (desktop-update-view-identity
@@ -807,7 +748,6 @@
 
 (defmethod ataxia.runtime:xdg-toplevel-request-move
     ((compositor compositor) event)
-  "Implement ATAXIA.RUNTIME:XDG-TOPLEVEL-REQUEST-MOVE for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
   (let* ((interaction (compositor-interaction compositor))
          (seat (interaction-seat-for-native
                 interaction (ataxia.runtime:xdg-move-seat event)))
@@ -820,7 +760,6 @@
 
 (defmethod ataxia.runtime:xdg-toplevel-request-resize
     ((compositor compositor) event)
-  "Implement ATAXIA.RUNTIME:XDG-TOPLEVEL-REQUEST-RESIZE for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
   (let* ((interaction (compositor-interaction compositor))
          (seat (interaction-seat-for-native
                 interaction (ataxia.runtime:xdg-resize-seat event)))
@@ -860,7 +799,6 @@
 
 (defmethod ataxia.runtime:xdg-toplevel-request-maximize
     ((compositor compositor) toplevel requested-p)
-  "Implement ATAXIA.RUNTIME:XDG-TOPLEVEL-REQUEST-MAXIMIZE for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
   (let ((view (desktop-find-view (compositor-desktop compositor) toplevel)))
     (when view
       (setf (view-maximized-p view) requested-p)
@@ -878,7 +816,6 @@
 
 (defmethod ataxia.runtime:xdg-toplevel-request-minimize
     ((compositor compositor) toplevel requested-p)
-  "Implement ATAXIA.RUNTIME:XDG-TOPLEVEL-REQUEST-MINIMIZE for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
   (let ((view (desktop-find-view (compositor-desktop compositor) toplevel)))
     (when view
       (setf (view-minimized-p view) requested-p)
@@ -886,7 +823,6 @@
 
 (defmethod ataxia.runtime:xdg-toplevel-request-fullscreen
     ((compositor compositor) request)
-  "Implement ATAXIA.RUNTIME:XDG-TOPLEVEL-REQUEST-FULLSCREEN for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
   (let* ((toplevel (ataxia.runtime:xdg-fullscreen-toplevel request))
          (requested-p (ataxia.runtime:xdg-fullscreen-requested-p request))
          (requested-native-output (ataxia.runtime:xdg-fullscreen-output request))
@@ -916,7 +852,6 @@
 
 (defmethod ataxia.runtime:xdg-new-popup
     ((compositor compositor) popup)
-  "Implement ATAXIA.RUNTIME:XDG-NEW-POPUP for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
   (let* ((surface (ataxia.runtime:xdg-popup-surface popup))
          (parent-surface (ataxia.runtime:xdg-popup-parent-surface popup))
          (parent-view
@@ -931,7 +866,6 @@
 
 (defmethod ataxia.runtime:xdg-popup-committed
     ((compositor compositor) popup commit initial-commit-p configured-p)
-  "Implement ATAXIA.RUNTIME:XDG-POPUP-COMMITTED for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
   (declare (ignore commit))
   (when (and initial-commit-p (not configured-p))
     (ataxia.runtime:xdg-surface-schedule-configure popup))
@@ -949,7 +883,6 @@
 
 (defmethod ataxia.runtime:xdg-popup-mapped
     ((compositor compositor) popup)
-  "Implement ATAXIA.RUNTIME:XDG-POPUP-MAPPED for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
   (let ((view (desktop-find-popup (compositor-desktop compositor) popup)))
     (when view
       (setf (popup-mapped-p view) t)
@@ -958,7 +891,6 @@
 
 (defmethod ataxia.runtime:xdg-popup-unmapped
     ((compositor compositor) popup)
-  "Implement ATAXIA.RUNTIME:XDG-POPUP-UNMAPPED for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
   (let ((view (desktop-find-popup (compositor-desktop compositor) popup)))
     (when view
       (setf (popup-mapped-p view) nil)
@@ -967,7 +899,6 @@
 
 (defmethod ataxia.runtime:xdg-popup-repositioned
     ((compositor compositor) popup)
-  "Implement ATAXIA.RUNTIME:XDG-POPUP-REPOSITIONED for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
   (let ((view (desktop-find-popup (compositor-desktop compositor) popup)))
     (when view
       (multiple-value-bind (x y) (ataxia.runtime:xdg-popup-position popup)
@@ -977,14 +908,11 @@
 
 (defmethod ataxia.runtime:xdg-popup-destroying
     ((compositor compositor) popup)
-  "Implement ATAXIA.RUNTIME:XDG-POPUP-DESTROYING idempotently. Release owned listeners and resources exactly once, and invalidate wrappers before native teardown."
   (prog1
       (desktop-remove-popup (compositor-desktop compositor) popup)
     (schedule-presentation (compositor-presentation compositor))))
 
-(defgeneric replace-behavior-policy (compositor new-policy)
-  (:documentation
-   "Implement REPLACE-BEHAVIOR-POLICY for compositor implementations. Preserve component ownership, protocol ordering, and the generic function's return contract."))
+(defgeneric replace-behavior-policy (compositor new-policy))
 
 (defun component-replacement-context
     (compositor descriptor phase &optional metadata)
@@ -1033,7 +961,6 @@
 
 (defmethod replace-behavior-policy
     ((compositor compositor) (new-policy behavior-policy))
-  "Implement REPLACE-BEHAVIOR-POLICY for this compositor specialization. Preserve component ownership, protocol ordering, and the generic function's return contract."
   (assert-compositor-owner compositor :replace-behavior-policy)
   (validate-component new-policy compositor)
   (when (eq new-policy (compositor-behavior-policy compositor))

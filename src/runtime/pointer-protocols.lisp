@@ -58,42 +58,27 @@
 
 (in-package #:ataxia.runtime)
 
-(defclass wlr-relative-pointer-manager-v1 (native-object) ()
-  (:documentation
-   "Wraps the native wlr relative pointer manager v1 object. Runtime owns its listener registration and must invalidate the wrapper before the corresponding native object is destroyed."))
-(defclass wlr-pointer-constraints-v1 (native-object) ()
-  (:documentation
-   "Wraps the native wlr pointer constraints v1 object. Runtime owns its listener registration and must invalidate the wrapper before the corresponding native object is destroyed."))
+(defclass wlr-relative-pointer-manager-v1 (native-object) ())
+(defclass wlr-pointer-constraints-v1 (native-object) ())
 (defclass wlr-pointer-constraint-v1 (native-object)
   ((surface :initarg :surface :reader pointer-constraint-surface)
    (seat :initarg :seat :reader pointer-constraint-seat)
-   (type :initarg :type :reader pointer-constraint-type))
-  (:documentation
-   "Wraps the native wlr pointer constraint v1 object. Runtime owns its listener registration and must invalidate the wrapper before the corresponding native object is destroyed."))
+   (type :initarg :type :reader pointer-constraint-type)))
 
-(defgeneric pointer-constraint-created (sink runtime constraint)
-  (:documentation
-   "Implement POINTER-CONSTRAINT-CREATED for implementations. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."))
-(defgeneric pointer-constraint-region-changed (sink constraint)
-  (:documentation
-   "Implement POINTER-CONSTRAINT-REGION-CHANGED for implementations. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."))
-(defgeneric pointer-constraint-destroying (sink constraint)
-  (:documentation
-   "Implement POINTER-CONSTRAINT-DESTROYING for implementations. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."))
+(defgeneric pointer-constraint-created (sink runtime constraint))
+(defgeneric pointer-constraint-region-changed (sink constraint))
+(defgeneric pointer-constraint-destroying (sink constraint))
 
 (defmethod pointer-constraint-created
     ((sink runtime-sink) runtime constraint)
-  "Implement POINTER-CONSTRAINT-CREATED for this specialization. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."
   (declare (ignore runtime constraint))
   nil)
 (defmethod pointer-constraint-region-changed
     ((sink runtime-sink) constraint)
-  "Implement POINTER-CONSTRAINT-REGION-CHANGED for this specialization. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."
   (declare (ignore constraint))
   nil)
 (defmethod pointer-constraint-destroying
     ((sink runtime-sink) constraint)
-  "Implement POINTER-CONSTRAINT-DESTROYING for this specialization. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."
   (declare (ignore constraint))
   nil)
 

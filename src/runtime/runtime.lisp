@@ -80,9 +80,7 @@
    (deferred-actions :initform nil :accessor %runtime-deferred-actions)
    (stop-requested-p :initform nil :accessor %runtime-stop-requested-p)
    (stop-reason :initform nil :accessor %runtime-stop-reason)
-   (last-fault :initform nil :accessor %runtime-last-fault))
-  (:documentation
-   "Represents Runtime runtime. It is valid only while its associated native owner is live and must follow Runtime listener and teardown ordering."))
+   (last-fault :initform nil :accessor %runtime-last-fault)))
 
 (defun runtime-state (runtime)
   (%runtime-state runtime))
@@ -267,20 +265,17 @@
     (finish-output stream)))
 
 (defmethod runtime-started ((sink diagnostic-sink) runtime)
-  "Implement RUNTIME-STARTED for this Runtime specialization. Consume callback data synchronously and preserve native object and listener ownership."
   (%diagnostic-line sink
                     "[runtime] running backend=~(~A~) socket=~A renderer=gles2"
                     (runtime-backend-kind runtime)
                     (or (runtime-socket-name runtime) "disabled")))
 
 (defmethod runtime-stopping ((sink diagnostic-sink) runtime reason)
-  "Implement RUNTIME-STOPPING idempotently. Release owned listeners and resources exactly once, and invalidate wrappers before native teardown."
   (declare (ignore runtime))
   (%diagnostic-line sink "[runtime] stopping reason=~(~A~)" reason))
 
 (defmethod backend-new-output
     ((sink diagnostic-sink) runtime (output wlr-output))
-  "Implement BACKEND-NEW-OUTPUT for this output specialization. Respect output membership, layout, scale, and hotplug lifetime when updating state."
   (%diagnostic-line
    sink "[runtime] new-output name=~A description=~A size=~Dx~D enabled=~A"
    (or (output-name output) "unknown")
@@ -289,7 +284,6 @@
 
 (defmethod backend-new-input
     ((sink diagnostic-sink) runtime (input-device wlr-input-device))
-  "Implement BACKEND-NEW-INPUT for this Runtime specialization. Consume callback data synchronously and preserve native object and listener ownership."
   (%diagnostic-line sink "[runtime] new-input type=~(~A~) name=~A"
                     (input-device-type input-device)
                     (or (input-device-name input-device) "unknown"))
@@ -316,53 +310,44 @@
 
 (defmethod backend-destroying
     ((sink diagnostic-sink) runtime (backend wlr-backend))
-  "Implement BACKEND-DESTROYING idempotently. Release owned listeners and resources exactly once, and invalidate wrappers before native teardown."
   (declare (ignore runtime backend))
   (%diagnostic-line sink "[runtime] backend-destroy"))
 
 (defmethod renderer-lost
     ((sink diagnostic-sink) runtime (renderer wlr-renderer))
-  "Implement RENDERER-LOST for this Runtime specialization. Consume callback data synchronously and preserve native object and listener ownership."
   (declare (ignore runtime renderer))
   (%diagnostic-line sink "[runtime] renderer-lost"))
 
 (defmethod compositor-new-surface
     ((sink diagnostic-sink) runtime (surface wlr-surface))
-  "Implement COMPOSITOR-NEW-SURFACE for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
   (declare (ignore runtime))
   (%diagnostic-line sink "[runtime] new-surface address=~X"
                     (native-object-address surface)))
 
 (defmethod output-destroying ((sink diagnostic-sink) (output wlr-output))
-  "Implement OUTPUT-DESTROYING idempotently. Release owned listeners and resources exactly once, and invalidate wrappers before native teardown."
   (%diagnostic-line sink "[runtime] output-destroy name=~A"
                     (or (output-name output) "unknown")))
 
 (defmethod input-device-destroying
     ((sink diagnostic-sink) (input-device wlr-input-device))
-  "Implement INPUT-DEVICE-DESTROYING idempotently. Release owned listeners and resources exactly once, and invalidate wrappers before native teardown."
   (%diagnostic-line sink "[runtime] input-destroy name=~A"
                     (or (input-device-name input-device) "unknown")))
 
 (defmethod pointer-button ((sink diagnostic-sink) event)
-  "Implement POINTER-BUTTON for this specialization. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."
   (%diagnostic-line sink "[runtime] pointer-button code=~D state=~(~A~)"
                     (pointer-button-code event)
                     (pointer-button-state event)))
 
 (defmethod keyboard-key ((sink diagnostic-sink) event)
-  "Implement KEYBOARD-KEY for this specialization. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."
   (%diagnostic-line sink "[runtime] keyboard-key code=~D state=~(~A~)"
                     (keyboard-key-keycode event)
                     (keyboard-key-state event)))
 
 (defmethod seat-destroying ((sink diagnostic-sink) (seat wlr-seat))
-  "Implement SEAT-DESTROYING for this specialization. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."
   (%diagnostic-line sink "[runtime] seat-destroy name=~A" (%seat-name seat)))
 
 (defmethod seat-request-set-cursor
     ((sink diagnostic-sink) request)
-  "Implement SEAT-REQUEST-SET-CURSOR for this specialization. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."
   (%diagnostic-line
    sink "[runtime] seat-cursor surface=~A hotspot=~D,~D serial=~D"
    (if (seat-cursor-request-surface request) "set" "hidden")
@@ -372,7 +357,6 @@
 
 (defmethod surface-committed
     ((sink diagnostic-sink) (surface wlr-surface) event)
-  "Implement SURFACE-COMMITTED for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
   (declare (ignore surface))
   (%diagnostic-line sink "[runtime] surface-commit seq=~D size=~Dx~D mapped=~A"
                     (surface-commit-sequence event)
@@ -381,17 +365,14 @@
                     (surface-commit-mapped-p event)))
 
 (defmethod surface-mapped ((sink diagnostic-sink) (surface wlr-surface))
-  "Implement SURFACE-MAPPED for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
   (%diagnostic-line sink "[runtime] surface-map address=~X"
                     (native-object-address surface)))
 
 (defmethod surface-unmapped ((sink diagnostic-sink) (surface wlr-surface))
-  "Implement SURFACE-UNMAPPED for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
   (%diagnostic-line sink "[runtime] surface-unmap address=~X"
                     (native-object-address surface)))
 
 (defmethod surface-destroying ((sink diagnostic-sink) (surface wlr-surface))
-  "Implement SURFACE-DESTROYING idempotently. Release owned listeners and resources exactly once, and invalidate wrappers before native teardown."
   (%diagnostic-line sink "[runtime] surface-destroy address=~X"
                     (native-object-address surface)))
 

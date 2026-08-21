@@ -17,9 +17,7 @@
 
 (defclass frame-damage ()
   ((full-p :initarg :full-p :initform nil :accessor frame-damage-full-p)
-   (boxes :initarg :boxes :initform nil :accessor frame-damage-boxes))
-  (:documentation
-   "Represents compositor frame damage. Mutate it only on the compositor owner thread and preserve the ownership invariants exposed by its accessors."))
+   (boxes :initarg :boxes :initform nil :accessor frame-damage-boxes)))
 
 (defclass compositor-output ()
   ((native :initarg :native :reader output-native)
@@ -41,9 +39,7 @@
    (last-present-time :initform 0d0 :accessor output-last-present-time)
    (refresh-seconds :initform (/ 1d0 60d0)
                     :accessor output-refresh-seconds)
-   (available-p :initform t :accessor output-available-p))
-  (:documentation
-   "Represents compositor compositor output. Mutate it only on the compositor owner thread and preserve the ownership invariants exposed by its accessors."))
+   (available-p :initform t :accessor output-available-p)))
 
 (defun output-viewport (output)
   (output-behavior-state output))
@@ -51,9 +47,7 @@
 (defclass output-system (compositor-component)
   ((outputs :initform (make-hash-table :test #'eq)
             :reader output-table)
-   (order :initform nil :accessor output-order))
-  (:documentation
-   "Owns output system subsystem state. Attach and detach it on the owner thread, and keep its tables synchronized with object lifecycle events."))
+   (order :initform nil :accessor output-order)))
 
 (defclass presentation-system (compositor-component)
   ((animation-engine :initarg :animation-engine
@@ -66,28 +60,14 @@
    (render-source :initform nil :accessor presentation-render-source)
    (damage-debug-p :initarg :damage-debug-p :initform nil
                    :accessor presentation-damage-debug-p)
-   (revision :initform 0 :accessor presentation-revision))
-  (:documentation
-   "Owns presentation system subsystem state. Attach and detach it on the owner thread, and keep its tables synchronized with object lifecycle events."))
+   (revision :initform 0 :accessor presentation-revision)))
 
-(defgeneric build-presentation-snapshot (presentation output timestamp)
-  (:documentation
-   "Implement BUILD-PRESENTATION-SNAPSHOT while preserving frame ordering and damage correctness. Never retain transient render data past the documented frame boundary."))
-(defgeneric build-frame-plan (presentation output snapshot timestamp)
-  (:documentation
-   "Implement BUILD-FRAME-PLAN while preserving frame ordering and damage correctness. Never retain transient render data past the documented frame boundary."))
-(defgeneric presentation-hit-test (snapshot output-x output-y)
-  (:documentation
-   "Implement PRESENTATION-HIT-TEST while preserving frame ordering and damage correctness. Never retain transient render data past the documented frame boundary."))
-(defgeneric render-presentation-frame (presentation output snapshot)
-  (:documentation
-   "Implement RENDER-PRESENTATION-FRAME with the active GLES context. Preserve resource ownership, honor supplied damage, and leave GL state valid for the next pass."))
-(defgeneric present-output (presentation output)
-  (:documentation
-   "Implement PRESENT-OUTPUT while preserving frame ordering and damage correctness. Never retain transient render data past the documented frame boundary."))
-(defgeneric schedule-presentation (presentation &optional output damage)
-  (:documentation
-   "Implement SCHEDULE-PRESENTATION while preserving frame ordering and damage correctness. Never retain transient render data past the documented frame boundary."))
+(defgeneric build-presentation-snapshot (presentation output timestamp))
+(defgeneric build-frame-plan (presentation output snapshot timestamp))
+(defgeneric presentation-hit-test (snapshot output-x output-y))
+(defgeneric render-presentation-frame (presentation output snapshot))
+(defgeneric present-output (presentation output))
+(defgeneric schedule-presentation (presentation &optional output damage))
 
 (defun set-damage-debug-mode (presentation enabled)
   "Toggle damage visualization and redraw every output to expose the change."
@@ -101,7 +81,6 @@
   enabled)
 
 (defmethod attach-component :before ((presentation presentation-system))
-  "Prepare or validate ATTACH-COMPONENT before primary dispatch. Do not consume ownership or perform the primary operation early."
   (let ((animation (presentation-animation-engine presentation)))
     (validate-component animation (component-compositor presentation))
     (unless (eq (component-state animation) :attached)
@@ -109,7 +88,6 @@
 
 (defmethod detach-component :before
     ((presentation presentation-system) reason)
-  "Prepare or validate DETACH-COMPONENT before primary dispatch. Do not consume ownership or perform the primary operation early."
   (let ((source (presentation-render-source presentation)))
     (when (and source (ataxia.runtime:native-object-live-p source))
       (ataxia.runtime:remove-event-loop-source source))
@@ -119,27 +97,17 @@
     (when (eq (component-state animation) :attached)
       (detach-component animation reason))))
 
-(defclass presentation-geometry () ()
-  (:documentation
-   "Represents presentation geometry. Keep its coordinates, ownership references, and lifetime consistent with the snapshot or subsystem that contains it."))
+(defclass presentation-geometry () ())
 
-(defclass presentation-mapping () ()
-  (:documentation
-   "Represents presentation mapping. Keep its coordinates, ownership references, and lifetime consistent with the snapshot or subsystem that contains it."))
+(defclass presentation-mapping () ())
 
 (defclass functional-presentation-mapping (presentation-mapping)
   ((function :initarg :function :reader presentation-mapping-function)
    (inverse-function :initarg :inverse-function :initform nil
-                     :reader presentation-mapping-inverse-function))
-  (:documentation
-   "Represents functional presentation mapping. Keep its coordinates, ownership references, and lifetime consistent with the snapshot or subsystem that contains it."))
+                     :reader presentation-mapping-inverse-function)))
 
-(defgeneric map-presentation-point (mapping item output-x output-y)
-  (:documentation
-   "Implement MAP-PRESENTATION-POINT while preserving frame ordering and damage correctness. Never retain transient render data past the documented frame boundary."))
-(defgeneric unmap-presentation-point (mapping item surface-x surface-y)
-  (:documentation
-   "Implement UNMAP-PRESENTATION-POINT while preserving frame ordering and damage correctness. Never retain transient render data past the documented frame boundary."))
+(defgeneric map-presentation-point (mapping item output-x output-y))
+(defgeneric unmap-presentation-point (mapping item surface-x surface-y))
 (defgeneric project-presentation-item-damage (item rectangle)
   (:documentation
    "Project one surface-local damage rectangle into conservative output-local damage."))
@@ -149,9 +117,7 @@
 
 (defclass mesh-geometry (presentation-geometry)
   ((vertices :initarg :vertices :reader mesh-geometry-vertices)
-   (vertex-count :initarg :vertex-count :reader mesh-geometry-vertex-count))
-  (:documentation
-   "Represents mesh geometry. Keep its coordinates, ownership references, and lifetime consistent with the snapshot or subsystem that contains it."))
+   (vertex-count :initarg :vertex-count :reader mesh-geometry-vertex-count)))
 
 (defun make-mesh-geometry (vertices)
   (let ((values (coerce vertices 'vector)))
@@ -180,14 +146,10 @@
                                  (- maximum-x minimum-x)
                                  (- maximum-y minimum-y)))))))
 
-(defclass presentation-material () ()
-  (:documentation
-   "Represents compositor presentation material. Mutate it only on the compositor owner thread and preserve the ownership invariants exposed by its accessors."))
+(defclass presentation-material () ())
 
 (defclass solid-color-material (presentation-material)
-  ((color :initarg :color :reader material-color))
-  (:documentation
-   "Represents compositor solid color material. Mutate it only on the compositor owner thread and preserve the ownership invariants exposed by its accessors."))
+  ((color :initarg :color :reader material-color)))
 
 (defclass surface-texture-material (presentation-material)
   ((texture :initarg :texture :reader material-texture)
@@ -201,15 +163,11 @@
    (opacity :initarg :opacity :initform 1d0 :reader material-opacity)
    (program-name :initarg :program-name :initform nil
                  :reader material-program-name)
-   (uniforms :initarg :uniforms :initform nil :reader material-uniforms))
-  (:documentation
-   "Represents compositor surface texture material. Mutate it only on the compositor owner thread and preserve the ownership invariants exposed by its accessors."))
+   (uniforms :initarg :uniforms :initform nil :reader material-uniforms)))
 
 (defclass shader-material (presentation-material)
   ((program-name :initarg :program-name :reader material-program-name)
-   (uniforms :initarg :uniforms :initform nil :reader material-uniforms))
-  (:documentation
-   "Represents compositor shader material. Mutate it only on the compositor owner thread and preserve the ownership invariants exposed by its accessors."))
+   (uniforms :initarg :uniforms :initform nil :reader material-uniforms)))
 
 (defclass presentation-item ()
   ((material :initarg :material :reader presentation-item-material)
@@ -229,43 +187,31 @@
    (source-width :initarg :source-width :initform 1d0
                  :reader presentation-item-source-width)
    (source-height :initarg :source-height :initform 1d0
-                  :reader presentation-item-source-height))
-  (:documentation
-   "Represents presentation item. Keep its coordinates, ownership references, and lifetime consistent with the snapshot or subsystem that contains it."))
+                  :reader presentation-item-source-height)))
 
 (defclass presentation-snapshot ()
   ((output :initarg :output :reader snapshot-output)
    (timestamp :initarg :timestamp :reader snapshot-timestamp)
    (revision :initarg :revision :reader snapshot-revision)
-   (items :initarg :items :reader snapshot-items))
-  (:documentation
-   "Captures immutable presentation snapshot state for deferred use. It must not reference retired surfaces, native objects, or mutable builder storage."))
+   (items :initarg :items :reader snapshot-items)))
 
 (defclass render-pass ()
   ((name :initarg :name :initform nil :reader render-pass-name)
    (target :initarg :target :initform :output :reader render-pass-target)
    (damage-mode :initarg :damage-mode :initform :frame
-                :reader render-pass-damage-mode))
-  (:documentation
-   "Represents compositor render pass. Mutate it only on the compositor owner thread and preserve the ownership invariants exposed by its accessors."))
+                :reader render-pass-damage-mode)))
 
 (defclass item-render-pass (render-pass)
-  ((items :initarg :items :reader render-pass-items))
-  (:documentation
-   "Represents compositor item render pass. Mutate it only on the compositor owner thread and preserve the ownership invariants exposed by its accessors."))
+  ((items :initarg :items :reader render-pass-items)))
 
-(defclass present-render-pass (render-pass) ()
-  (:documentation
-   "Represents compositor present render pass. Mutate it only on the compositor owner thread and preserve the ownership invariants exposed by its accessors."))
+(defclass present-render-pass (render-pass) ())
 
 (defclass frame-plan ()
   ((snapshot :initarg :snapshot :reader frame-plan-snapshot)
    (passes :initarg :passes :reader frame-plan-passes)
    (damage :initarg :damage :initform nil :accessor frame-plan-damage)
    (continuous-p :initarg :continuous-p :initform nil
-                 :reader frame-plan-continuous-p))
-  (:documentation
-   "Represents compositor frame plan. Mutate it only on the compositor owner thread and preserve the ownership invariants exposed by its accessors."))
+                 :reader frame-plan-continuous-p)))
 
 (defclass frame-context ()
   ((output :initarg :output :reader frame-context-output)
@@ -281,9 +227,7 @@
                         :accessor frame-context-scene-initialized-p)
    (scene-updated-p :initform nil :accessor frame-context-scene-updated-p)
    (width :initarg :width :reader frame-context-width)
-   (height :initarg :height :reader frame-context-height))
-  (:documentation
-   "Describes frame context without performing it. Hooks and policies may inspect or replace it only within the declared operation phase."))
+   (height :initarg :height :reader frame-context-height)))
 
 (defstruct (presentation-hit
              (:constructor make-presentation-hit
@@ -618,7 +562,6 @@
 
 (defmethod build-presentation-snapshot
     ((presentation presentation-system) (output compositor-output) timestamp)
-  "Implement BUILD-PRESENTATION-SNAPSHOT while preserving frame ordering and damage correctness. Never retain transient render data past the documented frame boundary."
   (let* ((compositor (component-compositor presentation))
          (policy (compositor-behavior-policy compositor)))
     (make-instance
@@ -629,7 +572,6 @@
 (defmethod build-frame-plan
     ((presentation presentation-system) (output compositor-output)
      (snapshot presentation-snapshot) timestamp)
-  "Implement BUILD-FRAME-PLAN while preserving frame ordering and damage correctness. Never retain transient render data past the documented frame boundary."
   (resolve-output-damage-subjects output snapshot)
   (let ((plan
           (behavior-compose-frame
@@ -688,13 +630,11 @@
 
 (defmethod map-presentation-point
     ((mapping functional-presentation-mapping) item output-x output-y)
-  "Implement MAP-PRESENTATION-POINT while preserving frame ordering and damage correctness. Never retain transient render data past the documented frame boundary."
   (funcall (presentation-mapping-function mapping)
            item output-x output-y))
 
 (defmethod map-presentation-point
     ((mapping null) item output-x output-y)
-  "Implement MAP-PRESENTATION-POINT while preserving frame ordering and damage correctness. Never retain transient render data past the documented frame boundary."
   (let ((geometry (presentation-item-geometry item)))
     (if (typep geometry 'mesh-geometry)
         (mesh-local-point
@@ -757,13 +697,11 @@
 
 (defmethod unmap-presentation-point
     ((mapping presentation-mapping) item surface-x surface-y)
-  "Implement UNMAP-PRESENTATION-POINT while preserving frame ordering and damage correctness. Never retain transient render data past the documented frame boundary."
   (declare (ignore mapping))
   (default-unmap-presentation-point item surface-x surface-y))
 
 (defmethod unmap-presentation-point
     ((mapping functional-presentation-mapping) item surface-x surface-y)
-  "Implement UNMAP-PRESENTATION-POINT while preserving frame ordering and damage correctness. Never retain transient render data past the documented frame boundary."
   (let ((inverse (presentation-mapping-inverse-function mapping)))
     (if inverse
         (funcall inverse item surface-x surface-y)
@@ -771,7 +709,6 @@
 
 (defmethod unmap-presentation-point
     ((mapping null) item surface-x surface-y)
-  "Implement UNMAP-PRESENTATION-POINT while preserving frame ordering and damage correctness. Never retain transient render data past the documented frame boundary."
   (default-unmap-presentation-point item surface-x surface-y))
 
 (defun presentation-item-local-point (item output-x output-y)
@@ -914,7 +851,6 @@
 
 (defmethod presentation-hit-test
     ((snapshot presentation-snapshot) output-x output-y)
-  "Implement PRESENTATION-HIT-TEST while preserving frame ordering and damage correctness. Never retain transient render data past the documented frame boundary."
   (dolist (item (reverse (snapshot-items snapshot)))
     (when (and (presentation-item-live-p item)
                (presentation-item-interactive-p item)
@@ -949,7 +885,6 @@
 (defmethod renderer-draw-item
     ((renderer direct-gles-renderer) frame-context
      (item presentation-item))
-  "Implement RENDERER-DRAW-ITEM for this compositor specialization. Preserve component ownership, protocol ordering, and the generic function's return contract."
   (renderer-draw-material
    renderer frame-context item (presentation-item-material item))
   item)
@@ -971,7 +906,6 @@
 
 (defmethod renderer-execute-pass
     ((renderer direct-gles-renderer) frame-context (pass item-render-pass))
-  "Implement RENDERER-EXECUTE-PASS for this compositor specialization. Preserve component ownership, protocol ordering, and the generic function's return contract."
   (if (eq :scene (render-pass-target pass))
       (let* ((damage (frame-plan-damage (frame-context-plan frame-context)))
              (boxes
@@ -1003,7 +937,6 @@
 
 (defmethod renderer-execute-pass
     ((renderer direct-gles-renderer) frame-context (pass present-render-pass))
-  "Implement RENDERER-EXECUTE-PASS for this compositor specialization. Preserve component ownership, protocol ordering, and the generic function's return contract."
   (declare (ignore pass))
   (if (presentation-damage-debug-p
        (compositor-presentation (component-compositor renderer)))
@@ -1021,13 +954,11 @@
 
 (defmethod renderer-execute-pass :around
     ((renderer direct-gles-renderer) frame-context (pass render-pass))
-  "Wrap RENDERER-EXECUTE-PASS for this specialization. Call the next method exactly once unless intentionally replacing the documented operation."
   (renderer-bind-target renderer frame-context (render-pass-target pass))
   (call-next-method))
 
 (defmethod renderer-execute-pass
     ((renderer direct-gles-renderer) frame-context (pass render-pass))
-  "Implement RENDERER-EXECUTE-PASS for this compositor specialization. Preserve component ownership, protocol ordering, and the generic function's return contract."
   (declare (ignore renderer frame-context))
   (error 'graphics-failure
          :operation :execute-render-pass
@@ -1036,7 +967,6 @@
 (defmethod renderer-draw-material
     ((renderer direct-gles-renderer) frame-context
      (item presentation-item) (material solid-color-material))
-  "Implement RENDERER-DRAW-MATERIAL for this compositor specialization. Preserve component ownership, protocol ordering, and the generic function's return contract."
   (draw-solid-rectangle
    renderer (frame-context-width frame-context)
    (frame-context-height frame-context)
@@ -1047,7 +977,6 @@
 (defmethod renderer-draw-material
     ((renderer direct-gles-renderer) frame-context
      (item presentation-item) (material surface-texture-material))
-  "Implement RENDERER-DRAW-MATERIAL for this compositor specialization. Preserve component ownership, protocol ordering, and the generic function's return contract."
   (draw-textured-rectangle
    renderer (frame-context-width frame-context)
    (frame-context-height frame-context)
@@ -1092,7 +1021,6 @@
 (defmethod renderer-draw-material
     ((renderer direct-gles-renderer) frame-context
      (item presentation-item) (material shader-material))
-  "Implement RENDERER-DRAW-MATERIAL for this compositor specialization. Preserve component ownership, protocol ordering, and the generic function's return contract."
   (draw-shader-material
    renderer (frame-context-width frame-context)
    (frame-context-height frame-context)
@@ -1104,7 +1032,6 @@
 (defmethod render-presentation-frame
     ((presentation presentation-system) (output compositor-output)
      (plan frame-plan))
-  "Implement RENDER-PRESENTATION-FRAME with the active GLES context. Preserve resource ownership, honor supplied damage, and leave GL state valid for the next pass."
   (let* ((compositor (component-compositor presentation))
          (snapshot (frame-plan-snapshot plan))
          (runtime (compositor-runtime compositor))
@@ -1224,7 +1151,6 @@
 
 (defmethod present-output
     ((presentation presentation-system) (output compositor-output))
-  "Implement PRESENT-OUTPUT while preserving frame ordering and damage correctness. Never retain transient render data past the documented frame boundary."
   (present-output-at presentation output (monotonic-seconds)))
 
 (defun queue-output-presentation (presentation output)
@@ -1271,7 +1197,6 @@
 
 (defmethod schedule-presentation
     ((presentation presentation-system) &optional output (damage :full))
-  "Implement SCHEDULE-PRESENTATION while preserving frame ordering and damage correctness. Never retain transient render data past the documented frame boundary."
   (let ((outputs (compositor-outputs (component-compositor presentation))))
     (dolist (candidate
               (if output

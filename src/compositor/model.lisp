@@ -24,9 +24,7 @@
    (mapped-p :initform nil :accessor surface-record-mapped-p)
    (entered-outputs :initform (make-hash-table :test #'eq)
                     :reader surface-record-entered-outputs)
-   (commit-sequence :initform 0 :accessor surface-record-commit-sequence))
-  (:documentation
-   "Represents surface record. Keep its coordinates, ownership references, and lifetime consistent with the snapshot or subsystem that contains it."))
+   (commit-sequence :initform 0 :accessor surface-record-commit-sequence)))
 
 (defclass surface-system (compositor-component)
   ((records :initform (make-hash-table :test #'eq)
@@ -34,16 +32,12 @@
    (subsurfaces :initform (make-hash-table :test #'eq)
                 :reader surface-subsurfaces)
    (children :initform (make-hash-table :test #'eq)
-             :reader surface-children))
-  (:documentation
-   "Owns surface system subsystem state. Attach and detach it on the owner thread, and keep its tables synchronized with object lifecycle events."))
+             :reader surface-children)))
 
 (defclass application ()
   ((id :initarg :id :reader application-id)
    (app-id :initarg :app-id :accessor application-app-id)
-   (views :initform nil :accessor application-views))
-  (:documentation
-   "Represents compositor application. Mutate it only on the compositor owner thread and preserve the ownership invariants exposed by its accessors."))
+   (views :initform nil :accessor application-views)))
 
 (defclass view ()
   ((id :initarg :id :reader view-id)
@@ -62,9 +56,7 @@
    (fullscreen-p :initform nil :accessor view-fullscreen-p)
    (fullscreen-output :initform nil :accessor view-fullscreen-output)
    (minimized-p :initform nil :accessor view-minimized-p)
-   (revision :initform 0 :accessor view-revision))
-  (:documentation
-   "Represents compositor view. Mutate it only on the compositor owner thread and preserve the ownership invariants exposed by its accessors."))
+   (revision :initform 0 :accessor view-revision)))
 
 (defun view-server-decorated-p (view)
   (eq :server-side (view-decoration-mode view)))
@@ -75,9 +67,7 @@
    (parent :initarg :parent :reader popup-parent)
    (x :initform 0d0 :accessor popup-x)
    (y :initform 0d0 :accessor popup-y)
-   (mapped-p :initform nil :accessor popup-mapped-p))
-  (:documentation
-   "Represents compositor popup view. Mutate it only on the compositor owner thread and preserve the ownership invariants exposed by its accessors."))
+   (mapped-p :initform nil :accessor popup-mapped-p)))
 
 (defclass desktop-system (compositor-component)
   ((applications :initform (make-hash-table :test #'equal)
@@ -88,9 +78,7 @@
            :reader desktop-popup-table)
    (stacking :initform nil :accessor desktop-stacking)
    (next-application-id :initform 0 :accessor desktop-next-application-id)
-   (next-view-id :initform 0 :accessor desktop-next-view-id))
-  (:documentation
-   "Owns desktop system subsystem state. Attach and detach it on the owner thread, and keep its tables synchronized with object lifecycle events."))
+   (next-view-id :initform 0 :accessor desktop-next-view-id)))
 
 (defun desktop-views (desktop)
   (loop for view being the hash-values of (desktop-view-table desktop)
@@ -319,7 +307,6 @@
     view))
 
 (defmethod detach-component :before ((surfaces surface-system) reason)
-  "Prepare or validate DETACH-COMPONENT before primary dispatch. Do not consume ownership or perform the primary operation early."
   (declare (ignore reason))
   (maphash (lambda (native record)
              (declare (ignore native))

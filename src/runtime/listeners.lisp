@@ -12,9 +12,7 @@
    (dispatcher :initarg :dispatcher :reader %subscription-dispatcher)
    (cell :initform (ataxia.runtime.raw:null-pointer)
          :accessor %subscription-cell)
-   (active-p :initform t :accessor %subscription-active-p))
-  (:documentation
-   "Represents Runtime signal subscription. It is valid only while its associated native owner is live and must follow Runtime listener and teardown ordering."))
+   (active-p :initform t :accessor %subscription-active-p)))
 
 (defvar *subscription-registry* (make-hash-table :test #'eql))
 (defvar *next-subscription-cookie* 0)

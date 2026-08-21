@@ -147,6 +147,29 @@ world replacement, viewport pan/zoom, application launch, per-view animation,
 shader installation, and per-view shader configuration. Capabilities are
 checked before an action reaches compositor state.
 
+Local processes connect through the mode-0600 Unix socket printed as
+`CONTROL_SOCKET` at startup. The socket accepts one read-eval-disabled Lisp data
+request per line and returns one data response per line. A request has the form
+`(:id 7 :action (:observe))`; responses preserve the identifier and contain
+either `:ok t :result ...` or `:ok nil :error ...`. The transport never evaluates
+client input. Peer PID/UID/GID become the control principal, requests and
+connections are bounded, and decoded actions pass through the same capability
+checks as in-process submissions.
+
+Representative actions are:
+
+```common-lisp
+(:id 1 :action (:observe))
+(:id 2 :action (:focus :seat "seat0" :view 4))
+(:id 3 :action (:move :view 4 :x 120d0 :y 80d0))
+(:id 4 :action (:replace-behavior :kind :spherical))
+(:id 5 :action (:pan :output "WL-1" :delta-x 0.1d0 :delta-y 0d0))
+```
+
+`decode-control-action` and `decode-control-placement` are generic functions,
+so additional trusted action or world representations can extend the transport
+without adding an evaluator or bypassing typed control methods.
+
 Live world replacement runs at an owner-thread safe point, rejects active
 interactive grabs, invokes typed replacement hooks, migrates every view
 placement, swaps the component, and rolls back on failure.

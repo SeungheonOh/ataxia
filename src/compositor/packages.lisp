@@ -486,6 +486,8 @@
    #:begin-interactive-resize
    #:cancel-interactive-operation
    #:control-system
+   #:control-socket-path
+   #:observe-compositor-action
    #:control-local-principal
    #:control-principal
    #:control-action

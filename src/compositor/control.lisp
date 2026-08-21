@@ -1,7 +1,7 @@
 ;;;; External control plane.
 ;;;;
-;;;; Only external callers cross a queue. An eventfd wakes the Wayland event
-;;;; loop, after which typed actions execute synchronously on the owner thread.
+;;;; Threads cross a bounded queue and local processes cross the control socket.
+;;;; Both paths execute typed actions synchronously on the Wayland owner thread.
 
 (in-package #:ataxia.compositor)
 
@@ -36,6 +36,8 @@
    (completion-waitqueue :initform (sb-thread:make-waitqueue
                                     :name "control action")
                          :reader control-action-completion-waitqueue)))
+
+(defclass observe-compositor-action (control-action) ())
 
 (defclass focus-view-action (control-action)
   ((seat :initarg :seat :reader focus-action-seat)
@@ -108,6 +110,17 @@
    (event-file-descriptor :initform -1
                           :accessor control-event-file-descriptor)
    (event-source :initform nil :accessor control-event-source)
+   (socket-path :initarg :socket-path :initform nil
+                :accessor control-socket-path)
+   (listen-file-descriptor :initform -1
+                           :accessor control-listen-file-descriptor)
+   (listen-source :initform nil :accessor control-listen-source)
+   (connections :initform (make-hash-table :test #'eql)
+                :reader control-connections)
+   (connection-limit :initarg :connection-limit :initform 32
+                     :reader control-connection-limit)
+   (request-byte-limit :initarg :request-byte-limit :initform 1048576
+                       :reader control-request-byte-limit)
    (local-principal
     :initform
     (make-instance
@@ -120,6 +133,9 @@
 (defgeneric required-control-capability (action))
 (defgeneric execute-control-action (control action))
 
+(defmethod required-control-capability
+    ((action observe-compositor-action))
+  :observe)
 (defmethod required-control-capability ((action focus-view-action)) :focus)
 (defmethod required-control-capability ((action move-view-action)) :move)
 (defmethod required-control-capability ((action place-view-action)) :move)
@@ -217,10 +233,12 @@
       (serious-condition (condition)
         (%posix-close file-descriptor)
         (setf (control-event-file-descriptor control) -1)
-        (error condition)))))
+        (error condition))))
+  (start-control-transport control))
 
 (defmethod detach-component :before ((control control-system) reason)
   (declare (ignore reason))
+  (stop-control-transport control)
   (when (and (control-event-source control)
              (ataxia.runtime:native-object-live-p
               (control-event-source control)))
@@ -284,6 +302,10 @@
   (assert-compositor-owner (component-compositor control)
                            :execute-control-action)
   (validate-control-action action))
+
+(defmethod execute-control-action
+    ((control control-system) (action observe-compositor-action))
+  (observe-compositor control (control-action-principal action)))
 
 (defmethod execute-control-action
     ((control control-system) (action focus-view-action))
@@ -449,6 +471,7 @@
     (assert-compositor-owner compositor :observe-compositor)
     (list
      :state (compositor-state compositor)
+     :control-socket (control-socket-path control)
      :behavior-policy
      (class-name (class-of (compositor-behavior-policy compositor)))
      :socket (ataxia.runtime:runtime-socket-name (compositor-runtime compositor))

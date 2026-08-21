@@ -43,5 +43,6 @@
     :components
     ((:file "interaction")
      (:file "control")
+     (:file "control-transport")
      (:file "compositor")
      (:file "main")))))

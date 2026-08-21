@@ -115,6 +115,9 @@ Options:~%\
                          (or (ataxia.runtime:runtime-socket-name
                               (compositor-runtime compositor))
                              "unpublished"))
+                 (format *standard-output* "[compositor] CONTROL_SOCKET=~A~%"
+                         (control-socket-path
+                          (compositor-control compositor)))
                  (finish-output *standard-output*)
                  (dolist (application applications)
                    (launch-application compositor application))

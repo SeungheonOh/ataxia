@@ -25,6 +25,12 @@
                  :reader presentation-panel-height)
    (revision :initform 0 :accessor presentation-revision)))
 
+(defgeneric build-presentation-snapshot (presentation output timestamp))
+(defgeneric presentation-hit-test (snapshot output-x output-y))
+(defgeneric render-presentation-frame (presentation output snapshot))
+(defgeneric present-output (presentation output))
+(defgeneric schedule-presentation (presentation &optional output))
+
 (defmethod attach-component :before ((presentation presentation-system))
   (let ((animation (presentation-animation-engine presentation)))
     (validate-component animation (component-compositor presentation))
@@ -360,7 +366,8 @@
                        (make-solid-item (+ x 1d0) (+ y 1d0) 1d0 16d0
                                         '(0.95 0.97 1.0 1.0))))))))))
 
-(defun build-presentation-snapshot (presentation output timestamp)
+(defmethod build-presentation-snapshot
+    ((presentation presentation-system) (output compositor-output) timestamp)
   (let* ((compositor (component-compositor presentation))
          (desktop (compositor-desktop compositor))
          (world (compositor-world compositor))
@@ -405,7 +412,8 @@
        (<= (presentation-item-y item) y
            (+ (presentation-item-y item) (presentation-item-height item)))))
 
-(defun presentation-hit-test (snapshot output-x output-y)
+(defmethod presentation-hit-test
+    ((snapshot presentation-snapshot) output-x output-y)
   (dolist (item (reverse (snapshot-items snapshot)))
     (when (and (presentation-item-interactive-p item)
                (point-in-item-p item output-x output-y))
@@ -462,7 +470,9 @@
       (presentation-item-shader-uniforms item))))
   item)
 
-(defun render-presentation-frame (presentation output snapshot)
+(defmethod render-presentation-frame
+    ((presentation presentation-system) (output compositor-output)
+     (snapshot presentation-snapshot))
   (let* ((compositor (component-compositor presentation))
          (runtime (compositor-runtime compositor))
          (renderer (compositor-graphics compositor))
@@ -519,7 +529,8 @@
         (ataxia.runtime:surface-send-frame-done surface))))
   snapshot)
 
-(defun present-output (presentation output)
+(defmethod present-output
+    ((presentation presentation-system) (output compositor-output))
   (handler-case
       (let ((snapshot
               (build-presentation-snapshot
@@ -541,7 +552,8 @@
         (ataxia.runtime:output-schedule-frame (output-native output)))
       nil)))
 
-(defun schedule-presentation (presentation &optional output)
+(defmethod schedule-presentation
+    ((presentation presentation-system) &optional output)
   (let ((outputs (compositor-outputs (component-compositor presentation))))
     (dolist (candidate
               (if output

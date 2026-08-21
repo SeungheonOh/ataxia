@@ -111,6 +111,10 @@
    #:placement-height
    #:placement-z
    #:placement-request
+   #:requested-placement-x
+   #:requested-placement-y
+   #:requested-placement-width
+   #:requested-placement-height
    #:viewport
    #:viewport-camera-x
    #:viewport-camera-y
@@ -162,21 +166,64 @@
    #:renderer-end-frame
    #:renderer-abort-frame
    #:shader-program-descriptor
+   #:program-vertex-source
+   #:program-fragment-source
    #:program-descriptor-kind
+   #:program-uniform-names
    #:shader-program
+   #:shader-native-program
+   #:shader-uniforms
+   #:shader-program-state
    #:compile-shader-program
    #:replace-shader-program
    #:set-view-shader-program
    #:set-view-shader-uniform
    #:presentation-system
+   #:presentation-animation-engine
+   #:presentation-panel-height
    #:presentation-snapshot
+   #:snapshot-output
+   #:snapshot-timestamp
+   #:snapshot-revision
+   #:snapshot-items
    #:presentation-item
+   #:presentation-item-kind
+   #:presentation-item-owner
+   #:presentation-item-surface
+   #:presentation-item-x
+   #:presentation-item-y
+   #:presentation-item-width
+   #:presentation-item-height
+   #:presentation-item-texture
    #:presentation-item-shader-program-name
    #:presentation-item-shader-uniforms
+   #:presentation-item-color
+   #:presentation-item-opacity
+   #:presentation-item-interactive-p
+   #:presentation-item-hit-kind
+   #:presentation-item-source-width
+   #:presentation-item-source-height
    #:presentation-hit
+   #:presentation-hit-item
+   #:presentation-hit-owner
+   #:presentation-hit-surface
+   #:presentation-hit-surface-x
+   #:presentation-hit-surface-y
+   #:presentation-hit-kind
+   #:make-presentation-hit
    #:build-presentation-snapshot
    #:presentation-hit-test
+   #:render-presentation-frame
+   #:present-output
    #:schedule-presentation
+   #:frame-context
+   #:frame-context-output
+   #:frame-context-snapshot
+   #:frame-context-state
+   #:frame-context-buffer
+   #:frame-context-framebuffer
+   #:frame-context-width
+   #:frame-context-height
    #:output-system
    #:compositor-output
    #:output-native

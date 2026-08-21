@@ -120,7 +120,7 @@
                 credentials '(:struct peer-credentials) 'group-id))
          :capabilities
          '(:observe :focus :move :seat :behavior-policy :viewport :launch
-           :animation :shader))
+           :animation :shader :debug))
         (error 'control-request-rejected
                :action :connect :reason :peer-credentials-unavailable))))
 
@@ -359,7 +359,16 @@
          (make-instance
           'configure-view-shader-action :principal principal :view (view)
           :program-name (getf properties :program-name)
-          :uniforms (getf properties :uniforms)))))))
+          :uniforms (getf properties :uniforms)))
+        (:debug-damage
+         (let ((enabled
+                 (required-command-value properties :enabled)))
+           (unless (typep enabled 'boolean)
+             (error 'control-request-rejected
+                    :action :decode :reason :invalid-debug-state))
+           (make-instance
+            'set-damage-debug-action :principal principal
+            :enabled-p enabled)))))))
 
 (defun serializable-control-value (value)
   (typecase value

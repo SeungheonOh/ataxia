@@ -149,7 +149,8 @@
 
 (defun create-compositor
     (&key (backend :auto) (headless-width 1280) (headless-height 720)
-          (socket-p t) debug-p (compositor-class 'compositor))
+          (socket-p t) debug-p damage-debug-p
+          (compositor-class 'compositor))
   (unless (subtypep compositor-class 'compositor)
     (error 'invalid-compositor-state
            :operation :create-compositor :state compositor-class))
@@ -168,7 +169,8 @@
                  :socket-p socket-p :debug-p debug-p))
           (multiple-value-bind (animation presentation)
               (construct-compositor-components compositor)
-            (declare (ignore animation presentation))
+            (declare (ignore animation))
+            (set-damage-debug-mode presentation damage-debug-p)
             (dolist (component (compositor-components compositor))
               (attach-component component)))
           (ataxia.runtime:create-xdg-shell (compositor-runtime compositor))

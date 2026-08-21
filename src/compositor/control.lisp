@@ -132,6 +132,11 @@
   (:documentation
    "Represents the typed configure view shader action request. Validate capabilities and object ownership before executing it on the compositor owner thread."))
 
+(defclass set-damage-debug-action (control-action)
+  ((enabled-p :initarg :enabled-p :reader damage-debug-action-enabled-p))
+  (:documentation
+   "Requests an owner-thread transition into or out of output damage visualization."))
+
 (defclass control-system (compositor-component)
   ((queue :initform nil :accessor control-queue)
    (queue-limit :initarg :queue-limit :initform 1024
@@ -159,7 +164,7 @@
      'control-principal :identity :local-shell
      :capabilities
      '(:observe :focus :move :seat :behavior-policy :viewport :launch
-       :animation :shader))
+       :animation :shader :debug))
     :reader control-local-principal))
   (:documentation
    "Owns control system subsystem state. Attach and detach it on the owner thread, and keep its tables synchronized with object lifecycle events."))
@@ -220,6 +225,9 @@
     ((action configure-view-shader-action))
   "Implement REQUIRED-CONTROL-CAPABILITY after validating the principal and referenced objects. Execute mutations only at an owner-thread safe point."
   :shader)
+(defmethod required-control-capability ((action set-damage-debug-action))
+  "Require explicit debug authority before changing diagnostic rendering."
+  :debug)
 
 (defun principal-allows-action-p (principal action)
   (member (required-control-capability action)
@@ -536,6 +544,13 @@
     (set-view-shader-program
      renderer view (configure-shader-action-program-name action))))
 
+(defmethod execute-control-action
+    ((control control-system) (action set-damage-debug-action))
+  "Apply damage visualization at an output-safe owner-thread boundary."
+  (set-damage-debug-mode
+   (compositor-presentation (component-compositor control))
+   (damage-debug-action-enabled-p action)))
+
 (defun observe-compositor (control &optional principal)
   (let* ((compositor (component-compositor control))
          (effective-principal (or principal (control-local-principal control))))
@@ -550,6 +565,8 @@
      :control-socket (control-socket-path control)
      :behavior-policy
      (class-name (class-of (compositor-behavior-policy compositor)))
+     :damage-debug
+     (presentation-damage-debug-p (compositor-presentation compositor))
      :socket (ataxia.runtime:runtime-socket-name (compositor-runtime compositor))
      :protocols
      (ataxia.runtime:runtime-protocol-capabilities

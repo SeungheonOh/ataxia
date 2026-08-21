@@ -513,6 +513,7 @@
    #:set-view-animation-action
    #:install-shader-program-action
    #:configure-view-shader-action
+   #:set-damage-debug-action
    #:create-compositor
    #:start-compositor
    #:run-compositor

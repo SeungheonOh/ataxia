@@ -17,6 +17,7 @@ Options:~%\
   --launch PROGRAM        Launch a program after startup (repeatable)~%\
   --no-socket             Do not publish a Wayland socket~%\
   --debug                 Enable wlroots debug logging~%\
+  --debug-damage          Visualize submitted output damage~%\
   --help                  Show this help~%"))
 
 (defun require-option-value (arguments option)
@@ -51,6 +52,7 @@ Options:~%\
         (run-for nil)
         (socket-p t)
         (debug-p nil)
+        (damage-debug-p nil)
         (launch nil)
         (help-p nil))
     (loop while arguments
@@ -87,12 +89,15 @@ Options:~%\
                         arguments remaining)))
                ((string= option "--no-socket") (setf socket-p nil))
                ((string= option "--debug") (setf debug-p t))
+               ((string= option "--debug-damage")
+                (setf damage-debug-p t))
                ((string= option "--help") (setf help-p t))
                (t
                 (error 'invalid-compositor-state
                        :operation :command-line :state option))))
     (list :backend backend :headless-width width :headless-height height
           :run-for run-for :socket-p socket-p :debug-p debug-p
+          :damage-debug-p damage-debug-p
           :launch launch :help-p help-p)))
 
 (defun main (&optional (arguments (uiop:command-line-arguments)))

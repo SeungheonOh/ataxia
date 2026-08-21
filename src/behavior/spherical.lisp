@@ -32,7 +32,7 @@
    (width :initarg :width :reader spherical-restore-width)
    (height :initarg :height :reader spherical-restore-height)))
 
-(defclass spherical-behavior-policy (behavior-policy)
+(defclass spherical-behavior-policy (standard-behavior-policy)
   ((next-longitude :initform -0.25d0
                    :accessor spherical-next-longitude)
    (next-latitude :initform 0.12d0

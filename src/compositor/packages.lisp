@@ -155,6 +155,7 @@
    #:behavior-policy
    #:behavior-policy-active-p
    #:behavior-policy-revision
+   #:standard-behavior-policy
    #:planar-behavior-policy
    #:planar-behavior-state
    #:spherical-behavior-policy

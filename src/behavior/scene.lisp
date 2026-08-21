@@ -176,7 +176,7 @@
   items)
 
 (defmethod behavior-build-scene
-    ((policy behavior-policy) (presentation presentation-system)
+    ((policy standard-behavior-policy) (presentation presentation-system)
      (output compositor-output) timestamp)
   "Build the ordered scene while core retains snapshot and frame ownership."
   (let* ((compositor (component-compositor presentation))

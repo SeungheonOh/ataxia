@@ -18,11 +18,12 @@
      (:file "conditions")
      (:file "core")
      (:file "hooks")
-     (:file "model")))
-   (:module "behavior-contract"
+     (:file "model")
+     (:file "behavior-protocol")))
+   (:module "behavior-base-implementation"
     :pathname "src/behavior"
     :components
-    ((:file "policy")))
+    ((:file "standard-policy")))
    (:module "compositor-presentation"
     :pathname "src/compositor"
     :components

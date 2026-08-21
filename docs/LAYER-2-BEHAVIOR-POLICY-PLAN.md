@@ -360,8 +360,10 @@ would otherwise make visible.
 
 The physical boundary is:
 
-- `src/behavior/policy.lisp`: contract, opaque state, migration, and planar
-  coordinate policy;
+- `src/compositor/behavior-protocol.lisp`: compositor-facing contract types,
+  lifecycle, typed generic functions, and opaque policy state;
+- `src/behavior/standard-policy.lisp`: standard lifecycle methods, migration,
+  viewport implementation, and planar coordinate policy;
 - `src/behavior/effects.lisp`: policy-owned shader sources, effect styles, and
   effect presentation items;
 - `src/behavior/reveal.lisp`: policy-owned application reveal materials,

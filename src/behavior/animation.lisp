@@ -9,7 +9,7 @@
     (policy subject descriptor context))
 
 (defmethod behavior-default-animation-definition
-    ((policy behavior-policy) (subject view) descriptor context)
+    ((policy standard-behavior-policy) (subject view) descriptor context)
   (declare (ignore context))
   (cond
     ((typep descriptor 'visibility-transition)

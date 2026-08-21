@@ -475,6 +475,9 @@
      :behavior-policy
      (class-name (class-of (compositor-behavior-policy compositor)))
      :socket (ataxia.runtime:runtime-socket-name (compositor-runtime compositor))
+     :protocols
+     (ataxia.runtime:runtime-protocol-capabilities
+      (compositor-runtime compositor))
      :outputs
      (mapcar (lambda (output)
                (list :name (ataxia.runtime:output-name (output-native output))

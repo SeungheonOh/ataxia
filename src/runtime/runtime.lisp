@@ -118,6 +118,25 @@
 (defun runtime-data-device-manager (runtime)
   (%runtime-data-device-manager runtime))
 
+(defun runtime-protocol-capabilities (runtime)
+  "Return only protocol families whose globals exist in this Runtime."
+  (remove
+   nil
+   (list
+    (and (%runtime-compositor-global runtime) :wl-compositor)
+    (and (%runtime-subcompositor-global runtime) :wl-subcompositor)
+    (and (%runtime-renderer runtime) :buffer-factories)
+    (and (%runtime-xdg-shell runtime) :xdg-shell)
+    (and (%runtime-data-device-manager runtime) :data-device)
+    (and (%runtime-viewporter runtime) :viewporter)
+    (and (%runtime-fractional-scale-manager runtime) :fractional-scale)
+    (and (%runtime-presentation runtime) :presentation-time)
+    (and (%runtime-xdg-decoration-manager runtime) :xdg-decoration)
+    (and (%runtime-xdg-activation runtime) :xdg-activation)
+    (and (%runtime-relative-pointer-manager runtime) :relative-pointer)
+    (and (%runtime-pointer-constraints-manager runtime)
+         :pointer-constraints))))
+
 (defun %hash-values (table)
   (loop for value being the hash-values of table collect value))
 

@@ -561,6 +561,7 @@
    #:runtime-xdg-toplevels
    #:runtime-xdg-popups
    #:runtime-last-fault
+   #:runtime-protocol-capabilities
    #:runtime-started
    #:runtime-stopping
    #:backend-new-output

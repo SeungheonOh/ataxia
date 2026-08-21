@@ -65,10 +65,12 @@ toplevel, notify seat focus, send pointer events, create a logical seat, submit
 an output state, or send surface frame completion. Layer 2 does not construct an
 arbitrary event envelope around these calls.
 
-Protocol objects created by policy use Runtime constructors. The current
-framework creates XDG shell, data-device manager, logical seats, and output
-globals. New protocol families should add exact Runtime constructors/events and
-then a focused Layer 2 component or aggregate methods for their policy.
+Protocol objects created by policy use Runtime constructors. The implemented
+baseline publishes core compositor/subcompositor and renderer buffer globals,
+XDG shell, data-device, viewporter, fractional-scale, presentation-time, XDG
+decoration, XDG activation, relative-pointer, and pointer-constraints globals.
+New protocol families add exact Runtime constructors/events and then focused
+compositor methods for their policy; there is no central protocol event union.
 
 ## Presentation and damage
 
@@ -88,6 +90,12 @@ into a scanout-compatible buffer, and commits that buffer through an exact
 output state. Core provides solid, surface-texture, and generic shader-material
 execution only. Behavior code owns visible background selection, shadows, and
 other effect shader definitions.
+
+Viewport source rectangles and buffer transforms are frozen into presentation
+materials, so cropped and transformed surfaces sample correctly in planar and
+mesh-based behaviors. Fractional preferred scale follows the greatest scale of
+the outputs a surface currently enters. Presentation feedback is associated
+with every textured surface before its output commit.
 
 ## Per-window animation and shaders
 
@@ -141,6 +149,13 @@ seat, and every seat has independent pointer coordinates, client cursor state,
 and a rendered cursor item. XDG activation stays active while any seat focuses
 the view.
 
+Relative motion is delivered independently of compositor cursor movement.
+Locked pointers preserve the logical pointer position, while confined pointers
+use the same bidirectional presentation mapping as rendering and hit testing.
+Constraints therefore work through rectangular and spherical presentation
+meshes instead of assuming one Euclidean desktop transform. Cursor-position
+hints are applied when an active constraint is destroyed.
+
 The control system currently provides typed actions for observation, focus,
 movement and placement, seat creation/destruction, device assignment, live
 world replacement, viewport pan/zoom, application launch, per-view animation,
@@ -155,6 +170,10 @@ either `:ok t :result ...` or `:ok nil :error ...`. The transport never evaluate
 client input. Peer PID/UID/GID become the control principal, requests and
 connections are bounded, and decoded actions pass through the same capability
 checks as in-process submissions.
+
+The `:observe` result includes the live Runtime protocol capability list, so an
+agent can branch on supported Wayland facilities without parsing logs or
+probing globals blindly.
 
 Representative actions are:
 

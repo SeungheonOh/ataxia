@@ -326,34 +326,39 @@
                    scale scale))))))))
 
 (defun append-cursor-items (items compositor output)
+  (declare (ignore output))
   (dolist (seat (interaction-seats (compositor-interaction compositor)) items)
     (let* ((x (seat-pointer-x seat))
            (y (seat-pointer-y seat))
            (cursor-record (seat-cursor-record seat)))
-      (if (and cursor-record (surface-record-texture cursor-record))
-          (setf items
-                (nconc
-                 items
-                 (list
-                  (make-instance
-                   'presentation-item :kind :surface :owner seat
-                   :surface (surface-record-native cursor-record)
-                   :x (- x (seat-cursor-hotspot-x seat))
-                   :y (- y (seat-cursor-hotspot-y seat))
-                   :width (surface-record-width cursor-record)
-                   :height (surface-record-height cursor-record)
-                   :texture
-                   (ataxia.runtime:texture-gles-attributes
-                    (surface-record-texture cursor-record))))))
-          (setf items
-                (nconc items
-                       (list
-                        (make-solid-item x y 3d0 20d0
-                                         '(0.04 0.04 0.05 1.0))
-                        (make-solid-item (+ x 3d0) (+ y 3d0) 9d0 3d0
-                                         '(0.04 0.04 0.05 1.0))
-                        (make-solid-item (+ x 1d0) (+ y 1d0) 1d0 16d0
-                                         '(0.95 0.97 1.0 1.0)))))))))
+      (ecase (seat-cursor-mode seat)
+        (:hidden nil)
+        (:surface
+         (when (and cursor-record (surface-record-texture cursor-record))
+           (setf items
+                 (nconc
+                  items
+                  (list
+                   (make-instance
+                    'presentation-item :kind :surface :owner seat
+                    :surface (surface-record-native cursor-record)
+                    :x (- x (seat-cursor-hotspot-x seat))
+                    :y (- y (seat-cursor-hotspot-y seat))
+                    :width (surface-record-width cursor-record)
+                    :height (surface-record-height cursor-record)
+                    :texture
+                    (ataxia.runtime:texture-gles-attributes
+                     (surface-record-texture cursor-record))))))))
+        (:default
+         (setf items
+               (nconc items
+                      (list
+                       (make-solid-item x y 3d0 20d0
+                                        '(0.04 0.04 0.05 1.0))
+                       (make-solid-item (+ x 3d0) (+ y 3d0) 9d0 3d0
+                                        '(0.04 0.04 0.05 1.0))
+                       (make-solid-item (+ x 1d0) (+ y 1d0) 1d0 16d0
+                                        '(0.95 0.97 1.0 1.0))))))))))
 
 (defun build-presentation-snapshot (presentation output timestamp)
   (let* ((compositor (component-compositor presentation))

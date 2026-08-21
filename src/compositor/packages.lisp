@@ -187,10 +187,12 @@
    #:seat-pointer-x
    #:seat-pointer-y
    #:seat-focused-view
+   #:seat-cursor-mode
    #:create-logical-seat
    #:destroy-logical-seat
    #:focus-view
    #:interactive-operation
+   #:interactive-operation-button
    #:begin-interactive-move
    #:begin-interactive-resize
    #:cancel-interactive-operation

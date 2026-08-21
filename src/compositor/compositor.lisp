@@ -325,7 +325,8 @@
     (when (and (seat-cursor-record seat)
                (eq surface
                    (surface-record-native (seat-cursor-record seat))))
-      (setf (seat-cursor-record seat) nil)))
+      (setf (seat-cursor-record seat) nil
+            (seat-cursor-mode seat) :default)))
   (retire-surface-record (compositor-surfaces compositor) surface))
 
 (defmethod ataxia.runtime:surface-new-subsurface

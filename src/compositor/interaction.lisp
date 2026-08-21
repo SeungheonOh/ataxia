@@ -10,6 +10,7 @@
 (defconstant +resize-edge-bottom+ 2)
 (defconstant +resize-edge-left+ 4)
 (defconstant +resize-edge-right+ 8)
+(defconstant +button-left+ 272)
 
 (defparameter *trace-input-p*
   (not (null (uiop:getenv "ATAXIA_TRACE_INPUT"))))
@@ -39,6 +40,7 @@
    (pointer-surface-y :initform 0d0 :accessor seat-pointer-surface-y)
    (focused-view :initform nil :accessor seat-focused-view)
    (cursor-record :initform nil :accessor seat-cursor-record)
+   (cursor-mode :initform :default :accessor seat-cursor-mode)
    (cursor-hotspot-x :initform 0d0 :accessor seat-cursor-hotspot-x)
    (cursor-hotspot-y :initform 0d0 :accessor seat-cursor-hotspot-y)
    (pressed-buttons :initform (make-hash-table :test #'eql)
@@ -50,6 +52,7 @@
    (seat :initarg :seat :reader interactive-operation-seat)
    (view :initarg :view :reader interactive-operation-view)
    (edges :initarg :edges :initform 0 :reader interactive-operation-edges)
+   (button :initarg :button :reader interactive-operation-button)
    (start-x :initarg :start-x :reader interactive-operation-start-x)
    (start-y :initarg :start-y :reader interactive-operation-start-y)
    (original-placement :initarg :original-placement
@@ -101,8 +104,14 @@
      (interaction-device-seats interaction))
     (dolist (device devices)
       (remhash device (interaction-device-seats interaction))))
-  (setf (interaction-seats interaction)
-        (delete seat (interaction-seats interaction) :test #'eq))
+  (let ((focused-view (seat-focused-view seat)))
+    (setf (interaction-seats interaction)
+          (delete seat (interaction-seats interaction) :test #'eq))
+    (when (and focused-view
+               (not (find focused-view (interaction-seats interaction)
+                          :key #'seat-focused-view :test #'eq)))
+      (ataxia.runtime:xdg-toplevel-set-activated
+       (view-native focused-view) nil)))
   (when (eq seat (interaction-default-seat interaction))
     (setf (interaction-default-seat interaction)
           (first (interaction-seats interaction))))
@@ -208,7 +217,8 @@
          (unless (eq surface (seat-pointer-focus-surface seat))
            ;; A cursor shape belongs to the focused client surface. Reset it
            ;; until the newly entered client supplies its own shape.
-           (setf (seat-cursor-record seat) nil))
+           (setf (seat-cursor-record seat) nil
+                 (seat-cursor-mode seat) :default))
          (if (eq surface (seat-pointer-focus-surface seat))
              (ataxia.runtime:seat-pointer-notify-motion
               (seat-native seat) time-msec
@@ -228,7 +238,8 @@
             (seat-native seat)))
          (setf (seat-pointer-focus-surface seat) nil
                (seat-pointer-focus-view seat) nil
-               (seat-cursor-record seat) nil)))
+               (seat-cursor-record seat) nil
+               (seat-cursor-mode seat) :default)))
       hit)))
 
 (defun focus-view (interaction seat view)
@@ -238,10 +249,14 @@
     (return-from focus-view nil))
   (let ((previous (seat-focused-view seat)))
     (unless (eq previous view)
-      (when previous
+      (setf (seat-focused-view seat) view)
+      ;; XDG activation is per toplevel, while keyboard focus is per seat.
+      ;; Keep a view active until the final logical seat leaves it.
+      (when (and previous
+                 (not (find previous (interaction-seats interaction)
+                            :key #'seat-focused-view :test #'eq)))
         (ataxia.runtime:xdg-toplevel-set-activated
          (view-native previous) nil))
-      (setf (seat-focused-view seat) view)
       (if view
           (progn
             (desktop-raise-view
@@ -287,7 +302,15 @@
       (compositor-presentation (component-compositor interaction)))
      view descriptor context)))
 
-(defun begin-interactive-operation (interaction seat view kind edges)
+(defun pressed-operation-button (seat)
+  ;; Prefer the conventional primary button when several buttons are held.
+  (if (gethash +button-left+ (seat-pressed-buttons seat))
+      +button-left+
+      (loop for button being the hash-keys of (seat-pressed-buttons seat)
+            return button)))
+
+(defun begin-interactive-operation
+    (interaction seat view kind edges &key button)
   (let ((placement (view-placement view)))
     (unless (typep placement 'planar-placement)
       (error 'compositor-error))
@@ -304,7 +327,8 @@
       (setf (seat-operation seat)
             (make-instance
              'interactive-operation :kind kind :seat seat :view view
-             :edges edges :start-x (seat-pointer-x seat)
+             :edges edges :button (or button (pressed-operation-button seat))
+             :start-x (seat-pointer-x seat)
              :start-y (seat-pointer-y seat)
              :original-placement (copy-planar-placement placement)))
       (when (eq kind :resize)
@@ -315,16 +339,18 @@
                 (interaction-hook-context interaction view descriptor :after))
       (seat-operation seat))))
 
-(defun begin-interactive-move (interaction seat view &key serial)
+(defun begin-interactive-move (interaction seat view &key serial button)
   (when (and serial
              (not (and (seat-pointer-focus-surface seat)
                        (ataxia.runtime:seat-validate-pointer-grab-serial
                         (seat-native seat)
                         (seat-pointer-focus-surface seat) serial))))
     (return-from begin-interactive-move nil))
-  (begin-interactive-operation interaction seat view :move 0))
+  (begin-interactive-operation
+   interaction seat view :move 0 :button button))
 
-(defun begin-interactive-resize (interaction seat view edges &key serial)
+(defun begin-interactive-resize
+    (interaction seat view edges &key serial button)
   (when (zerop edges)
     (return-from begin-interactive-resize nil))
   (when (and serial
@@ -333,7 +359,8 @@
                         (seat-native seat)
                         (seat-pointer-focus-surface seat) serial))))
     (return-from begin-interactive-resize nil))
-  (begin-interactive-operation interaction seat view :resize edges))
+  (begin-interactive-operation
+   interaction seat view :resize edges :button button))
 
 (defun cancel-interactive-operation (interaction seat)
   (let ((operation (seat-operation seat)))
@@ -501,17 +528,22 @@
           (focus-view interaction seat view)
           (case (presentation-hit-kind hit)
             (:titlebar
-             (begin-interactive-move interaction seat view))
+             (when (= button +button-left+)
+               (begin-interactive-move
+                interaction seat view :button button)))
             (:frame
-             (begin-interactive-resize
-              interaction seat view
-              (resize-edges-at-point
-               (presentation-hit-item hit)
-               (seat-pointer-x seat) (seat-pointer-y seat))))))
+             (when (= button +button-left+)
+               (begin-interactive-resize
+                interaction seat view
+                (resize-edges-at-point
+                 (presentation-hit-item hit)
+                 (seat-pointer-x seat) (seat-pointer-y seat))
+                :button button)))))
         (when (seat-pointer-focus-surface seat)
           (ataxia.runtime:seat-pointer-notify-button
            (seat-native seat) time button state))
-        (when (and (eq state :released) operation)
+        (when (and (eq state :released) operation
+                   (eql button (interactive-operation-button operation)))
           (cancel-interactive-operation interaction seat))
         (schedule-presentation
          (compositor-presentation (component-compositor interaction))))
@@ -581,6 +613,7 @@
                  (ensure-surface-record
                   (compositor-surfaces (component-compositor interaction))
                   surface))
+            (seat-cursor-mode seat) (if surface :surface :hidden)
             (seat-cursor-hotspot-x seat)
             (coerce (ataxia.runtime:seat-cursor-request-hotspot-x request)
                     'double-float)

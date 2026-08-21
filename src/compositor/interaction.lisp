@@ -11,6 +11,14 @@
 (defconstant +resize-edge-left+ 4)
 (defconstant +resize-edge-right+ 8)
 
+(defparameter *trace-input-p*
+  (not (null (uiop:getenv "ATAXIA_TRACE_INPUT"))))
+
+(defun trace-input (control &rest arguments)
+  (when *trace-input-p*
+    (apply #'format *error-output* control arguments)
+    (finish-output *error-output*)))
+
 (defclass interaction-system (compositor-component)
   ((seats :initform nil :accessor interaction-seats)
    (device-seats :initform (make-hash-table :test #'eq)
@@ -120,6 +128,10 @@
     (unless target
       (setf target (create-logical-seat interaction "seat0")))
     (setf (gethash device (interaction-device-seats interaction)) target)
+    (trace-input "[input] add ~A ~A -> ~A~%"
+                 (ataxia.runtime:input-device-type device)
+                 (or (ataxia.runtime:input-device-name device) "unnamed")
+                 (seat-name target))
     (pushnew device (seat-devices target) :test #'eq)
     (when (eq :keyboard (ataxia.runtime:input-device-type device))
       (ataxia.runtime:set-keyboard-keymap-from-names device)
@@ -408,6 +420,9 @@
           (interaction-seat-for-device
            interaction (ataxia.runtime:pointer-motion-pointer event))))
     (when seat
+      (trace-input "[input] relative ~,2F ~,2F~%"
+                   (ataxia.runtime:pointer-motion-delta-x event)
+                   (ataxia.runtime:pointer-motion-delta-y event))
       (incf (seat-pointer-x seat)
             (ataxia.runtime:pointer-motion-delta-x event))
       (incf (seat-pointer-y seat)
@@ -428,6 +443,9 @@
             (ataxia.runtime:pointer-motion-absolute-pointer event)))
          (output (and seat (primary-output interaction))))
     (when (and seat output)
+      (trace-input "[input] absolute ~,3F ~,3F~%"
+                   (ataxia.runtime:pointer-motion-absolute-x event)
+                   (ataxia.runtime:pointer-motion-absolute-y event))
       (setf (seat-pointer-x seat)
             (* (ataxia.runtime:pointer-motion-absolute-x event)
                (ataxia.runtime:output-width (output-native output)))
@@ -466,6 +484,9 @@
           (interaction-seat-for-device
            interaction (ataxia.runtime:pointer-button-pointer event))))
     (when seat
+      (trace-input "[input] button ~D ~A~%"
+                   (ataxia.runtime:pointer-button-code event)
+                   (ataxia.runtime:pointer-button-state event))
       (let* ((state (ataxia.runtime:pointer-button-state event))
              (button (ataxia.runtime:pointer-button-code event))
              (time (ataxia.runtime:pointer-button-time-msec event))
@@ -501,6 +522,9 @@
           (interaction-seat-for-device
            interaction (ataxia.runtime:pointer-axis-pointer event))))
     (when seat
+      (trace-input "[input] key ~D ~A~%"
+                   (ataxia.runtime:keyboard-key-keycode event)
+                   (ataxia.runtime:keyboard-key-state event))
       (ataxia.runtime:seat-pointer-notify-axis
        (seat-native seat)
        (ataxia.runtime:pointer-axis-time-msec event)

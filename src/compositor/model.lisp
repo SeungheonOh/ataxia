@@ -25,7 +25,11 @@
 
 (defclass surface-system (compositor-component)
   ((records :initform (make-hash-table :test #'eq)
-            :reader surface-records)))
+            :reader surface-records)
+   (subsurfaces :initform (make-hash-table :test #'eq)
+                :reader surface-subsurfaces)
+   (children :initform (make-hash-table :test #'eq)
+             :reader surface-children)))
 
 (defclass application ()
   ((id :initarg :id :reader application-id)
@@ -144,6 +148,28 @@
       (remhash native (surface-records surfaces)))
     record))
 
+(defun register-subsurface (surfaces parent subsurface)
+  (setf (gethash subsurface (surface-subsurfaces surfaces)) parent)
+  (let ((children (gethash parent (surface-children surfaces))))
+    (setf (gethash parent (surface-children surfaces))
+          (append (delete subsurface children :test #'eq)
+                  (list subsurface))))
+  subsurface)
+
+(defun unregister-subsurface (surfaces subsurface)
+  (let ((parent (gethash subsurface (surface-subsurfaces surfaces))))
+    (when parent
+      (setf (gethash parent (surface-children surfaces))
+            (delete subsurface (gethash parent (surface-children surfaces))
+                    :test #'eq))
+      (when (null (gethash parent (surface-children surfaces)))
+        (remhash parent (surface-children surfaces))))
+    (remhash subsurface (surface-subsurfaces surfaces))
+    parent))
+
+(defun surface-child-subsurfaces (surfaces parent)
+  (copy-list (gethash parent (surface-children surfaces))))
+
 (defun application-key (desktop app-id)
   (if (and app-id (plusp (length app-id)))
       app-id
@@ -213,7 +239,9 @@
              (declare (ignore native))
              (release-surface-content record))
            (surface-records surfaces))
-  (clrhash (surface-records surfaces)))
+  (clrhash (surface-records surfaces))
+  (clrhash (surface-subsurfaces surfaces))
+  (clrhash (surface-children surfaces)))
 
 (defun desktop-update-view-identity (desktop view app-id title)
   (when title

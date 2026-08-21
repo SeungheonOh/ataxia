@@ -329,6 +329,24 @@
       (setf (seat-cursor-record seat) nil)))
   (retire-surface-record (compositor-surfaces compositor) surface))
 
+(defmethod ataxia.runtime:surface-new-subsurface
+    ((compositor compositor) parent subsurface)
+  (ensure-surface-record
+   (compositor-surfaces compositor)
+   (ataxia.runtime:subsurface-surface subsurface))
+  (register-subsurface (compositor-surfaces compositor) parent subsurface)
+  (schedule-presentation (compositor-presentation compositor)))
+
+(defmethod ataxia.runtime:subsurface-state-changed
+    ((compositor compositor) subsurface)
+  (declare (ignore subsurface))
+  (schedule-presentation (compositor-presentation compositor)))
+
+(defmethod ataxia.runtime:subsurface-destroying
+    ((compositor compositor) subsurface)
+  (unregister-subsurface (compositor-surfaces compositor) subsurface)
+  (schedule-presentation (compositor-presentation compositor)))
+
 (defun start-view-visibility-transition (compositor view visible-p)
   (let* ((descriptor
            (make-instance 'visibility-transition :subject view

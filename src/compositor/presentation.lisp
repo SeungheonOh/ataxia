@@ -142,6 +142,42 @@
                (presentation-offset-y state))
             scaled-width scaled-height)))
 
+(defun append-subsurface-tree-items
+    (items compositor parent-surface owner x y scale-x scale-y)
+  ;; Runtime reports exact parent-relative offsets. Keeping traversal here lets
+  ;; alternate presentation engines replace tree composition independently.
+  (let ((surfaces (compositor-surfaces compositor)))
+    (dolist (subsurface
+              (surface-child-subsurfaces surfaces parent-surface) items)
+      (let* ((surface (ataxia.runtime:subsurface-surface subsurface))
+             (record (gethash surface (surface-records surfaces)))
+             (child-x (+ x (* (ataxia.runtime:subsurface-x subsurface)
+                              scale-x)))
+             (child-y (+ y (* (ataxia.runtime:subsurface-y subsurface)
+                              scale-y))))
+        (when (and record (surface-record-mapped-p record)
+                   (surface-record-texture record))
+          (setf items
+                (nconc
+                 items
+                 (list
+                  (make-instance
+                   'presentation-item :kind :surface :owner owner
+                   :surface surface :x child-x :y child-y
+                   :width (* (surface-record-width record) scale-x)
+                   :height (* (surface-record-height record) scale-y)
+                   :texture
+                   (ataxia.runtime:texture-gles-attributes
+                    (surface-record-texture record))
+                   :interactive-p t :hit-kind :subsurface
+                   :source-width (max 1 (surface-record-width record))
+                   :source-height
+                   (max 1 (surface-record-height record))))))
+          (setf items
+                (append-subsurface-tree-items
+                 items compositor surface owner child-x child-y
+                 scale-x scale-y)))))))
+
 (defun append-view-items
     (items world output view timestamp titlebar-height)
   (let ((record (view-surface view)))
@@ -154,45 +190,57 @@
         (let ((effective-titlebar-height
                 (if (view-fullscreen-p view) 0d0 titlebar-height)))
           (multiple-value-bind (x y width height)
-            (scaled-view-geometry
-             world-x world-y world-width
-             (+ world-height effective-titlebar-height)
-             (view-presentation-state view))
-          (let* ((scale (/ width world-width))
-                 (title-height (* effective-titlebar-height scale))
-                 (content-y (+ y title-height))
-                 (content-height (- height title-height))
-                 (opacity
-                   (presentation-opacity (view-presentation-state view))))
-            (setf items
-                  (nconc
-                   items
-                   (append
-                    (unless (view-fullscreen-p view)
+              (scaled-view-geometry
+               world-x world-y world-width
+               (+ world-height effective-titlebar-height)
+               (view-presentation-state view))
+            (let* ((scale (/ width world-width))
+                   (title-height (* effective-titlebar-height scale))
+                   (content-y (+ y title-height))
+                   (content-height (- height title-height))
+                   (opacity
+                     (presentation-opacity (view-presentation-state view))))
+              (setf items
+                    (nconc
+                     items
+                     (append
+                      (unless (view-fullscreen-p view)
+                        (list
+                         (make-solid-item
+                          (- x 7d0) (- y 7d0) (+ width 14d0) (+ height 14d0)
+                          '(0.0 0.0 0.0 0.28) :owner view)
+                         (make-solid-item
+                          (- x 2d0) (- y 2d0) (+ width 4d0) (+ height 4d0)
+                          '(0.12 0.15 0.21 1.0) :owner view
+                          :interactive-p t :hit-kind :frame)
+                         (make-solid-item
+                          x y width title-height '(0.095 0.12 0.18 1.0)
+                          :owner view :interactive-p t :hit-kind :titlebar)))
                       (list
-                       (make-solid-item
-                        (- x 7d0) (- y 7d0) (+ width 14d0) (+ height 14d0)
-                        '(0.0 0.0 0.0 0.28) :owner view)
-                       (make-solid-item
-                        (- x 2d0) (- y 2d0) (+ width 4d0) (+ height 4d0)
-                        '(0.12 0.15 0.21 1.0) :owner view
-                        :interactive-p t :hit-kind :frame)
-                       (make-solid-item
-                        x y width title-height '(0.095 0.12 0.18 1.0)
-                        :owner view :interactive-p t :hit-kind :titlebar)))
-                    (list
-                    (make-instance
-                     'presentation-item
-                     :kind :surface :owner view
-                     :surface (surface-record-native record)
-                     :x x :y content-y :width width :height content-height
-                     :texture
-                     (ataxia.runtime:texture-gles-attributes
-                      (surface-record-texture record))
-                     :opacity opacity :interactive-p t :hit-kind :content
-                     :source-width (max 1 (surface-record-width record))
-                     :source-height
-                     (max 1 (surface-record-height record))))))))))))
+                       (make-instance
+                        'presentation-item
+                        :kind :surface :owner view
+                        :surface (surface-record-native record)
+                        :x x :y content-y :width width :height content-height
+                        :texture
+                        (ataxia.runtime:texture-gles-attributes
+                         (surface-record-texture record))
+                        :opacity opacity :interactive-p t :hit-kind :content
+                        :source-width (max 1 (surface-record-width record))
+                        :source-height
+                        (max 1 (surface-record-height record)))))))
+              (setf items
+                    (append-subsurface-tree-items
+                     items (component-compositor world)
+                     (surface-record-native record) view x content-y
+                     (/ width
+                        (max 1d0
+                             (coerce (surface-record-width record)
+                                     'double-float)))
+                     (/ content-height
+                        (max 1d0
+                             (coerce (surface-record-height record)
+                                     'double-float))))))))))
   items))
 
 (defun append-popup-items (items desktop output titlebar-height)
@@ -225,7 +273,14 @@
                      :interactive-p t :hit-kind :popup
                      :source-width (max 1 (surface-record-width record))
                      :source-height
-                     (max 1 (surface-record-height record))))))))))))
+                     (max 1 (surface-record-height record))))))
+            (setf items
+                  (append-subsurface-tree-items
+                   items (component-compositor desktop)
+                   (surface-record-native record) popup
+                   (+ parent-x (* (popup-x popup) scale))
+                   (+ parent-y titlebar-height (* (popup-y popup) scale))
+                   scale scale))))))))
 
 (defun append-cursor-items (items compositor output)
   (dolist (seat (interaction-seats (compositor-interaction compositor)) items)
@@ -322,6 +377,10 @@
             (ataxia.runtime:xdg-surface-at
              (view-native (presentation-item-owner item)) local-x local-y)))
         (when (eq :popup (presentation-item-hit-kind item))
+          (multiple-value-setq (surface surface-x surface-y)
+            (ataxia.runtime:surface-at
+             (presentation-item-surface item) local-x local-y)))
+        (when (eq :subsurface (presentation-item-hit-kind item))
           (multiple-value-setq (surface surface-x surface-y)
             (ataxia.runtime:surface-at
              (presentation-item-surface item) local-x local-y)))

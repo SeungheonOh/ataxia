@@ -15,7 +15,9 @@
                   :accessor spherical-angular-width)
    (angular-height :initarg :angular-height
                    :accessor spherical-angular-height)
-   (depth :initarg :depth :initform 0d0 :accessor spherical-depth)))
+   (depth :initarg :depth :initform 0d0 :accessor spherical-depth))
+  (:documentation
+   "Represents behavior implementation spherical placement. It may own policy-specific state but must remain replaceable through the compositor behavior protocol."))
 
 (defclass spherical-camera ()
   ((longitude :initarg :longitude :initform 0d0
@@ -23,14 +25,20 @@
    (latitude :initarg :latitude :initform 0d0
              :accessor camera-latitude)
    (field-of-view :initarg :field-of-view :initform 1.45d0
-                  :accessor camera-field-of-view)))
+                  :accessor camera-field-of-view))
+  (:documentation
+   "Represents behavior implementation spherical camera. It may own policy-specific state but must remain replaceable through the compositor behavior protocol."))
 
-(defclass spherical-behavior-state (behavior-view-state) ())
+(defclass spherical-behavior-state (behavior-view-state) ()
+  (:documentation
+   "Stores spherical behavior state. Only the owning subsystem or active behavior policy may mutate it, and replacement must copy or migrate mutable members."))
 
 (defclass spherical-restore-state ()
   ((placement :initarg :placement :reader spherical-restore-placement)
    (width :initarg :width :reader spherical-restore-width)
-   (height :initarg :height :reader spherical-restore-height)))
+   (height :initarg :height :reader spherical-restore-height))
+  (:documentation
+   "Stores spherical restore state. Only the owning subsystem or active behavior policy may mutate it, and replacement must copy or migrate mutable members."))
 
 (defclass spherical-behavior-policy (standard-behavior-policy)
   ((next-longitude :initform -0.25d0
@@ -48,7 +56,9 @@
                         :accessor spherical-mesh-cache-revision)
    (shadow-style :initarg :shadow-style
                  :initform (make-instance 'soft-shadow-style)
-                 :accessor behavior-shadow-style)))
+                 :accessor behavior-shadow-style))
+  (:documentation
+   "Defines the replaceable spherical behavior policy. It owns policy-specific state and must satisfy compositor generics without mutating Runtime objects directly."))
 
 (defun normalize-longitude (longitude)
   (- (mod (+ (coerce longitude 'double-float) pi) +two-pi+) pi))
@@ -102,17 +112,20 @@
 
 (defmethod behavior-output-added
     ((policy spherical-behavior-policy) output)
+  "Implement BEHAVIOR-OUTPUT-ADDED for this policy specialization. Mutate only behavior-owned state and return a value the compositor can validate and apply synchronously."
   (setf (output-behavior-state output) (make-instance 'spherical-camera))
   (incf (behavior-policy-revision policy))
   output)
 
 (defmethod behavior-view-created
     ((policy spherical-behavior-policy) view)
+  "Implement BEHAVIOR-VIEW-CREATED for this policy specialization. Mutate only behavior-owned state and return a value the compositor can validate and apply synchronously."
   (adopt-spherical-behavior-state view)
   (behavior-place-view policy view nil))
 
 (defmethod behavior-place-view
     ((policy spherical-behavior-policy) view request)
+  "Implement BEHAVIOR-PLACE-VIEW for this policy specialization. Mutate only behavior-owned state and return a value the compositor can validate and apply synchronously."
   (declare (ignore request))
   (let* ((angular-width 0.65d0)
          (placement
@@ -137,6 +150,7 @@
 (defmethod behavior-update-placement
     ((policy spherical-behavior-policy) view
      (placement spherical-placement) context)
+  "Implement BEHAVIOR-UPDATE-PLACEMENT for this policy specialization. Mutate only behavior-owned state and return a value the compositor can validate and apply synchronously."
   (declare (ignore context))
   (setf (view-placement view) placement)
   (incf (behavior-policy-revision policy))
@@ -144,6 +158,7 @@
 
 (defmethod behavior-view-committed
     ((policy spherical-behavior-policy) view commit initial-commit-p)
+  "Implement BEHAVIOR-VIEW-COMMITTED for this policy specialization. Mutate only behavior-owned state and return a value the compositor can validate and apply synchronously."
   (declare (ignore initial-commit-p))
   (when (plusp (ataxia.runtime:surface-commit-width commit))
     (let ((placement (view-placement view)))
@@ -155,6 +170,7 @@
 
 (defmethod behavior-recommend-initial-size
     ((policy spherical-behavior-policy) compositor view)
+  "Implement BEHAVIOR-RECOMMEND-INITIAL-SIZE for this policy specialization. Mutate only behavior-owned state and return a value the compositor can validate and apply synchronously."
   (declare (ignore policy view))
   (let ((output (first (compositor-outputs-list
                         (compositor-outputs compositor)))))
@@ -169,6 +185,7 @@
 
 (defmethod behavior-set-view-size
     ((policy spherical-behavior-policy) view width height context)
+  "Implement BEHAVIOR-SET-VIEW-SIZE for this policy specialization. Mutate only behavior-owned state and return a value the compositor can validate and apply synchronously."
   (declare (ignore context))
   (let ((placement (view-placement view)))
     (when placement
@@ -257,6 +274,7 @@
 (defmethod behavior-project-view
     ((policy spherical-behavior-policy) output
      (camera spherical-camera) view timestamp)
+  "Implement BEHAVIOR-PROJECT-VIEW for this policy specialization. Mutate only behavior-owned state and return a value the compositor can validate and apply synchronously."
   (declare (ignore policy timestamp))
   (project-spherical-placement camera output (view-placement view)))
 
@@ -267,6 +285,7 @@
 (defmethod behavior-unproject-point
     ((policy spherical-behavior-policy) output
      (camera spherical-camera) output-x output-y)
+  "Implement BEHAVIOR-UNPROJECT-POINT for this policy specialization. Mutate only behavior-owned state and return a value the compositor can validate and apply synchronously."
   (declare (ignore policy))
   (multiple-value-bind (forward right up) (spherical-camera-basis camera)
     (let* ((width (coerce (ataxia.runtime:output-width (output-native output))
@@ -289,6 +308,7 @@
 
 (defmethod copy-behavior-view-state
     ((policy spherical-behavior-policy) (state spherical-behavior-state))
+  "Implement COPY-BEHAVIOR-VIEW-STATE by returning an independent copy. Do not share mutable policy, presentation, or lifecycle state with the source."
   (declare (ignore policy))
   (make-instance
    'spherical-behavior-state
@@ -311,6 +331,7 @@
 
 (defmethod copy-behavior-output-state
     ((policy spherical-behavior-policy) (state spherical-camera))
+  "Implement COPY-BEHAVIOR-OUTPUT-STATE by returning an independent copy. Do not share mutable policy, presentation, or lifecycle state with the source."
   (declare (ignore policy))
   (copy-spherical-camera state))
 
@@ -318,6 +339,7 @@
     ((old-policy spherical-behavior-policy)
      (new-policy spherical-behavior-policy) view
      (state spherical-behavior-state))
+  "Implement MIGRATE-BEHAVIOR-VIEW-STATE without mutating the source. Reject unsupported state before installation so policy replacement can roll back atomically."
   (declare (ignore old-policy view))
   (copy-behavior-view-state new-policy state))
 
@@ -325,6 +347,7 @@
     ((old-policy spherical-behavior-policy)
      (new-policy spherical-behavior-policy) output
      (state spherical-camera))
+  "Implement MIGRATE-BEHAVIOR-OUTPUT-STATE without mutating the source. Reject unsupported state before installation so policy replacement can roll back atomically."
   (declare (ignore old-policy output))
   (copy-behavior-output-state new-policy state))
 
@@ -336,6 +359,7 @@
 (defmethod migrate-behavior-output-state
     ((old-policy planar-behavior-policy)
      (new-policy spherical-behavior-policy) output (state viewport))
+  "Implement MIGRATE-BEHAVIOR-OUTPUT-STATE without mutating the source. Reject unsupported state before installation so policy replacement can roll back atomically."
   (declare (ignore old-policy output state))
   (make-instance 'spherical-camera))
 
@@ -343,6 +367,7 @@
     ((old-policy planar-behavior-policy)
      (new-policy spherical-behavior-policy) view
      (state planar-behavior-state))
+  "Implement MIGRATE-BEHAVIOR-VIEW-STATE without mutating the source. Reject unsupported state before installation so policy replacement can roll back atomically."
   (let* ((output (first-policy-output new-policy))
          (viewport (and output (output-behavior-state output)))
          (placement (behavior-state-placement state))
@@ -393,6 +418,7 @@
 (defmethod migrate-behavior-output-state
     ((old-policy spherical-behavior-policy)
      (new-policy planar-behavior-policy) output (state spherical-camera))
+  "Implement MIGRATE-BEHAVIOR-OUTPUT-STATE without mutating the source. Reject unsupported state before installation so policy replacement can roll back atomically."
   (declare (ignore old-policy new-policy output state))
   (make-instance 'viewport))
 
@@ -400,6 +426,7 @@
     ((old-policy spherical-behavior-policy)
      (new-policy planar-behavior-policy) view
      (state spherical-behavior-state))
+  "Implement MIGRATE-BEHAVIOR-VIEW-STATE without mutating the source. Reject unsupported state before installation so policy replacement can roll back atomically."
   (let* ((output (first-policy-output old-policy))
          (camera (and output (output-behavior-state output)))
          (placement (behavior-state-placement state)))
@@ -588,10 +615,13 @@
    (draw-width :initarg :draw-width
                :reader spherical-mapping-draw-width)
    (draw-height :initarg :draw-height
-                 :reader spherical-mapping-draw-height)))
+                 :reader spherical-mapping-draw-height))
+  (:documentation
+   "Represents spherical surface mapping. Keep its coordinates, ownership references, and lifetime consistent with the snapshot or subsystem that contains it."))
 
 (defmethod map-presentation-point
     ((mapping spherical-surface-mapping) item output-x output-y)
+  "Implement MAP-PRESENTATION-POINT while preserving frame ordering and damage correctness. Never retain transient render data past the documented frame boundary."
   (declare (ignore mapping))
   (mesh-local-point
    (presentation-item-geometry item) output-x output-y
@@ -823,6 +853,7 @@
 (defmethod behavior-build-view-items
     ((policy spherical-behavior-policy) items output view timestamp
      titlebar-height)
+  "Implement BEHAVIOR-BUILD-VIEW-ITEMS for this policy specialization. Mutate only behavior-owned state and return a value the compositor can validate and apply synchronously."
   (declare (ignore timestamp))
   (let ((record (view-surface view)))
     (when (and (view-mapped-p view) (not (view-minimized-p view))
@@ -908,6 +939,7 @@
 
 (defmethod behavior-build-popup-items
     ((policy spherical-behavior-policy) items desktop output timestamp)
+  "Implement BEHAVIOR-BUILD-POPUP-ITEMS for this policy specialization. Mutate only behavior-owned state and return a value the compositor can validate and apply synchronously."
   (declare (ignore output timestamp))
   (dolist (view (desktop-stacking-order desktop) items)
     (setf items
@@ -915,6 +947,7 @@
 
 (defmethod behavior-begin-operation
     ((policy spherical-behavior-policy) interaction seat view kind edges button)
+  "Implement BEHAVIOR-BEGIN-OPERATION for this policy specialization. Mutate only behavior-owned state and return a value the compositor can validate and apply synchronously."
   (declare (ignore interaction policy))
   (let ((output (seat-pointer-output seat)))
     (multiple-value-bind (start-x start-y)
@@ -1006,6 +1039,7 @@
 (defmethod behavior-update-operation
     ((policy spherical-behavior-policy) interaction
      (operation interactive-operation))
+  "Implement BEHAVIOR-UPDATE-OPERATION for this policy specialization. Mutate only behavior-owned state and return a value the compositor can validate and apply synchronously."
   (declare (ignore interaction))
   (ecase (interactive-operation-kind operation)
     (:move (update-spherical-move policy operation))
@@ -1013,6 +1047,7 @@
 
 (defmethod behavior-move-view
     ((policy spherical-behavior-policy) view longitude latitude context)
+  "Implement BEHAVIOR-MOVE-VIEW for this policy specialization. Mutate only behavior-owned state and return a value the compositor can validate and apply synchronously."
   (declare (ignore context))
   (let ((placement (view-placement view)))
     (check-type placement spherical-placement)
@@ -1023,6 +1058,7 @@
 
 (defmethod behavior-restore-view
     ((policy spherical-behavior-policy) compositor view)
+  "Implement BEHAVIOR-RESTORE-VIEW for this policy specialization. Mutate only behavior-owned state and return a value the compositor can validate and apply synchronously."
   (declare (ignore compositor))
   (let ((restore (view-restore-placement view)))
     (when restore
@@ -1039,6 +1075,7 @@
 
 (defmethod behavior-configure-view-for-output
     ((policy spherical-behavior-policy) compositor view output fullscreen-p)
+  "Implement BEHAVIOR-CONFIGURE-VIEW-FOR-OUTPUT for this policy specialization. Mutate only behavior-owned state and return a value the compositor can validate and apply synchronously."
   (let ((output (or output (first-policy-output policy))))
     (if (null output)
         (make-instance 'view-configuration-decision
@@ -1074,6 +1111,7 @@
 
 (defmethod behavior-pan-output
     ((policy spherical-behavior-policy) output delta-x delta-y)
+  "Implement BEHAVIOR-PAN-OUTPUT for this policy specialization. Mutate only behavior-owned state and return a value the compositor can validate and apply synchronously."
   (let ((camera (output-behavior-state output)))
     (setf (camera-longitude camera)
           (normalize-longitude (+ (camera-longitude camera) delta-x))
@@ -1084,6 +1122,7 @@
 
 (defmethod behavior-zoom-output
     ((policy spherical-behavior-policy) output factor anchor-x anchor-y)
+  "Implement BEHAVIOR-ZOOM-OUTPUT for this policy specialization. Mutate only behavior-owned state and return a value the compositor can validate and apply synchronously."
   (let ((camera (output-behavior-state output)))
     (multiple-value-bind (anchor-longitude anchor-latitude)
         (behavior-unproject-point
@@ -1108,6 +1147,7 @@
 
 (defmethod behavior-observe-output
     ((policy spherical-behavior-policy) output)
+  "Implement BEHAVIOR-OBSERVE-OUTPUT for this policy specialization. Mutate only behavior-owned state and return a value the compositor can validate and apply synchronously."
   (declare (ignore policy))
   (let ((camera (output-behavior-state output)))
     (list :longitude (camera-longitude camera)
@@ -1116,6 +1156,7 @@
 
 (defmethod behavior-observe-view
     ((policy spherical-behavior-policy) view)
+  "Implement BEHAVIOR-OBSERVE-VIEW for this policy specialization. Mutate only behavior-owned state and return a value the compositor can validate and apply synchronously."
   (declare (ignore policy))
   (let ((placement (view-placement view)))
     (list :longitude (spherical-longitude placement)

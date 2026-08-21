@@ -12,21 +12,29 @@
     :accessor behavior-application-reveal-style)
    (background-color :initarg :background-color
                      :initform '(0.035 0.045 0.065 1.0)
-                     :accessor behavior-background-color)))
+                     :accessor behavior-background-color))
+  (:documentation
+   "Defines the replaceable standard behavior policy. It owns policy-specific state and must satisfy compositor generics without mutating Runtime objects directly."))
 
 (defclass planar-placement (behavior-placement)
   ((x :initarg :x :accessor placement-x)
    (y :initarg :y :accessor placement-y)
    (width :initarg :width :accessor placement-width)
    (height :initarg :height :accessor placement-height)
-   (z :initarg :z :initform 0d0 :accessor placement-z)))
+   (z :initarg :z :initform 0d0 :accessor placement-z))
+  (:documentation
+   "Represents behavior implementation planar placement. It may own policy-specific state but must remain replaceable through the compositor behavior protocol."))
 
-(defclass planar-behavior-state (behavior-view-state) ())
+(defclass planar-behavior-state (behavior-view-state) ()
+  (:documentation
+   "Stores planar behavior state. Only the owning subsystem or active behavior policy may mutate it, and replacement must copy or migrate mutable members."))
 
 (defclass viewport ()
   ((camera-x :initarg :camera-x :initform 0d0 :accessor viewport-camera-x)
    (camera-y :initarg :camera-y :initform 0d0 :accessor viewport-camera-y)
-   (scale :initarg :scale :initform 1d0 :accessor viewport-scale)))
+   (scale :initarg :scale :initform 1d0 :accessor viewport-scale))
+  (:documentation
+   "Represents behavior implementation viewport. It may own policy-specific state but must remain replaceable through the compositor behavior protocol."))
 
 (defclass planar-behavior-policy (standard-behavior-policy)
   ((cascade-x :initform 48d0 :accessor planar-cascade-x)
@@ -35,23 +43,29 @@
    (next-z :initform 0d0 :accessor planar-next-z)
    (shadow-style :initarg :shadow-style
                  :initform (make-instance 'soft-shadow-style)
-                 :accessor behavior-shadow-style)))
+                 :accessor behavior-shadow-style))
+  (:documentation
+   "Defines the replaceable planar behavior policy. It owns policy-specific state and must satisfy compositor generics without mutating Runtime objects directly."))
 
 (defmethod activate-behavior-policy ((policy behavior-policy))
+  "Implement ACTIVATE-BEHAVIOR-POLICY on the owner thread. Establish required listeners and state before publishing the object to other components."
   (setf (behavior-policy-active-p policy) t)
   policy)
 
 (defmethod quiesce-behavior-policy
     ((policy behavior-policy) reason)
+  "Implement QUIESCE-BEHAVIOR-POLICY for this behavior specialization. Keep policy state replaceable and return the protocol-defined result without bypassing core."
   (declare (ignore reason))
   (setf (behavior-policy-active-p policy) nil)
   policy)
 
 (defmethod attach-component :after ((policy behavior-policy))
+  "Extend ATTACH-COMPONENT after primary dispatch. Preserve the primary result and perform only the documented follow-up obligation."
   (activate-behavior-policy policy))
 
 (defmethod detach-component :before
     ((policy behavior-policy) reason)
+  "Prepare or validate DETACH-COMPONENT before primary dispatch. Do not consume ownership or perform the primary operation early."
   (quiesce-behavior-policy policy reason)
   (let* ((compositor (component-compositor policy))
          (renderer
@@ -62,16 +76,19 @@
 
 (defmethod behavior-handle-pointer-axis
     ((policy behavior-policy) interaction seat input)
+  "Implement BEHAVIOR-HANDLE-POINTER-AXIS for this policy specialization. Mutate only behavior-owned state and return a value the compositor can validate and apply synchronously."
   (declare (ignore policy interaction seat input))
   (make-instance 'pointer-axis-decision))
 
 (defmethod behavior-handle-keyboard-key
     ((policy behavior-policy) interaction seat input)
+  "Implement BEHAVIOR-HANDLE-KEYBOARD-KEY for this policy specialization. Mutate only behavior-owned state and return a value the compositor can validate and apply synchronously."
   (declare (ignore policy interaction seat input))
   (make-instance 'keyboard-key-decision))
 
 (defmethod behavior-validate-resources
     ((policy behavior-policy) compositor snapshots context)
+  "Implement BEHAVIOR-VALIDATE-RESOURCES for this policy specialization. Mutate only behavior-owned state and return a value the compositor can validate and apply synchronously."
   (declare (ignore policy context))
   (let ((renderer (compositor-graphics compositor)))
     (dolist (entry snapshots)
@@ -99,23 +116,27 @@
 
 (defmethod behavior-view-created
     ((policy planar-behavior-policy) view)
+  "Implement BEHAVIOR-VIEW-CREATED for this policy specialization. Mutate only behavior-owned state and return a value the compositor can validate and apply synchronously."
   (adopt-planar-behavior-state view)
   (behavior-place-view policy view nil))
 
 (defmethod behavior-output-added
     ((policy planar-behavior-policy) output)
+  "Implement BEHAVIOR-OUTPUT-ADDED for this policy specialization. Mutate only behavior-owned state and return a value the compositor can validate and apply synchronously."
   (setf (output-behavior-state output) (make-instance 'viewport))
   (incf (behavior-policy-revision policy))
   output)
 
 (defmethod behavior-output-removing
     ((policy behavior-policy) output)
+  "Implement BEHAVIOR-OUTPUT-REMOVING for this policy specialization. Mutate only behavior-owned state and return a value the compositor can validate and apply synchronously."
   (setf (output-behavior-state output) nil)
   (incf (behavior-policy-revision policy))
   output)
 
 (defmethod behavior-view-committed
     ((policy planar-behavior-policy) view commit initial-commit-p)
+  "Implement BEHAVIOR-VIEW-COMMITTED for this policy specialization. Mutate only behavior-owned state and return a value the compositor can validate and apply synchronously."
   (declare (ignore initial-commit-p))
   (let ((width (ataxia.runtime:surface-commit-width commit))
         (height (ataxia.runtime:surface-commit-height commit)))
@@ -129,27 +150,32 @@
 
 (defmethod behavior-view-mapped
     ((policy behavior-policy) view)
+  "Implement BEHAVIOR-VIEW-MAPPED for this policy specialization. Mutate only behavior-owned state and return a value the compositor can validate and apply synchronously."
   (incf (behavior-policy-revision policy))
   view)
 
 (defmethod behavior-view-unmapped
     ((policy behavior-policy) view)
+  "Implement BEHAVIOR-VIEW-UNMAPPED for this policy specialization. Mutate only behavior-owned state and return a value the compositor can validate and apply synchronously."
   (incf (behavior-policy-revision policy))
   view)
 
 (defmethod behavior-view-destroying
     ((policy behavior-policy) view)
+  "Implement BEHAVIOR-VIEW-DESTROYING for this policy specialization. Mutate only behavior-owned state and return a value the compositor can validate and apply synchronously."
   (incf (behavior-policy-revision policy))
   view)
 
 (defmethod behavior-view-identity-changed
     ((policy behavior-policy) view kind value)
+  "Implement BEHAVIOR-VIEW-IDENTITY-CHANGED for this policy specialization. Mutate only behavior-owned state and return a value the compositor can validate and apply synchronously."
   (declare (ignore kind value))
   (incf (behavior-policy-revision policy))
   view)
 
 (defmethod behavior-recommend-initial-size
     ((policy planar-behavior-policy) compositor view)
+  "Implement BEHAVIOR-RECOMMEND-INITIAL-SIZE for this policy specialization. Mutate only behavior-owned state and return a value the compositor can validate and apply synchronously."
   (declare (ignore policy view))
   (let ((output (first (compositor-outputs-list
                         (compositor-outputs compositor)))))
@@ -165,6 +191,7 @@
 
 (defmethod behavior-set-view-size
     ((policy planar-behavior-policy) view width height context)
+  "Implement BEHAVIOR-SET-VIEW-SIZE for this policy specialization. Mutate only behavior-owned state and return a value the compositor can validate and apply synchronously."
   (declare (ignore context))
   (let ((placement (view-placement view)))
     (when placement
@@ -175,6 +202,7 @@
 
 (defmethod copy-behavior-placement
     ((policy planar-behavior-policy) (placement planar-placement))
+  "Implement COPY-BEHAVIOR-PLACEMENT by returning an independent copy. Do not share mutable policy, presentation, or lifecycle state with the source."
   (declare (ignore policy))
   (make-instance 'planar-placement
                  :x (placement-x placement) :y (placement-y placement)
@@ -200,6 +228,7 @@
 
 (defmethod copy-behavior-view-state
     ((policy planar-behavior-policy) (state planar-behavior-state))
+  "Implement COPY-BEHAVIOR-VIEW-STATE by returning an independent copy. Do not share mutable policy, presentation, or lifecycle state with the source."
   (make-instance
    'planar-behavior-state
    :placement
@@ -216,6 +245,7 @@
 
 (defmethod copy-behavior-output-state
     ((policy planar-behavior-policy) (state viewport))
+  "Implement COPY-BEHAVIOR-OUTPUT-STATE by returning an independent copy. Do not share mutable policy, presentation, or lifecycle state with the source."
   (declare (ignore policy))
   (make-instance 'viewport
                  :camera-x (viewport-camera-x state)
@@ -226,17 +256,20 @@
     ((old-policy planar-behavior-policy)
      (new-policy planar-behavior-policy) view
      (state planar-behavior-state))
+  "Implement MIGRATE-BEHAVIOR-VIEW-STATE without mutating the source. Reject unsupported state before installation so policy replacement can roll back atomically."
   (declare (ignore old-policy view))
   (copy-behavior-view-state new-policy state))
 
 (defmethod migrate-behavior-output-state
     ((old-policy planar-behavior-policy)
      (new-policy planar-behavior-policy) output (state viewport))
+  "Implement MIGRATE-BEHAVIOR-OUTPUT-STATE without mutating the source. Reject unsupported state before installation so policy replacement can roll back atomically."
   (declare (ignore old-policy output))
   (copy-behavior-output-state new-policy state))
 
 (defmethod behavior-export-state
     ((policy behavior-policy) compositor context)
+  "Implement BEHAVIOR-EXPORT-STATE for this policy specialization. Mutate only behavior-owned state and return a value the compositor can validate and apply synchronously."
   (declare (ignore context))
   (make-instance
    'behavior-portable-state
@@ -258,6 +291,7 @@
 
 (defmethod behavior-import-state
     ((policy behavior-policy) (portable behavior-portable-state) context)
+  "Implement BEHAVIOR-IMPORT-STATE for this policy specialization. Mutate only behavior-owned state and return a value the compositor can validate and apply synchronously."
   (declare (ignore context))
   (let ((old-policy (portable-state-source-policy portable)))
     (make-instance
@@ -279,6 +313,7 @@
 
 (defmethod behavior-place-view
     ((policy planar-behavior-policy) view (request placement-request))
+  "Implement BEHAVIOR-PLACE-VIEW for this policy specialization. Mutate only behavior-owned state and return a value the compositor can validate and apply synchronously."
   (let* ((x (or (requested-placement-x request)
                 (planar-cascade-x policy)))
          (y (or (requested-placement-y request)
@@ -302,11 +337,13 @@
 
 (defmethod behavior-place-view
     ((policy planar-behavior-policy) view (request null))
+  "Implement BEHAVIOR-PLACE-VIEW for this policy specialization. Mutate only behavior-owned state and return a value the compositor can validate and apply synchronously."
   (behavior-place-view policy view (make-instance 'placement-request)))
 
 (defmethod behavior-update-placement
     ((policy planar-behavior-policy) view
      (placement planar-placement) context)
+  "Implement BEHAVIOR-UPDATE-PLACEMENT for this policy specialization. Mutate only behavior-owned state and return a value the compositor can validate and apply synchronously."
   (declare (ignore policy context))
   (setf (view-placement view) placement)
   placement)
@@ -314,6 +351,7 @@
 (defmethod behavior-project-view
     ((policy planar-behavior-policy) output
      (viewport viewport) view timestamp)
+  "Implement BEHAVIOR-PROJECT-VIEW for this policy specialization. Mutate only behavior-owned state and return a value the compositor can validate and apply synchronously."
   (declare (ignore policy output timestamp))
   (let ((placement (view-placement view))
         (scale (viewport-scale viewport)))
@@ -326,23 +364,30 @@
 (defmethod behavior-unproject-point
     ((policy planar-behavior-policy) output
      (viewport viewport) output-x output-y)
+  "Implement BEHAVIOR-UNPROJECT-POINT for this policy specialization. Mutate only behavior-owned state and return a value the compositor can validate and apply synchronously."
   (declare (ignore policy output))
   (values (+ (viewport-camera-x viewport)
              (/ output-x (viewport-scale viewport)))
           (+ (viewport-camera-y viewport)
              (/ output-y (viewport-scale viewport)))))
 
-(defgeneric pan-viewport (viewport delta-x delta-y))
-(defgeneric zoom-viewport (viewport factor anchor-x anchor-y))
+(defgeneric pan-viewport (viewport delta-x delta-y)
+  (:documentation
+   "Implement PAN-VIEWPORT for behavior implementations. Keep policy state replaceable and return the protocol-defined result without bypassing core."))
+(defgeneric zoom-viewport (viewport factor anchor-x anchor-y)
+  (:documentation
+   "Implement ZOOM-VIEWPORT for behavior implementations. Keep policy state replaceable and return the protocol-defined result without bypassing core."))
 
 (defmethod pan-viewport
     ((viewport viewport) delta-x delta-y)
+  "Implement PAN-VIEWPORT for this behavior specialization. Keep policy state replaceable and return the protocol-defined result without bypassing core."
   (incf (viewport-camera-x viewport) (coerce delta-x 'double-float))
   (incf (viewport-camera-y viewport) (coerce delta-y 'double-float))
   viewport)
 
 (defmethod zoom-viewport
     ((viewport viewport) factor anchor-x anchor-y)
+  "Implement ZOOM-VIEWPORT for this behavior specialization. Keep policy state replaceable and return the protocol-defined result without bypassing core."
   (let* ((old-scale (viewport-scale viewport))
          (new-scale (max 0.05d0 (min 32d0 (* old-scale factor))))
          (world-x (+ (viewport-camera-x viewport) (/ anchor-x old-scale)))
@@ -354,11 +399,13 @@
 
 (defmethod behavior-pan-output
     ((policy planar-behavior-policy) output delta-x delta-y)
+  "Implement BEHAVIOR-PAN-OUTPUT for this policy specialization. Mutate only behavior-owned state and return a value the compositor can validate and apply synchronously."
   (declare (ignore policy))
   (pan-viewport (output-viewport output) delta-x delta-y))
 
 (defmethod behavior-zoom-output
     ((policy planar-behavior-policy) output factor anchor-x anchor-y)
+  "Implement BEHAVIOR-ZOOM-OUTPUT for this policy specialization. Mutate only behavior-owned state and return a value the compositor can validate and apply synchronously."
   (declare (ignore policy))
   (zoom-viewport
    (output-viewport output) factor anchor-x anchor-y))

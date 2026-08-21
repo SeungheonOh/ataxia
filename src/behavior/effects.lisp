@@ -58,10 +58,14 @@ void main() {
                   :initform '(0.0 0.0 0.0 0.16)
                   :accessor soft-shadow-ambient-color)
    (ambient-blur-radius :initarg :ambient-blur-radius :initform 7d0
-                        :accessor soft-shadow-ambient-blur-radius)))
+                        :accessor soft-shadow-ambient-blur-radius))
+  (:documentation
+   "Represents behavior implementation soft shadow style. It may own policy-specific state but must remain replaceable through the compositor behavior protocol."))
 
 (defclass effect-parameter-binding ()
-  ((name :initarg :name :reader effect-parameter-binding-name)))
+  ((name :initarg :name :reader effect-parameter-binding-name))
+  (:documentation
+   "Binds effect parameter binding to a concrete target. Samples must update only the declared property and preserve unrelated presentation state."))
 
 (defun view-effect-parameter (view name &optional (default 0d0))
   (gethash name
@@ -77,6 +81,7 @@ void main() {
 
 (defmethod apply-animation-sample
     ((subject view) (property effect-parameter-binding) value context)
+  "Implement APPLY-ANIMATION-SAMPLE for this behavior specialization. Keep policy state replaceable and return the protocol-defined result without bypassing core."
   (declare (ignore context))
   (setf (view-effect-parameter
          subject (effect-parameter-binding-name property))
@@ -84,6 +89,7 @@ void main() {
   subject)
 
 (defmethod animation-property-key ((property effect-parameter-binding))
+  "Implement ANIMATION-PROPERTY-KEY for this behavior specialization. Keep policy state replaceable and return the protocol-defined result without bypassing core."
   (list :effect-parameter (effect-parameter-binding-name property)))
 
 (defun ensure-soft-shadow-program (policy)

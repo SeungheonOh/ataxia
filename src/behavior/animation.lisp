@@ -6,10 +6,13 @@
 (in-package #:ataxia.compositor)
 
 (defgeneric behavior-default-animation-definition
-    (policy subject descriptor context))
+    (policy subject descriptor context)
+  (:documentation
+   "Implement BEHAVIOR-DEFAULT-ANIMATION-DEFINITION for behavior policies. Mutate only behavior-owned state and return a value the compositor can validate and apply synchronously."))
 
 (defmethod behavior-default-animation-definition
     ((policy standard-behavior-policy) (subject view) descriptor context)
+  "Implement BEHAVIOR-DEFAULT-ANIMATION-DEFINITION for this policy specialization. Mutate only behavior-owned state and return a value the compositor can validate and apply synchronously."
   (declare (ignore context))
   (cond
     ((typep descriptor 'visibility-transition)
@@ -54,6 +57,7 @@
 (defmethod behavior-resolve-animation
     ((policy behavior-policy) (engine animation-engine)
      (subject view) descriptor context)
+  "Implement BEHAVIOR-RESOLVE-ANIMATION for this policy specialization. Mutate only behavior-owned state and return a value the compositor can validate and apply synchronously."
   (or (operation-animation-override descriptor)
       (let ((view-policy (view-animation-policy subject)))
         (when view-policy
@@ -67,6 +71,7 @@
 
 (defmethod behavior-set-view-animation-definition
     ((policy behavior-policy) (view view) descriptor-class definition)
+  "Implement BEHAVIOR-SET-VIEW-ANIMATION-DEFINITION for this policy specialization. Mutate only behavior-owned state and return a value the compositor can validate and apply synchronously."
   (let ((view-policy
           (or (view-animation-policy view)
               (setf (view-animation-policy view)

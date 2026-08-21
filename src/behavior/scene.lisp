@@ -116,6 +116,7 @@
 
 (defmethod behavior-build-popup-items
     ((policy behavior-policy) items desktop output timestamp)
+  "Implement BEHAVIOR-BUILD-POPUP-ITEMS for this policy specialization. Mutate only behavior-owned state and return a value the compositor can validate and apply synchronously."
   (declare (ignore policy output timestamp))
   (append-popup-items items desktop))
 
@@ -203,6 +204,7 @@
 
 (defmethod behavior-compose-frame
     ((policy behavior-policy) presentation output snapshot timestamp)
+  "Implement BEHAVIOR-COMPOSE-FRAME for this policy specialization. Mutate only behavior-owned state and return a value the compositor can validate and apply synchronously."
   (declare (ignore policy presentation output timestamp))
   (make-instance
    'frame-plan :snapshot snapshot

@@ -108,12 +108,16 @@ void main() {
    (displacement :initarg :displacement :initform 0.16d0
                  :accessor codec-reveal-displacement)
    (chroma-separation :initarg :chroma-separation :initform 0.018d0
-                      :accessor codec-reveal-chroma-separation)))
+                      :accessor codec-reveal-chroma-separation))
+  (:documentation
+   "Represents behavior implementation codec reveal style. It may own policy-specific state but must remain replaceable through the compositor behavior protocol."))
 
 (defclass reveal-progress-binding (shader-uniform-binding)
   ((program-name :initarg :program-name :reader reveal-binding-program-name)
    (previous-program :initarg :previous-program
-                     :reader reveal-binding-previous-program)))
+                     :reader reveal-binding-previous-program))
+  (:documentation
+   "Binds reveal progress binding to a concrete target. Samples must update only the declared property and preserve unrelated presentation state."))
 
 (defun codec-reveal-uniform-table (view)
   (presentation-shader-uniforms (view-presentation-state view)))
@@ -131,6 +135,7 @@ void main() {
 
 (defmethod apply-animation-sample
     ((subject view) (property reveal-progress-binding) value context)
+  "Implement APPLY-ANIMATION-SAMPLE for this behavior specialization. Keep policy state replaceable and return the protocol-defined result without bypassing core."
   (call-next-method)
   (when (>= value (- 1d0 1d-6))
     (clear-codec-reveal-state
@@ -139,12 +144,14 @@ void main() {
 
 (defmethod finalize-animation-property
     ((property reveal-progress-binding) (subject view) instance reason)
+  "Implement FINALIZE-ANIMATION-PROPERTY for this behavior specialization. Keep policy state replaceable and return the protocol-defined result without bypassing core."
   (declare (ignore instance reason))
   (clear-codec-reveal-state
    subject (reveal-binding-previous-program property)))
 
 (defmethod prepare-animation-property-for-policy
     ((property reveal-progress-binding) (policy behavior-policy) instance)
+  "Implement PREPARE-ANIMATION-PROPERTY-FOR-POLICY for this behavior specialization. Keep policy state replaceable and return the protocol-defined result without bypassing core."
   (declare (ignore property instance))
   (ensure-codec-reveal-programs policy))
 
@@ -222,6 +229,7 @@ void main() {
 
 (defmethod behavior-view-unmapped :after
     ((policy behavior-policy) view)
+  "Extend BEHAVIOR-VIEW-UNMAPPED after primary dispatch. Preserve the primary result and perform only the documented follow-up obligation."
   (declare (ignore policy))
   (let* ((parameters
            (presentation-effect-parameters (view-presentation-state view)))

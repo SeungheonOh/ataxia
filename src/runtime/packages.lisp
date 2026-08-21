@@ -74,6 +74,11 @@
    #:%wlr-xdg-decoration-manager-v1-create
    #:%wlr-xdg-toplevel-decoration-v1-set-mode
    #:%wlr-xdg-activation-v1-create
+   #:%wlr-relative-pointer-manager-v1-create
+   #:%wlr-relative-pointer-manager-v1-send-relative-motion
+   #:%wlr-pointer-constraints-v1-create
+   #:%wlr-pointer-constraint-v1-send-activated
+   #:%wlr-pointer-constraint-v1-send-deactivated
    #:%wlr-seat-create
    #:%wlr-seat-destroy
    #:%wlr-seat-set-capabilities
@@ -219,6 +224,16 @@
    #:%xdg-activation-token-seat
    #:%xdg-activation-token-serial
    #:%xdg-activation-token-app-id
+   #:%pointer-constraints-event-new-constraint
+   #:%pointer-constraints-event-destroy
+   #:%pointer-constraint-event-set-region
+   #:%pointer-constraint-event-destroy
+   #:%pointer-constraint-surface
+   #:%pointer-constraint-seat
+   #:%pointer-constraint-type
+   #:%pointer-constraint-confine
+   #:%pointer-constraint-region-empty
+   #:%pointer-constraint-cursor-hint
    #:%surface-mapped
    #:%wlr-surface-surface-at
    #:%subsurface-event-destroy
@@ -453,6 +468,12 @@
    #:xdg-decoration-toplevel
    #:xdg-decoration-requested-mode
    #:wlr-xdg-activation-v1
+   #:wlr-relative-pointer-manager-v1
+   #:wlr-pointer-constraints-v1
+   #:wlr-pointer-constraint-v1
+   #:pointer-constraint-surface
+   #:pointer-constraint-seat
+   #:pointer-constraint-type
    #:xdg-activation-request
    #:xdg-activation-request-target-surface
    #:xdg-activation-request-source-surface
@@ -596,6 +617,9 @@
    #:xdg-toplevel-decoration-request-mode
    #:xdg-toplevel-decoration-destroying
    #:xdg-activation-requested
+   #:pointer-constraint-created
+   #:pointer-constraint-region-changed
+   #:pointer-constraint-destroying
    #:create-runtime
    #:start-runtime
    #:run-runtime
@@ -618,6 +642,16 @@
    #:find-xdg-toplevel-decoration
    #:runtime-xdg-activation
    #:xdg-toplevel-decoration-set-mode
+   #:create-pointer-protocols
+   #:runtime-relative-pointer-manager
+   #:runtime-pointer-constraints-manager
+   #:runtime-pointer-constraints
+   #:relative-pointer-send-motion
+   #:pointer-constraint-send-activated
+   #:pointer-constraint-send-deactivated
+   #:pointer-constraint-confine
+   #:pointer-constraint-region-empty-p
+   #:pointer-constraint-cursor-hint
    #:set-seat-capabilities
    #:set-seat-name
    #:set-seat-keyboard

@@ -116,6 +116,7 @@ Options:~%\
                   (runtime-egl runtime) (lambda () nil))
                  (create-xdg-shell runtime)
                  (create-desktop-shell-protocols runtime)
+                 (create-pointer-protocols runtime)
                  (create-data-device-manager runtime)
                  (create-presentation-protocols runtime)
                  (let ((seat (create-seat runtime "seat0")))

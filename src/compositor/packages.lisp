@@ -348,7 +348,9 @@
    #:presentation-mapping
    #:functional-presentation-mapping
    #:presentation-mapping-function
+   #:presentation-mapping-inverse-function
    #:map-presentation-point
+   #:unmap-presentation-point
    #:mesh-geometry
    #:mesh-geometry-vertices
    #:mesh-geometry-vertex-count

@@ -21,12 +21,14 @@
 #include <wlr/types/wlr_keyboard.h>
 #include <wlr/types/wlr_output.h>
 #include <wlr/types/wlr_pointer.h>
+#include <wlr/types/wlr_pointer_constraints_v1.h>
 #include <wlr/types/wlr_seat.h>
 #include <wlr/types/wlr_subcompositor.h>
 #include <wlr/types/wlr_xdg_shell.h>
 #include <wlr/types/wlr_xdg_activation_v1.h>
 #include <wlr/types/wlr_xdg_decoration_v1.h>
 #include <wlr/version.h>
+#include <wlr/util/region.h>
 
 struct ataxia_listener {
 	struct wl_listener listener;
@@ -143,6 +145,14 @@ SIGNAL_ACCESSOR(ataxia_xdg_activation_event_request_activate,
 	wlr_xdg_activation_v1, events.request_activate)
 SIGNAL_ACCESSOR(ataxia_xdg_activation_event_destroy,
 	wlr_xdg_activation_v1, events.destroy)
+SIGNAL_ACCESSOR(ataxia_pointer_constraints_event_new_constraint,
+	wlr_pointer_constraints_v1, events.new_constraint)
+SIGNAL_ACCESSOR(ataxia_pointer_constraints_event_destroy,
+	wlr_pointer_constraints_v1, events.destroy)
+SIGNAL_ACCESSOR(ataxia_pointer_constraint_event_set_region,
+	wlr_pointer_constraint_v1, events.set_region)
+SIGNAL_ACCESSOR(ataxia_pointer_constraint_event_destroy,
+	wlr_pointer_constraint_v1, events.destroy)
 
 const char *ataxia_output_name(const struct wlr_output *output) {
 	return output == NULL ? NULL : output->name;
@@ -564,6 +574,50 @@ uint32_t ataxia_xdg_activation_token_serial(
 const char *ataxia_xdg_activation_token_app_id(
 		const struct wlr_xdg_activation_token_v1 *token) {
 	return token == NULL ? NULL : token->app_id;
+}
+
+struct wlr_surface *ataxia_pointer_constraint_surface(
+		const struct wlr_pointer_constraint_v1 *constraint) {
+	return constraint == NULL ? NULL : constraint->surface;
+}
+
+struct wlr_seat *ataxia_pointer_constraint_seat(
+		const struct wlr_pointer_constraint_v1 *constraint) {
+	return constraint == NULL ? NULL : constraint->seat;
+}
+
+uint32_t ataxia_pointer_constraint_type(
+		const struct wlr_pointer_constraint_v1 *constraint) {
+	return constraint == NULL ? WLR_POINTER_CONSTRAINT_V1_LOCKED :
+		(uint32_t)constraint->type;
+}
+
+bool ataxia_pointer_constraint_confine(
+		const struct wlr_pointer_constraint_v1 *constraint,
+		double x1, double y1, double x2, double y2,
+		double *confined_x, double *confined_y) {
+	if (constraint == NULL || confined_x == NULL || confined_y == NULL) {
+		return false;
+	}
+	return wlr_region_confine(&constraint->region, x1, y1, x2, y2,
+		confined_x, confined_y);
+}
+
+bool ataxia_pointer_constraint_region_empty(
+		const struct wlr_pointer_constraint_v1 *constraint) {
+	return constraint == NULL || pixman_region32_empty(&constraint->region);
+}
+
+bool ataxia_pointer_constraint_cursor_hint(
+		const struct wlr_pointer_constraint_v1 *constraint,
+		double *x, double *y) {
+	if (constraint == NULL || x == NULL || y == NULL ||
+			!constraint->current.cursor_hint.enabled) {
+		return false;
+	}
+	*x = constraint->current.cursor_hint.x;
+	*y = constraint->current.cursor_hint.y;
+	return true;
 }
 
 bool ataxia_surface_mapped(const struct wlr_surface *surface) {

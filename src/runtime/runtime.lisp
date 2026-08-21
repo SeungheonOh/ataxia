@@ -54,6 +54,12 @@
    (xdg-decoration-manager
     :initform nil :accessor %runtime-xdg-decoration-manager)
    (xdg-activation :initform nil :accessor %runtime-xdg-activation)
+   (relative-pointer-manager
+    :initform nil :accessor %runtime-relative-pointer-manager)
+   (pointer-constraints-manager
+    :initform nil :accessor %runtime-pointer-constraints-manager)
+   (pointer-constraints :initform (make-hash-table :test #'eql)
+                        :reader %runtime-pointer-constraint-table)
    (xdg-decorations :initform (make-hash-table :test #'eql)
                     :reader %runtime-xdg-decoration-table)
    (xdg-toplevels :initform (make-hash-table :test #'eql)
@@ -862,7 +868,9 @@
                             (%runtime-fractional-scale-manager runtime)
                             (%runtime-presentation runtime)
                             (%runtime-xdg-decoration-manager runtime)
-                            (%runtime-xdg-activation runtime)))
+                            (%runtime-xdg-activation runtime)
+                            (%runtime-relative-pointer-manager runtime)
+                            (%runtime-pointer-constraints-manager runtime)))
         (when object (%invalidate-native-object object)))
       (clrhash (%runtime-output-table runtime))
       (clrhash (%runtime-input-table runtime))
@@ -872,6 +880,7 @@
       (clrhash (%runtime-xdg-toplevel-table runtime))
       (clrhash (%runtime-xdg-popup-table runtime))
       (clrhash (%runtime-xdg-decoration-table runtime))
+      (clrhash (%runtime-pointer-constraint-table runtime))
       (setf (%runtime-display runtime) nil
             (%runtime-event-loop runtime) nil
             (%runtime-backend runtime) nil
@@ -887,6 +896,8 @@
             (%runtime-presentation runtime) nil
             (%runtime-xdg-decoration-manager runtime) nil
             (%runtime-xdg-activation runtime) nil
+            (%runtime-relative-pointer-manager runtime) nil
+            (%runtime-pointer-constraints-manager runtime) nil
             (%runtime-socket-name runtime) nil
             (%runtime-state runtime) :stopped))))
   nil)

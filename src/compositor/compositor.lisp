@@ -157,6 +157,8 @@
           (ataxia.runtime:create-xdg-shell (compositor-runtime compositor))
           (ataxia.runtime:create-desktop-shell-protocols
            (compositor-runtime compositor))
+          (ataxia.runtime:create-pointer-protocols
+           (compositor-runtime compositor))
           (ataxia.runtime:create-data-device-manager
            (compositor-runtime compositor))
           (ataxia.runtime:create-presentation-protocols
@@ -297,6 +299,24 @@
     (when (and seat view (view-mapped-p view))
       (desktop-raise-view (compositor-desktop compositor) view)
       (focus-view interaction seat view))))
+
+(defmethod ataxia.runtime:pointer-constraint-created
+    ((compositor compositor) runtime constraint)
+  (declare (ignore runtime))
+  (interaction-add-pointer-constraint
+   (compositor-interaction compositor) constraint))
+
+(defmethod ataxia.runtime:pointer-constraint-region-changed
+    ((compositor compositor) constraint)
+  (let* ((interaction (compositor-interaction compositor))
+         (seat (constraint-logical-seat interaction constraint)))
+    (when seat
+      (synchronize-seat-pointer-constraint interaction seat))))
+
+(defmethod ataxia.runtime:pointer-constraint-destroying
+    ((compositor compositor) constraint)
+  (interaction-remove-pointer-constraint
+   (compositor-interaction compositor) constraint))
 
 (defmethod ataxia.runtime:backend-new-output
     ((compositor compositor) runtime native-output)

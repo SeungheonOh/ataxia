@@ -86,9 +86,12 @@
 (defclass presentation-mapping () ())
 
 (defclass functional-presentation-mapping (presentation-mapping)
-  ((function :initarg :function :reader presentation-mapping-function)))
+  ((function :initarg :function :reader presentation-mapping-function)
+   (inverse-function :initarg :inverse-function :initform nil
+                     :reader presentation-mapping-inverse-function)))
 
 (defgeneric map-presentation-point (mapping item output-x output-y))
+(defgeneric unmap-presentation-point (mapping item surface-x surface-y))
 
 (defclass mesh-geometry (presentation-geometry)
   ((vertices :initarg :vertices :reader mesh-geometry-vertices)
@@ -638,9 +641,74 @@
                (max 1d0 (presentation-item-height item)))
             (presentation-item-source-height item))))))
 
+(defun mesh-output-point
+    (geometry surface-x surface-y source-width source-height)
+  (let ((vertices (mesh-geometry-vertices geometry))
+        (texture-x (/ surface-x (max 1d0 source-width)))
+        (texture-y (/ surface-y (max 1d0 source-height))))
+    (loop for offset from 0 below (length vertices) by 12
+          do (multiple-value-bind (first second third)
+                 (barycentric-coordinate
+                  texture-x texture-y
+                  (aref vertices (+ offset 2))
+                  (aref vertices (+ offset 3))
+                  (aref vertices (+ offset 6))
+                  (aref vertices (+ offset 7))
+                  (aref vertices (+ offset 10))
+                  (aref vertices (+ offset 11)))
+               (when first
+                 (return
+                   (values
+                    t
+                    (+ (* first (aref vertices offset))
+                       (* second (aref vertices (+ offset 4)))
+                       (* third (aref vertices (+ offset 8))))
+                    (+ (* first (aref vertices (+ offset 1)))
+                       (* second (aref vertices (+ offset 5)))
+                       (* third (aref vertices (+ offset 9))))))))
+          finally (return (values nil 0d0 0d0)))))
+
+(defun default-unmap-presentation-point (item surface-x surface-y)
+  (let ((geometry (presentation-item-geometry item)))
+    (if (typep geometry 'mesh-geometry)
+        (mesh-output-point
+         geometry surface-x surface-y
+         (presentation-item-source-width item)
+         (presentation-item-source-height item))
+        (values
+         t
+         (+ (presentation-item-x item)
+            (* (/ surface-x
+                  (max 1d0 (presentation-item-source-width item)))
+               (presentation-item-width item)))
+         (+ (presentation-item-y item)
+            (* (/ surface-y
+                  (max 1d0 (presentation-item-source-height item)))
+               (presentation-item-height item)))))))
+
+(defmethod unmap-presentation-point
+    ((mapping presentation-mapping) item surface-x surface-y)
+  (declare (ignore mapping))
+  (default-unmap-presentation-point item surface-x surface-y))
+
+(defmethod unmap-presentation-point
+    ((mapping functional-presentation-mapping) item surface-x surface-y)
+  (let ((inverse (presentation-mapping-inverse-function mapping)))
+    (if inverse
+        (funcall inverse item surface-x surface-y)
+        (default-unmap-presentation-point item surface-x surface-y))))
+
+(defmethod unmap-presentation-point
+    ((mapping null) item surface-x surface-y)
+  (default-unmap-presentation-point item surface-x surface-y))
+
 (defun presentation-item-local-point (item output-x output-y)
   (map-presentation-point
    (presentation-item-mapping item) item output-x output-y))
+
+(defun presentation-item-output-point (item surface-x surface-y)
+  (unmap-presentation-point
+   (presentation-item-mapping item) item surface-x surface-y))
 
 (defun presentation-item-live-p (item)
   "Reject geometry that still references a surface retired after the snapshot."

@@ -12,7 +12,7 @@
 #include <stdint.h>
 
 #define ATAXIA_WLR_GLUE_API __attribute__((visibility("default")))
-#define ATAXIA_WLR_GLUE_ABI_VERSION 5u
+#define ATAXIA_WLR_GLUE_ABI_VERSION 6u
 
 struct wl_signal;
 struct wlr_allocator;
@@ -50,6 +50,8 @@ struct wlr_xdg_activation_token_v1;
 struct wlr_xdg_activation_v1_request_activate_event;
 struct wlr_xdg_decoration_manager_v1;
 struct wlr_xdg_toplevel_decoration_v1;
+struct wlr_pointer_constraint_v1;
+struct wlr_pointer_constraints_v1;
 struct ataxia_listener;
 
 typedef void (*ataxia_listener_callback)(uintptr_t cookie, void *data);
@@ -423,5 +425,31 @@ ATAXIA_WLR_GLUE_API uint32_t ataxia_xdg_activation_token_serial(
 	const struct wlr_xdg_activation_token_v1 *token);
 ATAXIA_WLR_GLUE_API const char *ataxia_xdg_activation_token_app_id(
 	const struct wlr_xdg_activation_token_v1 *token);
+
+ATAXIA_WLR_GLUE_API struct wl_signal *
+ataxia_pointer_constraints_event_new_constraint(
+	struct wlr_pointer_constraints_v1 *manager);
+ATAXIA_WLR_GLUE_API struct wl_signal *
+ataxia_pointer_constraints_event_destroy(
+	struct wlr_pointer_constraints_v1 *manager);
+ATAXIA_WLR_GLUE_API struct wl_signal *ataxia_pointer_constraint_event_set_region(
+	struct wlr_pointer_constraint_v1 *constraint);
+ATAXIA_WLR_GLUE_API struct wl_signal *ataxia_pointer_constraint_event_destroy(
+	struct wlr_pointer_constraint_v1 *constraint);
+ATAXIA_WLR_GLUE_API struct wlr_surface *ataxia_pointer_constraint_surface(
+	const struct wlr_pointer_constraint_v1 *constraint);
+ATAXIA_WLR_GLUE_API struct wlr_seat *ataxia_pointer_constraint_seat(
+	const struct wlr_pointer_constraint_v1 *constraint);
+ATAXIA_WLR_GLUE_API uint32_t ataxia_pointer_constraint_type(
+	const struct wlr_pointer_constraint_v1 *constraint);
+ATAXIA_WLR_GLUE_API bool ataxia_pointer_constraint_confine(
+	const struct wlr_pointer_constraint_v1 *constraint,
+	double x1, double y1, double x2, double y2,
+	double *confined_x, double *confined_y);
+ATAXIA_WLR_GLUE_API bool ataxia_pointer_constraint_region_empty(
+	const struct wlr_pointer_constraint_v1 *constraint);
+ATAXIA_WLR_GLUE_API bool ataxia_pointer_constraint_cursor_hint(
+	const struct wlr_pointer_constraint_v1 *constraint,
+	double *x, double *y);
 
 #endif

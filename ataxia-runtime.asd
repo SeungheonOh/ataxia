@@ -27,4 +27,5 @@
      (:file "presentation-protocols")
      (:file "xdg-shell")
      (:file "desktop-shell-protocols")
+     (:file "pointer-protocols")
      (:file "main")))))

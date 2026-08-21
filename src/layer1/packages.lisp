@@ -21,6 +21,13 @@
    #:%wl-display-add-socket-auto
    #:%wl-display-flush-clients
    #:%wl-event-loop-dispatch
+   #:%wl-event-loop-add-fd
+   #:%wl-event-loop-add-timer
+   #:%wl-event-loop-add-signal
+   #:%wl-event-loop-add-idle
+   #:%wl-event-source-fd-update
+   #:%wl-event-source-timer-update
+   #:%wl-event-source-remove
    #:%wlr-log-init
    #:%wlr-backend-autocreate
    #:%wlr-headless-backend-create
@@ -28,6 +35,26 @@
    #:%wlr-backend-start
    #:%wlr-backend-destroy
    #:%wlr-renderer-autocreate
+   #:%wlr-renderer-is-gles2
+   #:%wlr-gles2-renderer-get-egl
+   #:%wlr-egl-get-display
+   #:%wlr-egl-get-context
+   #:%egl-get-current-display
+   #:%egl-get-current-context
+   #:%egl-get-current-surface
+   #:%egl-make-current
+   #:%egl-get-error
+   #:%wlr-buffer-unlock
+   #:%wlr-texture-is-gles2
+   #:%surface-lock-buffer
+   #:%buffer-width
+   #:%buffer-height
+   #:%client-buffer-texture
+   #:%texture-width
+   #:%texture-height
+   #:%gles2-texture-target
+   #:%gles2-texture-name
+   #:%gles2-texture-has-alpha
    #:%wlr-renderer-init-wl-display
    #:%wlr-renderer-destroy
    #:%wlr-allocator-autocreate
@@ -51,15 +78,98 @@
    #:%compositor-event-new-surface
    #:%compositor-event-destroy
    #:%output-event-frame
+   #:%output-event-damage
+   #:%output-event-needs-frame
+   #:%output-event-present
+   #:%output-event-request-state
    #:%output-event-destroy
    #:%output-name
    #:%output-description
    #:%output-width
    #:%output-height
    #:%output-enabled
+   #:%output-damage-region
+   #:%region-rectangle-count
+   #:%region-rectangle-at
+   #:%output-present-commit-sequence
+   #:%output-presented
+   #:%output-present-seconds
+   #:%output-present-nanoseconds
+   #:%output-present-sequence
+   #:%output-present-refresh-nanoseconds
+   #:%output-present-flags
+   #:%output-requested-state
+   #:%wlr-output-init-render
+   #:%wlr-output-preferred-mode
+   #:%wlr-output-create-global
+   #:%wlr-output-destroy-global
+   #:%wlr-output-state-set-enabled
+   #:%wlr-output-state-set-mode
+   #:%wlr-output-state-set-custom-mode
+   #:%wlr-output-test-state
+   #:%wlr-output-commit-state
+   #:%wlr-output-schedule-frame
+   #:%output-state-create
+   #:%output-state-destroy
    #:%input-device-event-destroy
    #:%input-device-name
    #:%input-device-type
+   #:%input-device-pointer
+   #:%pointer-event-motion
+   #:%pointer-event-motion-absolute
+   #:%pointer-event-button
+   #:%pointer-event-axis
+   #:%pointer-event-frame
+   #:%pointer-motion-time-msec
+   #:%pointer-motion-delta-x
+   #:%pointer-motion-delta-y
+   #:%pointer-motion-unaccel-dx
+   #:%pointer-motion-unaccel-dy
+   #:%pointer-motion-absolute-time-msec
+   #:%pointer-motion-absolute-x
+   #:%pointer-motion-absolute-y
+   #:%pointer-button-time-msec
+   #:%pointer-button-button
+   #:%pointer-button-state
+   #:%pointer-axis-time-msec
+   #:%pointer-axis-source
+   #:%pointer-axis-orientation
+   #:%pointer-axis-relative-direction
+   #:%pointer-axis-delta
+   #:%pointer-axis-delta-discrete
+   #:%input-device-keyboard
+   #:%keyboard-event-key
+   #:%keyboard-event-modifiers
+   #:%keyboard-event-keymap
+   #:%keyboard-event-repeat-info
+   #:%keyboard-key-time-msec
+   #:%keyboard-key-keycode
+   #:%keyboard-key-update-state
+   #:%keyboard-key-state
+   #:%keyboard-modifiers-depressed
+   #:%keyboard-modifiers-latched
+   #:%keyboard-modifiers-locked
+   #:%keyboard-modifiers-group
+   #:%keyboard-repeat-rate
+   #:%keyboard-repeat-delay
+   #:%seat-event-destroy
+   #:%seat-event-request-set-cursor
+   #:%seat-cursor-surface
+   #:%seat-cursor-serial
+   #:%seat-cursor-hotspot-x
+   #:%seat-cursor-hotspot-y
+   #:%wlr-data-device-manager-create
+   #:%wlr-seat-set-keyboard
+   #:%wlr-seat-pointer-notify-enter
+   #:%wlr-seat-pointer-notify-clear-focus
+   #:%wlr-seat-pointer-notify-motion
+   #:%wlr-seat-pointer-notify-button
+   #:%wlr-seat-pointer-notify-axis
+   #:%wlr-seat-pointer-notify-frame
+   #:%wlr-seat-keyboard-notify-key
+   #:%wlr-seat-keyboard-notify-clear-focus
+   #:%seat-keyboard-notify-modifiers-current
+   #:%seat-keyboard-notify-enter-current
    #:%surface-event-commit
    #:%surface-event-map
    #:%surface-event-unmap
@@ -72,6 +182,66 @@
    #:%surface-current-buffer-width
    #:%surface-current-buffer-height
    #:%surface-mapped
+   #:%wlr-surface-surface-at
+   #:%subsurface-event-destroy
+   #:%subsurface-surface
+   #:%subsurface-parent
+   #:%subsurface-x
+   #:%subsurface-y
+   #:%subsurface-synchronized
+   #:%wlr-xdg-shell-create
+   #:%wlr-xdg-surface-ping
+   #:%wlr-xdg-surface-surface-at
+   #:%wlr-xdg-surface-popup-surface-at
+   #:%wlr-xdg-toplevel-set-size
+   #:%wlr-xdg-toplevel-set-activated
+   #:%wlr-xdg-toplevel-set-maximized
+   #:%wlr-xdg-toplevel-set-fullscreen
+   #:%wlr-xdg-toplevel-set-resizing
+   #:%wlr-xdg-toplevel-set-tiled
+   #:%wlr-xdg-toplevel-set-bounds
+   #:%wlr-xdg-toplevel-set-wm-capabilities
+   #:%wlr-xdg-toplevel-set-suspended
+   #:%wlr-xdg-toplevel-set-constrained
+   #:%wlr-xdg-toplevel-send-close
+   #:%wlr-xdg-popup-destroy
+   #:%xdg-shell-event-new-toplevel
+   #:%xdg-shell-event-new-popup
+   #:%xdg-shell-event-destroy
+   #:%xdg-toplevel-base
+   #:%xdg-surface-surface
+   #:%xdg-surface-initial-commit
+   #:%xdg-surface-configured
+   #:%xdg-surface-event-destroy
+   #:%xdg-toplevel-title
+   #:%xdg-toplevel-app-id
+   #:%xdg-toplevel-requested-maximized
+   #:%xdg-toplevel-requested-minimized
+   #:%xdg-toplevel-requested-fullscreen
+   #:%xdg-toplevel-requested-fullscreen-output
+   #:%xdg-toplevel-event-destroy
+   #:%xdg-toplevel-event-request-maximize
+   #:%xdg-toplevel-event-request-fullscreen
+   #:%xdg-toplevel-event-request-minimize
+   #:%xdg-toplevel-event-request-move
+   #:%xdg-toplevel-event-request-resize
+   #:%xdg-toplevel-event-request-show-window-menu
+   #:%xdg-toplevel-event-set-parent
+   #:%xdg-toplevel-event-set-title
+   #:%xdg-toplevel-event-set-app-id
+   #:%xdg-move-seat
+   #:%xdg-move-serial
+   #:%xdg-resize-seat
+   #:%xdg-resize-serial
+   #:%xdg-resize-edges
+   #:%xdg-window-menu-seat
+   #:%xdg-window-menu-serial
+   #:%xdg-window-menu-x
+   #:%xdg-window-menu-y
+   #:%xdg-popup-base
+   #:%xdg-popup-parent-surface
+   #:%xdg-popup-event-destroy
+   #:%xdg-popup-event-reposition
    #:%listener-dispatch-pointer))
 
 (defpackage #:ataxia.layer1
@@ -90,17 +260,134 @@
    #:native-object
    #:native-object-live-p
    #:native-object-address
+   #:wl-display
+   #:wl-event-loop
+   #:wl-event-source
+   #:event-source-kind
+   #:add-event-loop-fd
+   #:add-event-loop-timer
+   #:add-event-loop-signal
+   #:add-event-loop-idle
+   #:update-event-loop-fd
+   #:update-event-loop-timer
+   #:remove-event-loop-source
+   #:+event-readable+
+   #:+event-writable+
+   #:+event-hangup+
+   #:+event-error+
+   #:wlr-backend
+   #:wlr-renderer
+   #:wlr-allocator
+   #:wlr-compositor
+   #:wlr-subcompositor
    #:wlr-output
    #:output-name
    #:output-description
    #:output-width
    #:output-height
    #:output-enabled-p
+   #:output-global-p
+   #:damage-rectangle
+   #:damage-rectangle-x
+   #:damage-rectangle-y
+   #:damage-rectangle-width
+   #:damage-rectangle-height
+   #:output-damage-event
+   #:output-damage-output
+   #:output-damage-rectangles
+   #:output-present-event
+   #:output-present-output
+   #:output-present-commit-sequence
+   #:output-present-presented-p
+   #:output-present-seconds
+   #:output-present-nanoseconds
+   #:output-present-sequence
+   #:output-present-refresh-nanoseconds
+   #:output-present-flags
+   #:wlr-output-mode
+   #:wlr-output-state
+   #:initialize-output-render
+   #:output-preferred-mode
+   #:create-output-global
+   #:destroy-output-global
+   #:create-output-state
+   #:output-state-set-enabled
+   #:output-state-set-mode
+   #:output-state-set-custom-mode
+   #:output-test-state
+   #:output-commit-state
+   #:output-schedule-frame
+   #:destroy-output-state
    #:wlr-input-device
    #:input-device-name
    #:input-device-type
+   #:input-device-type-code
+   #:wlr-pointer
+   #:pointer-motion-event
+   #:pointer-motion-pointer
+   #:pointer-motion-time-msec
+   #:pointer-motion-delta-x
+   #:pointer-motion-delta-y
+   #:pointer-motion-unaccelerated-delta-x
+   #:pointer-motion-unaccelerated-delta-y
+   #:pointer-motion-absolute-event
+   #:pointer-motion-absolute-pointer
+   #:pointer-motion-absolute-time-msec
+   #:pointer-motion-absolute-x
+   #:pointer-motion-absolute-y
+   #:pointer-button-event
+   #:pointer-button-pointer
+   #:pointer-button-time-msec
+   #:pointer-button-code
+   #:pointer-button-state
+   #:pointer-button-state-code
+   #:pointer-axis-event
+   #:pointer-axis-pointer
+   #:pointer-axis-time-msec
+   #:pointer-axis-source
+   #:pointer-axis-source-code
+   #:pointer-axis-orientation
+   #:pointer-axis-orientation-code
+   #:pointer-axis-relative-direction
+   #:pointer-axis-relative-direction-code
+   #:pointer-axis-delta
+   #:pointer-axis-discrete-delta
+   #:wlr-keyboard
+   #:wlr-xkb-context
+   #:wlr-xkb-keymap
+   #:create-xkb-context
+   #:create-xkb-keymap
+   #:set-keyboard-keymap
+   #:set-keyboard-keymap-from-names
+   #:set-keyboard-repeat-info
+   #:destroy-xkb-keymap
+   #:destroy-xkb-context
+   #:keyboard-key-event
+   #:keyboard-key-keyboard
+   #:keyboard-key-time-msec
+   #:keyboard-key-keycode
+   #:keyboard-key-update-state-p
+   #:keyboard-key-state
+   #:keyboard-key-state-code
+   #:keyboard-modifiers-event
+   #:keyboard-modifiers-keyboard
+   #:keyboard-modifiers-depressed
+   #:keyboard-modifiers-latched
+   #:keyboard-modifiers-locked
+   #:keyboard-modifiers-group
+   #:keyboard-repeat-event
+   #:keyboard-repeat-keyboard
+   #:keyboard-repeat-rate
+   #:keyboard-repeat-delay
    #:wlr-surface
+   #:wlr-subsurface
+   #:subsurface-surface
+   #:subsurface-parent
+   #:subsurface-x
+   #:subsurface-y
+   #:subsurface-synchronized-p
    #:surface-mapped-p
+   #:surface-at
    #:surface-commit-event
    #:surface-commit-sequence
    #:surface-commit-fields
@@ -110,15 +397,80 @@
    #:surface-commit-buffer-height
    #:surface-commit-mapped-p
    #:wlr-seat
+   #:wlr-data-device-manager
+   #:seat-cursor-request
+   #:seat-cursor-request-seat
+   #:seat-cursor-request-surface
+   #:seat-cursor-request-serial
+   #:seat-cursor-request-hotspot-x
+   #:seat-cursor-request-hotspot-y
+   #:wlr-xdg-shell
+   #:wlr-xdg-surface
+   #:wlr-xdg-toplevel
+   #:wlr-xdg-popup
+   #:xdg-toplevel-title
+   #:xdg-toplevel-app-id
+   #:xdg-toplevel-surface
+   #:xdg-popup-surface
+   #:xdg-popup-parent-surface
+   #:xdg-move-event
+   #:xdg-move-toplevel
+   #:xdg-move-seat
+   #:xdg-move-serial
+   #:xdg-resize-event
+   #:xdg-resize-toplevel
+   #:xdg-resize-seat
+   #:xdg-resize-serial
+   #:xdg-resize-edges
+   #:xdg-window-menu-event
+   #:xdg-window-menu-toplevel
+   #:xdg-window-menu-seat
+   #:xdg-window-menu-serial
+   #:xdg-window-menu-x
+   #:xdg-window-menu-y
+   #:xdg-fullscreen-request
+   #:xdg-fullscreen-toplevel
+   #:xdg-fullscreen-requested-p
+   #:xdg-fullscreen-output
+   #:wlr-egl
+   #:wlr-buffer
+   #:buffer-width
+   #:buffer-height
+   #:wlr-texture
+   #:texture-width
+   #:texture-height
+   #:gles-texture-attributes
+   #:gles-texture-target
+   #:gles-texture-name
+   #:gles-texture-has-alpha-p
+   #:retain-surface-buffer
+   #:release-buffer
+   #:buffer-texture
+   #:texture-gles-attributes
+   #:call-with-egl-context
+   #:with-egl-context
    #:layer1-sink
    #:diagnostic-sink
    #:layer1-runtime
    #:runtime-state
    #:runtime-socket-name
    #:runtime-backend-kind
+   #:runtime-display
+   #:runtime-event-loop
+   #:runtime-backend
+   #:runtime-renderer
+   #:runtime-egl
+   #:runtime-allocator
+   #:runtime-compositor-global
+   #:runtime-subcompositor-global
    #:runtime-outputs
    #:runtime-input-devices
    #:runtime-surfaces
+   #:runtime-subsurfaces
+   #:runtime-seats
+   #:runtime-xdg-shell
+   #:runtime-xdg-toplevels
+   #:runtime-xdg-popups
    #:runtime-last-fault
    #:runtime-started
    #:runtime-stopping
@@ -128,13 +480,50 @@
    #:renderer-lost
    #:compositor-new-surface
    #:output-frame
+   #:output-damaged
+   #:output-needs-frame
+   #:output-present
+   #:output-request-state
    #:output-destroying
    #:input-device-destroying
+   #:pointer-motion
+   #:pointer-motion-absolute
+   #:pointer-button
+   #:pointer-axis
+   #:pointer-frame
+   #:keyboard-key
+   #:keyboard-modifiers
+   #:keyboard-keymap-changed
+   #:keyboard-repeat-info
+   #:seat-destroying
+   #:seat-request-set-cursor
    #:surface-committed
    #:surface-mapped
    #:surface-unmapped
-   #:surface-new-subsurface
    #:surface-destroying
+   #:surface-new-subsurface
+   #:subsurface-state-changed
+   #:subsurface-destroying
+   #:xdg-new-toplevel
+   #:xdg-new-popup
+   #:xdg-toplevel-mapped
+   #:xdg-toplevel-unmapped
+   #:xdg-toplevel-committed
+   #:xdg-toplevel-destroying
+   #:xdg-toplevel-request-move
+   #:xdg-toplevel-request-resize
+   #:xdg-toplevel-request-maximize
+   #:xdg-toplevel-request-minimize
+   #:xdg-toplevel-request-fullscreen
+   #:xdg-toplevel-request-show-window-menu
+   #:xdg-toplevel-parent-changed
+   #:xdg-toplevel-title-changed
+   #:xdg-toplevel-app-id-changed
+   #:xdg-popup-mapped
+   #:xdg-popup-unmapped
+   #:xdg-popup-committed
+   #:xdg-popup-repositioned
+   #:xdg-popup-destroying
    #:create-layer1-runtime
    #:start-layer1-runtime
    #:run-layer1-runtime
@@ -142,7 +531,39 @@
    #:destroy-layer1-runtime
    #:call-with-layer1-runtime
    #:create-seat
+   #:create-data-device-manager
+   #:runtime-data-device-manager
    #:set-seat-capabilities
    #:set-seat-name
+   #:set-seat-keyboard
+   #:seat-pointer-notify-enter
+   #:seat-pointer-notify-clear-focus
+   #:seat-pointer-notify-motion
+   #:seat-pointer-notify-button
+   #:seat-pointer-notify-axis
+   #:seat-pointer-notify-frame
+   #:seat-keyboard-notify-key
+   #:seat-keyboard-notify-modifiers
+   #:seat-keyboard-notify-enter
+   #:seat-keyboard-notify-clear-focus
    #:destroy-seat
+   #:create-xdg-shell
+   #:xdg-surface-ping
+   #:xdg-surface-at
+   #:xdg-popup-surface-at
+   #:xdg-toplevel-set-size
+   #:xdg-toplevel-set-activated
+   #:xdg-toplevel-set-maximized
+   #:xdg-toplevel-set-fullscreen
+   #:xdg-toplevel-set-resizing
+   #:xdg-toplevel-set-tiled
+   #:xdg-toplevel-set-bounds
+   #:xdg-toplevel-set-wm-capabilities
+   #:xdg-toplevel-set-suspended
+   #:xdg-toplevel-set-constrained
+   #:xdg-toplevel-send-close
+   #:xdg-popup-destroy
+   #:+seat-capability-pointer+
+   #:+seat-capability-keyboard+
+   #:+seat-capability-touch+
    #:main))

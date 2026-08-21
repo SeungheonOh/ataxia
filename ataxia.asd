@@ -1,25 +1,7 @@
-;;;; Ataxia Layer 1 system definition.
+;;;; Ataxia aggregate system definition.
 ;;;;
-;;;; This system contains only the direct Common Lisp bindings, typed native
-;;;; wrappers, callback barrier, and Lisp-owned Wayland runtime.
-
-(asdf:defsystem "ataxia-layer1"
-  :description "Direct Common Lisp wlroots and libwayland runtime for Ataxia"
-  :version "0.1.0"
-  :author "Ataxia contributors"
-  :license "Unspecified"
-  :depends-on ("cffi")
-  :serial t
-  :components
-  ((:module "src/layer1"
-    :components
-    ((:file "packages")
-     (:file "conditions")
-     (:file "raw")
-     (:file "objects")
-     (:file "listeners")
-     (:file "runtime")
-     (:file "main")))))
+;;;; This system is the stable project entrypoint. Concrete architectural
+;;;; layers retain separate system definitions and dependency boundaries.
 
 (asdf:defsystem "ataxia"
   :description "Ataxia compositor"

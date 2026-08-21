@@ -958,6 +958,14 @@
      (%object-pointer seat) (%object-pointer keyboard)))
   seat)
 
+(defun clear-seat-keyboard (seat)
+  "Remove wlroots' borrowed reference before the keyboard is destroyed."
+  (let ((runtime (%native-runtime seat)))
+    (%assert-runtime-live runtime :clear-seat-keyboard)
+    (ataxia.runtime.raw:%wlr-seat-set-keyboard
+     (%object-pointer seat) (ataxia.runtime.raw:null-pointer)))
+  seat)
+
 (defun seat-pointer-notify-enter (seat surface surface-x surface-y)
   (check-type surface wlr-surface)
   (let ((runtime (%native-runtime seat)))

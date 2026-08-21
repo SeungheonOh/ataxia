@@ -558,6 +558,7 @@
    #:set-seat-capabilities
    #:set-seat-name
    #:set-seat-keyboard
+   #:clear-seat-keyboard
    #:seat-pointer-notify-enter
    #:seat-pointer-notify-clear-focus
    #:seat-pointer-notify-motion

@@ -1,8 +1,7 @@
 ;;;; Logical seats and interactive operations.
 ;;;;
 ;;;; This module assigns wlroots input devices to compositor-owned logical
-;;;; seats, routes pointer hits from presentation snapshots, and owns move and
-;;;; resize grabs. It never duplicates rendering geometry.
+;;;; seats and forwards protocol input events through behavior policy.
 
 (in-package #:ataxia.compositor)
 
@@ -24,7 +23,8 @@
    (default-seat :initform nil :accessor interaction-default-seat)))
 
 (defclass logical-seat ()
-  ((name :initarg :name :reader seat-name)
+  ((interaction :initarg :interaction :reader seat-interaction)
+   (name :initarg :name :reader seat-name)
    (native :initarg :native :reader seat-native)
    (devices :initform nil :accessor seat-devices)
    (keyboards :initform nil :accessor seat-keyboards)
@@ -36,9 +36,6 @@
    (locked-modifiers :initform 0
                      :accessor seat-locked-modifiers)
    (layout-group :initform 0 :accessor seat-layout-group)
-   (pointer-x :initarg :pointer-x :initform 160d0 :accessor seat-pointer-x)
-   (pointer-y :initarg :pointer-y :initform 100d0 :accessor seat-pointer-y)
-   (pointer-output :initform nil :accessor seat-pointer-output)
    (pointer-focus-surface :initform nil :accessor seat-pointer-focus-surface)
    (pointer-focus-view :initform nil :accessor seat-pointer-focus-view)
    (pointer-surface-x :initform 0d0 :accessor seat-pointer-surface-x)
@@ -49,8 +46,7 @@
    (cursor-hotspot-x :initform 0d0 :accessor seat-cursor-hotspot-x)
    (cursor-hotspot-y :initform 0d0 :accessor seat-cursor-hotspot-y)
    (pressed-buttons :initform (make-hash-table :test #'eql)
-                    :reader seat-pressed-buttons)
-   (operation :initform nil :accessor seat-operation)))
+                    :reader seat-pressed-buttons)))
 
 (defgeneric create-logical-seat
     (interaction name &key pointer-x pointer-y))
@@ -61,14 +57,6 @@
 (defgeneric assign-input-device (interaction device seat))
 (defgeneric unassign-input-device (interaction device))
 (defgeneric focus-view (interaction seat view))
-(defgeneric begin-interactive-operation
-    (interaction seat view kind edges &key button))
-(defgeneric begin-interactive-move
-    (interaction seat view &key serial button))
-(defgeneric begin-interactive-resize
-    (interaction seat view edges &key serial button))
-(defgeneric cancel-interactive-operation (interaction seat))
-(defgeneric update-interactive-operation (interaction seat))
 (defgeneric interaction-handle-pointer-motion (interaction event))
 (defgeneric interaction-handle-pointer-motion-absolute (interaction event))
 (defgeneric interaction-handle-pointer-button (interaction event))
@@ -90,51 +78,6 @@
       (when (ataxia.runtime:native-object-live-p constraint)
         (ataxia.runtime:pointer-constraint-send-deactivated constraint))))
   (setf (interaction-pointer-constraints interaction) nil))
-
-(defun seat-pointer-local-position (seat &optional (output (seat-pointer-output seat)))
-  (when output
-    (output-local-position output (seat-pointer-x seat) (seat-pointer-y seat))))
-
-(defun seat-cursor-damage-box
-    (seat output pointer-x pointer-y)
-  (when output
-    (multiple-value-bind (local-x local-y)
-        (output-local-position output pointer-x pointer-y)
-      (multiple-value-bind (width height hotspot-x hotspot-y)
-          (case (seat-cursor-mode seat)
-            (:hidden (values 0 0 0 0))
-            (:surface
-             (let ((record (seat-cursor-record seat)))
-               (if record
-                   (values (surface-record-width record)
-                           (surface-record-height record)
-                           (seat-cursor-hotspot-x seat)
-                           (seat-cursor-hotspot-y seat))
-                   (values 14 22 0 0))))
-            (:default (values 14 22 0 0)))
-        (when (and (plusp width) (plusp height))
-          (make-damage-box
-           (floor (- local-x hotspot-x 2d0))
-           (floor (- local-y hotspot-y 2d0))
-           (+ (ceiling width) 4) (+ (ceiling height) 4)))))))
-
-(defun schedule-seat-cursor-damage
-    (interaction seat old-output old-box)
-  (let* ((presentation
-           (compositor-presentation (component-compositor interaction)))
-         (new-output (seat-pointer-output seat))
-         (new-box
-           (seat-cursor-damage-box
-            seat new-output (seat-pointer-x seat) (seat-pointer-y seat))))
-    (dolist (output (remove-duplicates
-                     (remove nil (list old-output new-output)) :test #'eq))
-      (let ((boxes
-              (remove nil
-                      (list (and (eq output old-output) old-box)
-                            (and (eq output new-output) new-box)))))
-        (when boxes
-          (schedule-presentation presentation output boxes)))))
-  seat)
 
 (defun interaction-owns-seat-p (interaction seat)
   (member seat (interaction-seats interaction) :test #'eq))
@@ -168,15 +111,15 @@
   (let* ((compositor (component-compositor interaction))
          (seat
            (make-instance
-            'logical-seat :name name
+            'logical-seat :interaction interaction :name name
             :native (ataxia.runtime:create-seat
-                     (compositor-runtime compositor) name)
-            :pointer-x (coerce pointer-x 'double-float)
-            :pointer-y (coerce pointer-y 'double-float))))
+                     (compositor-runtime compositor) name))))
     (push seat (interaction-seats interaction))
     (unless (interaction-default-seat interaction)
       (setf (interaction-default-seat interaction) seat))
-    (clamp-seat-pointer interaction seat)
+    (behavior-seat-created
+     (compositor-behavior-policy compositor) interaction seat
+     (coerce pointer-x 'double-float) (coerce pointer-y 'double-float))
     (update-seat-capabilities seat)
     seat))
 
@@ -187,7 +130,9 @@
   (unless (interaction-owns-seat-p interaction seat)
     (error 'invalid-compositor-state
            :operation :destroy-logical-seat :state :foreign-seat))
-  (cancel-interactive-operation interaction seat)
+  (behavior-seat-destroying
+   (compositor-behavior-policy (component-compositor interaction))
+   interaction seat)
   (let ((devices nil))
     (maphash
      (lambda (device assigned-seat)
@@ -330,22 +275,11 @@
           (current-input-snapshot interaction output) local-x local-y)
          output)))))
 
-(defun clamp-seat-pointer (interaction seat)
-  (multiple-value-bind (output x y)
-      (confine-layout-position
-       (compositor-outputs (component-compositor interaction))
-       (seat-pointer-x seat) (seat-pointer-y seat))
-    (setf (seat-pointer-output seat) output)
-    (when output
-      (setf (seat-pointer-x seat) x
-            (seat-pointer-y seat) y)))
-  seat)
-
-(defun update-pointer-focus (interaction seat time-msec)
+(defun update-pointer-focus-at
+    (interaction seat pointer-x pointer-y time-msec)
   (multiple-value-bind (hit output)
-      (interaction-hit-test interaction
-                            (seat-pointer-x seat) (seat-pointer-y seat))
-    (setf (seat-pointer-output seat) output)
+      (interaction-hit-test interaction pointer-x pointer-y)
+    (declare (ignore output))
     (let ((surface (and hit (presentation-hit-surface hit))))
       (cond
         (surface
@@ -383,7 +317,9 @@
         (interaction-seats interaction) :key #'seat-native :test #'eq))
 
 (defun matching-seat-pointer-constraint (interaction seat)
-  (unless (seat-operation seat)
+  (unless (behavior-operation
+           (compositor-behavior-policy (component-compositor interaction))
+           seat)
     (find-if
      (lambda (constraint)
        (and (ataxia.runtime:native-object-live-p constraint)
@@ -435,19 +371,14 @@
           (multiple-value-bind (mapped-p output-x output-y)
               (presentation-item-output-point item surface-x surface-y)
             (when mapped-p
-              (let* ((old-output (seat-pointer-output seat))
-                     (old-box
-                       (seat-cursor-damage-box
-                        seat old-output
-                        (seat-pointer-x seat) (seat-pointer-y seat))))
-                (setf (seat-pointer-x seat) (+ (output-layout-x output) output-x)
-                      (seat-pointer-y seat) (+ (output-layout-y output) output-y))
-                (clamp-seat-pointer interaction seat)
-                (update-pointer-focus
-                 interaction seat
-                 (mod (floor (* (monotonic-seconds) 1000d0)) #x100000000))
-                (schedule-seat-cursor-damage
-                 interaction seat old-output old-box)))))))))
+              (behavior-warp-cursor
+               (compositor-behavior-policy
+                (component-compositor interaction))
+               interaction seat
+               (+ (output-layout-x output) output-x)
+               (+ (output-layout-y output) output-y)
+               (mod (floor (* (monotonic-seconds) 1000d0))
+                    #x100000000)))))))))
 
 (defun interaction-remove-pointer-constraint (interaction constraint)
   (let ((seat (constraint-logical-seat interaction constraint)))
@@ -505,7 +436,7 @@
        constraint old-x old-y candidate-x candidate-y)))
 
 (defun constrain-seat-pointer-position
-    (interaction seat candidate-x candidate-y)
+    (interaction seat old-x old-y old-output candidate-x candidate-y)
   (let ((constraint
           (gethash seat
                    (interaction-active-pointer-constraints interaction))))
@@ -514,16 +445,16 @@
            (not (ataxia.runtime:native-object-live-p constraint)))
        (values candidate-x candidate-y))
       ((eq :locked (ataxia.runtime:pointer-constraint-type constraint))
-       (values (seat-pointer-x seat) (seat-pointer-y seat)))
+       (values old-x old-y))
       (t
-       (let* ((output (seat-pointer-output seat))
+       (let* ((output old-output)
               (item
                 (presentation-item-for-surface
                  output (ataxia.runtime:pointer-constraint-surface constraint))))
          (if (null item)
-             (values (seat-pointer-x seat) (seat-pointer-y seat))
+             (values old-x old-y)
              (multiple-value-bind (old-output-x old-output-y)
-                 (seat-pointer-local-position seat output)
+                 (output-local-position output old-x old-y)
                (multiple-value-bind (candidate-output-x candidate-output-y)
                    (output-local-position output candidate-x candidate-y)
                  (multiple-value-bind (local-x local-y)
@@ -545,10 +476,13 @@
                            (if projected-p
                                (values (+ (output-layout-x output) output-x)
                                        (+ (output-layout-y output) output-y))
-                               (values (seat-pointer-x seat)
-                                       (seat-pointer-y seat))))
-                         (values (seat-pointer-x seat)
-                                 (seat-pointer-y seat)))))))))))))
+                               (values old-x old-y)))
+                         (values old-x old-y))))))))))))
+
+(defun interaction-pointer-grab-serial-valid-p (seat serial)
+  (and (seat-pointer-focus-surface seat)
+       (ataxia.runtime:seat-validate-pointer-grab-serial
+        (seat-native seat) (seat-pointer-focus-surface seat) serial)))
 
 (defun send-relative-pointer-event (interaction seat event)
   (let ((manager
@@ -603,125 +537,6 @@
        (compositor-presentation (component-compositor interaction)))))
   view)
 
-(defun interaction-hook-context (interaction view descriptor phase)
-  (declare (ignore interaction))
-  (make-instance
-   'hook-context :subject view :operation descriptor
-   :old-state (and (typep descriptor 'interaction-transition)
-                   (interaction-old-state descriptor))
-   :new-state (and (typep descriptor 'interaction-transition)
-                   (interaction-new-state descriptor))
-   :cause :pointer :provenance (make-local-provenance :seat)
-   :phase phase))
-
-(defun start-interaction-animation (interaction view old-state new-state)
-  (let* ((descriptor
-           (make-instance 'interaction-transition :subject view
-                          :old-state old-state :new-state new-state))
-         (context (interaction-hook-context interaction view descriptor :after)))
-    (start-transition
-     (presentation-animation-engine
-      (compositor-presentation (component-compositor interaction)))
-     view descriptor context)))
-
-(defun pressed-operation-button (seat)
-  ;; Prefer the conventional primary button when several buttons are held.
-  (if (gethash +button-left+ (seat-pressed-buttons seat))
-      +button-left+
-      (loop for button being the hash-keys of (seat-pressed-buttons seat)
-            return button)))
-
-(defmethod begin-interactive-operation
-    ((interaction interaction-system) (seat logical-seat) (view view)
-     kind edges &key button)
-  (unless (and (interaction-owns-seat-p interaction seat)
-               (interaction-owns-view-p interaction view))
-    (error 'invalid-compositor-state
-           :operation :begin-interactive-operation
-           :state :foreign-object))
-  (let* ((descriptor
-           (make-instance 'interaction-transition :subject view
-                          :old-state nil :new-state kind))
-         (context
-           (interaction-hook-context interaction view descriptor :before))
-         (hooks
-           (extension-hooks
-            (compositor-extensions (component-compositor interaction)))))
-    (run-hook hooks 'before-interactive-operation context)
-    (cancel-interactive-operation interaction seat)
-    (setf (seat-operation seat)
-          (behavior-begin-operation
-           (compositor-behavior-policy
-            (component-compositor interaction))
-           interaction seat view kind edges
-           (or button (pressed-operation-button seat))))
-    (when (eq kind :resize)
-      (ataxia.runtime:xdg-toplevel-set-resizing (view-native view) t))
-    (focus-view interaction seat view)
-    (synchronize-seat-pointer-constraint interaction seat)
-    (start-interaction-animation interaction view nil kind)
-    (run-hook hooks 'after-interactive-operation
-              (interaction-hook-context interaction view descriptor :after))
-    (seat-operation seat)))
-
-(defmethod begin-interactive-move
-    ((interaction interaction-system) (seat logical-seat) (view view)
-     &key serial button)
-  (when (and serial
-             (not (and (seat-pointer-focus-surface seat)
-                       (ataxia.runtime:seat-validate-pointer-grab-serial
-                        (seat-native seat)
-                        (seat-pointer-focus-surface seat) serial))))
-    (return-from begin-interactive-move nil))
-  (begin-interactive-operation
-   interaction seat view :move 0 :button button))
-
-(defmethod begin-interactive-resize
-    ((interaction interaction-system) (seat logical-seat) (view view) edges
-     &key serial button)
-  (when (zerop edges)
-    (return-from begin-interactive-resize nil))
-  (when (and serial
-             (not (and (seat-pointer-focus-surface seat)
-                       (ataxia.runtime:seat-validate-pointer-grab-serial
-                        (seat-native seat)
-                        (seat-pointer-focus-surface seat) serial))))
-    (return-from begin-interactive-resize nil))
-  (begin-interactive-operation
-   interaction seat view :resize edges :button button))
-
-(defmethod cancel-interactive-operation
-    ((interaction interaction-system) (seat logical-seat))
-  (let ((operation (seat-operation seat)))
-    (when operation
-      (let ((view (interactive-operation-view operation)))
-        (when (eq :resize (interactive-operation-kind operation))
-          (ataxia.runtime:xdg-toplevel-set-resizing (view-native view) nil))
-        (setf (seat-operation seat) nil)
-        (synchronize-seat-pointer-constraint interaction seat)
-        (start-interaction-animation
-         interaction view (interactive-operation-kind operation) nil)
-        (schedule-presentation-subject
-         (compositor-presentation (component-compositor interaction)) view)))
-    operation))
-
-(defmethod update-interactive-operation
-    ((interaction interaction-system) (seat logical-seat))
-  (let ((operation (seat-operation seat)))
-    (when operation
-      (let ((decision
-              (behavior-update-operation
-               (compositor-behavior-policy
-                (component-compositor interaction))
-               interaction operation)))
-        (when (typep decision 'view-configuration-decision)
-          (apply-view-configuration-decision
-           (interactive-operation-view operation) decision)))
-      (schedule-presentation-subject
-       (compositor-presentation (component-compositor interaction))
-       (interactive-operation-view operation)))
-    operation))
-
 (defmethod interaction-handle-pointer-motion
     ((interaction interaction-system) event)
   (let ((seat
@@ -729,30 +544,12 @@
            interaction (ataxia.runtime:pointer-motion-pointer event))))
     (when seat
       (send-relative-pointer-event interaction seat event)
-      (let* ((old-output (seat-pointer-output seat))
-             (old-box
-               (seat-cursor-damage-box
-                seat old-output (seat-pointer-x seat) (seat-pointer-y seat))))
-        (trace-input "[input] relative ~,2F ~,2F~%"
-                     (ataxia.runtime:pointer-motion-delta-x event)
-                     (ataxia.runtime:pointer-motion-delta-y event))
-        (multiple-value-bind (x y)
-            (constrain-seat-pointer-position
-             interaction seat
-             (+ (seat-pointer-x seat)
-                (ataxia.runtime:pointer-motion-delta-x event))
-             (+ (seat-pointer-y seat)
-                (ataxia.runtime:pointer-motion-delta-y event)))
-          (setf (seat-pointer-x seat) x
-                (seat-pointer-y seat) y))
-        (clamp-seat-pointer interaction seat)
-        (if (seat-operation seat)
-            (update-interactive-operation interaction seat)
-            (progn
-              (update-pointer-focus
-               interaction seat (ataxia.runtime:pointer-motion-time-msec event))
-              (schedule-seat-cursor-damage
-               interaction seat old-output old-box)))))
+      (trace-input "[input] relative ~,2F ~,2F~%"
+                   (ataxia.runtime:pointer-motion-delta-x event)
+                   (ataxia.runtime:pointer-motion-delta-y event))
+      (behavior-handle-pointer-motion
+       (compositor-behavior-policy (component-compositor interaction))
+       interaction seat event))
     seat))
 
 (defmethod interaction-handle-pointer-motion-absolute
@@ -761,38 +558,14 @@
            (interaction-seat-for-device
             interaction
             (ataxia.runtime:pointer-motion-absolute-pointer event)))
-         (outputs (compositor-outputs (component-compositor interaction))))
+         (policy
+           (compositor-behavior-policy (component-compositor interaction))))
     (when seat
-      (let* ((old-output (seat-pointer-output seat))
-             (old-box
-               (seat-cursor-damage-box
-                seat old-output (seat-pointer-x seat) (seat-pointer-y seat))))
-        (trace-input "[input] absolute ~,3F ~,3F~%"
-                     (ataxia.runtime:pointer-motion-absolute-x event)
-                     (ataxia.runtime:pointer-motion-absolute-y event))
-        (multiple-value-bind (minimum-x minimum-y maximum-x maximum-y)
-            (output-layout-bounds outputs)
-          (when minimum-x
-            (multiple-value-bind (x y)
-                (constrain-seat-pointer-position
-                 interaction seat
-                 (+ minimum-x
-                    (* (ataxia.runtime:pointer-motion-absolute-x event)
-                       (- maximum-x minimum-x)))
-                 (+ minimum-y
-                    (* (ataxia.runtime:pointer-motion-absolute-y event)
-                       (- maximum-y minimum-y))))
-              (setf (seat-pointer-x seat) x
-                    (seat-pointer-y seat) y))))
-        (clamp-seat-pointer interaction seat)
-        (if (seat-operation seat)
-            (update-interactive-operation interaction seat)
-            (progn
-              (update-pointer-focus
-               interaction seat
-               (ataxia.runtime:pointer-motion-absolute-time-msec event))
-              (schedule-seat-cursor-damage
-               interaction seat old-output old-box)))))
+      (trace-input "[input] absolute ~,3F ~,3F~%"
+                   (ataxia.runtime:pointer-motion-absolute-x event)
+                   (ataxia.runtime:pointer-motion-absolute-y event))
+      (behavior-handle-pointer-motion-absolute
+       policy interaction seat event))
     seat))
 
 (defmethod interaction-handle-pointer-button
@@ -807,38 +580,29 @@
       (let* ((state (ataxia.runtime:pointer-button-state event))
              (button (ataxia.runtime:pointer-button-code event))
              (time (ataxia.runtime:pointer-button-time-msec event))
-             (operation (seat-operation seat))
+             (policy
+               (compositor-behavior-policy
+                (component-compositor interaction)))
+             (operation (behavior-operation policy seat))
              (hit (unless operation
-                    (update-pointer-focus interaction seat time)))
+                    (multiple-value-bind (pointer-x pointer-y)
+                        (behavior-cursor-layout-position policy seat)
+                      (update-pointer-focus-at
+                       interaction seat pointer-x pointer-y time))))
              (decision
                (behavior-handle-pointer-button
-                (compositor-behavior-policy
-                 (component-compositor interaction))
+                policy
                 interaction seat hit button state time)))
         (if (eq state :pressed)
             (setf (gethash button (seat-pressed-buttons seat)) t)
             (remhash button (seat-pressed-buttons seat)))
         (let ((view (pointer-decision-focus-target decision)))
           (when view
-            (focus-view interaction seat view))
-          (case (pointer-decision-operation-kind decision)
-            (:move
-             (begin-interactive-move
-              interaction seat view :button button))
-            (:resize
-             (begin-interactive-resize
-              interaction seat view
-              (pointer-decision-resize-edges decision)
-              :button button))))
+            (focus-view interaction seat view)))
         (when (and (pointer-decision-deliver-p decision)
                    (seat-pointer-focus-surface seat))
           (ataxia.runtime:seat-pointer-notify-button
-           (seat-native seat) time button state))
-        (when (and (eq state :released) operation
-                   (eql button (interactive-operation-button operation)))
-          (cancel-interactive-operation interaction seat))
-        (schedule-presentation
-         (compositor-presentation (component-compositor interaction))))
+           (seat-native seat) time button state)))
       seat)))
 
 (defmethod interaction-handle-pointer-axis
@@ -948,10 +712,15 @@
                          (seat-native seat)
                          (seat-pointer-focus-surface seat)
                          (ataxia.runtime:seat-cursor-request-serial request)))))
-      (let* ((old-output (seat-pointer-output seat))
+      (let* ((policy
+               (compositor-behavior-policy
+                (component-compositor interaction)))
+             (old-output (behavior-cursor-output policy seat))
              (old-box
-               (seat-cursor-damage-box
-                seat old-output (seat-pointer-x seat) (seat-pointer-y seat))))
+               (multiple-value-bind (pointer-x pointer-y)
+                   (behavior-cursor-layout-position policy seat)
+                 (behavior-cursor-damage-box
+                  policy seat old-output pointer-x pointer-y))))
         (setf (seat-cursor-record seat)
               (and surface
                    (ensure-surface-record
@@ -964,5 +733,6 @@
               (seat-cursor-hotspot-y seat)
               (coerce (ataxia.runtime:seat-cursor-request-hotspot-y request)
                       'double-float))
-        (schedule-seat-cursor-damage interaction seat old-output old-box)))
+        (behavior-cursor-content-changed
+         policy interaction seat old-output old-box)))
     seat))

@@ -53,8 +53,6 @@
    #:configuration-height
    #:pointer-button-decision
    #:pointer-decision-focus-target
-   #:pointer-decision-operation-kind
-   #:pointer-decision-resize-edges
    #:pointer-decision-deliver-p
    #:pointer-axis-input
    #:pointer-axis-input-time
@@ -76,6 +74,8 @@
    #:keyboard-key-decision
    #:keyboard-decision-deliver-p
    #:apply-view-configuration-decision
+   #:configure-view-size
+   #:set-view-resizing
    #:operation-context
    #:context-subject
    #:context-operation
@@ -176,9 +176,11 @@
    #:portable-state-source-policy
    #:portable-state-view-states
    #:portable-state-output-states
+   #:portable-state-seat-states
    #:behavior-installation
    #:installation-view-states
    #:installation-output-states
+   #:installation-seat-states
    #:activate-behavior-policy
    #:quiesce-behavior-policy
    #:behavior-view-created
@@ -189,6 +191,24 @@
    #:behavior-view-identity-changed
    #:behavior-output-added
    #:behavior-output-removing
+   #:behavior-outputs-changed
+   #:behavior-seat-created
+   #:behavior-seat-destroying
+   #:behavior-seat-state
+   #:behavior-install-seat-state
+   #:copy-behavior-seat-state
+   #:migrate-behavior-seat-state
+   #:behavior-cursor-layout-position
+   #:behavior-cursor-output
+   #:behavior-cursor-local-position
+   #:behavior-cursor-damage-box
+   #:behavior-cursor-content-changed
+   #:behavior-warp-cursor
+   #:behavior-operation
+   #:behavior-request-move
+   #:behavior-request-resize
+   #:behavior-cancel-operation
+   #:behavior-cancel-view-operations
    #:behavior-recommend-initial-size
    #:behavior-set-view-size
    #:behavior-place-view
@@ -215,6 +235,8 @@
    #:behavior-move-view
    #:behavior-focus-changed
    #:behavior-handle-pointer-button
+   #:behavior-handle-pointer-motion
+   #:behavior-handle-pointer-motion-absolute
    #:behavior-handle-pointer-axis
    #:behavior-handle-keyboard-key
    #:behavior-observe-output
@@ -418,6 +440,7 @@
    #:render-presentation-frame
    #:present-output
    #:schedule-presentation
+   #:behavior-schedule-presentation
    #:schedule-surface-damage
    #:schedule-presentation-subject
    #:frame-context
@@ -462,18 +485,14 @@
    #:interaction-system
    #:interaction-seats
    #:logical-seat
+   #:seat-interaction
    #:seat-name
    #:seat-native
-   #:seat-pointer-x
-   #:seat-pointer-y
-   #:seat-pointer-output
-   #:seat-pointer-local-position
    #:seat-focused-view
    #:seat-cursor-mode
    #:seat-devices
    #:seat-keyboards
    #:seat-active-keyboard
-   #:seat-operation
    #:create-logical-seat
    #:destroy-logical-seat
    #:assign-input-device
@@ -491,10 +510,9 @@
    #:interactive-operation-original-width
    #:interactive-operation-original-height
    #:interactive-operation-original-placement
-   #:begin-interactive-operation
-   #:begin-interactive-move
-   #:begin-interactive-resize
-   #:cancel-interactive-operation
+   #:update-pointer-focus-at
+   #:constrain-seat-pointer-position
+   #:interaction-pointer-grab-serial-valid-p
    #:control-system
    #:control-socket-path
    #:observe-compositor-action

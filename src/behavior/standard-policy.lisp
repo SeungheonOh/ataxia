@@ -12,7 +12,16 @@
     :accessor behavior-application-reveal-style)
    (background-color :initarg :background-color
                      :initform '(0.035 0.045 0.065 1.0)
-                     :accessor behavior-background-color)))
+                     :accessor behavior-background-color)
+   (seat-states :initform (make-hash-table :test #'eq)
+                :reader standard-behavior-seat-states)))
+
+(defmethod behavior-seat-state ((policy standard-behavior-policy) seat)
+  (gethash seat (standard-behavior-seat-states policy)))
+
+(defmethod behavior-install-seat-state
+    ((policy standard-behavior-policy) seat state)
+  (setf (gethash seat (standard-behavior-seat-states policy)) state))
 
 (defclass planar-placement (behavior-placement)
   ((x :initarg :x :accessor placement-x)
@@ -254,7 +263,14 @@
       (cons output
             (copy-behavior-output-state
              policy (output-behavior-state output))))
-    (compositor-outputs-list (compositor-outputs compositor)))))
+    (compositor-outputs-list (compositor-outputs compositor)))
+   :seat-states
+   (mapcar
+    (lambda (seat)
+      (cons seat
+            (copy-behavior-seat-state
+             policy (behavior-seat-state policy seat))))
+    (interaction-seats (compositor-interaction compositor)))))
 
 (defmethod behavior-import-state
     ((policy behavior-policy) (portable behavior-portable-state) context)
@@ -275,7 +291,14 @@
         (cons (car entry)
               (migrate-behavior-output-state
                old-policy policy (car entry) (cdr entry))))
-      (portable-state-output-states portable)))))
+      (portable-state-output-states portable))
+     :seat-states
+     (mapcar
+      (lambda (entry)
+        (cons (car entry)
+              (migrate-behavior-seat-state
+               old-policy policy (car entry) (cdr entry))))
+      (portable-state-seat-states portable)))))
 
 (defmethod behavior-place-view
     ((policy planar-behavior-policy) view (request placement-request))

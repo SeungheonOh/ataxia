@@ -516,12 +516,15 @@
              (compositor-outputs-list (compositor-outputs compositor)))
      :seats
      (mapcar (lambda (seat)
-               (list :name (seat-name seat)
-                     :pointer-x (seat-pointer-x seat)
-                     :pointer-y (seat-pointer-y seat)
-                     :focused-view
-                     (and (seat-focused-view seat)
-                          (view-id (seat-focused-view seat)))))
+               (multiple-value-bind (pointer-x pointer-y)
+                   (behavior-cursor-layout-position
+                    (compositor-behavior-policy compositor) seat)
+                 (list :name (seat-name seat)
+                       :pointer-x pointer-x
+                       :pointer-y pointer-y
+                       :focused-view
+                       (and (seat-focused-view seat)
+                            (view-id (seat-focused-view seat))))))
              (interaction-seats (compositor-interaction compositor)))
      :views
      (mapcar (lambda (view)

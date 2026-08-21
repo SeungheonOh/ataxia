@@ -119,10 +119,11 @@
   (declare (ignore policy output timestamp))
   (append-popup-items items desktop))
 
-(defun append-cursor-items (items compositor output)
+(defun append-cursor-items (policy items compositor output)
   (dolist (seat (interaction-seats (compositor-interaction compositor)) items)
-    (when (eq output (seat-pointer-output seat))
-      (multiple-value-bind (x y) (seat-pointer-local-position seat output)
+    (when (eq output (behavior-cursor-output policy seat))
+      (multiple-value-bind (x y)
+          (behavior-cursor-local-position policy seat output)
         (let ((cursor-record (seat-cursor-record seat)))
       (ecase (seat-cursor-mode seat)
         (:hidden nil)
@@ -198,7 +199,7 @@
           (behavior-build-popup-items
            policy items desktop output timestamp)
           items (append-panel-items items presentation output desktop)
-          items (append-cursor-items items compositor output))
+          items (append-cursor-items policy items compositor output))
     items))
 
 (defmethod behavior-compose-frame

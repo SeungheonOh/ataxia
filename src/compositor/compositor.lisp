@@ -328,8 +328,9 @@
     (when output
       (behavior-output-added
        (compositor-behavior-policy compositor) output)
-      (dolist (seat (interaction-seats (compositor-interaction compositor)))
-        (clamp-seat-pointer (compositor-interaction compositor) seat))
+      (behavior-outputs-changed
+       (compositor-behavior-policy compositor)
+       (compositor-interaction compositor))
       ;; The initial modeset already queues the first frame event. Scheduling
       ;; here can race a pending DRM page flip on physical backends.
       )
@@ -445,20 +446,22 @@
      (compositor-outputs compositor) native-output)
     (when output
       (dolist (seat (interaction-seats (compositor-interaction compositor)))
-        (when (eq output (seat-pointer-output seat))
+        (when (eq output
+                  (behavior-cursor-output
+                   (compositor-behavior-policy compositor) seat))
           (ataxia.runtime:seat-pointer-notify-clear-focus (seat-native seat))
           (setf (seat-pointer-focus-surface seat) nil
-                (seat-pointer-focus-view seat) nil))
-        (clamp-seat-pointer (compositor-interaction compositor) seat))
+                (seat-pointer-focus-view seat) nil)))
+      (behavior-outputs-changed
+       (compositor-behavior-policy compositor)
+       (compositor-interaction compositor))
       (dolist (view (desktop-views (compositor-desktop compositor)))
         (when (eq output (view-fullscreen-output view))
           (setf (view-fullscreen-output view) nil)
           (when (view-fullscreen-p view)
             (configure-view-for-output
              compositor view :output (preferred-output-for-view compositor view)
-             :fullscreen-p t)
-            (ataxia.runtime:xdg-toplevel-set-size
-             (view-native view) (view-width view) (view-height view))))))))
+             :fullscreen-p t)))))))
 
 (defmethod ataxia.runtime:backend-new-input
     ((compositor compositor) runtime device)
@@ -706,12 +709,10 @@
       (behavior-view-unmapped (compositor-behavior-policy compositor) view)
       (dolist (seat (interaction-seats (compositor-interaction compositor)))
         (when (eq view (seat-focused-view seat))
-          (focus-view (compositor-interaction compositor) seat nil))
-        (when (and (seat-operation seat)
-                   (eq view
-                       (interactive-operation-view (seat-operation seat))))
-          (cancel-interactive-operation
-           (compositor-interaction compositor) seat)))
+          (focus-view (compositor-interaction compositor) seat nil)))
+      (behavior-cancel-view-operations
+       (compositor-behavior-policy compositor)
+       (compositor-interaction compositor) view)
       (schedule-presentation (compositor-presentation compositor)))
     view))
 
@@ -755,8 +756,10 @@
                 (compositor-desktop compositor)
                 (ataxia.runtime:xdg-move-toplevel event))))
     (when (and seat view (eq view (seat-pointer-focus-view seat)))
-      (begin-interactive-move
-       interaction seat view :serial (ataxia.runtime:xdg-move-serial event)))))
+      (behavior-request-move
+       (compositor-behavior-policy compositor)
+       interaction seat view
+       :serial (ataxia.runtime:xdg-move-serial event)))))
 
 (defmethod ataxia.runtime:xdg-toplevel-request-resize
     ((compositor compositor) event)
@@ -767,7 +770,8 @@
                 (compositor-desktop compositor)
                 (ataxia.runtime:xdg-resize-toplevel event))))
     (when (and seat view (eq view (seat-pointer-focus-view seat)))
-      (begin-interactive-resize
+      (behavior-request-resize
+       (compositor-behavior-policy compositor)
        interaction seat view (ataxia.runtime:xdg-resize-edges event)
        :serial (ataxia.runtime:xdg-resize-serial event)))))
 
@@ -780,8 +784,10 @@
 (defun preferred-output-for-view (compositor view)
   (or (loop for seat in (interaction-seats (compositor-interaction compositor))
             when (and (eq view (seat-focused-view seat))
-                      (seat-pointer-output seat))
-              return (seat-pointer-output seat))
+                      (behavior-cursor-output
+                       (compositor-behavior-policy compositor) seat))
+              return (behavior-cursor-output
+                      (compositor-behavior-policy compositor) seat))
       (let ((membership
               (surface-record-entered-outputs (view-surface view))))
         (find-if (lambda (output) (gethash output membership))
@@ -809,9 +815,7 @@
           (if requested-p
               (configure-view-for-output compositor view)
               (restore-view-placement compositor view)))
-        (ataxia.runtime:xdg-toplevel-set-maximized toplevel requested-p)
-        (ataxia.runtime:xdg-toplevel-set-size
-         toplevel (view-width view) (view-height view)))
+        (ataxia.runtime:xdg-toplevel-set-maximized toplevel requested-p))
       (schedule-presentation (compositor-presentation compositor)))))
 
 (defmethod ataxia.runtime:xdg-toplevel-request-minimize
@@ -845,9 +849,7 @@
             (if (view-maximized-p view)
                 (configure-view-for-output compositor view)
                 (restore-view-placement compositor view)))
-        (ataxia.runtime:xdg-toplevel-set-fullscreen toplevel requested-p)
-        (ataxia.runtime:xdg-toplevel-set-size
-         toplevel (view-width view) (view-height view)))
+        (ataxia.runtime:xdg-toplevel-set-fullscreen toplevel requested-p))
       (schedule-presentation (compositor-presentation compositor)))))
 
 (defmethod ataxia.runtime:xdg-new-popup
@@ -923,21 +925,26 @@
    :cause :control :provenance (make-local-provenance :compositor)
    :phase phase :metadata metadata))
 
-(defun install-behavior-state (installation)
+(defun install-behavior-state (policy installation)
   (dolist (entry (installation-view-states installation))
     (setf (view-behavior-state (car entry)) (cdr entry)))
   (dolist (entry (installation-output-states installation))
     (setf (output-behavior-state (car entry)) (cdr entry)))
+  (dolist (entry (installation-seat-states installation))
+    (behavior-install-seat-state policy (car entry) (cdr entry)))
   installation)
 
 (defun validate-behavior-installation (compositor installation)
   (check-type installation behavior-installation)
   (let ((views (desktop-views (compositor-desktop compositor)))
-        (outputs (compositor-outputs-list (compositor-outputs compositor))))
+        (outputs (compositor-outputs-list (compositor-outputs compositor)))
+        (seats (interaction-seats (compositor-interaction compositor))))
     (unless (and (= (length views)
                     (length (installation-view-states installation)))
                  (= (length outputs)
                     (length (installation-output-states installation)))
+                 (= (length seats)
+                    (length (installation-seat-states installation)))
                  (null (set-exclusive-or
                         views (mapcar #'car
                                       (installation-view-states installation))
@@ -945,6 +952,10 @@
                  (null (set-exclusive-or
                         outputs (mapcar #'car
                                         (installation-output-states installation))
+                        :test #'eq))
+                 (null (set-exclusive-or
+                        seats (mapcar #'car
+                                      (installation-seat-states installation))
                         :test #'eq)))
       (error 'invalid-compositor-state
              :operation :replace-behavior-policy
@@ -955,9 +966,13 @@
   (let ((time-msec
           (mod (floor (* 1000d0 (monotonic-seconds))) (expt 2 32))))
     (dolist (seat (interaction-seats (compositor-interaction compositor)))
-      (unless (seat-operation seat)
-        (update-pointer-focus
-         (compositor-interaction compositor) seat time-msec)))))
+      (let ((policy (compositor-behavior-policy compositor)))
+        (unless (behavior-operation policy seat)
+          (multiple-value-bind (pointer-x pointer-y)
+              (behavior-cursor-layout-position policy seat)
+            (update-pointer-focus-at
+             (compositor-interaction compositor) seat
+             pointer-x pointer-y time-msec)))))))
 
 (defmethod replace-behavior-policy
     ((compositor compositor) (new-policy behavior-policy))
@@ -966,8 +981,10 @@
   (when (eq new-policy (compositor-behavior-policy compositor))
     (return-from replace-behavior-policy new-policy))
   (dolist (seat (interaction-seats (compositor-interaction compositor)))
-    (when (seat-operation seat)
-      (cancel-interactive-operation (compositor-interaction compositor) seat)))
+    (let ((old-policy (compositor-behavior-policy compositor)))
+      (when (behavior-operation old-policy seat)
+        (behavior-cancel-operation
+         old-policy (compositor-interaction compositor) seat))))
   (let* ((hooks (extension-hooks (compositor-extensions compositor)))
          (old-policy (compositor-behavior-policy compositor))
          (requested-descriptor
@@ -1006,7 +1023,12 @@
               (mapcar (lambda (output)
                         (cons output (output-behavior-state output)))
                       (compositor-outputs-list
-                       (compositor-outputs compositor)))))
+                       (compositor-outputs compositor)))
+              :seat-states
+              (mapcar
+               (lambda (seat)
+                 (cons seat (behavior-seat-state old-policy seat)))
+               (interaction-seats (compositor-interaction compositor)))))
            (old-snapshots
              (mapcar (lambda (output)
                        (cons output (output-last-snapshot output)))
@@ -1023,7 +1045,7 @@
                    compositor
                    (behavior-import-state
                     effective-policy portable resolution-context))))
-            (install-behavior-state new-installation)
+            (install-behavior-state effective-policy new-installation)
             (setf (compositor-behavior-policy compositor) effective-policy
                   adopted-p t)
             (prepare-active-animations-for-policy
@@ -1056,7 +1078,7 @@
         (serious-condition (condition)
           (when adopted-p
             (setf (compositor-behavior-policy compositor) old-policy)
-            (install-behavior-state old-installation)
+            (install-behavior-state old-policy old-installation)
             (dolist (entry old-snapshots)
               (setf (output-last-snapshot (car entry)) (cdr entry))))
           (when (eq (component-state old-policy) :detached)

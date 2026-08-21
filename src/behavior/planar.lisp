@@ -5,28 +5,6 @@
 
 (in-package #:ataxia.compositor)
 
-(defconstant +resize-edge-top+ 1)
-(defconstant +resize-edge-bottom+ 2)
-(defconstant +resize-edge-left+ 4)
-(defconstant +resize-edge-right+ 8)
-(defconstant +button-left+ 272)
-
-(defclass interactive-operation ()
-  ((kind :initarg :kind :reader interactive-operation-kind)
-   (seat :initarg :seat :reader interactive-operation-seat)
-   (view :initarg :view :reader interactive-operation-view)
-   (output :initarg :output :initform nil :reader interactive-operation-output)
-   (edges :initarg :edges :initform 0 :reader interactive-operation-edges)
-   (button :initarg :button :reader interactive-operation-button)
-   (start-x :initarg :start-x :reader interactive-operation-start-x)
-   (start-y :initarg :start-y :reader interactive-operation-start-y)
-   (original-width :initarg :original-width
-                   :reader interactive-operation-original-width)
-   (original-height :initarg :original-height
-                    :reader interactive-operation-original-height)
-   (original-placement :initarg :original-placement
-                       :reader interactive-operation-original-placement)))
-
 (defmethod behavior-build-view-items
     ((policy planar-behavior-policy) items output view timestamp titlebar-height)
   (let ((record (view-surface view)))
@@ -108,19 +86,21 @@
 (defmethod behavior-begin-operation
     ((policy planar-behavior-policy) interaction seat view kind edges button)
   (declare (ignore interaction))
-  (make-instance
-   'interactive-operation :kind kind :seat seat :view view
-   :output (seat-pointer-output seat) :edges edges :button button
-   :start-x (seat-pointer-x seat)
-   :start-y (seat-pointer-y seat)
-   :original-width (view-width view)
-   :original-height (view-height view)
-   :original-placement
-   (copy-behavior-placement policy (view-placement view))))
+  (multiple-value-bind (pointer-x pointer-y)
+      (behavior-cursor-layout-position policy seat)
+    (make-instance
+     'interactive-operation :kind kind :seat seat :view view
+     :output (behavior-cursor-output policy seat) :edges edges :button button
+     :start-x pointer-x :start-y pointer-y
+     :original-width (view-width view)
+     :original-height (view-height view)
+     :original-placement
+     (copy-behavior-placement policy (view-placement view)))))
 
 (defun planar-pointer-scale (policy operation)
   (let ((output (or (interactive-operation-output operation)
-                    (seat-pointer-output (interactive-operation-seat operation))
+                    (behavior-cursor-output
+                     policy (interactive-operation-seat operation))
                     (default-compositor-output
                      (component-compositor policy)))))
     (if output (viewport-scale (output-viewport output)) 1d0)))
@@ -129,34 +109,42 @@
   (let* ((seat (interactive-operation-seat operation))
          (view (interactive-operation-view operation))
          (original (interactive-operation-original-placement operation))
-         (scale (planar-pointer-scale policy operation))
-         (delta-x (/ (- (seat-pointer-x seat)
-                        (interactive-operation-start-x operation)) scale))
-         (delta-y (/ (- (seat-pointer-y seat)
-                        (interactive-operation-start-y operation)) scale))
-         (placement (view-placement view)))
-    (setf (placement-x placement) (+ (placement-x original) delta-x)
-          (placement-y placement) (+ (placement-y original) delta-y))
-    placement))
+         (scale (planar-pointer-scale policy operation)))
+    (multiple-value-bind (pointer-x pointer-y)
+        (behavior-cursor-layout-position policy seat)
+      (let ((placement (view-placement view)))
+        (setf (placement-x placement)
+              (+ (placement-x original)
+                 (/ (- pointer-x (interactive-operation-start-x operation))
+                    scale))
+              (placement-y placement)
+              (+ (placement-y original)
+                 (/ (- pointer-y (interactive-operation-start-y operation))
+                    scale)))
+        placement))))
 
 (defun update-planar-resize (policy operation)
   (let* ((seat (interactive-operation-seat operation))
          (view (interactive-operation-view operation))
          (original (interactive-operation-original-placement operation))
          (scale (planar-pointer-scale policy operation))
-         (delta-x (/ (- (seat-pointer-x seat)
-                        (interactive-operation-start-x operation)) scale))
-         (delta-y (/ (- (seat-pointer-y seat)
-                        (interactive-operation-start-y operation)) scale))
          (edges (interactive-operation-edges operation))
          (left (placement-x original))
          (top (placement-y original))
          (right (+ left (placement-width original)))
          (bottom (+ top (placement-height original))))
-    (when (logtest +resize-edge-left+ edges) (incf left delta-x))
-    (when (logtest +resize-edge-right+ edges) (incf right delta-x))
-    (when (logtest +resize-edge-top+ edges) (incf top delta-y))
-    (when (logtest +resize-edge-bottom+ edges) (incf bottom delta-y))
+    (multiple-value-bind (pointer-x pointer-y)
+        (behavior-cursor-layout-position policy seat)
+      (let ((delta-x
+              (/ (- pointer-x (interactive-operation-start-x operation))
+                 scale))
+            (delta-y
+              (/ (- pointer-y (interactive-operation-start-y operation))
+                 scale)))
+        (when (logtest +resize-edge-left+ edges) (incf left delta-x))
+        (when (logtest +resize-edge-right+ edges) (incf right delta-x))
+        (when (logtest +resize-edge-top+ edges) (incf top delta-y))
+        (when (logtest +resize-edge-bottom+ edges) (incf bottom delta-y))))
     (when (< (- right left) 120d0)
       (if (logtest +resize-edge-left+ edges)
           (setf left (- right 120d0))
@@ -252,48 +240,6 @@
      (compositor-desktop (component-compositor policy)) view))
   (incf (behavior-policy-revision policy))
   view)
-
-(defun resize-edges-at-point (item x y)
-  (let* ((margin 8d0)
-         (left (presentation-item-x item))
-         (top (presentation-item-y item))
-         (right (+ left (presentation-item-width item)))
-         (bottom (+ top (presentation-item-height item)))
-         (edges 0))
-    (when (<= (abs (- x left)) margin)
-      (setf edges (logior edges +resize-edge-left+)))
-    (when (<= (abs (- x right)) margin)
-      (setf edges (logior edges +resize-edge-right+)))
-    (when (<= (abs (- y top)) margin)
-      (setf edges (logior edges +resize-edge-top+)))
-    (when (<= (abs (- y bottom)) margin)
-      (setf edges (logior edges +resize-edge-bottom+)))
-    edges))
-
-(defmethod behavior-handle-pointer-button
-    ((policy behavior-policy) interaction seat hit button state time)
-  (declare (ignore policy interaction time))
-  (let ((view (and hit (seat-hit-view hit))))
-    (if (and (eq state :pressed) view)
-        (case (presentation-hit-kind hit)
-          (:titlebar
-           (make-instance
-            'pointer-button-decision :focus-target view
-            :operation-kind (and (= button +button-left+) :move)
-            :deliver-p nil))
-          (:frame
-           (make-instance
-            'pointer-button-decision :focus-target view
-            :operation-kind (and (= button +button-left+) :resize)
-            :resize-edges
-            (multiple-value-bind (local-x local-y)
-                (seat-pointer-local-position seat)
-              (resize-edges-at-point
-               (presentation-hit-item hit) local-x local-y))
-            :deliver-p nil))
-          (otherwise
-           (make-instance 'pointer-button-decision :focus-target view)))
-        (make-instance 'pointer-button-decision))))
 
 (defmethod behavior-observe-output
     ((policy planar-behavior-policy) output)

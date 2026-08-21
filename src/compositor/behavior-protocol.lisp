@@ -74,13 +74,21 @@
    (view-states :initarg :view-states
                 :reader portable-state-view-states)
    (output-states :initarg :output-states
-                  :reader portable-state-output-states)))
+                  :reader portable-state-output-states)
+   (seat-states :initarg :seat-states
+                :reader portable-state-seat-states)))
 
 (defclass behavior-installation ()
   ((view-states :initarg :view-states
                 :reader installation-view-states)
    (output-states :initarg :output-states
-                  :reader installation-output-states)))
+                  :reader installation-output-states)
+   (seat-states :initarg :seat-states
+                :reader installation-seat-states)))
+
+(defgeneric schedule-presentation (presentation &optional output damage))
+(defgeneric behavior-schedule-presentation
+    (policy &key output damage subject))
 
 (defgeneric activate-behavior-policy (policy))
 (defgeneric quiesce-behavior-policy (policy reason))
@@ -92,6 +100,33 @@
 (defgeneric behavior-view-identity-changed (policy view kind value))
 (defgeneric behavior-output-added (policy output))
 (defgeneric behavior-output-removing (policy output))
+(defgeneric behavior-outputs-changed (policy interaction))
+(defgeneric behavior-seat-created
+    (policy interaction seat pointer-x pointer-y))
+(defgeneric behavior-seat-destroying (policy interaction seat))
+(defgeneric behavior-seat-state (policy seat))
+(defgeneric behavior-install-seat-state (policy seat state))
+(defgeneric copy-behavior-seat-state (policy state))
+(defgeneric migrate-behavior-seat-state
+    (old-policy new-policy seat state))
+(defgeneric behavior-cursor-layout-position (policy seat))
+(defgeneric behavior-cursor-output (policy seat))
+(defgeneric behavior-cursor-local-position
+    (policy seat &optional output))
+(defgeneric behavior-cursor-damage-box
+    (policy seat output pointer-x pointer-y))
+(defgeneric behavior-cursor-content-changed
+    (policy interaction seat old-output old-box))
+(defgeneric behavior-warp-cursor
+    (policy interaction seat pointer-x pointer-y time-msec))
+(defgeneric behavior-operation (policy seat))
+(defgeneric behavior-request-move
+    (policy interaction seat view &key serial button))
+(defgeneric behavior-request-resize
+    (policy interaction seat view edges &key serial button))
+(defgeneric behavior-cancel-operation (policy interaction seat))
+(defgeneric behavior-cancel-view-operations
+    (policy interaction view))
 (defgeneric behavior-recommend-initial-size (policy compositor view))
 (defgeneric behavior-set-view-size (policy view width height context))
 (defgeneric behavior-place-view (policy view placement-request))
@@ -116,9 +151,6 @@
     (policy items output view timestamp titlebar-height))
 (defgeneric behavior-build-popup-items
     (policy items desktop output timestamp))
-(defgeneric behavior-begin-operation
-    (policy interaction seat view kind edges button))
-(defgeneric behavior-update-operation (policy interaction operation))
 (defgeneric behavior-configure-view-for-output
     (policy compositor view output fullscreen-p))
 (defgeneric behavior-restore-view (policy compositor view))
@@ -129,6 +161,10 @@
 (defgeneric behavior-focus-changed (policy seat previous view))
 (defgeneric behavior-handle-pointer-button
     (policy interaction seat hit button state time))
+(defgeneric behavior-handle-pointer-motion
+    (policy interaction seat event))
+(defgeneric behavior-handle-pointer-motion-absolute
+    (policy interaction seat event))
 (defgeneric behavior-handle-pointer-axis
     (policy interaction seat input))
 (defgeneric behavior-handle-keyboard-key

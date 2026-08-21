@@ -67,7 +67,6 @@
 (defgeneric presentation-hit-test (snapshot output-x output-y))
 (defgeneric render-presentation-frame (presentation output snapshot))
 (defgeneric present-output (presentation output))
-(defgeneric schedule-presentation (presentation &optional output damage))
 
 (defun set-damage-debug-mode (presentation enabled)
   "Toggle damage visualization and redraw every output to expose the change."
@@ -1216,3 +1215,13 @@
       (queue-output-damage-subject output subject)
       (mark-output-presentation-pending presentation output)))
   presentation)
+
+(defmethod behavior-schedule-presentation
+    ((policy behavior-policy) &key output damage subject)
+  (let ((presentation
+          (compositor-presentation (component-compositor policy))))
+    (if subject
+        (schedule-presentation-subject presentation subject)
+        (schedule-presentation
+         presentation output (or damage :full))))
+  policy)

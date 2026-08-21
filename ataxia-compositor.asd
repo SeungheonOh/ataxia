@@ -25,25 +25,29 @@
     :components
     ((:file "standard-policy")))
    (:module "compositor-presentation"
-    :pathname "src/compositor"
-    :components
+   :pathname "src/compositor"
+   :components
     ((:file "animation")
      (:file "graphics")
      (:file "presentation")))
+   (:module "compositor-interaction"
+    :pathname "src/compositor"
+    :components
+    ((:file "interaction")))
    (:module "behavior-implementations"
     :pathname "src/behavior"
     :components
     ((:file "effects")
      (:file "reveal")
-     (:file "scene")
      (:file "animation")
+     (:file "interaction")
+     (:file "scene")
      (:file "planar")
      (:file "spherical")))
    (:module "compositor-services"
-    :pathname "src/compositor"
-    :components
-    ((:file "interaction")
-     (:file "control")
+   :pathname "src/compositor"
+   :components
+    ((:file "control")
      (:file "control-transport")
      (:file "compositor")
      (:file "main")))))

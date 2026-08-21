@@ -100,10 +100,6 @@
 (defclass pointer-button-decision ()
   ((focus-target :initarg :focus-target :initform nil
                  :reader pointer-decision-focus-target)
-   (operation-kind :initarg :operation-kind :initform nil
-                   :reader pointer-decision-operation-kind)
-   (resize-edges :initarg :resize-edges :initform 0
-                 :reader pointer-decision-resize-edges)
    (deliver-p :initarg :deliver-p :initform t
               :reader pointer-decision-deliver-p)))
 
@@ -141,12 +137,22 @@
 (defun apply-view-configuration-decision (view decision)
   (when decision
     (check-type decision view-configuration-decision)
-    (let ((width (max 1 (round (configuration-width decision))))
-          (height (max 1 (round (configuration-height decision)))))
-      (setf (view-width view) width
-            (view-height view) height)
-      (ataxia.runtime:xdg-toplevel-set-size (view-native view) width height)))
+    (configure-view-size
+     view (configuration-width decision) (configuration-height decision)))
   decision)
+
+(defun configure-view-size (view width height)
+  (let ((width (max 1 (round width)))
+        (height (max 1 (round height))))
+    (setf (view-width view) width
+          (view-height view) height)
+    (ataxia.runtime:xdg-toplevel-set-size (view-native view) width height))
+  view)
+
+(defun set-view-resizing (view resizing-p)
+  (ataxia.runtime:xdg-toplevel-set-resizing
+   (view-native view) (not (null resizing-p)))
+  view)
 
 (defclass operation-context ()
   ((subject :initarg :subject :reader context-subject)

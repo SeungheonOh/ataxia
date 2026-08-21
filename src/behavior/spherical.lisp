@@ -915,10 +915,10 @@
 
 (defmethod behavior-begin-operation
     ((policy spherical-behavior-policy) interaction seat view kind edges button)
-  (declare (ignore interaction policy))
-  (let ((output (seat-pointer-output seat)))
+  (declare (ignore interaction))
+  (let ((output (behavior-cursor-output policy seat)))
     (multiple-value-bind (start-x start-y)
-        (seat-pointer-local-position seat output)
+        (behavior-cursor-local-position policy seat output)
       (make-instance
        'interactive-operation :kind kind :seat seat :view view
        :output output :edges edges :button button
@@ -943,7 +943,7 @@
            (interactive-operation-start-x operation)
            (interactive-operation-start-y operation))
         (multiple-value-bind (current-x current-y)
-            (output-local-position output (seat-pointer-x seat) (seat-pointer-y seat))
+            (behavior-cursor-local-position policy seat output)
           (multiple-value-bind (current-longitude current-latitude)
               (behavior-unproject-point
                policy output camera current-x current-y)
@@ -964,11 +964,11 @@
          (seat (interactive-operation-seat operation))
          (view (interactive-operation-view operation))
          (original (interactive-operation-original-placement operation))
-         (edges (interactive-operation-edges operation))
-         (current-x (and output
-                         (- (seat-pointer-x seat) (output-layout-x output))))
-         (current-y (and output
-                         (- (seat-pointer-y seat) (output-layout-y output))))
+         (edges (interactive-operation-edges operation)))
+    (multiple-value-bind (cursor-x cursor-y)
+        (and output (behavior-cursor-local-position policy seat output))
+      (let* ((current-x cursor-x)
+             (current-y cursor-y)
          (delta-x (- (or current-x (interactive-operation-start-x operation))
                      (interactive-operation-start-x operation)))
          (delta-y (- (or current-y (interactive-operation-start-y operation))
@@ -990,18 +990,18 @@
          (new-width (max 120d0 (+ original-width width-delta)))
          (new-height (max 80d0 (+ original-height height-delta)))
          (placement (view-placement view)))
-    (when output
-      (setf (spherical-angular-width placement)
-            (max 0.12d0
-                 (* (spherical-angular-width original)
-                    (/ new-width (max 1d0 original-width))))
-            (spherical-angular-height placement)
-            (max 0.12d0
-                 (* (spherical-angular-height original)
-                    (/ new-height (max 1d0 original-height))))))
-    (incf (behavior-policy-revision policy))
-    (make-instance 'view-configuration-decision
-                   :width new-width :height new-height)))
+        (when output
+          (setf (spherical-angular-width placement)
+                (max 0.12d0
+                     (* (spherical-angular-width original)
+                        (/ new-width (max 1d0 original-width))))
+                (spherical-angular-height placement)
+                (max 0.12d0
+                     (* (spherical-angular-height original)
+                        (/ new-height (max 1d0 original-height))))))
+        (incf (behavior-policy-revision policy))
+        (make-instance 'view-configuration-decision
+                       :width new-width :height new-height)))))
 
 (defmethod behavior-update-operation
     ((policy spherical-behavior-policy) interaction

@@ -10,7 +10,7 @@
 
 (defparameter +codec-reveal-uniforms+
   '(texture-sampler opacity texture-has-alpha reveal-progress
-    corruption-phase macroblock-size displacement chroma-separation))
+    corruption-phase fragmentation displacement chroma-separation))
 
 (defun codec-reveal-fragment-shader (external-p)
   (format
@@ -22,31 +22,59 @@ uniform float opacity;
 uniform float texture_has_alpha;
 uniform float reveal_progress;
 uniform float corruption_phase;
-uniform vec2 macroblock_size;
+uniform float fragmentation;
 uniform float displacement;
 uniform float chroma_separation;
 
-float codec_random(vec2 cell, float phase) {
-  return fract(sin(dot(cell + vec2(phase, phase * 0.37),
-                       vec2(12.9898, 78.233))) * 43758.5453);
+float codec_random(float seed) {
+  return fract(sin(seed * 91.3458) * 47453.5453);
+}
+
+vec2 codec_random2(float seed) {
+  return vec2(codec_random(seed + 17.17), codec_random(seed + 63.41));
 }
 
 void main() {
   vec2 clean_uv = texture_coordinate;
   float amount = clamp(1.0 - reveal_progress, 0.0, 1.0);
-  vec2 block_count = max(macroblock_size, vec2(2.0));
-  vec2 cell = floor(clean_uv * block_count);
-  float cell_noise = codec_random(cell, floor(corruption_phase));
-  float band_noise = codec_random(vec2(cell.y, cell.y), corruption_phase * 0.5);
-  float burst = step(0.48, cell_noise) * amount;
+  float epoch = floor(corruption_phase * 1.35);
+  vec2 damaged_uv = clean_uv;
+  float fragment_mask = 0.0;
+  float fragment_noise = codec_random(epoch + 7.0);
 
-  vec2 block_uv = (cell + vec2(0.5)) / block_count;
-  vec2 damaged_uv = mix(clean_uv, block_uv, burst * 0.72);
-  damaged_uv.x += (band_noise - 0.5) * displacement * amount;
-  damaged_uv.y += (cell_noise - 0.5) * 0.018 * amount;
+  for (int fragment_index = 0; fragment_index < 7; fragment_index++) {
+    float index = float(fragment_index);
+    float seed = epoch * 37.0 + index * 83.0 + 11.0;
+    vec2 center = codec_random2(seed);
+    vec2 random_size = codec_random2(seed + 29.0);
+    vec2 half_size = vec2(
+        mix(0.035, 0.31, pow(random_size.x, 1.45)),
+        mix(0.004, 0.075, pow(random_size.y, 2.1)));
+    vec2 distance_to_center = abs(clean_uv - center);
+    float inside = step(distance_to_center.x, half_size.x)
+                 * step(distance_to_center.y, half_size.y);
+    float active = step(codec_random(seed + 51.0), fragmentation);
+    float region = inside * active;
+    float signed_noise = codec_random(seed + 71.0) * 2.0 - 1.0;
+    vec2 source_uv = clean_uv;
+    source_uv.x += signed_noise * displacement
+                 * mix(0.25, 1.0, codec_random(seed + 91.0));
+    source_uv.y += (codec_random(seed + 113.0) - 0.5)
+                 * half_size.y * 1.8;
+    source_uv.x = mix(
+        source_uv.x,
+        center.x + (source_uv.x - center.x)
+                 * mix(0.12, 0.72, codec_random(seed + 137.0)),
+        codec_random(seed + 149.0));
+    damaged_uv = mix(damaged_uv, source_uv, region * amount);
+    fragment_mask = max(fragment_mask, region);
+    fragment_noise = mix(
+        fragment_noise, codec_random(seed + 173.0), region);
+  }
+
   damaged_uv = clamp(damaged_uv, vec2(0.002), vec2(0.998));
 
-  float split = chroma_separation * amount * (0.35 + burst);
+  float split = chroma_separation * amount * (0.3 + fragment_mask);
   vec4 clean_sample = texture2D(texture_sampler, clean_uv);
   vec4 damaged_sample = texture2D(texture_sampler, damaged_uv);
   float red = texture2D(
@@ -57,10 +85,13 @@ void main() {
                              vec2(0.002), vec2(0.998))).b;
   vec3 codec_color = vec3(red, damaged_sample.g, blue);
   float posterize = mix(7.0, 32.0, reveal_progress);
-  codec_color = floor(codec_color * posterize + 0.5) / posterize;
-  codec_color += (cell_noise - 0.5) * 0.16 * amount * burst;
+  vec3 quantized = floor(codec_color * posterize + 0.5) / posterize;
+  codec_color = mix(codec_color, quantized, fragment_mask);
+  codec_color += (fragment_noise - 0.5) * 0.16
+               * amount * fragment_mask;
 
-  vec3 color = mix(clean_sample.rgb, codec_color, amount);
+  float corruption_mix = amount * mix(0.16, 1.0, fragment_mask);
+  vec3 color = mix(clean_sample.rgb, codec_color, corruption_mix);
   float alpha = texture_has_alpha > 0.5 ? clean_sample.a : 1.0;
   gl_FragColor = vec4(color, alpha) * opacity;
 }"
@@ -72,8 +103,8 @@ void main() {
               :accessor codec-reveal-enabled-p)
    (duration :initarg :duration :initform 1.10d0
              :accessor codec-reveal-duration)
-   (macroblock-size :initarg :macroblock-size :initform '(18d0 14d0)
-                    :accessor codec-reveal-macroblock-size)
+   (fragmentation :initarg :fragmentation :initform 0.78d0
+                  :accessor codec-reveal-fragmentation)
    (displacement :initarg :displacement :initform 0.16d0
                  :accessor codec-reveal-displacement)
    (chroma-separation :initarg :chroma-separation :initform 0.018d0
@@ -91,7 +122,7 @@ void main() {
   (when (eq (view-shader-program-name view) +codec-reveal-program-name+)
     (setf (view-shader-program-name view) previous-program))
   (let ((uniforms (codec-reveal-uniform-table view)))
-    (dolist (name '(reveal-progress corruption-phase macroblock-size
+    (dolist (name '(reveal-progress corruption-phase fragmentation
                     displacement chroma-separation))
       (remhash name uniforms)))
   (remhash 'codec-reveal-previous-program
@@ -151,8 +182,8 @@ void main() {
               (view-shader-program-name view) +codec-reveal-program-name+
               (gethash 'reveal-progress uniforms) 0d0
               (gethash 'corruption-phase uniforms) seed
-              (gethash 'macroblock-size uniforms)
-              (codec-reveal-macroblock-size style)
+              (gethash 'fragmentation uniforms)
+              (codec-reveal-fragmentation style)
               (gethash 'displacement uniforms)
               (codec-reveal-displacement style)
               (gethash 'chroma-separation uniforms)

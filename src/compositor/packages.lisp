@@ -352,7 +352,7 @@
    #:codec-reveal-style
    #:codec-reveal-enabled-p
    #:codec-reveal-duration
-   #:codec-reveal-macroblock-size
+   #:codec-reveal-fragmentation
    #:codec-reveal-displacement
    #:codec-reveal-chroma-separation
    #:behavior-application-reveal-style

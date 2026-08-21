@@ -13,7 +13,7 @@ The new boundary is:
 - Ataxia-authored C contains only unavoidable wlroots/libwayland ABI glue;
 - Common Lisp owns server construction, event-loop control, object wrappers,
   signal conversion, lifetime bookkeeping, protocol composition, and errors;
-- binding packages and compositor components communicate through
+- binding packages and compositor subsystems/components communicate through
   protocol-specific Common Lisp generic functions and ordinary typed return
   values;
 - incoming names and values preserve the exact wlroots signal or Wayland
@@ -44,9 +44,10 @@ flowchart LR
 
     subgraph CORE[Compositor object graph in Common Lisp]
         COMP[compositor aggregate]
-        HANDLER[Protocol-owning components]
-        OBJECTS[Outputs, seats, applications, views]
-        STRATEGY[World, animation, presentation, renderer]
+        HANDLER[Protocol-owning subsystems and nested components]
+        DOMAINS[Runtime, outputs, surfaces, desktop, interaction]
+        STRATEGY[World, presentation, graphics, extensions, control]
+        OBJECTS[Owned outputs, seats, applications, views]
     end
 
     CLIENT <--> WLR
@@ -57,8 +58,9 @@ flowchart LR
     LOOP --> SIGNAL
     SIGNAL --> HANDLER
     HANDLER --> COMP
-    COMP --> OBJECTS
+    COMP --> DOMAINS
     COMP --> STRATEGY
+    DOMAINS --> OBJECTS
     HANDLER --> WRAP
     STRATEGY --> WRAP
 ```
@@ -167,8 +169,8 @@ similar resources are created by clients/protocol implementations. The
 compositor does not construct those objects.
 
 The Lisp runtime calls `wl_event_loop_dispatch` itself instead of hiding the
-loop in a C `server_run` function. This makes native events, Lisp timers, the
-external owner-thread inbox, and safe points visible in one place.
+loop in a C `server_run` function. This makes native events, Lisp timers,
+control's external owner-thread inbox, and safe points visible in one place.
 
 ### 4.2 Typed native wrappers
 
@@ -323,9 +325,9 @@ Each protocol manager has a typed handler slot installed at a runtime safe
 point:
 
 ```lisp
-(install-xdg-shell-sink xdg-shell compositor)
-(install-input-sink input-runtime input-router)
-(install-output-sink backend output-manager)
+(install-xdg-shell-sink xdg-shell desktop)
+(install-input-sink input-runtime interaction)
+(install-output-sink backend outputs)
 ```
 
 The exact constructor for a new server-owned manager/resource receives its
@@ -477,7 +479,7 @@ before the compositor enters its ordinary running state:
 | Object family | Selection owner | Required binding interface |
 |---|---|---|
 | backend/session and multi-backend composition | launch profile | exact backend-specific create/start/destroy functions |
-| renderer, EGL context, allocator, and output render initialization | selected renderer component | exact autocreate/create/init/destroy functions |
+| renderer, EGL context, allocator, and output render initialization | graphics subsystem | exact autocreate/create/init/destroy functions |
 | core and initially enabled protocol globals | active protocol profile and security policy | protocol-package constructor with version, initial sink, and quiesce/destroy contract |
 | Xwayland server/instance | Xwayland policy | exact lazy/eager create, ready/failure/new-surface callbacks, and destroy |
 
@@ -489,15 +491,15 @@ ordering, but does not make bootstrap itself a generic compositor factory.
 
 | Object family | Compositor owner/decision | Required binding interface |
 |---|---|---|
-| logical seats, including transient seats | seat policy | exact create/name/capabilities/keyboard/destroy functions and request callbacks |
+| logical seats, including transient seats | interaction seat policy | exact create/name/capabilities/keyboard/destroy functions and request callbacks |
 | headless, Wayland, or X11 virtual outputs | output, capture, test-profile, or agent policy | backend-specific output constructor and normal output callbacks |
-| output hardware cursors and output layers | cursor/render/direct-scanout policy | exact output-cursor/layer create, update, and destroy functions |
-| keyboard groups and tablet-v2 seat objects | input/seat assignment policy | exact group/tablet/pad/tool constructors and lifecycle callbacks |
-| compositor-owned synthetic input devices | agent/input-source provider | provider-specific pointer/keyboard/touch/tablet constructor built on the exact public `wlr_*_init`/`finish` interface |
+| output hardware cursors and output layers | interaction cursor, graphics, and direct-scanout policy | exact output-cursor/layer create, update, and destroy functions |
+| keyboard groups and tablet-v2 seat objects | interaction device/seat-assignment policy | exact group/tablet/pad/tool constructors and lifecycle callbacks |
+| compositor-owned synthetic input devices | control/interaction input-source provider | provider-specific pointer/keyboard/touch/tablet constructor built on the exact public `wlr_*_init`/`finish` interface |
 | foreign-toplevel and workspace handles | publication components | exact manager/handle/group create, update, close, and destroy functions |
 | compositor-owned data or primary-selection sources | clipboard/agent transfer broker | typed source initialization with Lisp callbacks and explicit source destruction |
-| capture sources and synchronization timelines | capture/renderer components | exact source/timeline init/ref/unref/finish functions |
-| event-loop FD, timer, signal, and idle sources | external inbox, timeout, repeat, and component policy | distinct `wl_event_loop_add_*`, update, callback-sink, and remove functions |
+| capture sources and synchronization timelines | capture/graphics components | exact source/timeline init/ref/unref/finish functions |
+| event-loop FD, timer, signal, and idle sources | control inbox plus runtime timeout/repeat/subsystem policy | distinct `wl_event_loop_add_*`, update, callback-sink, and remove functions |
 | explicitly provisioned `wl_client` from an owned FD | sandbox/application launch policy | exact `wl_client_create`, credential/label registration, destroy callback, and FD ownership transfer |
 
 Synthetic input construction is not the default agent injection path. Agents
@@ -597,10 +599,10 @@ Persistent native creation follows construct-before-expose ordering:
 
 ```mermaid
 sequenceDiagram
-    participant M as seat-manager
+    participant M as interaction subsystem
     participant B as Exact seat binding package
     participant W as wlroots/libwayland
-    participant C as compositor object graph
+    participant C as desktop/outputs/control peers
 
     M->>M: validate name, policy, phase, dependencies
     M->>B: seat-create(runtime, name, sink)
@@ -609,7 +611,7 @@ sequenceDiagram
     B->>B: wrap object and install exact listeners
     B-->>M: live typed wlr-seat wrapper
     M->>B: set capabilities/name/keyboard
-    M->>C: expose Lisp seat object to peer components
+    M->>C: expose Lisp seat through direct typed operations
     C-->>M: seat is live
 ```
 
@@ -638,7 +640,7 @@ Persistent destruction proceeds in the opposite direction:
 5. remove it from its manager and release component references.
 
 Destroying a Wayland global is not equivalent to unloading its protocol package.
-If already-bound resources must remain serviced, the owning component quiesces
+If already-bound resources must remain serviced, the owning subsystem/component quiesces
 new exposure and remains attached until every resource is destroyed.
 If wlroots offers no safe destructor for an object, the interface exposes
 quiescing only and destruction is deferred to server shutdown.
@@ -650,8 +652,8 @@ sequenceDiagram
     participant W as wlroots signal
     participant T as wl_listener trampoline
     participant B as Typed binding callback
-    participant C as compositor or owning component
-    participant P as Direct peer components
+    participant C as compositor or exact owning subsystem/component
+    participant P as Direct peer subsystems/components
 
     W->>T: notify(listener, native data)
     T->>B: callback(subscription token, native data)
@@ -679,7 +681,8 @@ callback returns.
 
 ### 7.1 Callback barrier
 
-Every C-to-Lisp entry executes inside a callback barrier that:
+Every C-to-Lisp entry executes inside the runtime subsystem's callback barrier,
+which:
 
 - records callback depth and the exact active signal;
 - prevents a Lisp condition from unwinding through C;
@@ -689,16 +692,16 @@ Every C-to-Lisp entry executes inside a callback barrier that:
 - requests controlled compositor shutdown if a critical callback cannot be
   completed safely.
 
-Nested wlroots signals are legal. The callback-depth counter makes outermost
-exit explicit and prevents listener memory from being freed while a nested
-callback still uses it.
+Nested wlroots signals are legal. Runtime's callback-depth counter makes
+outermost exit explicit and prevents listener memory from being freed while a
+nested callback still uses it.
 
 ### 7.2 Direct versus deferred native effects
 
 Typed wrapper operations declare one of three call modes in Lisp metadata:
 
 - **callback-safe** — may be called during its documented wlroots callback;
-- **outermost-safe-point** — placed on the owner-thread deferred-action list
+- **outermost-safe-point** — placed on runtime's owner-thread deferred-action list
   until callback depth returns to zero;
 - **event-loop-only** — callable only from the top-level runtime turn.
 
@@ -713,12 +716,12 @@ Because events are dispatched synchronously:
 - ordering is the wlroots signal order;
 - backpressure is simply time spent in the compositor callback;
 - latency is measurable without a hidden producer/consumer boundary;
-- coalescing, if desired, happens explicitly inside the input router or output
-  manager after receipt.
+- coalescing, if desired, happens explicitly inside interaction or outputs after
+  receipt.
 
-The external control inbox is unrelated. It is awakened through an event-loop FD
-and drained by the owner thread; compositor components do not send messages
-through it.
+Control's external inbox is unrelated. It is awakened through a runtime-owned
+event-loop FD and drained by the owner thread; compositor subsystems/components
+do not send messages through it.
 
 ## 8. Specialized Lifetime Objects
 
@@ -792,9 +795,11 @@ The typed callback is:
 (surface-commit surface-policy surface-commit-event)
 ```
 
-The surface manager decides whether this commit changes a view, invalidates
-presentation, starts an animation, supplies frame callbacks, or is never shown.
-The binding package does not translate it into a generic mutation.
+The surfaces subsystem owns the raw commit, retained content, damage, and frame
+callback state. It directly notifies the owning desktop role and presentation;
+desktop decides whether a view changes and presentation decides invalidation or
+animation. The binding package does not translate the commit into a generic
+mutation.
 
 The protocol adapter handling XDG semantics may observe the same committed
 surface through an explicit relationship to its `wlr-xdg-surface` wrapper. The
@@ -827,16 +832,18 @@ There is no Ataxia C frame-target abstraction. The concrete compositor renderer
 receives typed Lisp wrappers for the actual wlroots renderer, allocator, output,
 and buffers, and operates its EGL/GLES resources through direct Lisp bindings.
 
-### 10.2 Replaceable renderer component
+### 10.2 Graphics subsystem
 
-The compositor stores the active renderer component directly:
+The compositor stores graphics as a root subsystem. Graphics owns the active
+direct GLES execution strategy; the root slot does not imply arbitrary live
+replacement:
 
 ```mermaid
 flowchart LR
     FRAME[Typed output-frame callback]
-    COORD[Compositor presentation engine]
+    COORD[Presentation subsystem]
     SNAP[Immutable presentation snapshot]
-    RENDER[Selected renderer component]
+    RENDER[Graphics subsystem and direct GLES strategy]
     WLRAPI[Direct Lisp EGL/GLES and typed wlroots interop]
     WLR[wlroots backend, allocator, buffers, output]
 
@@ -879,24 +886,26 @@ become a protocol-independent render command language.
 
 ### 10.4 Direct scanout
 
-The presentation engine may propose a concrete client `wlr_buffer` for direct
-scanout after the renderer and output manager verify eligibility. It then builds a typed
+Presentation may propose a concrete client `wlr_buffer` for direct scanout after
+graphics and outputs verify eligibility. Outputs then builds a typed
 `wlr-output-state` and calls the direct output test/commit wrappers. wlroots and
-the backend decide whether KMS accepts it. Failure returns to the compositor, which
-renders a composed frame instead.
+the backend decide whether KMS accepts it. Failure returns to the compositor,
+which renders a composed frame instead.
 
 ## 11. Event Loop and Threading
 
 The compositor owner thread executes a Lisp-controlled loop:
 
 ```lisp
-(loop while (runtime-running-p runtime)
-      do (drain-external-inbox compositor)
-         (run-due-lisp-timers runtime)
-         (wl-event-loop-dispatch event-loop (next-timeout runtime))
-         (run-outermost-safe-point-actions compositor)
-         (schedule-requested-frames runtime)
-         (wl-display-flush-clients display)))
+(let ((control (compositor-control compositor))
+      (outputs (compositor-outputs compositor)))
+  (loop while (runtime-running-p runtime)
+        do (drain-external-inbox control)
+           (run-due-lisp-timers runtime)
+           (wl-event-loop-dispatch event-loop (next-timeout runtime))
+           (run-outermost-safe-point-actions runtime)
+           (schedule-requested-frames outputs)
+           (wl-display-flush-clients display))))
 ```
 
 Exact ordering remains subject to wlroots event-loop requirements, but ownership
@@ -906,8 +915,8 @@ Rules:
 
 - all wlroots object mutation occurs on the compositor owner thread;
 - C callbacks always re-enter the same Lisp thread;
-- agent, worker, and off-thread shell code submit typed requests through the one
-  external inbox;
+- agent, worker, and off-thread shell code submit typed requests through
+  control's one external inbox;
 - an `eventfd` or pipe wakes the `wl_event_loop`;
 - worker results are immutable Lisp values until adopted on the owner thread;
 - workers never hold or call raw wlroots pointers;
@@ -970,8 +979,11 @@ Wayland state machine faithfully.
 
 ### 12.3 Loading and replacement limits
 
-Lisp policy handlers, hooks, renderers, worlds, and animation components can be
-replaced at an owner-thread safe point when their live-state contract permits it.
+Lisp protocol policies, world strategies, presentation/animation definitions,
+extension hooks, and graphics programs can be replaced at an owner-thread safe
+point when their owning subsystem's live-state contract permits it. Root
+subsystems are not implicitly replaceable merely because the aggregate has a
+slot for them.
 
 An advertised Wayland global and already-bound client resources cannot always
 be safely unloaded. A protocol implementation may be quiesced for new clients,
@@ -1015,7 +1027,7 @@ behavior without a native lock state machine:
 1. receive the concrete lock request;
 2. stop scheduling ordinary content for affected outputs;
 3. commit blank or valid lock frames;
-4. redirect/suppress ordinary input through the compositor seat/input objects;
+4. redirect/suppress ordinary input through interaction and its seat objects;
 5. only then call the typed wlroots function that reports the session locked.
 
 If Lisp fails before step 5, the lock was never acknowledged. If it fails after
@@ -1090,10 +1102,10 @@ component mailbox.
 
 Instead:
 
-- the compositor or exact owning component specializes each protocol sink
-  generic;
+- the compositor, exact owning subsystem, or exact owning nested component
+  specializes each protocol sink generic;
 - compositor objects reference typed native wrappers as provenance;
-- owning components request server-owned native objects through exact
+- owning subsystems/components request server-owned native objects through exact
   per-package constructors and expose the Lisp owner only after successful
   construction;
 - a callback directly invokes the owning method on the owner thread;
@@ -1110,19 +1122,25 @@ classDiagram
     class WlrXdgToplevel
     class XdgRequestResize
     class Compositor
-    class Shell
+    class Desktop
+    class Interaction
+    class Presentation
     class View
     class InteractiveOperation
     class World
     class AnimationEngine
 
     XdgRequestResize --> WlrXdgToplevel
-    Compositor --> XdgRequestResize : handles directly
-    Compositor --> Shell : calls
-    Shell --> InteractiveOperation : creates
+    Desktop --> XdgRequestResize : handles exact callback
+    Compositor --> Desktop : owns and coordinates
+    Compositor --> Interaction : owns and coordinates
+    Compositor --> Presentation : owns and coordinates
+    Desktop --> View : owns
+    Interaction --> InteractiveOperation : owns
     InteractiveOperation --> View : transforms
-    Shell --> World : updates placement
-    Compositor --> AnimationEngine : starts transition
+    Desktop --> World : requests placement
+    Presentation --> World : projects
+    Presentation --> AnimationEngine : owns and samples
 ```
 
 Loading a new protocol adds one binding package and the component methods that
@@ -1135,21 +1153,23 @@ own its policy. It does not add a central event case or generic protocol router.
 1. `wlr_xdg_toplevel.events.request_move` fires.
 2. The listener trampoline calls the exact binding subscription.
 3. The binding copies the toplevel, seat, and serial into `xdg-request-move`.
-4. It calls `xdg-toplevel-request-move` on the compositor.
-5. The compositor and shell directly validate focus, grab ownership, and policy.
-6. The shell creates an `interactive-operation` object.
+4. It calls `xdg-toplevel-request-move` on desktop.
+5. Desktop asks a compositor method to coordinate view policy with interaction.
+6. Interaction validates focus/serial/grab ownership and creates the per-seat
+   `interactive-operation` object.
 7. Subsequent concrete pointer-motion callbacks update that operation.
-8. The world, animation engine, and presentation engine compute view geometry.
+8. Presentation samples its animation engine and the world to compute view
+   geometry.
 9. XDG configure functions are called directly when client size must change.
 
 ### 18.2 Firefox pointer interaction
 
 1. A concrete pointer-motion or button signal enters Lisp.
-2. The input router maps device coordinates through the active world and
-   presentation snapshot.
+2. Interaction maps device coordinates through the active world and presentation
+   snapshot.
 3. Hit testing returns a surface and exact surface-local coordinates.
-4. The seat/input objects call `seat-pointer-notify-enter`, motion, button, axis,
-   and frame functions directly and in protocol order.
+4. The seat/interaction objects call `seat-pointer-notify-enter`, motion, button,
+   axis, and frame functions directly and in protocol order.
 5. Pointer focus is changed only when the hit target changes.
 6. Resize cursors and resize operations exist only while a concrete decorated
    edge or authorized XDG resize request is active.
@@ -1159,11 +1179,12 @@ semantics in this path.
 
 ### 18.3 Output frame
 
-1. `wlr_output.events.frame` calls `output-frame` on the output manager.
-2. The presentation engine samples the compositor clock and animation engine.
+1. `wlr_output.events.frame` calls `output-frame` on outputs.
+2. Presentation samples its clock and nested animation engine.
 3. It builds one frame-local scene/hit-test snapshot.
-4. The chosen renderer uses typed wlroots render and buffer wrappers.
-5. The output manager builds and tests a concrete output state.
+4. Graphics executes the direct GLES graph using typed wlroots buffer/output
+   interoperability.
+5. Outputs builds and tests a concrete output state.
 6. It commits that output state directly.
 7. `output-present` later supplies the actual presentation facts.
 
@@ -1194,9 +1215,10 @@ flowchart TD
 Rules:
 
 - raw CFFI packages are private to the binding layer;
-- protocol-owning component packages may depend on public typed binding APIs;
+- protocol-owning subsystem/component packages may depend on public typed
+  binding APIs;
 - the compositor aggregate package does not enumerate optional protocol cases;
-- renderer implementations may depend on `ataxia.wlr.render`;
+- graphics implementations may depend on `ataxia.wlr.render`;
 - world, animation, hook, and agent packages never depend on raw bindings;
 - no package uses a generic bridge envelope.
 
@@ -1251,17 +1273,18 @@ kind of serialization boundary this in-process design rejects.
     protocol is quiesced.
 14. Session lock is acknowledged only after ordinary content is no longer
     presentable.
-15. Off-thread agent actions enter through the external owner-thread inbox,
-    never through C or an internal component mailbox.
+15. Off-thread agent actions enter through control's external owner-thread
+    inbox, never through C or an internal subsystem/component mailbox.
 16. Every compositor-requested native object uses an exact package constructor and
     exact lifetime operation; no generic native-object factory exists.
 17. A compositor object identity is never replaced by its native wrapper identity.
 18. The compositor never misclassifies an observed backend-, connection-, or
     client-created object as policy-created; explicitly server-originated
     variants use separate exact typed operations.
-19. Native callbacks invoke the compositor or exact owning component directly.
+19. Native callbacks invoke the compositor, exact owning subsystem, or exact
+    owning nested component directly.
 20. No general transaction, service-scope, or internal mailbox framework exists
-    between compositor components.
+    between compositor subsystems/components.
 
 ## 22. Remaining Decisions Before Implementation
 
@@ -1274,7 +1297,7 @@ Only implementation-specific choices remain:
    four-function native listener helper is required.
 4. Select the exact GLES/EGL capability, import, synchronization, and output
    target baseline for the direct renderer.
-5. Select the event-loop wake primitive for the external control inbox.
+5. Select the control-inbox/runtime event-loop wake primitive pair.
 6. Define the callback-safe versus safe-point function table for the pinned
    wlroots API.
 7. Define the first protocol coverage set and advertised versions.

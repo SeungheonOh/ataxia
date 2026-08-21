@@ -225,7 +225,7 @@ Use compositor-mediated methods when:
 - failure requires coordinated cleanup;
 - security authorization precedes several effects;
 - a public shell or agent action must behave identically to local input;
-- component replacement must not expose an intermediate state.
+- supported strategy/subsystem replacement must not expose an intermediate state.
 
 ### 5.3 Direct peer references
 
@@ -405,7 +405,7 @@ new logical seat:
 If Lisp object publication fails after native construction, the owner schedules
 the exact destructor at the outermost safe point.
 
-### 8.3 Component replacement
+### 8.3 Strategy and subsystem replacement
 
 Replacement is explicit and uncommon:
 
@@ -706,7 +706,8 @@ client/backend behavior—not component communication.
 4. Select the first world and presentation implementations and the exact
    GLES/EGL capability baseline for the direct renderer.
 5. Choose the control inbox/runtime wake primitive pair.
-6. Define which component replacements the first implementation supports live.
+6. Define which strategy and subsystem replacements the first implementation
+   supports live.
 7. Define the first typed hook contexts and budgets.
 8. Define the first control principals, capabilities, and observation redactions.
 

@@ -41,17 +41,18 @@ The corrected split is:
 - **Direct binding Common Lisp packages** own server construction, event-loop control, typed
   wlroots wrappers, exact signal subscriptions, callback-lifetime copying,
   specialized buffer/FD cleanup, and direct typed native calls.
-- **The `compositor` aggregate** owns every compositor component and object:
-  applications, views, outputs, seats, shell, worlds, placement, input routing,
-  focus, cursor, animation, presentation, rendering strategy, output policy,
-  hooks, plugins, and agent control.
+- **The `compositor` aggregate** directly owns ten cohesive domain subsystems:
+  runtime, outputs, surfaces, desktop, interaction, world, presentation,
+  graphics, extensions, and control. Managers, registries, policies, and live
+  objects are nested under the subsystem that owns their invariants.
 
-Binding packages call protocol-specific generic functions on the compositor or
-exact owning component. An XDG resize request remains an XDG resize request;
+Binding packages call protocol-specific generic functions on the compositor,
+exact owning subsystem, or exact owning nested component. An XDG resize request
+remains an XDG resize request;
 pointer motion remains a concrete wlroots pointer event; an output frame remains
-a concrete wlroots output signal. Components call typed functions such as XDG
-configure, seat notification, buffer, render-pass, and output-state operations
-directly.
+a concrete wlroots output signal. Subsystems/components call typed functions
+such as XDG configure, seat notification, buffer, render-pass, and output-state
+operations directly.
 
 There is no invented native event protocol between the layers. In particular,
 there is no generic module catalog, event/command envelope, numeric object
@@ -123,7 +124,8 @@ requests also have exact ownership rules.
 
 The wlroots listener enters Common Lisp synchronously. The binding package must copy the
 exact transient fields or call the concrete retention primitive while that
-callback is active. It then invokes the compositor or exact owning component. There is
+callback is active. It then invokes the compositor, exact owning subsystem, or
+exact owning nested component. There is
 no native queue and no generic lease. A retained surface buffer, owned FD, output
 state, or render pass has its own concrete Lisp lifetime type.
 
@@ -363,24 +365,24 @@ This is a Wayland lifetime constraint, not a reason for a native plugin ABI.
 1. The XDG binding package creates `wlr_xdg_shell` and installs listeners.
 2. A client creates a toplevel. The listener wraps the exact
    `wlr_xdg_toplevel` and calls `xdg-new-toplevel`.
-3. The compositor creates or updates a view and directly asks its shell and
-   world components for initial policy.
-4. The shell calls the typed size/state setters and schedules a configure.
+3. The desktop subsystem creates or updates a view and asks the active world for
+   initial placement policy.
+4. Desktop calls the typed size/state setters and schedules a configure.
 5. The direct wrapper returns the concrete configure serial.
 6. The client acknowledges and commits. Exact ack and surface-commit callbacks
-   enter their respective owning compositor components.
-7. The shell correlates the serial, updates the view, and schedules
+   enter their respective owning compositor subsystems/components.
+7. Desktop correlates the serial, updates the view, and schedules
    presentation.
 8. A client move or resize request arrives as a policy request containing the
    seat, serial, and edge—not as an automatically executed native operation.
-9. The shell owns the interactive operation and calls typed seat
-   delivery/configure functions as needed.
+9. A compositor method coordinates desktop and interaction; interaction owns the
+   per-seat operation/grab/focus/cursor state while desktop emits configures.
 
 #### 4.3.8 Example: fractional scale
 
 1. The fractional-scale binding package wraps the real protocol object and calls
    its exact lifecycle sink methods.
-2. The presentation engine computes preferred scale from the surface’s current
+2. The presentation subsystem computes preferred scale from the surface’s current
    presentation across output viewports.
 3. It calls the concrete preferred-scale wrapper.
 4. wlroots/libwayland emit the correct protocol event.
@@ -403,7 +405,7 @@ No world coordinate or output arrangement policy exists in the bindings.
    wrappers to the compositor capture component.
 2. The compositor authorizes it and directly asks the capture component for a
    frame tied to a presentation snapshot.
-3. The current renderer performs readback or copy into the concrete capture
+3. Graphics performs readback or copy into the concrete capture
    buffer.
 4. The capture component calls the protocol-specific success/damage/timestamp
    functions.
@@ -437,9 +439,10 @@ from the pinned wlroots signal. Lifecycle, discrete input, protocol state,
 and output-frame callbacks are delivered synchronously in wlroots order. The
 binding does not coalesce or drop them.
 
-The callback barrier copies transient fields, retains the active sink for the
-callback extent, contains Lisp conditions, tracks nested callback depth, and
-runs typed deferred destruction/actions when the outermost callback exits.
+The runtime-owned callback barrier copies transient fields, retains the active
+sink for the callback extent, contains Lisp conditions, tracks nested callback
+depth, and runs typed deferred destruction/actions when the outermost callback
+exits.
 
 ### 4.6 Outgoing typed-function contract
 
@@ -558,9 +561,9 @@ If a renderer needs direct client-buffer access, the binding package creates a c
 wlroots retention primitive. It is released explicitly when superseded and is
 not represented by a generic lease ID.
 
-### 5.4 Renderer component boundary
+### 5.4 Graphics subsystem boundary
 
-The selected renderer component owns:
+The graphics subsystem and its direct GLES execution strategy own:
 
 - renderer/device selection policy;
 - shader compilation and program caches;
@@ -591,17 +594,17 @@ become live only at an owner-thread safe point. The complete contract is in
 
 A frame is a specialized output/presentation operation over concrete wlroots wrappers:
 
-1. The exact `wlr_output.events.frame` callback enters the output manager.
-2. The presentation engine freezes one frame-local snapshot and its hit-test
+1. The exact `wlr_output.events.frame` callback enters the outputs subsystem.
+2. Presentation freezes one frame-local snapshot and its hit-test
    index.
-3. The selected renderer acquires or configures a concrete wlroots render buffer
+3. Graphics acquires or configures a concrete wlroots render buffer
    through typed binding calls.
 4. It executes the render plan through the direct Common Lisp EGL/GLES renderer.
-5. The output manager builds a concrete `wlr_output_state`, including damage and buffer.
+5. Outputs builds a concrete `wlr_output_state`, including damage and buffer.
 6. It calls the direct output test function and selects fallback on failure.
 7. It calls the direct output commit function.
 8. Exact presentation/release callbacks reconcile the frame.
-9. The presentation engine sends frame-done and presentation feedback only for
+9. Presentation sends frame-done and presentation feedback only for
    surfaces actually sampled by a successfully submitted frame.
 10. Specialized buffer/render-pass/output-state objects are finished or released
     on success, cancellation, output loss, and shutdown.
@@ -640,9 +643,10 @@ No renderer plugin may guess whether a buffer is inverted.
 
 ## 6. Compositor Aggregate and Direct Object Graph
 
-Ataxia has one `compositor` object. It is the aggregate root for the native
-runtime wrapper, components, live compositor objects, callback depth, safe-point
-actions, external ingress, and lifecycle ordering.
+Ataxia has one `compositor` object. It directly owns ten domain references:
+runtime plus nine policy/execution subsystems. Live objects, callback
+bookkeeping, registries, policies, and external ingress are owned below those
+domain boundaries rather than exposed as root services.
 
 The previous independent kernel/services/transactions model is removed. The
 concrete object graph is specified in
@@ -650,35 +654,39 @@ concrete object graph is specified in
 
 ### 6.1 Aggregate ownership
 
-The compositor directly owns slots for:
+The compositor directly owns read-only references to:
 
-- native runtime;
-- output, seat, and surface managers;
-- shell and input router;
-- focus and cursor managers;
-- world and presentation engine;
-- renderer and animation engine;
-- hook registry and control plane;
-- application/view registries;
-- callback depth, typed deferred actions, clocks, and external inbox;
-- orderly startup, component replacement, and shutdown.
+- `runtime`: native runtime wrapper, callback barrier, safe points, runtime turn;
+- `outputs`: output objects, modes, viewports, damage, frames, native commits;
+- `surfaces`: raw surfaces, subsurfaces, commits, retained content;
+- `desktop`: shell roles, applications, views, popup/layer/lock relationships;
+- `interaction`: devices, seats, routing, per-seat focus/cursor/grabs/operations;
+- `world`: placements, projection, inverse mapping, spatial queries;
+- `presentation`: visibility, frame snapshots, damage, and animation;
+- `graphics`: direct EGL/GLES resources, shaders, graphs, and submission;
+- `extensions`: typed hooks and local plugin registration;
+- `control`: principals, capabilities, observations, trusted shell/RPC, and the
+  only external inbox;
+- compositor lifecycle state.
 
-Managers own their live objects. For example, `seat-manager` owns seat objects
-and `output-manager` owns output objects, but every object remains reachable
-from the compositor aggregate.
+Applications and views are reachable through desktop; seats through
+interaction; output objects through outputs; animation through presentation;
+hooks through extensions; and callback/safe-point state through runtime.
 
 ### 6.2 Direct component communication
 
-Components communicate through synchronous ordinary functions and CLOS generic
-functions on the owner thread. A component reaches a peer through an explicit
-compositor accessor or a direct peer reference wired by the compositor.
+Subsystems and nested components communicate through synchronous ordinary
+functions and CLOS generic functions on the owner thread. A subsystem reaches a
+root peer through a compositor reader. A nested component reaches peers through
+its owning subsystem or a stable direct reference wired during construction.
 
 Use a method on `compositor` when an operation coordinates several component
-invariants. For example, `begin-interactive-move` validates shell/seat state,
-establishes an input grab, updates focus and cursor state, resolves animation,
-and schedules presentation in one visible call sequence.
+invariants. For example, `begin-interactive-move` validates desktop/view and
+interaction/seat state, establishes a grab, updates the seat's focus and cursor,
+asks presentation to resolve animation, and schedules a frame in one visible
+call sequence.
 
-Core components never communicate through:
+Subsystems/components never communicate through:
 
 - internal mailboxes;
 - generic event/command envelopes;
@@ -690,18 +698,20 @@ Core components never communicate through:
 
 A runtime turn is:
 
-1. drain the one external agent/worker/control inbox and due Lisp timers;
+1. drain control's one external inbox and the runtime's due Lisp timers;
 2. call `wl_event_loop_dispatch` for a bounded interval;
-3. let exact wlroots callbacks invoke the compositor or owning component;
-4. let those objects call peer components directly;
+3. let exact wlroots callbacks invoke the compositor or exact owning subsystem/
+   nested component;
+4. let those objects call peers directly;
 5. run typed outermost-safe-point destruction/actions;
 6. advance active clocks and animation instances;
 7. build, render, and submit requested frames through typed binding calls;
 8. emit bounded observations and retire dead wrappers/objects;
 9. flush Wayland clients.
 
-The external inbox is only for crossing into the owner thread. No further inbox
-hop occurs after a request reaches the compositor.
+Control's external inbox is only for crossing into the owner thread. Runtime
+owns its event-loop wake source. No further inbox hop occurs after a request
+reaches the compositor.
 
 ### 6.4 Object model
 
@@ -749,25 +759,30 @@ Real asynchronous protocols retain specialized pending objects for:
 These model the real protocol or operation and are owned by the relevant
 component. They do not derive from a general transaction class.
 
-### 6.6 Component replacement
+### 6.6 Strategy and subsystem replacement
 
-Replaceable strategies are explicit compositor slots. Replacement occurs only
-at an owner-thread safe point:
+Having a root slot does not imply replaceability. Public root access is
+read-only. A declared strategy such as the world or a nested presentation policy
+is replaced only through its explicit operation at an owner-thread safe point:
 
 1. construct and validate the candidate;
 2. verify or reject migration of live owned objects;
 3. detach the old component from new calls;
-4. swap the compositor slot and rewire declared direct references;
+4. install the strategy through the root/subsystem-specific replacement method
+   and rewire declared direct references;
 5. attach the candidate and migrate/rebuild supported state;
 6. destroy the old component after retained frames/callbacks release it.
 
-There is no service scope or generation lookup. Replacement may be rejected when
-the native API, active frames, or placement representation cannot migrate safely.
+Root-subsystem replacement is supported only when separately specified. Graphics
+may require controlled recovery instead of hot replacement. There is no service
+scope or generation lookup. Replacement may be rejected when the native API,
+active frames, or placement representation cannot migrate safely.
 
 ### 6.7 Hooks and general operation contexts
 
-Hooks are typed, synchronous extension points, not component communication.
-Required focus, cursor, input, shell, or renderer behavior uses direct calls.
+Hooks are typed, synchronous extension points owned by extensions, not component
+communication. Required interaction, desktop, presentation, or graphics
+behavior uses direct calls.
 
 Do not hard-code animation/policy around a short list such as `map`, `pickup`,
 and `drop`. Hook and animation matching receive a typed operation context with:
@@ -785,12 +800,12 @@ bounded snapshot crosses the external control boundary.
 
 ## 7. Domain Component Structure
 
-### 7.1 Protocol-owning components
+### 7.1 Protocol-owning subsystems and components
 
-The compositor or one exact owning component per protocol family handles the
-binding callback generics and directly invokes the relevant shell/input/output/
-transfer operation. Sinks contain policy-facing translation, not raw native
-storage.
+The compositor or one exact owning subsystem/nested component per protocol
+family handles binding callback generics and directly invokes the relevant
+desktop, interaction, outputs, surfaces, or transfer operation. Sinks contain
+policy-facing translation, not raw native storage.
 
 Examples:
 
@@ -820,7 +835,7 @@ part of that plugin, not a shared compositor requirement.
 
 ### 7.3 Scene and presentation
 
-Scene sources enumerate live compositor objects. The presentation engine freezes:
+Scene sources enumerate live compositor objects. Presentation freezes:
 
 - output and viewport state;
 - projected render geometry;
@@ -839,9 +854,9 @@ layer-shell surfaces, are represented separately from world placement. They must
 not be forced into a spherical or infinite world merely because they share an
 output.
 
-### 7.4 Shell and interactive operations
+### 7.4 Desktop and interactive operations
 
-Shell behavior is decomposed into:
+Desktop owns shell-role, application, and view policy:
 
 - role policy;
 - placement policy;
@@ -855,14 +870,16 @@ Shell behavior is decomposed into:
 - workspace/application grouping policy.
 
 Interactive operations are state machines with an initiating serial, seat,
-target, starting placement, and cancellation rule. A stuck resize cursor cannot
-occur because cursor appearance derives from the live operation state and the
-operation must terminate on button release, focus loss, target destruction,
-seat removal, or cancellation.
+target, starting placement, and cancellation rule. Interaction owns that
+per-seat operation and its grab/focus/cursor state; desktop owns role semantics
+and configure emission. A compositor method coordinates them. A stuck resize
+cursor cannot occur because cursor appearance derives from the live operation
+state and the operation must terminate on button release, focus loss, target
+destruction, seat removal, or cancellation.
 
 ### 7.5 Input pipeline
 
-Input flows through directly called stages/components:
+The interaction subsystem owns input flow through directly called nested stages:
 
 1. native device event normalization;
 2. device-to-logical-seat assignment;
@@ -878,13 +895,14 @@ Pointer, keyboard, touch, tablet, switches, and synthetic agent input remain
 distinct typed events. Synthetic events carry provenance and cannot impersonate
 physical input.
 
-Protocol delivery is owned by the seat/input objects. They call public typed
+Protocol delivery is owned by the seat/interaction objects. They call public typed
 seat binding functions and never import raw CFFI bindings.
 
 ### 7.6 Cursor
 
-Cursor responsibilities are coordinated by the cursor manager with direct calls
-to input, focus, world, animation, and presentation:
+Each logical seat owns cursor, focus, grab, and active-operation state inside
+interaction. Shared interaction policies coordinate direct calls to world and
+presentation for:
 
 - motion interpretation;
 - constraints;
@@ -901,7 +919,8 @@ causes the “cursor cannot interact with the window below” failure.
 
 ### 7.7 Animation
 
-Animation consists of replaceable objects and generic functions for:
+Presentation owns the animation engine. Animation consists of replaceable
+objects and generic functions for:
 
 - clock;
 - event/transition matcher;
@@ -947,8 +966,8 @@ Performance rules:
 
 ### 7.8 Output management
 
-The output manager owns outputs and directly coordinates components responsible
-for:
+The outputs subsystem owns output objects and directly coordinates policies
+responsible for:
 
 - output discovery and identity;
 - mode/scale/transform policy;
@@ -960,7 +979,7 @@ for:
 - variable refresh and tearing policy;
 - direct-scanout policy.
 
-The output manager builds concrete output states and invokes typed binding
+Outputs builds concrete output states and invokes typed binding
 test/commit functions. It handles failure and selects fallback; the bindings never silently
 picks a desktop arrangement.
 
@@ -975,8 +994,9 @@ was announced. Completion requires explicit terminal state and cleanup.
 
 ## 8. Agentic Control Plane
 
-Agent control is not a parallel compositor. After one external-inbox hop, it
-invokes the same compositor methods as human input and shell policy.
+Agent control is not a parallel compositor. Control owns the only external
+inbox; after that single hop it invokes the same compositor methods as human
+interaction and desktop policy.
 
 ### 8.1 Principals and provenance
 
@@ -1009,7 +1029,7 @@ Examples:
 
 Authorization and validation run on the owner thread immediately before the
 direct operation. Long work must finish before re-entry and is revalidated when
-its result reaches the external inbox.
+its result reaches control's external inbox.
 
 ### 8.3 Observations
 
@@ -1117,39 +1137,32 @@ The repository should enforce boundaries through separate ASDF systems.
 - `ataxia.wlr.protocol.*`: one typed package per protocol family;
 - native `libataxia-wlr-glue`: only direct wlroots/libwayland ABI helpers.
 
-Compositor/component systems may import public typed binding packages but never
+Compositor subsystem/component systems may import public typed binding packages but never
 raw CFFI packages or foreign pointers.
 
-### 10.2 Compositor aggregate systems
+### 10.2 Compositor aggregate system
 
-- `ataxia.compositor`: aggregate, owner-thread runtime, direct orchestration;
-- `ataxia.compositor.objects`: application, view, output, seat, operations;
-- `ataxia.compositor.lifecycle`: construction, safe points, replacement, shutdown;
-- `ataxia.compositor.inbox`: the single external ingress boundary.
+- `ataxia.compositor`: aggregate root, lifecycle state, and cross-domain
+  orchestration only.
 
-The aggregate systems contain no domain component or protocol-specific policy.
+The aggregate system contains no domain or protocol-specific policy.
 
-### 10.3 Direct component systems
+### 10.3 Domain subsystem systems
 
-- `ataxia.protocol.*`;
-- `ataxia.world`;
-- `ataxia.scene`;
-- `ataxia.presentation`;
-- `ataxia.render`;
+- `ataxia.runtime`: callback barrier, safe points, runtime turns, shutdown;
 - `ataxia.output`;
-- `ataxia.input`;
-- `ataxia.cursor`;
-- `ataxia.focus`;
-- `ataxia.shell`;
-- `ataxia.animation`;
-- `ataxia.transfer`;
-- `ataxia.text`;
-- `ataxia.capture`;
-- `ataxia.security`;
-- `ataxia.agent`;
-- `ataxia.control`;
-- `ataxia.hooks`;
-- `ataxia.observation`.
+- `ataxia.surface`;
+- `ataxia.desktop`, with `ataxia.protocol.*`, shell/application/view policies;
+- `ataxia.interaction`, with input/seat/focus/cursor/grab policies;
+- `ataxia.world`;
+- `ataxia.scene` and `ataxia.presentation`;
+- `ataxia.animation`, runtime-owned by presentation;
+- `ataxia.graphics.gles` and optional diagnostic executors;
+- `ataxia.extensions`, including typed hooks and local plugins;
+- `ataxia.control`, including agents, security, observations, and the external
+  inbox;
+- `ataxia.transfer`, `ataxia.text`, and `ataxia.capture`, owned by the domain
+  whose protocol/lifetime contract they implement.
 
 ### 10.4 Profile/plugin systems
 
@@ -1159,7 +1172,7 @@ The aggregate systems contain no domain component or protocol-specific policy.
 - required direct Lisp EGL/GLES executor;
 - optional wlroots render-pass diagnostic/fallback executor;
 - optional wlroots-scene planar executor;
-- default shell/focus/input/cursor/animation policy;
+- default desktop/interaction/presentation policy;
 - headless deterministic profile.
 
 No default profile may be required by the compositor aggregate to construct.
@@ -1172,7 +1185,7 @@ There is no general compositor transaction. Each operation declares its real
 validation, mutation, native-call, and failure boundary. Specialized boundaries
 include:
 
-- one safe-point component replacement;
+- one safe-point supported strategy/subsystem replacement;
 - one concrete protocol policy response;
 - one input protocol frame;
 - one animation sampling pass;
@@ -1190,7 +1203,7 @@ Cleanup proceeds from policy toward native mechanism:
 
 1. stop accepting new control work;
 2. cancel interactive operations and animation bindings;
-3. quiesce protocol-owning components;
+3. quiesce protocol-owning subsystems/components;
 4. release presentation and surface-buffer snapshots;
 5. cancel or finish outstanding frame contexts;
 6. retire compositor objects and detach components;
@@ -1201,10 +1214,10 @@ Every cleanup operation is idempotent.
 
 ### 11.3 Owner-thread rule
 
-All native calls, compositor mutations, component replacement, and REPL
+All native calls, compositor mutations, supported strategy replacement, and REPL
 evaluation occur on the compositor owner thread. Worker threads may prepare
 shader source and descriptors, encode captures, or perform agent computation
-only against detached immutable data and must return results through the
+only against detached immutable data and must return results through control's
 external inbox. GLES compilation/linking occurs on the owner thread unless a
 worker explicitly owns a compatible shared EGL context.
 
@@ -1227,7 +1240,8 @@ The architecture is performant if it avoids fine-grained boundary crossings.
 - direct listener-token lookup on the callback path;
 - specialized callback structs and foreign-memory arenas where measured;
 - frame-local immutable presentation snapshots;
-- direct compositor slot access, fetched once before tight loops;
+- direct root-subsystem access, with nested strategies fetched once before tight
+  loops;
 - compiled render and animation descriptors;
 - bulk FFI arrays rather than one call per vertex;
 - spatial acceleration owned by the active world implementation;
@@ -1247,7 +1261,7 @@ Before adding visual complexity, the implementation must measure:
 - buffer age and damaged area;
 - animation count and sample time;
 - hit-test query time;
-- external inbox and agent observation pressure;
+- control-owned external inbox and agent observation pressure;
 - missed presentation deadlines.
 
 The target is not “zero CLOS dispatch.” The target is no unbounded allocation or
@@ -1264,7 +1278,7 @@ Deliverables:
 
 - approve this architecture and unresolved decisions;
 - freeze typed binding callback/function ownership rules;
-- freeze compositor slots, component ownership, and direct call paths;
+- freeze root subsystem slots, nested ownership, and direct call paths;
 - freeze exact native-object factory and destruction/quiescing rules;
 - freeze coordinate, buffer, and specialized frame-operation contracts;
 - define dependency rules enforced by ASDF/package boundaries.
@@ -1376,8 +1390,8 @@ Deliverables:
 Evidence:
 
 - unauthorized requests have zero compositor effects;
-- component replacement is visible at one safe point or rejected without
-  corrupting the active component;
+- supported strategy replacement is visible at one safe point or rejected
+  without corrupting its owning subsystem;
 - agents can operate terminal and Firefox through semantic and input actions.
 
 ### Milestone 7: Production protocol and DRM coverage

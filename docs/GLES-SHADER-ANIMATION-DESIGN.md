@@ -21,16 +21,16 @@ activate, replace, and remove shader programs and animation definitions.
 
 ## 2. Responsibility Boundary
 
-The animation engine owns:
+Within the presentation subsystem, the animation engine owns:
 
 - transition resolution;
 - clocks, timelines, springs, curves, and interruption;
 - per-subject animation definitions;
 - typed parameter tracks;
 - effect activation and blending weights;
-- presentation invalidation.
+- requests for presentation invalidation.
 
-The presentation engine owns:
+The presentation subsystem owns:
 
 - selecting visible compositor objects;
 - world/camera projection;
@@ -39,7 +39,7 @@ The presentation engine owns:
 - conservative damage;
 - old/new content relationships required by transitions.
 
-The GLES renderer owns:
+The graphics subsystem's direct GLES execution strategy owns:
 
 - EGL context and current-target dynamic extent;
 - shader compilation/linking and program caches;
@@ -239,7 +239,7 @@ Every effect supplies conservative output-local damage:
 - temporal effects remain dirty while active.
 
 Geometry animation damages previous and current bounds. Damage is clipped and
-coalesced by the output manager, then combined with per-output-buffer history.
+coalesced by outputs, then combined with per-output-buffer history.
 Shader effects normally veto direct scanout unless a concrete hardware path can
 produce the same result.
 
@@ -327,9 +327,9 @@ recovery where the driver permits it.
 - `ataxia.animation.bindings`: typed model/presentation/uniform bindings;
 - `ataxia.shader-control`: trusted agent and Lisp-shell shader operations.
 
-These packages call direct binding APIs and are wired into the compositor's
-renderer, presentation, animation, and control components. They do not introduce
-an internal message bus or a second graphics host abstraction.
+These packages call direct binding APIs and are wired into graphics,
+presentation and its nested animation engine, and control. They do not
+introduce an internal message bus or a second graphics host abstraction.
 
 ## 16. Invariants
 

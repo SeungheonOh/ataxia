@@ -59,6 +59,17 @@
                      :reader animation-action-descriptor-class)
    (definition :initarg :definition :reader animation-action-definition)))
 
+(defclass install-shader-program-action (control-action)
+  ((name :initarg :name :reader install-shader-action-name)
+   (descriptor :initarg :descriptor :reader install-shader-action-descriptor)))
+
+(defclass configure-view-shader-action (control-action)
+  ((view :initarg :view :reader configure-shader-action-view)
+   (program-name :initarg :program-name
+                 :reader configure-shader-action-program-name)
+   (uniforms :initarg :uniforms :initform nil
+             :reader configure-shader-action-uniforms)))
+
 (defclass control-system (compositor-component)
   ((queue :initform nil :accessor control-queue)
    (queue-limit :initarg :queue-limit :initform 1024
@@ -73,7 +84,7 @@
     :initform
     (make-instance
      'control-principal :identity :local-shell
-     :capabilities '(:observe :focus :move :seat :animation))
+     :capabilities '(:observe :focus :move :seat :animation :shader))
     :reader control-local-principal)))
 
 (defgeneric required-control-capability (action))
@@ -85,6 +96,12 @@
 (defmethod required-control-capability
     ((action set-view-animation-action))
   :animation)
+(defmethod required-control-capability
+    ((action install-shader-program-action))
+  :shader)
+(defmethod required-control-capability
+    ((action configure-view-shader-action))
+  :shader)
 
 (defun principal-allows-action-p (principal action)
   (member (required-control-capability action)
@@ -278,6 +295,24 @@
      policy (animation-action-descriptor-class action)
      (animation-action-definition action))))
 
+(defmethod execute-control-action
+    ((control control-system) (action install-shader-program-action))
+  ;; Compilation happens on the owner thread with the wlroots EGL context.
+  ;; replace-shader-program activates only after the candidate links cleanly.
+  (replace-shader-program
+   (compositor-graphics (component-compositor control))
+   (install-shader-action-name action)
+   (install-shader-action-descriptor action)))
+
+(defmethod execute-control-action
+    ((control control-system) (action configure-view-shader-action))
+  (let ((renderer (compositor-graphics (component-compositor control)))
+        (view (configure-shader-action-view action)))
+    (dolist (uniform (configure-shader-action-uniforms action))
+      (set-view-shader-uniform renderer view (car uniform) (cdr uniform)))
+    (set-view-shader-program
+     renderer view (configure-shader-action-program-name action))))
+
 (defun observe-compositor (control &optional principal)
   (let* ((compositor (component-compositor control))
          (effective-principal (or principal (control-local-principal control))))
@@ -308,8 +343,9 @@
              (interaction-seats (compositor-interaction compositor)))
      :views
      (mapcar (lambda (view)
-               (list :id (view-id view) :title (view-title view)
+             (list :id (view-id view) :title (view-title view)
                      :app-id (application-app-id (view-application view))
                      :mapped-p (view-mapped-p view)
+                     :shader-program (view-shader-program-name view)
                      :width (view-width view) :height (view-height view)))
              (desktop-views (compositor-desktop compositor))))))

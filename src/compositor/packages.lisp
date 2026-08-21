@@ -188,6 +188,8 @@
    #:move-view-action
    #:create-seat-action
    #:set-view-animation-action
+   #:install-shader-program-action
+   #:configure-view-shader-action
    #:create-compositor
    #:start-compositor
    #:run-compositor

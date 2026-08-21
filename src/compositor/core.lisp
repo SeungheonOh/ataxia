@@ -81,6 +81,11 @@
   ((old-state :initarg :old-state :reader content-old-state)
    (new-state :initarg :new-state :reader content-new-state)))
 
+(defclass component-replacement (operation-descriptor)
+  ((role :initarg :role :reader replacement-role)
+   (old-component :initarg :old-component :reader replacement-old-component)
+   (new-component :initarg :new-component :reader replacement-new-component)))
+
 (defclass operation-context ()
   ((subject :initarg :subject :reader context-subject)
    (operation :initarg :operation :reader context-operation)

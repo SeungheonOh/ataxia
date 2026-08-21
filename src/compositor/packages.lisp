@@ -44,6 +44,10 @@
    #:interaction-old-state
    #:interaction-new-state
    #:content-transition
+   #:component-replacement
+   #:replacement-role
+   #:replacement-old-component
+   #:replacement-new-component
    #:operation-context
    #:context-subject
    #:context-operation
@@ -129,6 +133,7 @@
    #:pan-viewport
    #:zoom-viewport
    #:replace-world
+   #:migrate-world-placement
    #:presentation-state
    #:presentation-opacity
    #:presentation-scale

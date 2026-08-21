@@ -694,6 +694,7 @@
   (desktop-remove-popup (compositor-desktop compositor) popup))
 
 (defgeneric migrate-world-placement (old-world new-world view placement))
+(defgeneric replace-world (compositor new-world))
 
 (defmethod migrate-world-placement
     ((old-world planar-world) (new-world planar-world)
@@ -701,30 +702,85 @@
   (declare (ignore old-world new-world view))
   (copy-planar-placement placement))
 
-(defun replace-world (compositor new-world)
+(defun component-replacement-context
+    (compositor descriptor phase &optional metadata)
+  (make-instance
+   'hook-context :subject compositor :operation descriptor
+   :old-state (replacement-old-component descriptor)
+   :new-state (replacement-new-component descriptor)
+   :cause :control :provenance (make-local-provenance :compositor)
+   :phase phase :metadata metadata))
+
+(defmethod replace-world ((compositor compositor) (new-world world))
   (assert-compositor-owner compositor :replace-world)
-  (check-type new-world world)
   (validate-component new-world compositor)
-  (let* ((old-world (compositor-world compositor))
-         (migrations
+  (when (eq new-world (compositor-world compositor))
+    (return-from replace-world new-world))
+  (when (find-if #'seat-operation
+                 (interaction-seats (compositor-interaction compositor)))
+    (error 'invalid-compositor-state
+           :operation :replace-world :state :active-interaction))
+  (let* ((hooks (extension-hooks (compositor-extensions compositor)))
+         (old-world (compositor-world compositor))
+         (requested-descriptor
+           (make-instance
+            'component-replacement :subject compositor :role :world
+            :old-component old-world :new-component new-world))
+         (resolution-context
+           (run-hook
+            hooks 'component-replacement-resolving
+            (component-replacement-context
+             compositor requested-descriptor :resolve)))
+         (descriptor (context-operation resolution-context))
+         (effective-world
+           (and (typep descriptor 'component-replacement)
+                (replacement-new-component descriptor))))
+    (unless (and (typep effective-world 'world)
+                 (eq :world (replacement-role descriptor))
+                 (eq compositor (operation-subject descriptor)))
+      (error 'compositor-error))
+    (validate-component effective-world compositor)
+    (let* ((migrations
            (mapcar
             (lambda (view)
-              (cons view
-                    (migrate-world-placement
-                     old-world new-world view (view-placement view))))
-            (desktop-views (compositor-desktop compositor)))))
-    (attach-component new-world)
-    (handler-case
-        (progn
-          (dolist (migration migrations)
-            (setf (view-placement (car migration)) (cdr migration)))
-          (setf (compositor-world compositor) new-world)
-          (detach-component old-world :replaced)
-          (schedule-presentation (compositor-presentation compositor))
-          new-world)
-      (serious-condition (condition)
-        (detach-component new-world :migration-failed)
-        (error condition)))))
+              (let ((old-placement (view-placement view)))
+                (list view old-placement
+                      (migrate-world-placement
+                       old-world effective-world view old-placement))))
+            (desktop-views (compositor-desktop compositor))))
+         (adopted-p nil))
+      (run-hook
+       hooks 'before-component-replacement
+       (component-replacement-context compositor descriptor :before))
+      (attach-component effective-world)
+      (handler-case
+          (progn
+            (dolist (migration migrations)
+              (setf (view-placement (first migration)) (third migration)))
+            (setf (compositor-world compositor) effective-world
+                  adopted-p t)
+            (detach-component old-world :replaced)
+            (schedule-presentation (compositor-presentation compositor))
+            (run-hook
+             hooks 'after-component-replacement
+             (component-replacement-context compositor descriptor :after))
+            effective-world)
+        (serious-condition (condition)
+          ;; Restore one coherent world/placement set before reporting failure.
+          (when adopted-p
+            (setf (compositor-world compositor) old-world)
+            (dolist (migration migrations)
+              (setf (view-placement (first migration)) (second migration))))
+          (when (eq (component-state old-world) :detached)
+            (attach-component old-world))
+          (when (eq (component-state effective-world) :attached)
+            (detach-component effective-world :migration-failed))
+          (ignore-errors
+            (run-hook
+             hooks 'component-replacement-failed
+             (component-replacement-context
+              compositor descriptor :failed condition)))
+          (error condition))))))
 
 (defun launch-application (compositor command)
   (let ((socket

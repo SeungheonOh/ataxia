@@ -35,7 +35,11 @@
     (before-animation-start :veto 64)
     (after-animation-start :observe 64)
     (animation-cancelled :observe 64)
-    (animation-completed :observe 64)))
+    (animation-completed :observe 64)
+    (component-replacement-resolving :transform 32)
+    (before-component-replacement :veto 32)
+    (after-component-replacement :observe 32)
+    (component-replacement-failed :observe 32)))
 
 (defun ensure-hook-point (registry name mode &key (limit 64))
   (or (gethash name (hook-registry-points registry))

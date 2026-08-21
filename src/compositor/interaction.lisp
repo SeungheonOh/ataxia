@@ -522,9 +522,6 @@
           (interaction-seat-for-device
            interaction (ataxia.runtime:pointer-axis-pointer event))))
     (when seat
-      (trace-input "[input] key ~D ~A~%"
-                   (ataxia.runtime:keyboard-key-keycode event)
-                   (ataxia.runtime:keyboard-key-state event))
       (ataxia.runtime:seat-pointer-notify-axis
        (seat-native seat)
        (ataxia.runtime:pointer-axis-time-msec event)
@@ -545,6 +542,9 @@
   (let* ((keyboard (ataxia.runtime:keyboard-key-keyboard event))
          (seat (interaction-seat-for-device interaction keyboard)))
     (when seat
+      (trace-input "[input] key ~D ~A~%"
+                   (ataxia.runtime:keyboard-key-keycode event)
+                   (ataxia.runtime:keyboard-key-state event))
       (setf (seat-active-keyboard seat) keyboard)
       (ataxia.runtime:set-seat-keyboard (seat-native seat) keyboard)
       (ataxia.runtime:seat-keyboard-notify-key

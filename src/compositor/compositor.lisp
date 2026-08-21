@@ -162,8 +162,7 @@
 (defmethod ataxia.runtime:runtime-started
     ((compositor compositor) runtime)
   (declare (ignore runtime))
-  (setf (compositor-state compositor) :running)
-  (schedule-presentation (compositor-presentation compositor)))
+  (setf (compositor-state compositor) :running))
 
 (defmethod ataxia.runtime:runtime-stopping
     ((compositor compositor) runtime reason)
@@ -190,7 +189,9 @@
                         collect record))
         (ataxia.runtime:surface-send-enter
          (surface-record-native record) native-output))
-      (ataxia.runtime:output-schedule-frame native-output))
+      ;; The initial modeset already queues the first frame event. Scheduling
+      ;; here can race a pending DRM page flip on physical backends.
+      )
     output))
 
 (defmethod ataxia.runtime:output-frame
@@ -352,7 +353,6 @@
             (ataxia.runtime:xdg-toplevel-app-id toplevel)
             (ataxia.runtime:xdg-toplevel-title toplevel))))
     (world-place-view (compositor-world compositor) view nil)
-    (ataxia.runtime:xdg-toplevel-set-wm-capabilities toplevel #x0f)
     view))
 
 (defmethod ataxia.runtime:xdg-toplevel-committed
@@ -373,6 +373,9 @@
                                      (- (ataxia.runtime:output-height
                                          (output-native output)) 128)))
                            650)))
+          (ataxia.runtime:xdg-toplevel-set-wm-capabilities toplevel #x0f)
+          (ataxia.runtime:xdg-toplevel-set-bounds
+           toplevel width height)
           (setf (view-width view) width (view-height view) height
                 (placement-width (view-placement view))
                 (coerce width 'double-float)

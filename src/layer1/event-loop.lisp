@@ -85,40 +85,49 @@
 
 (cffi:defcallback event-loop-fd-dispatch :int
     ((file-descriptor :int) (mask :uint32) (data :pointer))
-  (let ((source (%event-source-from-data data)))
-    (or (%call-event-source
-         source
-         (lambda ()
-           (funcall (%event-source-callback source)
-                    source file-descriptor mask)))
-        0)))
+  (handler-case
+      (let ((source (%event-source-from-data data)))
+        (or (%call-event-source
+             source
+             (lambda ()
+               (funcall (%event-source-callback source)
+                        source file-descriptor mask)))
+            0))
+    (serious-condition () 0)))
 
 (cffi:defcallback event-loop-timer-dispatch :int ((data :pointer))
-  (let ((source (%event-source-from-data data)))
-    (or (%call-event-source
-         source
-         (lambda () (funcall (%event-source-callback source) source)))
-        0)))
+  (handler-case
+      (let ((source (%event-source-from-data data)))
+        (or (%call-event-source
+             source
+             (lambda () (funcall (%event-source-callback source) source)))
+            0))
+    (serious-condition () 0)))
 
 (cffi:defcallback event-loop-signal-dispatch :int
     ((signal-number :int) (data :pointer))
-  (let ((source (%event-source-from-data data)))
-    (or (%call-event-source
-         source
-         (lambda ()
-           (funcall (%event-source-callback source) source signal-number)))
-        0)))
+  (handler-case
+      (let ((source (%event-source-from-data data)))
+        (or (%call-event-source
+             source
+             (lambda ()
+               (funcall (%event-source-callback source)
+                        source signal-number)))
+            0))
+    (serious-condition () 0)))
 
 (cffi:defcallback event-loop-idle-dispatch :void ((data :pointer))
-  (let ((source (%event-source-from-data data)))
-    (when source
-      (%call-event-source
-       source
-       (lambda () (funcall (%event-source-callback source) source)))
-      (remhash (%event-source-cookie source) *event-source-registry*)
-      (remhash (%event-source-cookie source)
-               (%runtime-event-source-table (%native-runtime source)))
-      (%invalidate-native-object source)))
+  (handler-case
+      (let ((source (%event-source-from-data data)))
+        (when source
+          (%call-event-source
+           source
+           (lambda () (funcall (%event-source-callback source) source)))
+          (remhash (%event-source-cookie source) *event-source-registry*)
+          (remhash (%event-source-cookie source)
+                   (%runtime-event-source-table (%native-runtime source)))
+          (%invalidate-native-object source)))
+    (serious-condition () nil))
   (values))
 
 (defun %event-loop-callback-pointer (kind)

@@ -40,35 +40,103 @@
                 (and (slot-boundp compositor 'control)
                      (compositor-control compositor)))))
 
-(defun construct-compositor-components (compositor)
+(defgeneric make-compositor-component
+    (compositor role &rest initialization-arguments))
+
+(defmethod make-compositor-component
+    ((compositor compositor) (role (eql :animation))
+     &rest initialization-arguments)
+  (apply #'make-instance 'animation-engine
+         :compositor compositor initialization-arguments))
+
+(defmethod make-compositor-component
+    ((compositor compositor) (role (eql :presentation))
+     &rest initialization-arguments)
+  (apply #'make-instance 'presentation-system
+         :compositor compositor initialization-arguments))
+
+(defmethod make-compositor-component
+    ((compositor compositor) (role (eql :world))
+     &rest initialization-arguments)
+  (apply #'make-instance 'planar-world
+         :compositor compositor initialization-arguments))
+
+(defmethod make-compositor-component
+    ((compositor compositor) (role (eql :graphics))
+     &rest initialization-arguments)
+  (apply #'make-instance 'direct-gles-renderer
+         :compositor compositor initialization-arguments))
+
+(defmethod make-compositor-component
+    ((compositor compositor) (role (eql :outputs))
+     &rest initialization-arguments)
+  (apply #'make-instance 'output-system
+         :compositor compositor initialization-arguments))
+
+(defmethod make-compositor-component
+    ((compositor compositor) (role (eql :surfaces))
+     &rest initialization-arguments)
+  (apply #'make-instance 'surface-system
+         :compositor compositor initialization-arguments))
+
+(defmethod make-compositor-component
+    ((compositor compositor) (role (eql :desktop))
+     &rest initialization-arguments)
+  (apply #'make-instance 'desktop-system
+         :compositor compositor initialization-arguments))
+
+(defmethod make-compositor-component
+    ((compositor compositor) (role (eql :extensions))
+     &rest initialization-arguments)
+  (apply #'make-instance 'extension-system
+         :compositor compositor initialization-arguments))
+
+(defmethod make-compositor-component
+    ((compositor compositor) (role (eql :interaction))
+     &rest initialization-arguments)
+  (apply #'make-instance 'interaction-system
+         :compositor compositor initialization-arguments))
+
+(defmethod make-compositor-component
+    ((compositor compositor) (role (eql :control))
+     &rest initialization-arguments)
+  (apply #'make-instance 'control-system
+         :compositor compositor initialization-arguments))
+
+(defgeneric construct-compositor-components (compositor))
+
+(defmethod construct-compositor-components ((compositor compositor))
   (let* ((animation
-           (make-instance 'animation-engine :compositor compositor))
+           (make-compositor-component compositor :animation))
          (presentation
-           (make-instance 'presentation-system :compositor compositor
-                          :animation-engine animation)))
+           (make-compositor-component
+            compositor :presentation :animation-engine animation)))
     (setf (slot-value compositor 'world)
-          (make-instance 'planar-world :compositor compositor)
+          (make-compositor-component compositor :world)
           (slot-value compositor 'graphics)
-          (make-instance 'direct-gles-renderer :compositor compositor)
+          (make-compositor-component compositor :graphics)
           (slot-value compositor 'outputs)
-          (make-instance 'output-system :compositor compositor)
+          (make-compositor-component compositor :outputs)
           (slot-value compositor 'surfaces)
-          (make-instance 'surface-system :compositor compositor)
+          (make-compositor-component compositor :surfaces)
           (slot-value compositor 'desktop)
-          (make-instance 'desktop-system :compositor compositor)
+          (make-compositor-component compositor :desktop)
           (slot-value compositor 'extensions)
-          (make-instance 'extension-system :compositor compositor)
+          (make-compositor-component compositor :extensions)
           (slot-value compositor 'presentation) presentation
           (slot-value compositor 'interaction)
-          (make-instance 'interaction-system :compositor compositor)
+          (make-compositor-component compositor :interaction)
           (slot-value compositor 'control)
-          (make-instance 'control-system :compositor compositor))
+          (make-compositor-component compositor :control))
     (values animation presentation)))
 
 (defun create-compositor
     (&key (backend :auto) (headless-width 1280) (headless-height 720)
-          (socket-p t) debug-p)
-  (let ((compositor (make-instance 'compositor)))
+          (socket-p t) debug-p (compositor-class 'compositor))
+  (unless (subtypep compositor-class 'compositor)
+    (error 'invalid-compositor-state
+           :operation :create-compositor :state compositor-class))
+  (let ((compositor (make-instance compositor-class)))
     #+sb-thread
     (setf (slot-value compositor 'owner-thread) sb-thread:*current-thread*)
     #-sb-thread

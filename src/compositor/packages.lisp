@@ -29,6 +29,8 @@
    #:compositor-extensions
    #:compositor-control
    #:compositor-state
+   #:make-compositor-component
+   #:construct-compositor-components
    #:operation-descriptor
    #:operation-subject
    #:operation-animation-override

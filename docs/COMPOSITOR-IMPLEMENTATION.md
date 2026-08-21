@@ -85,7 +85,9 @@ turn. Active animations keep the redraw flag set until sampling completes.
 The renderer is intentionally direct GLES. It uses Runtime's wlroots-owned EGL
 context, imports the client's wlroots texture as GLES texture attributes, draws
 into a scanout-compatible buffer, and commits that buffer through an exact
-output state.
+output state. Core provides solid, surface-texture, and generic shader-material
+execution only. Behavior code owns visible background selection, shadows, and
+other effect shader definitions.
 
 ## Per-window animation and shaders
 

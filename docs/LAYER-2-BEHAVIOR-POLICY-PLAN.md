@@ -362,6 +362,8 @@ The physical boundary is:
 
 - `src/behavior/policy.lisp`: contract, opaque state, migration, and planar
   coordinate policy;
+- `src/behavior/effects.lisp`: policy-owned shader sources, effect styles, and
+  effect presentation items;
 - `src/behavior/scene.lisp`: shared policy-owned scene assembly;
 - `src/behavior/animation.lisp`: policy animation resolution;
 - `src/behavior/planar.lisp`: planar interaction and scene projection;
@@ -377,11 +379,13 @@ The physical boundary is:
 4. Keyboard, pointer button, and pointer axis meaning use typed policy calls.
 5. Immutable presentation items share render geometry with pointer picking.
 6. Direct GLES supports both affine quads and arbitrary triangle meshes.
-7. Transactional policy replacement migrates live views and outputs and rolls
+7. Core rendering dispatches generic CLOS materials; visible background,
+   shadows, decorations, and effect shaders are selected under `src/behavior`.
+8. Transactional policy replacement migrates live views and outputs and rolls
    back failed trial snapshots.
-8. The spherical policy renders curved root surfaces, subsurfaces, and popups
+9. The spherical policy renders curved root surfaces, subsurfaces, and popups
    and supports bidirectional live migration with the planar policy.
-9. Projected partial damage remains a performance refinement; correctness uses
+10. Projected partial damage remains a performance refinement; correctness uses
    the full-output redraw fallback.
 
 ## Completion Criteria

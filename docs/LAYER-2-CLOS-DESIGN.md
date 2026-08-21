@@ -738,6 +738,59 @@ transaction. Protocol-specific state—such as an XDG configure serial or output
 commit sequence—relates it to a pending entity/component. The original
 transaction never stays open while waiting for a client or page flip.
 
+### 8.7 Layer 2-requested native objects
+
+Some native objects exist because of Layer 2 policy rather than a client or
+backend event. Logical seats are the reference case; protocol globals, headless
+outputs, server-published toplevel/workspace handles, hardware cursors/layers,
+Xwayland instances, and compositor-owned transfer sources follow the same
+transaction ordering.
+
+The same boundary also covers service-owned event-loop sources, explicitly
+provisioned clients from owned FDs, compositor-owned synthetic input providers,
+server-originated activation tokens, and native objects produced by an accepted
+DRM-lease, drag, output-management, or presentation operation. Root/bootstrap
+factories and operation-scoped render objects use the same exact Layer 1 calls,
+but their legal phases and publication rules are different.
+
+The kernel does not provide a generic factory service. The responsible domain
+provider calls the exact constructor exported by the relevant Layer 1 package:
+
+```lisp
+(seat-create layer-1-runtime seat-name active-seat-sink)
+(headless-output-create headless-backend width height active-output-sink)
+(foreign-toplevel-handle-create toplevel-manager state)
+```
+
+Creation rules:
+
+1. the domain service proposes the semantic entity and exact native constructor;
+2. the transaction validates names, quotas, service dependencies, and runtime
+   phase before entering Layer 1;
+3. the constructor is a `required-before-publish` effect;
+4. Layer 1 returns a live typed wrapper only after required listeners/sinks are
+   installed;
+5. the transaction then publishes the semantic entity and a native-resource
+   relation containing that wrapper;
+6. the semantic object ID remains authoritative; the wrapper is provenance and
+   native capability, not semantic identity;
+7. constructor failure publishes nothing;
+8. unexpected failure after construction schedules the exact destructor at the
+   outermost safe point.
+
+Destruction first retires the semantic relationships, then executes the exact
+Layer 1 destructor. The native destroy callback invalidates the wrapper. A
+protocol global with live client resources is quiesced and retains its provider
+generation when immediate destruction would invalidate callbacks still required
+by Wayland clients.
+
+Backend-created physical outputs/devices, ordinary connected clients, and
+client-created surfaces, roles, offers, constraints, inhibitors, and requests
+never use this path. Their exact callbacks create Layer 2 relationships around
+already-existing wrappers. An explicitly provisioned client, server-originated
+activation token, custom DRM mode, or granted lease has a separate exact typed
+operation so provenance cannot be confused.
+
 ## 9. Runtime Turn and Safe Points
 
 ```mermaid
@@ -1369,7 +1422,9 @@ Rules:
 
 | Object/value | Creator | Mutator | Lifetime owner |
 |---|---|---|---|
-| native-resource relation | protocol policy transaction | resource protocol | object registry |
+| Layer 2-requested persistent wrapper | exact Layer 1 constructor effect | exact typed Layer 1 package | owning service plus native destroy signal |
+| backend/client-created wrapper relation | exact callback transaction | resource protocol | object registry plus native destroy signal |
+| scoped native wrapper | concrete render/response/transfer provider | exact typed Layer 1 package | one dynamic operation |
 | semantic entity | domain service transaction | owning domain service | object registry |
 | component value | component-owning service | replacement transaction only | entity snapshot |
 | service provider | plugin manager | provider lifecycle protocol | service scope/plugin instance |
@@ -1402,6 +1457,15 @@ Rules:
 15. Every mailbox/observation queue, component collection, callback copy, render
     plan, animation set, and observation is bounded.
 16. The kernel can run with no desktop-profile plugin installed.
+17. No generic native-object factory exists; every constructor belongs to one
+    concrete Layer 1 package and native type.
+18. A semantic entity is published only after its required native constructor
+    and listener installation succeed.
+19. Typed Layer 1 wrappers are provenance/capability references, never semantic
+    object identities.
+20. Layer 2 never misclassifies an observed backend-, connection-, or
+    client-created object as policy-created; explicitly server-originated
+    variants have separate exact typed operations.
 
 ## 19. Decisions Still Required
 

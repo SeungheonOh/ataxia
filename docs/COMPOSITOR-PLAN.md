@@ -158,6 +158,7 @@ native policy runtime.
 | XDG configure | expose exact setters/scheduler and ack/commit callbacks | decide geometry/states and match serials to policy transactions |
 | Move/resize request | deliver typed seat/serial/edges callback | authorize and run the interactive operation |
 | Input | deliver exact device callbacks and expose typed seat notification functions | mapping, grabs, hit testing, focus, cursor, shortcuts, accessibility |
+| Logical seat lifecycle | expose exact create/name/capabilities/keyboard/destroy calls and seat request callbacks | decide seat count, identity, device assignment, focus, and capabilities |
 | Clipboard/DND | express exact source/request/FD ownership in typed wrappers | authorization, MIME/action selection, transport/session policy |
 | Output | wrap capabilities and exact test/commit calls | arrangement, mode/scale choice, viewports, color and power policy |
 | Rendering | wrap wlroots renderer/allocator/buffer/output primitives | frame orchestration, scene, projection, damage, shaders, effects |
@@ -185,10 +186,9 @@ Neither Ataxia-authored C nor Layer 1 Lisp contains desktop behavior.
 
 ### 4.1 Lisp-owned runtime
 
-Common Lisp directly:
+Layer 1 Common Lisp directly owns the root runtime:
 
-- creates and destroys `wl_display`, the event loop, wlroots backend, renderer,
-  allocator, compositor globals, protocol managers, outputs, and seats;
+- creates and destroys `wl_display` and its event loop;
 - creates the Wayland socket and starts/stops the backend;
 - calls `wl_event_loop_dispatch` and `wl_display_flush_clients`;
 - discovers DRM, libinput, nested Wayland, and headless capabilities;
@@ -196,6 +196,20 @@ Common Lisp directly:
 - invalidates wrappers from the authoritative destroy signals;
 - contains callback failures so no Lisp condition unwinds through C;
 - exposes structured Lisp conditions around exact native failures.
+
+It exposes exact typed constructors/destructors for server-owned objects whose
+existence is selected by the composition root or Layer 2 policy: backends,
+renderers, allocators, protocol globals, logical seats, headless/nested outputs,
+server-published protocol handles, output cursor/layer objects, Xwayland, and
+scoped render/response resources. The same rule covers service-owned event-loop
+sources, explicitly provisioned clients from owned FDs, synthetic input
+providers, server-originated activation tokens, and policy-granted native
+objects such as DRM leases.
+
+Backend-created physical outputs/devices, ordinary connected clients, and
+client-created protocol resources enter only through their exact callbacks.
+Explicitly server-originated variants use distinct typed operations and retain
+their actual provenance.
 
 wlroots signals enter Lisp synchronously on the compositor owner thread. The
 callback copies transient fields or retains the exact concrete resource, then
@@ -211,6 +225,7 @@ Each protocol family is a separate Common Lisp package with:
 - listeners for its exact wlroots signals;
 - concrete structs for callback data that must be copied;
 - protocol-specific Layer 2 sink generic functions;
+- exact constructors/destructors for server-owned objects in that protocol;
 - typed functions that directly call the relevant `wlr_*` or `wl_*` API;
 - no dependency on world, scene, animation, focus, shell, or agent packages.
 
@@ -442,6 +457,56 @@ unsafe:
 
 The Ataxia C shim does none of this policy or bookkeeping. It only delivers the
 native callback to Lisp while the data is valid.
+
+### 4.8 Layer 2-requested native objects
+
+Layer 2 may request a native object only when the object exists because of
+compositor policy. Every request uses the exact constructor in the owning Layer
+1 package; there is no generic factory keyed by a type symbol.
+
+Persistent examples include:
+
+- logical and transient seats;
+- selected protocol globals/managers;
+- renderers, allocators, and output render initialization;
+- headless/nested virtual outputs;
+- output hardware cursors and layers;
+- keyboard groups and tablet protocol seat objects;
+- compositor-owned synthetic input devices;
+- Xwayland server/instance objects;
+- foreign-toplevel/workspace publication handles;
+- compositor-owned clipboard/primary-selection sources;
+- capture sources and synchronization timelines;
+- event-loop FD/timer/signal/idle sources;
+- explicitly provisioned clients created from owned FDs.
+
+Concrete provider plugins may additionally implement backend, renderer, output,
+buffer, or input subtypes through the exact public wlroots interface
+`init`/`finish` functions. Such subtypes remain provider-owned and enter the rest
+of Layer 2 through the same typed contracts as stock wlroots implementations.
+
+Policy-created operation results include server-originated activation tokens,
+granted DRM leases, compositor-initiated drags, presentation feedback, custom
+DRM modes, and output-management response objects.
+
+Scoped examples include output states, render passes, output configuration
+responses, textures, swapchains, render timers, and operation-local foreign
+arrays.
+
+Creation is a `required-before-publish` Layer 2 effect: validate policy first,
+call the exact owner-thread constructor, install required listeners/sink, receive
+a typed wrapper, then publish the semantic entity related to that wrapper.
+Constructor failure publishes nothing. Destruction retires semantic use first,
+then calls the exact destructor at an outermost safe point; the native destroy
+callback invalidates the wrapper.
+
+Physical outputs/devices, backend-reported modes, ordinary connected clients,
+surfaces, XDG/layer/lock roles, client data objects, constraints, inhibitors,
+client activation-token requests, and client capture requests are observed and
+never use this path. Server-originated variants are always separate typed APIs.
+
+The complete inventory and seat reference API are specified in
+[wlroots–Common Lisp Boundary and Layer 1–Layer 2 Interface](LAYER-1-2-INTERFACE.md).
 
 ## 5. Rendering and DRM Boundary
 
@@ -1007,7 +1072,8 @@ The repository should enforce boundaries through separate ASDF systems.
 - `ataxia.wlr.core`: display, event loop, client, surface, and wrapper lifetime;
 - `ataxia.wlr.backend`: backend, output, and input-device discovery;
 - `ataxia.wlr.render`: renderer, allocator, buffer, texture, and render pass;
-- `ataxia.wlr.seat`: seat objects and exact input delivery functions;
+- `ataxia.wlr.seat`: seat creation/lifecycle, request callbacks, and exact input
+  delivery functions;
 - `ataxia.wlr.protocol.*`: one typed package per protocol family;
 - native `libataxia-wlr-glue`: only direct wlroots/libwayland ABI helpers.
 
@@ -1156,6 +1222,7 @@ Deliverables:
 
 - approve this architecture and unresolved decisions;
 - freeze typed Layer 1 callback/function ownership rules;
+- freeze exact native-object factory and destruction/quiescing rules;
 - freeze coordinate, buffer, and frame transaction contracts;
 - define dependency rules enforced by ASDF/package boundaries.
 
@@ -1171,12 +1238,15 @@ Deliverables:
 - headless Wayland display and backend;
 - socket creation;
 - exact typed output/input discovery callbacks;
+- exact logical-seat creation, capability updates, and destruction;
 - typed wrapper creation and destroy-signal invalidation;
 - clean stop and dead-wrapper behavior.
 
 Evidence:
 
 - headless process starts, reports devices, dispatches, and stops cleanly;
+- a Layer 2-created seat is advertised only after its sink/listeners are ready
+  and is removed cleanly through `wlr_seat_destroy`;
 - Ataxia-authored C contains only audited wlroots/libwayland ABI glue.
 
 ### Milestone 2: Surface-to-pixel vertical slice
@@ -1208,6 +1278,8 @@ Deliverables:
 Evidence:
 
 - terminal typing works;
+- a second logical seat can be created, assigned devices, used, and destroyed
+  without restarting the compositor or corrupting the first seat;
 - Firefox spawns, maps popups, accepts keyboard input, and moves/resizes;
 - pointer resize mode always terminates correctly;
 - cursor never intercepts hit testing;

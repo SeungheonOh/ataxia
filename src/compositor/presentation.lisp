@@ -15,7 +15,8 @@
 
 (defclass output-system (compositor-component)
   ((outputs :initform (make-hash-table :test #'eq)
-            :reader output-table)))
+            :reader output-table)
+   (order :initform nil :accessor output-order)))
 
 (defclass presentation-system (compositor-component)
   ((animation-engine :initarg :animation-engine
@@ -67,9 +68,7 @@
   kind)
 
 (defun compositor-outputs-list (outputs)
-  (loop for output being the hash-values of (output-table outputs)
-        when (output-available-p output)
-          collect output))
+  (remove-if-not #'output-available-p (copy-list (output-order outputs))))
 
 (defun find-compositor-output (outputs native)
   (gethash native (output-table outputs)))
@@ -104,6 +103,8 @@
                (make-instance 'compositor-output
                               :native native :swapchain swapchain)))
         (setf (gethash native (output-table outputs)) output)
+        (setf (output-order outputs)
+              (append (output-order outputs) (list output)))
         output)
     (ataxia.runtime:native-call-failed (condition)
       (format *error-output* "[compositor] output unavailable ~A: ~A~%"
@@ -120,6 +121,8 @@
                   (output-swapchain output)))
         (ataxia.runtime:destroy-output-swapchain
          (output-swapchain output)))
+      (setf (output-order outputs)
+            (delete output (output-order outputs) :test #'eq))
       (remhash native (output-table outputs)))
     output))
 
@@ -230,18 +233,20 @@
            (y (seat-pointer-y seat))
            (cursor-record (seat-cursor-record seat)))
       (if (and cursor-record (surface-record-texture cursor-record))
-          (push
-           (make-instance
-            'presentation-item :kind :surface :owner seat
-            :surface (surface-record-native cursor-record)
-            :x (- x (seat-cursor-hotspot-x seat))
-            :y (- y (seat-cursor-hotspot-y seat))
-            :width (surface-record-width cursor-record)
-            :height (surface-record-height cursor-record)
-            :texture
-            (ataxia.runtime:texture-gles-attributes
-             (surface-record-texture cursor-record)))
-           items)
+          (setf items
+                (nconc
+                 items
+                 (list
+                  (make-instance
+                   'presentation-item :kind :surface :owner seat
+                   :surface (surface-record-native cursor-record)
+                   :x (- x (seat-cursor-hotspot-x seat))
+                   :y (- y (seat-cursor-hotspot-y seat))
+                   :width (surface-record-width cursor-record)
+                   :height (surface-record-height cursor-record)
+                   :texture
+                   (ataxia.runtime:texture-gles-attributes
+                    (surface-record-texture cursor-record))))))
           (setf items
                 (nconc items
                        (list

@@ -49,12 +49,8 @@
 
 (defun primary-output (interaction)
   (first
-   (sort (copy-list
-          (compositor-outputs-list
-           (compositor-outputs (component-compositor interaction))))
-         #'string<
-         :key (lambda (output)
-                (or (ataxia.runtime:output-name (output-native output)) "")))))
+   (compositor-outputs-list
+    (compositor-outputs (component-compositor interaction)))))
 
 (defun update-seat-capabilities (seat)
   (let ((capabilities 0))
@@ -197,6 +193,10 @@
     (let ((surface (and hit (presentation-hit-surface hit))))
       (cond
         (surface
+         (unless (eq surface (seat-pointer-focus-surface seat))
+           ;; A cursor shape belongs to the focused client surface. Reset it
+           ;; until the newly entered client supplies its own shape.
+           (setf (seat-cursor-record seat) nil))
          (if (eq surface (seat-pointer-focus-surface seat))
              (ataxia.runtime:seat-pointer-notify-motion
               (seat-native seat) time-msec
@@ -215,7 +215,8 @@
            (ataxia.runtime:seat-pointer-notify-clear-focus
             (seat-native seat)))
          (setf (seat-pointer-focus-surface seat) nil
-               (seat-pointer-focus-view seat) nil)))
+               (seat-pointer-focus-view seat) nil
+               (seat-cursor-record seat) nil)))
       hit)))
 
 (defun focus-view (interaction seat view)

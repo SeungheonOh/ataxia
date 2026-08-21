@@ -41,6 +41,8 @@
                      :reader presentation-animation-engine)
    (panel-height :initarg :panel-height :initform 32d0
                  :reader presentation-panel-height)
+   (titlebar-height :initarg :titlebar-height :initform 28d0
+                    :reader presentation-titlebar-height)
    (revision :initform 0 :accessor presentation-revision)))
 
 (defgeneric build-presentation-snapshot (presentation output timestamp))
@@ -333,7 +335,10 @@
       (multiple-value-bind (world-x world-y world-width world-height)
           (world-project world output (output-viewport output) view timestamp)
         (let ((effective-titlebar-height
-                (if (view-fullscreen-p view) 0d0 titlebar-height)))
+                (if (or (view-fullscreen-p view)
+                        (not (view-server-decorated-p view)))
+                    0d0
+                    titlebar-height)))
           (multiple-value-bind (x y width height)
               (scaled-view-geometry
                world-x world-y world-width
@@ -492,7 +497,7 @@
          (desktop (compositor-desktop compositor))
          (world (compositor-world compositor))
          (items nil)
-         (titlebar-height 28d0))
+         (titlebar-height (presentation-titlebar-height presentation)))
     (sample-animations (presentation-animation-engine presentation) timestamp)
     (dolist (view (desktop-stacking-order desktop))
       (setf items

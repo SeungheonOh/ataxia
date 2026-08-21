@@ -645,7 +645,12 @@
                         0d0
                         (presentation-panel-height
                          (compositor-presentation compositor))))
-             (titlebar (if fullscreen-p 0d0 28d0))
+             (titlebar
+               (if (or fullscreen-p
+                       (not (view-server-decorated-p view)))
+                   0d0
+                   (presentation-titlebar-height
+                    (compositor-presentation compositor))))
              (scale (viewport-scale (output-viewport output)))
              (placement (view-placement view))
              (width (/ (ataxia.runtime:output-width native) scale))

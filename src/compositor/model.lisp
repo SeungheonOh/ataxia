@@ -47,6 +47,7 @@
    (width :initform 900 :accessor view-width)
    (height :initform 650 :accessor view-height)
    (title :initarg :title :initform nil :accessor view-title)
+   (decoration-mode :initform :client-side :accessor view-decoration-mode)
    (initialized-p :initform nil :accessor view-initialized-p)
    (mapped-p :initform nil :accessor view-mapped-p)
    (presentable-p :initform nil :accessor view-presentable-p)
@@ -59,6 +60,9 @@
    (presentation-state :initform (make-instance 'presentation-state)
                        :reader view-presentation-state)
    (revision :initform 0 :accessor view-revision)))
+
+(defun view-server-decorated-p (view)
+  (eq :server-side (view-decoration-mode view)))
 
 (defclass popup-view ()
   ((native :initarg :native :reader popup-native)

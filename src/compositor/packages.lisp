@@ -90,6 +90,8 @@
    #:view-width
    #:view-height
    #:view-title
+   #:view-decoration-mode
+   #:view-server-decorated-p
    #:view-initialized-p
    #:view-mapped-p
    #:view-presentable-p
@@ -196,6 +198,7 @@
    #:presentation-system
    #:presentation-animation-engine
    #:presentation-panel-height
+   #:presentation-titlebar-height
    #:presentation-snapshot
    #:snapshot-output
    #:snapshot-timestamp

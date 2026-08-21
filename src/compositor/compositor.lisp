@@ -435,12 +435,17 @@
 (defmethod ataxia.runtime:surface-destroying
     ((compositor compositor) surface)
   (dolist (seat (interaction-seats (compositor-interaction compositor)))
+    (when (eq surface (seat-pointer-focus-surface seat))
+      (ataxia.runtime:seat-pointer-notify-clear-focus (seat-native seat))
+      (setf (seat-pointer-focus-surface seat) nil
+            (seat-pointer-focus-view seat) nil))
     (when (and (seat-cursor-record seat)
                (eq surface
                    (surface-record-native (seat-cursor-record seat))))
       (setf (seat-cursor-record seat) nil
             (seat-cursor-mode seat) :default)))
-  (retire-surface-record (compositor-surfaces compositor) surface))
+  (retire-surface-record (compositor-surfaces compositor) surface)
+  (schedule-presentation (compositor-presentation compositor)))
 
 (defmethod ataxia.runtime:surface-new-subsurface
     ((compositor compositor) parent subsurface)
@@ -578,7 +583,9 @@
 
 (defmethod ataxia.runtime:xdg-toplevel-destroying
     ((compositor compositor) toplevel)
-  (desktop-remove-view (compositor-desktop compositor) toplevel))
+  (prog1
+      (desktop-remove-view (compositor-desktop compositor) toplevel)
+    (schedule-presentation (compositor-presentation compositor))))
 
 (defmethod ataxia.runtime:xdg-toplevel-title-changed
     ((compositor compositor) toplevel title)
@@ -755,7 +762,9 @@
 
 (defmethod ataxia.runtime:xdg-popup-destroying
     ((compositor compositor) popup)
-  (desktop-remove-popup (compositor-desktop compositor) popup))
+  (prog1
+      (desktop-remove-popup (compositor-desktop compositor) popup)
+    (schedule-presentation (compositor-presentation compositor))))
 
 (defgeneric migrate-world-placement (old-world new-world view placement))
 (defgeneric replace-world (compositor new-world))

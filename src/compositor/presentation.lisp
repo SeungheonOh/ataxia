@@ -532,10 +532,32 @@
        (<= (presentation-item-y item) y
            (+ (presentation-item-y item) (presentation-item-height item)))))
 
+(defun presentation-item-live-p (item)
+  "Reject geometry that still references a surface retired after the snapshot."
+  (let ((surface (presentation-item-surface item))
+        (owner (presentation-item-owner item)))
+    (and (or (null surface)
+             (ataxia.runtime:native-object-live-p surface))
+         (typecase owner
+           (view
+            (and (ataxia.runtime:native-object-live-p (view-native owner))
+                 (ataxia.runtime:native-object-live-p
+                  (surface-record-native (view-surface owner)))))
+           (popup-view
+            (let ((parent (popup-parent-view owner)))
+              (and (ataxia.runtime:native-object-live-p (popup-native owner))
+                   (ataxia.runtime:native-object-live-p
+                    (surface-record-native (popup-surface owner)))
+                   (or (null parent)
+                       (ataxia.runtime:native-object-live-p
+                        (view-native parent))))))
+           (t t)))))
+
 (defmethod presentation-hit-test
     ((snapshot presentation-snapshot) output-x output-y)
   (dolist (item (reverse (snapshot-items snapshot)))
-    (when (and (presentation-item-interactive-p item)
+    (when (and (presentation-item-live-p item)
+               (presentation-item-interactive-p item)
                (point-in-item-p item output-x output-y))
       (let* ((kind (presentation-item-hit-kind item))
              (local-x

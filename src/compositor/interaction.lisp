@@ -89,6 +89,15 @@
    (compositor-outputs-list
     (compositor-outputs (component-compositor interaction)))))
 
+(defun interaction-owns-seat-p (interaction seat)
+  (member seat (interaction-seats interaction) :test #'eq))
+
+(defun interaction-owns-view-p (interaction view)
+  (member view
+          (desktop-views
+           (compositor-desktop (component-compositor interaction)))
+          :test #'eq))
+
 (defun update-seat-capabilities (seat)
   (let ((capabilities 0))
     (when (find :pointer (seat-devices seat)
@@ -105,6 +114,10 @@
     ((interaction interaction-system) name
      &key (pointer-x 160d0) (pointer-y 100d0))
   (check-type interaction interaction-system)
+  (when (find name (interaction-seats interaction)
+              :key #'seat-name :test #'string=)
+    (error 'invalid-compositor-state
+           :operation :create-logical-seat :state :duplicate-name))
   (let* ((compositor (component-compositor interaction))
          (seat
            (make-instance
@@ -123,6 +136,9 @@
     ((interaction interaction-system) (seat logical-seat))
   (check-type interaction interaction-system)
   (check-type seat logical-seat)
+  (unless (interaction-owns-seat-p interaction seat)
+    (error 'invalid-compositor-state
+           :operation :destroy-logical-seat :state :foreign-seat))
   (cancel-interactive-operation interaction seat)
   (let ((devices nil))
     (maphash
@@ -224,6 +240,14 @@
   (check-type interaction interaction-system)
   (check-type device ataxia.runtime:wlr-input-device)
   (check-type seat logical-seat)
+  (unless (and (interaction-owns-seat-p interaction seat)
+               (member device
+                       (ataxia.runtime:runtime-input-devices
+                        (compositor-runtime
+                         (component-compositor interaction)))
+                       :test #'eq))
+    (error 'invalid-compositor-state
+           :operation :assign-input-device :state :foreign-object))
   (interaction-add-input-device interaction device seat))
 
 (defmethod unassign-input-device
@@ -314,6 +338,10 @@
     ((interaction interaction-system) (seat logical-seat) view)
   (check-type interaction interaction-system)
   (check-type seat logical-seat)
+  (unless (and (interaction-owns-seat-p interaction seat)
+               (or (null view) (interaction-owns-view-p interaction view)))
+    (error 'invalid-compositor-state
+           :operation :focus-view :state :foreign-object))
   (when (and view (not (view-mapped-p view)))
     (return-from focus-view nil))
   (let ((previous (seat-focused-view seat)))
@@ -382,6 +410,11 @@
     ((interaction interaction-system) (seat logical-seat) (view view)
      kind edges &key button)
   (let ((placement (view-placement view)))
+    (unless (and (interaction-owns-seat-p interaction seat)
+                 (interaction-owns-view-p interaction view))
+      (error 'invalid-compositor-state
+             :operation :begin-interactive-operation
+             :state :foreign-object))
     (unless (typep placement 'world-placement)
       (error 'compositor-error))
     (let* ((descriptor

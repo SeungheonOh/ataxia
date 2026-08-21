@@ -268,6 +268,7 @@
    #:begin-interactive-resize
    #:cancel-interactive-operation
    #:control-system
+   #:control-local-principal
    #:control-principal
    #:control-action
    #:submit-control-action
@@ -275,7 +276,14 @@
    #:observe-compositor
    #:focus-view-action
    #:move-view-action
+   #:place-view-action
    #:create-seat-action
+   #:destroy-seat-action
+   #:assign-input-device-action
+   #:replace-world-action
+   #:pan-viewport-action
+   #:zoom-viewport-action
+   #:launch-application-action
    #:set-view-animation-action
    #:install-shader-program-action
    #:configure-view-shader-action

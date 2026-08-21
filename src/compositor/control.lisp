@@ -46,12 +46,40 @@
    (x :initarg :x :reader move-action-x)
    (y :initarg :y :reader move-action-y)))
 
+(defclass place-view-action (control-action)
+  ((view :initarg :view :reader place-action-view)
+   (placement :initarg :placement :reader place-action-placement)))
+
 (defclass create-seat-action (control-action)
   ((name :initarg :name :reader create-seat-action-name)
    (pointer-x :initarg :pointer-x :initform 160d0
               :reader create-seat-action-pointer-x)
    (pointer-y :initarg :pointer-y :initform 100d0
               :reader create-seat-action-pointer-y)))
+
+(defclass destroy-seat-action (control-action)
+  ((seat :initarg :seat :reader destroy-seat-action-seat)))
+
+(defclass assign-input-device-action (control-action)
+  ((device :initarg :device :reader assign-device-action-device)
+   (seat :initarg :seat :reader assign-device-action-seat)))
+
+(defclass replace-world-action (control-action)
+  ((world :initarg :world :reader replace-world-action-world)))
+
+(defclass pan-viewport-action (control-action)
+  ((output :initarg :output :reader pan-viewport-action-output)
+   (delta-x :initarg :delta-x :reader pan-viewport-action-delta-x)
+   (delta-y :initarg :delta-y :reader pan-viewport-action-delta-y)))
+
+(defclass zoom-viewport-action (control-action)
+  ((output :initarg :output :reader zoom-viewport-action-output)
+   (factor :initarg :factor :reader zoom-viewport-action-factor)
+   (anchor-x :initarg :anchor-x :reader zoom-viewport-action-anchor-x)
+   (anchor-y :initarg :anchor-y :reader zoom-viewport-action-anchor-y)))
+
+(defclass launch-application-action (control-action)
+  ((command :initarg :command :reader launch-action-command)))
 
 (defclass set-view-animation-action (control-action)
   ((view :initarg :view :reader animation-action-view)
@@ -84,7 +112,9 @@
     :initform
     (make-instance
      'control-principal :identity :local-shell
-     :capabilities '(:observe :focus :move :seat :animation :shader))
+     :capabilities
+     '(:observe :focus :move :seat :world :viewport :launch
+       :animation :shader))
     :reader control-local-principal)))
 
 (defgeneric required-control-capability (action))
@@ -92,7 +122,18 @@
 
 (defmethod required-control-capability ((action focus-view-action)) :focus)
 (defmethod required-control-capability ((action move-view-action)) :move)
+(defmethod required-control-capability ((action place-view-action)) :move)
 (defmethod required-control-capability ((action create-seat-action)) :seat)
+(defmethod required-control-capability ((action destroy-seat-action)) :seat)
+(defmethod required-control-capability
+    ((action assign-input-device-action))
+  :seat)
+(defmethod required-control-capability ((action replace-world-action)) :world)
+(defmethod required-control-capability ((action pan-viewport-action)) :viewport)
+(defmethod required-control-capability ((action zoom-viewport-action)) :viewport)
+(defmethod required-control-capability
+    ((action launch-application-action))
+  :launch)
 (defmethod required-control-capability
     ((action set-view-animation-action))
   :animation)
@@ -278,12 +319,94 @@
       placement)))
 
 (defmethod execute-control-action
+    ((control control-system) (action place-view-action))
+  (let* ((compositor (component-compositor control))
+         (world (compositor-world compositor))
+         (view (place-action-view action))
+         (old-placement (view-placement view))
+         (new-placement (place-action-placement action))
+         (descriptor
+           (make-instance
+            'placement-transition :subject view
+            :old-value old-placement :new-value new-placement)))
+    (check-type new-placement world-placement)
+    (world-update-placement
+     world view new-placement
+     (make-instance
+      'operation-context :subject view :operation descriptor
+      :old-state old-placement :new-state new-placement :cause :agent
+      :provenance
+      (make-instance
+       'provenance :kind :control
+       :identity
+       (control-principal-identity (control-action-principal action)))
+      :phase :apply))
+    (schedule-presentation (compositor-presentation compositor))
+    new-placement))
+
+(defmethod execute-control-action
     ((control control-system) (action create-seat-action))
   (create-logical-seat
    (compositor-interaction (component-compositor control))
    (create-seat-action-name action)
    :pointer-x (create-seat-action-pointer-x action)
    :pointer-y (create-seat-action-pointer-y action)))
+
+(defmethod execute-control-action
+    ((control control-system) (action destroy-seat-action))
+  (destroy-logical-seat
+   (compositor-interaction (component-compositor control))
+   (destroy-seat-action-seat action)))
+
+(defmethod execute-control-action
+    ((control control-system) (action assign-input-device-action))
+  (assign-input-device
+   (compositor-interaction (component-compositor control))
+   (assign-device-action-device action)
+   (assign-device-action-seat action)))
+
+(defmethod execute-control-action
+    ((control control-system) (action replace-world-action))
+  (replace-world
+   (component-compositor control) (replace-world-action-world action)))
+
+(defmethod execute-control-action
+    ((control control-system) (action pan-viewport-action))
+  (let* ((compositor (component-compositor control))
+         (output (pan-viewport-action-output action)))
+    (unless (eq output
+                (find-compositor-output
+                 (compositor-outputs compositor) (output-native output)))
+      (error 'control-request-rejected
+             :action action :reason :foreign-output))
+    (pan-viewport
+     (output-viewport output)
+     (pan-viewport-action-delta-x action)
+     (pan-viewport-action-delta-y action))
+    (schedule-presentation (compositor-presentation compositor) output)
+    (output-viewport output)))
+
+(defmethod execute-control-action
+    ((control control-system) (action zoom-viewport-action))
+  (let* ((compositor (component-compositor control))
+         (output (zoom-viewport-action-output action)))
+    (unless (eq output
+                (find-compositor-output
+                 (compositor-outputs compositor) (output-native output)))
+      (error 'control-request-rejected
+             :action action :reason :foreign-output))
+    (zoom-viewport
+     (output-viewport output)
+     (zoom-viewport-action-factor action)
+     (zoom-viewport-action-anchor-x action)
+     (zoom-viewport-action-anchor-y action))
+    (schedule-presentation (compositor-presentation compositor) output)
+    (output-viewport output)))
+
+(defmethod execute-control-action
+    ((control control-system) (action launch-application-action))
+  (launch-application
+   (component-compositor control) (launch-action-command action)))
 
 (defmethod execute-control-action
     ((control control-system) (action set-view-animation-action))
@@ -324,13 +447,19 @@
     (assert-compositor-owner compositor :observe-compositor)
     (list
      :state (compositor-state compositor)
+     :world (class-name (class-of (compositor-world compositor)))
      :socket (ataxia.runtime:runtime-socket-name (compositor-runtime compositor))
      :outputs
      (mapcar (lambda (output)
                (list :name (ataxia.runtime:output-name (output-native output))
                      :width (ataxia.runtime:output-width (output-native output))
                      :height (ataxia.runtime:output-height
-                              (output-native output))))
+                              (output-native output))
+                     :camera-x
+                     (viewport-camera-x (output-viewport output))
+                     :camera-y
+                     (viewport-camera-y (output-viewport output))
+                     :scale (viewport-scale (output-viewport output))))
              (compositor-outputs-list (compositor-outputs compositor)))
      :seats
      (mapcar (lambda (seat)

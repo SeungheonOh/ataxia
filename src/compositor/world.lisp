@@ -118,12 +118,17 @@
                       (/ (- output-x x) (viewport-scale viewport))
                       (/ (- output-y y) (viewport-scale viewport))))))))))
 
-(defun pan-viewport (viewport delta-x delta-y)
+(defgeneric pan-viewport (viewport delta-x delta-y))
+(defgeneric zoom-viewport (viewport factor anchor-x anchor-y))
+
+(defmethod pan-viewport
+    ((viewport viewport) delta-x delta-y)
   (incf (viewport-camera-x viewport) (coerce delta-x 'double-float))
   (incf (viewport-camera-y viewport) (coerce delta-y 'double-float))
   viewport)
 
-(defun zoom-viewport (viewport factor anchor-x anchor-y)
+(defmethod zoom-viewport
+    ((viewport viewport) factor anchor-x anchor-y)
   (let* ((old-scale (viewport-scale viewport))
          (new-scale (max 0.05d0 (min 32d0 (* old-scale factor))))
          (world-x (+ (viewport-camera-x viewport) (/ anchor-x old-scale)))

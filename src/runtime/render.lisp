@@ -69,12 +69,16 @@
 (defclass wlr-buffer (native-object)
   ((width :initarg :width :reader buffer-width)
    (height :initarg :height :reader buffer-height)
-   (textures :initform nil :accessor %buffer-textures)))
+   (textures :initform nil :accessor %buffer-textures))
+  (:documentation
+   "Wraps the native wlr buffer object. Runtime owns its listener registration and must invalidate the wrapper before the corresponding native object is destroyed."))
 
 (defclass wlr-texture (native-object)
   ((buffer :initarg :buffer :reader %texture-buffer)
    (width :initarg :width :reader texture-width)
-   (height :initarg :height :reader texture-height)))
+   (height :initarg :height :reader texture-height))
+  (:documentation
+   "Wraps the native wlr texture object. Runtime owns its listener registration and must invalidate the wrapper before the corresponding native object is destroyed."))
 
 (defstruct (gles-texture-attributes
              (:constructor %make-gles-texture-attributes

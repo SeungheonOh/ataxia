@@ -9,16 +9,34 @@
   ((pointer :initarg :pointer :accessor %native-pointer)
    (runtime :initarg :runtime :reader %native-runtime)
    (live-p :initform t :accessor native-object-live-p)
-   (listeners :initform nil :accessor %native-listeners)))
+   (listeners :initform nil :accessor %native-listeners))
+  (:documentation
+   "Represents Runtime native object. It is valid only while its associated native owner is live and must follow Runtime listener and teardown ordering."))
 
-(defclass wl-display (native-object) ())
-(defclass wl-event-loop (native-object) ())
-(defclass wlr-backend (native-object) ())
-(defclass wlr-renderer (native-object) ())
-(defclass wlr-egl (native-object) ())
-(defclass wlr-allocator (native-object) ())
-(defclass wlr-compositor (native-object) ())
-(defclass wlr-subcompositor (native-object) ())
+(defclass wl-display (native-object) ()
+  (:documentation
+   "Wraps the native wl display object. Runtime owns its listener registration and must invalidate the wrapper before the corresponding native object is destroyed."))
+(defclass wl-event-loop (native-object) ()
+  (:documentation
+   "Wraps the native wl event loop object. Runtime owns its listener registration and must invalidate the wrapper before the corresponding native object is destroyed."))
+(defclass wlr-backend (native-object) ()
+  (:documentation
+   "Wraps the native wlr backend object. Runtime owns its listener registration and must invalidate the wrapper before the corresponding native object is destroyed."))
+(defclass wlr-renderer (native-object) ()
+  (:documentation
+   "Wraps the native wlr renderer object. Runtime owns its listener registration and must invalidate the wrapper before the corresponding native object is destroyed."))
+(defclass wlr-egl (native-object) ()
+  (:documentation
+   "Wraps the native wlr egl object. Runtime owns its listener registration and must invalidate the wrapper before the corresponding native object is destroyed."))
+(defclass wlr-allocator (native-object) ()
+  (:documentation
+   "Wraps the native wlr allocator object. Runtime owns its listener registration and must invalidate the wrapper before the corresponding native object is destroyed."))
+(defclass wlr-compositor (native-object) ()
+  (:documentation
+   "Wraps the native wlr compositor object. Runtime owns its listener registration and must invalidate the wrapper before the corresponding native object is destroyed."))
+(defclass wlr-subcompositor (native-object) ()
+  (:documentation
+   "Wraps the native wlr subcompositor object. Runtime owns its listener registration and must invalidate the wrapper before the corresponding native object is destroyed."))
 
 (defclass wlr-output (native-object)
   ((name :initform nil :accessor output-name)
@@ -28,23 +46,37 @@
    (scale :initform 1d0 :accessor output-scale)
    (enabled-p :initform nil :accessor output-enabled-p)
    (global-p :initform nil :accessor output-global-p)
-   (modes :initform nil :accessor %output-modes)))
+   (modes :initform nil :accessor %output-modes))
+  (:documentation
+   "Wraps the native wlr output object. Runtime owns its listener registration and must invalidate the wrapper before the corresponding native object is destroyed."))
 
 (defclass wlr-input-device (native-object)
   ((name :initform nil :accessor input-device-name)
    (type :initform :unknown :accessor input-device-type)
-   (type-code :initform #xffffffff :accessor input-device-type-code)))
+   (type-code :initform #xffffffff :accessor input-device-type-code))
+  (:documentation
+   "Wraps the native wlr input device object. Runtime owns its listener registration and must invalidate the wrapper before the corresponding native object is destroyed."))
 
-(defclass wlr-pointer (wlr-input-device) ())
-(defclass wlr-keyboard (wlr-input-device) ())
+(defclass wlr-pointer (wlr-input-device) ()
+  (:documentation
+   "Wraps the native wlr pointer object. Runtime owns its listener registration and must invalidate the wrapper before the corresponding native object is destroyed."))
+(defclass wlr-keyboard (wlr-input-device) ()
+  (:documentation
+   "Wraps the native wlr keyboard object. Runtime owns its listener registration and must invalidate the wrapper before the corresponding native object is destroyed."))
 
 (defclass wlr-surface (native-object)
-  ((mapped-p :initform nil :accessor surface-mapped-p)))
+  ((mapped-p :initform nil :accessor surface-mapped-p))
+  (:documentation
+   "Wraps the native wlr surface object. Runtime owns its listener registration and must invalidate the wrapper before the corresponding native object is destroyed."))
 
 (defclass wlr-seat (native-object)
-  ((name :initarg :name :accessor %seat-name)))
+  ((name :initarg :name :accessor %seat-name))
+  (:documentation
+   "Wraps the native wlr seat object. Runtime owns its listener registration and must invalidate the wrapper before the corresponding native object is destroyed."))
 
-(defclass wlr-data-device-manager (native-object) ())
+(defclass wlr-data-device-manager (native-object) ()
+  (:documentation
+   "Wraps the native wlr data device manager object. Runtime owns its listener registration and must invalidate the wrapper before the corresponding native object is destroyed."))
 
 (defstruct (surface-commit-event
              (:constructor %make-surface-commit-event
@@ -147,87 +179,166 @@
   (hotspot-x 0 :type (signed-byte 32) :read-only t)
   (hotspot-y 0 :type (signed-byte 32) :read-only t))
 
-(defclass runtime-sink () ())
+(defclass runtime-sink () ()
+  (:documentation
+   "Represents Runtime runtime sink. It is valid only while its associated native owner is live and must follow Runtime listener and teardown ordering."))
 
 (defclass diagnostic-sink (runtime-sink)
   ((stream :initarg :stream :initform *error-output*
-           :reader diagnostic-stream)))
+           :reader diagnostic-stream))
+  (:documentation
+   "Represents Runtime diagnostic sink. It is valid only while its associated native owner is live and must follow Runtime listener and teardown ordering."))
 
-(defgeneric runtime-started (sink runtime))
-(defgeneric runtime-stopping (sink runtime reason))
-(defgeneric backend-new-output (sink runtime output))
-(defgeneric backend-new-input (sink runtime input-device))
-(defgeneric backend-destroying (sink runtime backend))
-(defgeneric renderer-lost (sink runtime renderer))
-(defgeneric compositor-new-surface (sink runtime surface))
-(defgeneric output-frame (sink output))
-(defgeneric output-destroying (sink output))
-(defgeneric input-device-destroying (sink input-device))
-(defgeneric pointer-motion (sink event))
-(defgeneric pointer-motion-absolute (sink event))
-(defgeneric pointer-button (sink event))
-(defgeneric pointer-axis (sink event))
-(defgeneric pointer-frame (sink pointer))
-(defgeneric keyboard-key (sink event))
-(defgeneric keyboard-modifiers (sink event))
-(defgeneric keyboard-keymap-changed (sink keyboard))
-(defgeneric keyboard-repeat-info (sink event))
-(defgeneric seat-destroying (sink seat))
-(defgeneric seat-request-set-cursor (sink request))
-(defgeneric surface-committed (sink surface event))
-(defgeneric surface-mapped (sink surface))
-(defgeneric surface-unmapped (sink surface))
-(defgeneric surface-destroying (sink surface))
+(defgeneric runtime-started (sink runtime)
+  (:documentation
+   "Implement RUNTIME-STARTED for Runtime implementations. Consume callback data synchronously and preserve native object and listener ownership."))
+(defgeneric runtime-stopping (sink runtime reason)
+  (:documentation
+   "Implement RUNTIME-STOPPING idempotently. Release owned listeners and resources exactly once, and invalidate wrappers before native teardown."))
+(defgeneric backend-new-output (sink runtime output)
+  (:documentation
+   "Implement BACKEND-NEW-OUTPUT for this output specialization. Respect output membership, layout, scale, and hotplug lifetime when updating state."))
+(defgeneric backend-new-input (sink runtime input-device)
+  (:documentation
+   "Implement BACKEND-NEW-INPUT for Runtime implementations. Consume callback data synchronously and preserve native object and listener ownership."))
+(defgeneric backend-destroying (sink runtime backend)
+  (:documentation
+   "Implement BACKEND-DESTROYING idempotently. Release owned listeners and resources exactly once, and invalidate wrappers before native teardown."))
+(defgeneric renderer-lost (sink runtime renderer)
+  (:documentation
+   "Implement RENDERER-LOST for Runtime implementations. Consume callback data synchronously and preserve native object and listener ownership."))
+(defgeneric compositor-new-surface (sink runtime surface)
+  (:documentation
+   "Implement COMPOSITOR-NEW-SURFACE for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."))
+(defgeneric output-frame (sink output)
+  (:documentation
+   "Implement OUTPUT-FRAME while preserving frame ordering and damage correctness. Never retain transient render data past the documented frame boundary."))
+(defgeneric output-destroying (sink output)
+  (:documentation
+   "Implement OUTPUT-DESTROYING idempotently. Release owned listeners and resources exactly once, and invalidate wrappers before native teardown."))
+(defgeneric input-device-destroying (sink input-device)
+  (:documentation
+   "Implement INPUT-DEVICE-DESTROYING idempotently. Release owned listeners and resources exactly once, and invalidate wrappers before native teardown."))
+(defgeneric pointer-motion (sink event)
+  (:documentation
+   "Implement POINTER-MOTION for implementations. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."))
+(defgeneric pointer-motion-absolute (sink event)
+  (:documentation
+   "Implement POINTER-MOTION-ABSOLUTE for implementations. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."))
+(defgeneric pointer-button (sink event)
+  (:documentation
+   "Implement POINTER-BUTTON for implementations. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."))
+(defgeneric pointer-axis (sink event)
+  (:documentation
+   "Implement POINTER-AXIS for implementations. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."))
+(defgeneric pointer-frame (sink pointer)
+  (:documentation
+   "Implement POINTER-FRAME for implementations. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."))
+(defgeneric keyboard-key (sink event)
+  (:documentation
+   "Implement KEYBOARD-KEY for implementations. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."))
+(defgeneric keyboard-modifiers (sink event)
+  (:documentation
+   "Implement KEYBOARD-MODIFIERS for implementations. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."))
+(defgeneric keyboard-keymap-changed (sink keyboard)
+  (:documentation
+   "Implement KEYBOARD-KEYMAP-CHANGED for implementations. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."))
+(defgeneric keyboard-repeat-info (sink event)
+  (:documentation
+   "Implement KEYBOARD-REPEAT-INFO for implementations. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."))
+(defgeneric seat-destroying (sink seat)
+  (:documentation
+   "Implement SEAT-DESTROYING for implementations. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."))
+(defgeneric seat-request-set-cursor (sink request)
+  (:documentation
+   "Implement SEAT-REQUEST-SET-CURSOR for implementations. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."))
+(defgeneric surface-committed (sink surface event)
+  (:documentation
+   "Implement SURFACE-COMMITTED for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."))
+(defgeneric surface-mapped (sink surface)
+  (:documentation
+   "Implement SURFACE-MAPPED for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."))
+(defgeneric surface-unmapped (sink surface)
+  (:documentation
+   "Implement SURFACE-UNMAPPED for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."))
+(defgeneric surface-destroying (sink surface)
+  (:documentation
+   "Implement SURFACE-DESTROYING idempotently. Release owned listeners and resources exactly once, and invalidate wrappers before native teardown."))
 
 (defmethod runtime-started ((sink runtime-sink) runtime)
+  "Implement RUNTIME-STARTED for this Runtime specialization. Consume callback data synchronously and preserve native object and listener ownership."
   (declare (ignore sink runtime)))
 (defmethod runtime-stopping ((sink runtime-sink) runtime reason)
+  "Implement RUNTIME-STOPPING idempotently. Release owned listeners and resources exactly once, and invalidate wrappers before native teardown."
   (declare (ignore sink runtime reason)))
 (defmethod backend-new-output ((sink runtime-sink) runtime output)
+  "Implement BACKEND-NEW-OUTPUT for this output specialization. Respect output membership, layout, scale, and hotplug lifetime when updating state."
   (declare (ignore sink runtime output)))
 (defmethod backend-new-input ((sink runtime-sink) runtime input-device)
+  "Implement BACKEND-NEW-INPUT for this Runtime specialization. Consume callback data synchronously and preserve native object and listener ownership."
   (declare (ignore sink runtime input-device)))
 (defmethod backend-destroying ((sink runtime-sink) runtime backend)
+  "Implement BACKEND-DESTROYING idempotently. Release owned listeners and resources exactly once, and invalidate wrappers before native teardown."
   (declare (ignore sink runtime backend)))
 (defmethod renderer-lost ((sink runtime-sink) runtime renderer)
+  "Implement RENDERER-LOST for this Runtime specialization. Consume callback data synchronously and preserve native object and listener ownership."
   (declare (ignore sink runtime renderer)))
 (defmethod compositor-new-surface ((sink runtime-sink) runtime surface)
+  "Implement COMPOSITOR-NEW-SURFACE for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
   (declare (ignore sink runtime surface)))
 (defmethod output-frame ((sink runtime-sink) output)
+  "Implement OUTPUT-FRAME while preserving frame ordering and damage correctness. Never retain transient render data past the documented frame boundary."
   (declare (ignore sink output)))
 (defmethod output-destroying ((sink runtime-sink) output)
+  "Implement OUTPUT-DESTROYING idempotently. Release owned listeners and resources exactly once, and invalidate wrappers before native teardown."
   (declare (ignore sink output)))
 (defmethod input-device-destroying ((sink runtime-sink) input-device)
+  "Implement INPUT-DEVICE-DESTROYING idempotently. Release owned listeners and resources exactly once, and invalidate wrappers before native teardown."
   (declare (ignore sink input-device)))
 (defmethod pointer-motion ((sink runtime-sink) event)
+  "Implement POINTER-MOTION for this specialization. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."
   (declare (ignore sink event)))
 (defmethod pointer-motion-absolute ((sink runtime-sink) event)
+  "Implement POINTER-MOTION-ABSOLUTE for this specialization. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."
   (declare (ignore sink event)))
 (defmethod pointer-button ((sink runtime-sink) event)
+  "Implement POINTER-BUTTON for this specialization. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."
   (declare (ignore sink event)))
 (defmethod pointer-axis ((sink runtime-sink) event)
+  "Implement POINTER-AXIS for this specialization. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."
   (declare (ignore sink event)))
 (defmethod pointer-frame ((sink runtime-sink) pointer)
+  "Implement POINTER-FRAME for this specialization. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."
   (declare (ignore sink pointer)))
 (defmethod keyboard-key ((sink runtime-sink) event)
+  "Implement KEYBOARD-KEY for this specialization. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."
   (declare (ignore sink event)))
 (defmethod keyboard-modifiers ((sink runtime-sink) event)
+  "Implement KEYBOARD-MODIFIERS for this specialization. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."
   (declare (ignore sink event)))
 (defmethod keyboard-keymap-changed ((sink runtime-sink) keyboard)
+  "Implement KEYBOARD-KEYMAP-CHANGED for this specialization. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."
   (declare (ignore sink keyboard)))
 (defmethod keyboard-repeat-info ((sink runtime-sink) event)
+  "Implement KEYBOARD-REPEAT-INFO for this specialization. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."
   (declare (ignore sink event)))
 (defmethod seat-destroying ((sink runtime-sink) seat)
+  "Implement SEAT-DESTROYING for this specialization. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."
   (declare (ignore sink seat)))
 (defmethod seat-request-set-cursor ((sink runtime-sink) request)
+  "Implement SEAT-REQUEST-SET-CURSOR for this specialization. Preserve seat focus and grab invariants, and forward each protocol input event no more than once."
   (declare (ignore sink request)))
 (defmethod surface-committed ((sink runtime-sink) surface event)
+  "Implement SURFACE-COMMITTED for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
   (declare (ignore sink surface event)))
 (defmethod surface-mapped ((sink runtime-sink) surface)
+  "Implement SURFACE-MAPPED for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
   (declare (ignore sink surface)))
 (defmethod surface-unmapped ((sink runtime-sink) surface)
+  "Implement SURFACE-UNMAPPED for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
   (declare (ignore sink surface)))
 (defmethod surface-destroying ((sink runtime-sink) surface)
+  "Implement SURFACE-DESTROYING idempotently. Release owned listeners and resources exactly once, and invalidate wrappers before native teardown."
   (declare (ignore sink surface)))
 
 (defun native-object-address (object)

@@ -45,7 +45,9 @@
   ((kind :initarg :kind :reader event-source-kind)
    (cookie :initarg :cookie :reader %event-source-cookie)
    (callback :initarg :callback :reader %event-source-callback)
-   (dispatching-p :initform nil :accessor %event-source-dispatching-p)))
+   (dispatching-p :initform nil :accessor %event-source-dispatching-p))
+  (:documentation
+   "Wraps the native wl event source object. Runtime owns its listener registration and must invalidate the wrapper before the corresponding native object is destroyed."))
 
 (defvar *event-source-registry* (make-hash-table :test #'eql))
 (defvar *next-event-source-cookie* 0)

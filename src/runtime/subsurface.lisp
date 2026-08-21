@@ -33,22 +33,34 @@
    (parent :initarg :parent :reader subsurface-parent)
    (x :initform 0 :accessor subsurface-x)
    (y :initform 0 :accessor subsurface-y)
-   (synchronized-p :initform nil :accessor subsurface-synchronized-p)))
+   (synchronized-p :initform nil :accessor subsurface-synchronized-p))
+  (:documentation
+   "Wraps the native wlr subsurface object. Runtime owns its listener registration and must invalidate the wrapper before the corresponding native object is destroyed."))
 
-(defgeneric surface-new-subsurface (sink parent subsurface))
-(defgeneric subsurface-state-changed (sink subsurface))
-(defgeneric subsurface-destroying (sink subsurface))
+(defgeneric surface-new-subsurface (sink parent subsurface)
+  (:documentation
+   "Implement SURFACE-NEW-SUBSURFACE for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."))
+(defgeneric subsurface-state-changed (sink subsurface)
+  (:documentation
+   "Implement SUBSURFACE-STATE-CHANGED for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."))
+(defgeneric subsurface-destroying (sink subsurface)
+  (:documentation
+   "Implement SUBSURFACE-DESTROYING idempotently. Release owned listeners and resources exactly once, and invalidate wrappers before native teardown."))
 
 (defmethod surface-new-subsurface
     ((sink runtime-sink) parent subsurface)
+  "Implement SURFACE-NEW-SUBSURFACE for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
   (declare (ignore sink parent subsurface)))
 (defmethod subsurface-state-changed ((sink runtime-sink) subsurface)
+  "Implement SUBSURFACE-STATE-CHANGED for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
   (declare (ignore sink subsurface)))
 (defmethod subsurface-destroying ((sink runtime-sink) subsurface)
+  "Implement SUBSURFACE-DESTROYING idempotently. Release owned listeners and resources exactly once, and invalidate wrappers before native teardown."
   (declare (ignore sink subsurface)))
 
 (defmethod surface-new-subsurface
     ((sink diagnostic-sink) parent subsurface)
+  "Implement SURFACE-NEW-SUBSURFACE for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
   (declare (ignore parent))
   (%diagnostic-line
    sink "[runtime] new-subsurface address=~X offset=~D,~D synchronized=~A"
@@ -58,6 +70,7 @@
 
 (defmethod subsurface-destroying
     ((sink diagnostic-sink) subsurface)
+  "Implement SUBSURFACE-DESTROYING idempotently. Release owned listeners and resources exactly once, and invalidate wrappers before native teardown."
   (%diagnostic-line sink "[runtime] subsurface-destroy address=~X"
                     (native-object-address subsurface)))
 

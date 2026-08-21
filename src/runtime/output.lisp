@@ -110,15 +110,21 @@
 (in-package #:ataxia.runtime)
 
 (defclass wlr-output-mode (native-object)
-  ((output :initarg :output :reader %output-mode-output)))
+  ((output :initarg :output :reader %output-mode-output))
+  (:documentation
+   "Wraps the native wlr output mode object. Runtime owns its listener registration and must invalidate the wrapper before the corresponding native object is destroyed."))
 
 (defclass wlr-output-state (native-object)
   ((output :initarg :output :reader %output-state-output)
    (borrowed-p :initarg :borrowed-p :initform nil
-               :reader %output-state-borrowed-p)))
+               :reader %output-state-borrowed-p))
+  (:documentation
+   "Wraps the native wlr output state object. Runtime owns its listener registration and must invalidate the wrapper before the corresponding native object is destroyed."))
 
 (defclass wlr-output-swapchain (native-object)
-  ((output :initarg :output :reader output-swapchain-output)))
+  ((output :initarg :output :reader output-swapchain-output))
+  (:documentation
+   "Wraps the native wlr output swapchain object. Runtime owns its listener registration and must invalidate the wrapper before the corresponding native object is destroyed."))
 
 (defstruct (damage-rectangle
              (:constructor %make-damage-rectangle (&key x y width height))
@@ -152,18 +158,30 @@
   (refresh-nanoseconds 0 :type (signed-byte 32) :read-only t)
   (flags 0 :type (unsigned-byte 32) :read-only t))
 
-(defgeneric output-damaged (sink event))
-(defgeneric output-needs-frame (sink output))
-(defgeneric output-present (sink event))
-(defgeneric output-request-state (sink output state))
+(defgeneric output-damaged (sink event)
+  (:documentation
+   "Implement OUTPUT-DAMAGED while preserving frame ordering and damage correctness. Never retain transient render data past the documented frame boundary."))
+(defgeneric output-needs-frame (sink output)
+  (:documentation
+   "Implement OUTPUT-NEEDS-FRAME while preserving frame ordering and damage correctness. Never retain transient render data past the documented frame boundary."))
+(defgeneric output-present (sink event)
+  (:documentation
+   "Implement OUTPUT-PRESENT while preserving frame ordering and damage correctness. Never retain transient render data past the documented frame boundary."))
+(defgeneric output-request-state (sink output state)
+  (:documentation
+   "Implement OUTPUT-REQUEST-STATE for this output specialization. Respect output membership, layout, scale, and hotplug lifetime when updating state."))
 
 (defmethod output-damaged ((sink runtime-sink) event)
+  "Implement OUTPUT-DAMAGED while preserving frame ordering and damage correctness. Never retain transient render data past the documented frame boundary."
   (declare (ignore sink event)))
 (defmethod output-needs-frame ((sink runtime-sink) output)
+  "Implement OUTPUT-NEEDS-FRAME while preserving frame ordering and damage correctness. Never retain transient render data past the documented frame boundary."
   (declare (ignore sink output)))
 (defmethod output-present ((sink runtime-sink) event)
+  "Implement OUTPUT-PRESENT while preserving frame ordering and damage correctness. Never retain transient render data past the documented frame boundary."
   (declare (ignore sink event)))
 (defmethod output-request-state ((sink runtime-sink) output state)
+  "Implement OUTPUT-REQUEST-STATE for this output specialization. Respect output membership, layout, scale, and hotplug lifetime when updating state."
   (declare (ignore sink output state)))
 
 (defun %damage-rectangles (region)
@@ -496,6 +514,7 @@
 
 (defmethod backend-new-output
     ((sink diagnostic-sink) runtime (output wlr-output))
+  "Implement BACKEND-NEW-OUTPUT for this output specialization. Respect output membership, layout, scale, and hotplug lifetime when updating state."
   (handler-case
       (progn
         (initialize-output-render output

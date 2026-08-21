@@ -34,9 +34,15 @@
 (defconstant +fractional-scale-version+ 1)
 (defconstant +presentation-time-version+ 2)
 
-(defclass wlr-viewporter (native-object) ())
-(defclass wlr-fractional-scale-manager-v1 (native-object) ())
-(defclass wlr-presentation (native-object) ())
+(defclass wlr-viewporter (native-object) ()
+  (:documentation
+   "Wraps the native wlr viewporter object. Runtime owns its listener registration and must invalidate the wrapper before the corresponding native object is destroyed."))
+(defclass wlr-fractional-scale-manager-v1 (native-object) ()
+  (:documentation
+   "Wraps the native wlr fractional scale manager v1 object. Runtime owns its listener registration and must invalidate the wrapper before the corresponding native object is destroyed."))
+(defclass wlr-presentation (native-object) ()
+  (:documentation
+   "Wraps the native wlr presentation object. Runtime owns its listener registration and must invalidate the wrapper before the corresponding native object is destroyed."))
 
 (defun runtime-viewporter (runtime)
   (%runtime-viewporter runtime))

@@ -33,10 +33,14 @@
 
 (in-package #:ataxia.runtime)
 
-(defclass wlr-xkb-context (native-object) ())
+(defclass wlr-xkb-context (native-object) ()
+  (:documentation
+   "Wraps the native wlr xkb context object. Runtime owns its listener registration and must invalidate the wrapper before the corresponding native object is destroyed."))
 
 (defclass wlr-xkb-keymap (native-object)
-  ((context :initarg :context :reader %xkb-keymap-context)))
+  ((context :initarg :context :reader %xkb-keymap-context))
+  (:documentation
+   "Wraps the native wlr xkb keymap object. Runtime owns its listener registration and must invalidate the wrapper before the corresponding native object is destroyed."))
 
 (defun create-xkb-context (runtime)
   (%assert-runtime-live runtime :create-xkb-context)

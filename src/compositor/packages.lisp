@@ -288,6 +288,7 @@
    #:shader-program-state
    #:compile-shader-program
    #:make-material-program-descriptor
+   #:make-texture-program-descriptor
    #:replace-shader-program
    #:shader-program-installed-p
    #:set-view-shader-program

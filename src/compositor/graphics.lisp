@@ -277,6 +277,20 @@ void main() {
                  :uniforms uniforms
                  :kind :material))
 
+(defun make-texture-program-descriptor
+    (fragment-source uniforms kind
+     &key (vertex-source +builtin-vertex-shader+))
+  "Describe one target-specific variant of a logical texture program."
+  (unless (member kind '(:texture-2d :texture-external) :test #'eq)
+    (error 'graphics-failure
+           :operation :describe-texture-program
+           :detail (format nil "unsupported texture kind ~A" kind)))
+  (make-instance 'shader-program-descriptor
+                 :vertex-source vertex-source
+                 :fragment-source fragment-source
+                 :uniforms uniforms
+                 :kind kind))
+
 (defmethod attach-component :after ((renderer direct-gles-renderer))
   (let* ((compositor (component-compositor renderer))
          (runtime (compositor-runtime compositor)))
@@ -321,6 +335,12 @@ void main() {
     (setf (renderer-vertex-scratch renderer) nil
           (renderer-vertex-scratch-capacity renderer) 0)))
 
+(defun shader-program-key (name kind)
+  (list name kind))
+
+(defun registered-shader-program (renderer name kind)
+  (gethash (shader-program-key name kind) (renderer-programs renderer)))
+
 (defun replace-shader-program (renderer name descriptor)
   (assert-compositor-owner
    (component-compositor renderer) :replace-shader-program)
@@ -328,8 +348,9 @@ void main() {
   (let ((runtime (compositor-runtime (component-compositor renderer))))
     (ataxia.runtime:with-egl-context ((ataxia.runtime:runtime-egl runtime))
       (let* ((kind (program-descriptor-kind descriptor))
+             (key (shader-program-key name kind))
              (candidate (compile-shader-program descriptor))
-             (previous (gethash name (renderer-programs renderer))))
+             (previous (gethash key (renderer-programs renderer))))
         (handler-case
             (progn
               (unless (member kind
@@ -346,7 +367,7 @@ void main() {
                 (error 'graphics-failure
                        :operation :replace-shader
                        :detail "texture_sampler and opacity are required"))
-              (setf (gethash name (renderer-programs renderer)) candidate)
+              (setf (gethash key (renderer-programs renderer)) candidate)
               (delete-shader-program previous)
               (schedule-presentation
                (compositor-presentation (component-compositor renderer)))
@@ -356,36 +377,36 @@ void main() {
             (error condition)))))))
 
 (defun shader-program-installed-p (renderer name &optional kind)
-  (let ((program (gethash name (renderer-programs renderer))))
-    (and program
-         (eq (shader-program-state program) :live)
-         (or (null kind)
-             (eq kind
-                 (program-descriptor-kind
-                  (shader-program-descriptor program)))))))
+  (labels ((live-kind-p (candidate-kind)
+             (let ((program
+                     (registered-shader-program
+                      renderer name candidate-kind)))
+               (and program (eq (shader-program-state program) :live)))))
+    (if kind
+        (live-kind-p kind)
+        (some #'live-kind-p
+              '(:material :texture-2d :texture-external)))))
 
 (defun uniform-location (program name)
   (or (gethash (shader-interface-name name) (shader-uniforms program)) -1))
 
 (defun shader-program-for-texture (renderer name target)
-  (let ((candidate (and name (gethash name (renderer-programs renderer)))))
-    (if (and candidate
-             (eq (program-descriptor-kind
-                  (shader-program-descriptor candidate))
-                 (if (= target +gl-texture-2d+)
-                     :texture-2d
-                     :texture-external)))
+  (let* ((kind (if (= target +gl-texture-2d+)
+                   :texture-2d
+                   :texture-external))
+         (candidate
+           (and name (registered-shader-program renderer name kind))))
+    (if candidate
         candidate
         (if (= target +gl-texture-2d+)
             (renderer-texture-program renderer)
             (renderer-external-program renderer)))))
 
 (defun shader-program-for-material (renderer name)
-  (let ((program (and name (gethash name (renderer-programs renderer)))))
-    (unless (and program
-                 (eq :material
-                     (program-descriptor-kind
-                      (shader-program-descriptor program))))
+  (let ((program
+          (and name
+               (registered-shader-program renderer name :material))))
+    (unless program
       (error 'graphics-failure
              :operation :draw-material
              :detail (format nil "unknown material program ~A" name)))
@@ -405,15 +426,11 @@ void main() {
   (check-type view view)
   (when name
     (check-type name (or symbol string))
-    (let ((program (gethash name (renderer-programs renderer))))
-      (unless (and program
-                   (member
-                    (program-descriptor-kind
-                     (shader-program-descriptor program))
-                    '(:texture-2d :texture-external) :test #'eq))
-        (error 'graphics-failure
-               :operation :set-view-shader-program
-               :detail (format nil "unknown texture program ~A" name)))))
+    (unless (or (shader-program-installed-p renderer name :texture-2d)
+                (shader-program-installed-p renderer name :texture-external))
+      (error 'graphics-failure
+             :operation :set-view-shader-program
+             :detail (format nil "unknown texture program ~A" name))))
   (setf (view-shader-program-name view) name)
   (schedule-presentation
    (compositor-presentation (component-compositor renderer)))

@@ -8,27 +8,6 @@
 (defparameter *trace-graphics-p*
   (not (null (uiop:getenv "ATAXIA_TRACE_GRAPHICS"))))
 
-(defclass presentation-state ()
-  ((opacity :initform 1d0 :accessor presentation-opacity)
-   (scale :initform 1d0 :accessor presentation-scale)
-   (offset-x :initform 0d0 :accessor presentation-offset-x)
-   (offset-y :initform 0d0 :accessor presentation-offset-y)
-   (shader-uniforms :initform (make-hash-table :test #'equal)
-                    :reader presentation-shader-uniforms)))
-
-(defclass behavior-view-state ()
-  ((placement :initarg :placement :initform nil
-              :accessor behavior-state-placement)
-   (restore-state :initarg :restore-state :initform nil
-                  :accessor behavior-state-restore-state)
-   (animation-policy :initarg :animation-policy :initform nil
-                     :accessor behavior-state-animation-policy)
-   (shader-program-name :initarg :shader-program-name :initform nil
-                        :accessor behavior-state-shader-program-name)
-   (presentation-state :initarg :presentation-state
-                       :initform (make-instance 'presentation-state)
-                       :reader behavior-state-presentation-state)))
-
 (defclass surface-record ()
   ((native :initarg :native :reader surface-record-native)
    (buffer :initform nil :accessor surface-record-buffer)
@@ -56,8 +35,7 @@
    (native :initarg :native :reader view-native)
    (surface :initarg :surface :reader view-surface)
    (application :initarg :application :accessor view-application)
-   (behavior-state :initform (make-instance 'behavior-view-state)
-                   :accessor view-behavior-state)
+   (behavior-state :initform nil :accessor view-behavior-state)
    (width :initarg :width :initform 900 :accessor view-width)
    (height :initarg :height :initform 650 :accessor view-height)
    (title :initarg :title :initform nil :accessor view-title)
@@ -69,33 +47,6 @@
    (fullscreen-p :initform nil :accessor view-fullscreen-p)
    (minimized-p :initform nil :accessor view-minimized-p)
    (revision :initform 0 :accessor view-revision)))
-
-(defun view-placement (view)
-  (behavior-state-placement (view-behavior-state view)))
-
-(defun (setf view-placement) (placement view)
-  (setf (behavior-state-placement (view-behavior-state view)) placement))
-
-(defun view-restore-placement (view)
-  (behavior-state-restore-state (view-behavior-state view)))
-
-(defun (setf view-restore-placement) (state view)
-  (setf (behavior-state-restore-state (view-behavior-state view)) state))
-
-(defun view-animation-policy (view)
-  (behavior-state-animation-policy (view-behavior-state view)))
-
-(defun (setf view-animation-policy) (policy view)
-  (setf (behavior-state-animation-policy (view-behavior-state view)) policy))
-
-(defun view-shader-program-name (view)
-  (behavior-state-shader-program-name (view-behavior-state view)))
-
-(defun (setf view-shader-program-name) (name view)
-  (setf (behavior-state-shader-program-name (view-behavior-state view)) name))
-
-(defun view-presentation-state (view)
-  (behavior-state-presentation-state (view-behavior-state view)))
 
 (defun view-server-decorated-p (view)
   (eq :server-side (view-decoration-mode view)))

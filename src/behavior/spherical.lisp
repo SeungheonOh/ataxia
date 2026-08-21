@@ -78,10 +78,13 @@
    'spherical-behavior-state
    :placement placement
    :restore-state nil
-   :animation-policy (behavior-state-animation-policy state)
-   :shader-program-name (behavior-state-shader-program-name state)
+   :animation-policy (and state (behavior-state-animation-policy state))
+   :shader-program-name
+   (and state (behavior-state-shader-program-name state))
    :presentation-state
-   (copy-presentation-state (behavior-state-presentation-state state))))
+   (if state
+       (copy-presentation-state (behavior-state-presentation-state state))
+       (make-instance 'presentation-state))))
 
 (defun adopt-spherical-behavior-state (view)
   (let ((state (view-behavior-state view)))

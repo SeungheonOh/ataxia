@@ -11,20 +11,35 @@
   :depends-on ("ataxia-runtime" "cffi")
   :serial t
   :components
-  ((:module "src/compositor"
+  ((:module "compositor-foundation"
+    :pathname "src/compositor"
     :components
     ((:file "packages")
      (:file "conditions")
      (:file "core")
      (:file "hooks")
-     (:file "model")
-     (:file "policy")
-     (:file "animation")
+     (:file "model")))
+   (:module "behavior-contract"
+    :pathname "src/behavior"
+    :components
+    ((:file "policy")))
+   (:module "compositor-presentation"
+    :pathname "src/compositor"
+    :components
+    ((:file "animation")
      (:file "graphics")
-     (:file "presentation")
-     (:file "behavior")
-     (:file "spherical")
-     (:file "interaction")
+     (:file "presentation")))
+   (:module "behavior-implementations"
+    :pathname "src/behavior"
+    :components
+    ((:file "scene")
+     (:file "animation")
+     (:file "planar")
+     (:file "spherical")))
+   (:module "compositor-services"
+    :pathname "src/compositor"
+    :components
+    ((:file "interaction")
      (:file "control")
      (:file "compositor")
      (:file "main")))))

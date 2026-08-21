@@ -5,6 +5,54 @@
 
 (in-package #:ataxia.compositor)
 
+(defclass presentation-state ()
+  ((opacity :initform 1d0 :accessor presentation-opacity)
+   (scale :initform 1d0 :accessor presentation-scale)
+   (offset-x :initform 0d0 :accessor presentation-offset-x)
+   (offset-y :initform 0d0 :accessor presentation-offset-y)
+   (shader-uniforms :initform (make-hash-table :test #'equal)
+                    :reader presentation-shader-uniforms)))
+
+(defclass behavior-view-state ()
+  ((placement :initarg :placement :initform nil
+              :accessor behavior-state-placement)
+   (restore-state :initarg :restore-state :initform nil
+                  :accessor behavior-state-restore-state)
+   (animation-policy :initarg :animation-policy :initform nil
+                     :accessor behavior-state-animation-policy)
+   (shader-program-name :initarg :shader-program-name :initform nil
+                        :accessor behavior-state-shader-program-name)
+   (presentation-state :initarg :presentation-state
+                       :initform (make-instance 'presentation-state)
+                       :reader behavior-state-presentation-state)))
+
+(defun view-placement (view)
+  (behavior-state-placement (view-behavior-state view)))
+
+(defun (setf view-placement) (placement view)
+  (setf (behavior-state-placement (view-behavior-state view)) placement))
+
+(defun view-restore-placement (view)
+  (behavior-state-restore-state (view-behavior-state view)))
+
+(defun (setf view-restore-placement) (state view)
+  (setf (behavior-state-restore-state (view-behavior-state view)) state))
+
+(defun view-animation-policy (view)
+  (behavior-state-animation-policy (view-behavior-state view)))
+
+(defun (setf view-animation-policy) (policy view)
+  (setf (behavior-state-animation-policy (view-behavior-state view)) policy))
+
+(defun view-shader-program-name (view)
+  (behavior-state-shader-program-name (view-behavior-state view)))
+
+(defun (setf view-shader-program-name) (name view)
+  (setf (behavior-state-shader-program-name (view-behavior-state view)) name))
+
+(defun view-presentation-state (view)
+  (behavior-state-presentation-state (view-behavior-state view)))
+
 (defclass behavior-policy (compositor-component)
   ((active-p :initform nil :accessor behavior-policy-active-p)
    (revision :initform 0 :accessor behavior-policy-revision)))
@@ -124,15 +172,18 @@
   (let ((state (view-behavior-state view)))
     (unless (typep state 'planar-behavior-state)
       (setf state
-            (make-instance
+             (make-instance
              'planar-behavior-state
-             :placement (behavior-state-placement state)
-             :restore-state (behavior-state-restore-state state)
-             :animation-policy (behavior-state-animation-policy state)
+             :placement (and state (behavior-state-placement state))
+             :restore-state (and state (behavior-state-restore-state state))
+             :animation-policy
+             (and state (behavior-state-animation-policy state))
              :shader-program-name
-             (behavior-state-shader-program-name state)
+             (and state (behavior-state-shader-program-name state))
              :presentation-state
-             (behavior-state-presentation-state state))
+             (if state
+                 (behavior-state-presentation-state state)
+                 (make-instance 'presentation-state)))
             (view-behavior-state view) state))
     state))
 

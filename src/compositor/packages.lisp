@@ -433,7 +433,7 @@
    #:renderer-disable-damage-clip
    #:renderer-clip-damage-box
    #:renderer-clear-current-target
-   #:renderer-clear-damage-boxes
+   #:renderer-clear-current-target-with-color
    #:renderer-present-retained-scene
    #:frame-context-width
    #:frame-context-height

@@ -871,24 +871,25 @@ void main() {
 (defun renderer-clear-current-target ()
   (%gl-clear +gl-color-buffer-bit+))
 
-(defun renderer-clear-damage-boxes (boxes color)
-  "Clear only BOXES on the current target with one diagnostic COLOR."
+(defun renderer-clear-current-target-with-color (color)
+  "Clear the entire current target with COLOR, then restore the normal clear color."
+  (renderer-disable-damage-clip)
   (destructuring-bind (red green blue alpha) color
     (%gl-clear-color
      (coerce red 'single-float) (coerce green 'single-float)
      (coerce blue 'single-float) (coerce alpha 'single-float)))
   (unwind-protect
-       (dolist (box boxes)
-         (renderer-clip-damage-box box)
-         (renderer-clear-current-target))
-    (renderer-disable-damage-clip)
+       (renderer-clear-current-target)
     (destructuring-bind (red green blue alpha) +renderer-clear-color+
       (%gl-clear-color
        (coerce red 'single-float) (coerce green 'single-float)
        (coerce blue 'single-float) (coerce alpha 'single-float))))
-  boxes)
+  color)
 
-(defun renderer-present-retained-scene (renderer frame-context)
+(defun renderer-present-retained-scene
+    (renderer frame-context
+     &key (damage-boxes nil damage-boxes-supplied-p))
+  "Present the retained scene fully, or only through supplied damage boxes."
   (let ((program (renderer-texture-program renderer))
         (texture (frame-context-scene-texture frame-context)))
     (renderer-disable-damage-clip)
@@ -905,7 +906,13 @@ void main() {
     (%gl-uniform-1i (uniform-location program 'texture-sampler) 0)
     (%gl-uniform-1f (uniform-location program 'opacity) 1.0)
     (%gl-uniform-1f (uniform-location program 'texture-has-alpha) 1.0)
-    (%gl-draw-arrays +gl-triangles+ 0 6)
+    (if damage-boxes-supplied-p
+        (unwind-protect
+             (dolist (box damage-boxes)
+               (renderer-clip-damage-box box)
+               (%gl-draw-arrays +gl-triangles+ 0 6))
+          (renderer-disable-damage-clip))
+        (%gl-draw-arrays +gl-triangles+ 0 6))
     (%gl-bind-texture +gl-texture-2d+ 0)
     (%gl-enable +gl-blend+)
     (%gl-blend-func +gl-one+ +gl-one-minus-src-alpha+))

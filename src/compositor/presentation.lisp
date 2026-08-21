@@ -8,9 +8,7 @@
 (defparameter *trace-output-p*
   (not (null (uiop:getenv "ATAXIA_TRACE_OUTPUT"))))
 
-(defparameter +damage-debug-colors+
-  '((0.95 0.12 0.32 1.0)
-    (0.10 0.72 1.0 1.0)))
+(defparameter +damage-debug-color+ '(0.95 0.12 0.32 1.0))
 
 (defun trace-output (control &rest arguments)
   (when *trace-output-p*
@@ -904,19 +902,18 @@
     ((renderer direct-gles-renderer) frame-context (pass present-render-pass))
   "Implement RENDERER-EXECUTE-PASS for this compositor specialization. Preserve component ownership, protocol ordering, and the generic function's return contract."
   (declare (ignore pass))
-  (renderer-present-retained-scene renderer frame-context)
-  (let* ((presentation
-           (compositor-presentation (component-compositor renderer)))
-         (output (frame-context-output frame-context)))
-    (when (presentation-damage-debug-p presentation)
-      ;; The scene stays visible for context; only the submitted damage region
-      ;; receives the diagnostic color overlay.
-      (renderer-clear-damage-boxes
-       (frame-damage-boxes
-        (frame-plan-damage (frame-context-plan frame-context)))
-       (nth (mod (output-frame-revision output)
-                 (length +damage-debug-colors+))
-            +damage-debug-colors+))))
+  (if (presentation-damage-debug-p
+       (compositor-presentation (component-compositor renderer)))
+      (progn
+        ;; Untouched pixels become diagnostic color; freshly damaged pixels
+        ;; reveal the retained scene through the same submitted damage boxes.
+        (renderer-clear-current-target-with-color +damage-debug-color+)
+        (renderer-present-retained-scene
+         renderer frame-context
+         :damage-boxes
+         (frame-damage-boxes
+          (frame-plan-damage (frame-context-plan frame-context)))))
+      (renderer-present-retained-scene renderer frame-context))
   frame-context)
 
 (defmethod renderer-execute-pass :around

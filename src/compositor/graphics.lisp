@@ -171,13 +171,17 @@ void main() {
    (fragment-source :initarg :fragment-source :reader program-fragment-source)
    (kind :initarg :kind :initform :texture-2d
          :reader program-descriptor-kind)
-   (uniforms :initarg :uniforms :initform nil :reader program-uniform-names)))
+   (uniforms :initarg :uniforms :initform nil :reader program-uniform-names))
+  (:documentation
+   "Describes shader program descriptor without performing it. Hooks and policies may inspect or replace it only within the declared operation phase."))
 
 (defclass shader-program ()
   ((descriptor :initarg :descriptor :reader shader-program-descriptor)
    (native-program :initarg :native-program :reader shader-native-program)
    (uniforms :initarg :uniforms :reader shader-uniforms)
-   (state :initform :live :accessor shader-program-state)))
+   (state :initform :live :accessor shader-program-state))
+  (:documentation
+   "Represents compositor shader program. Mutate it only on the compositor owner thread and preserve the ownership invariants exposed by its accessors."))
 
 (defclass retained-output-target ()
   ((output :initarg :output :reader retained-target-output)
@@ -185,7 +189,9 @@ void main() {
    (texture :initarg :texture :reader retained-target-texture)
    (width :initarg :width :reader retained-target-width)
    (height :initarg :height :reader retained-target-height)
-   (valid-p :initform nil :accessor retained-target-valid-p)))
+   (valid-p :initform nil :accessor retained-target-valid-p))
+  (:documentation
+   "Represents compositor retained output target. Mutate it only on the compositor owner thread and preserve the ownership invariants exposed by its accessors."))
 
 (defclass direct-gles-renderer (compositor-component)
   ((solid-program :initform nil :accessor renderer-solid-program)
@@ -197,16 +203,34 @@ void main() {
                    :reader renderer-output-targets)
    (vertex-scratch :initform nil :accessor renderer-vertex-scratch)
    (vertex-scratch-capacity :initform 0
-                            :accessor renderer-vertex-scratch-capacity)))
+                            :accessor renderer-vertex-scratch-capacity))
+  (:documentation
+   "Represents compositor direct gles renderer. Mutate it only on the compositor owner thread and preserve the ownership invariants exposed by its accessors."))
 
-(defgeneric renderer-begin-frame (renderer output frame-context))
-(defgeneric renderer-draw-item (renderer frame-context item))
-(defgeneric renderer-draw-material (renderer frame-context item material))
-(defgeneric renderer-execute-pass (renderer frame-context pass))
-(defgeneric renderer-bind-target (renderer frame-context target))
-(defgeneric renderer-release-output-target (renderer output))
-(defgeneric renderer-end-frame (renderer frame-context))
-(defgeneric renderer-abort-frame (renderer frame-context reason))
+(defgeneric renderer-begin-frame (renderer output frame-context)
+  (:documentation
+   "Implement RENDERER-BEGIN-FRAME while preserving frame ordering and damage correctness. Never retain transient render data past the documented frame boundary."))
+(defgeneric renderer-draw-item (renderer frame-context item)
+  (:documentation
+   "Implement RENDERER-DRAW-ITEM for compositor implementations. Preserve component ownership, protocol ordering, and the generic function's return contract."))
+(defgeneric renderer-draw-material (renderer frame-context item material)
+  (:documentation
+   "Implement RENDERER-DRAW-MATERIAL for compositor implementations. Preserve component ownership, protocol ordering, and the generic function's return contract."))
+(defgeneric renderer-execute-pass (renderer frame-context pass)
+  (:documentation
+   "Implement RENDERER-EXECUTE-PASS for compositor implementations. Preserve component ownership, protocol ordering, and the generic function's return contract."))
+(defgeneric renderer-bind-target (renderer frame-context target)
+  (:documentation
+   "Implement RENDERER-BIND-TARGET for compositor implementations. Preserve component ownership, protocol ordering, and the generic function's return contract."))
+(defgeneric renderer-release-output-target (renderer output)
+  (:documentation
+   "Implement RENDERER-RELEASE-OUTPUT-TARGET for this output specialization. Respect output membership, layout, scale, and hotplug lifetime when updating state."))
+(defgeneric renderer-end-frame (renderer frame-context)
+  (:documentation
+   "Implement RENDERER-END-FRAME while preserving frame ordering and damage correctness. Never retain transient render data past the documented frame boundary."))
+(defgeneric renderer-abort-frame (renderer frame-context reason)
+  (:documentation
+   "Implement RENDERER-ABORT-FRAME while preserving frame ordering and damage correctness. Never retain transient render data past the documented frame boundary."))
 
 (defun gl-status (getter object parameter)
   (cffi:with-foreign-object (value :int)
@@ -373,6 +397,7 @@ void main() {
 
 (defmethod renderer-release-output-target
     ((renderer direct-gles-renderer) output)
+  "Implement RENDERER-RELEASE-OUTPUT-TARGET for this output specialization. Respect output membership, layout, scale, and hotplug lifetime when updating state."
   (let ((target (gethash output (renderer-output-targets renderer))))
     (when target
       (delete-retained-output-target target)
@@ -403,6 +428,7 @@ void main() {
                  :kind kind))
 
 (defmethod attach-component :after ((renderer direct-gles-renderer))
+  "Extend ATTACH-COMPONENT after primary dispatch. Preserve the primary result and perform only the documented follow-up obligation."
   (let* ((compositor (component-compositor renderer))
          (runtime (compositor-runtime compositor)))
     (ataxia.runtime:with-egl-context ((ataxia.runtime:runtime-egl runtime))
@@ -428,6 +454,7 @@ void main() {
 
 (defmethod detach-component :before
     ((renderer direct-gles-renderer) reason)
+  "Prepare or validate DETACH-COMPONENT before primary dispatch. Do not consume ownership or perform the primary operation early."
   (declare (ignore reason))
   (let ((runtime (compositor-runtime (component-compositor renderer))))
     (when (and runtime
@@ -812,6 +839,7 @@ void main() {
 
 (defmethod renderer-bind-target
     ((renderer direct-gles-renderer) frame-context (target (eql :scene)))
+  "Implement RENDERER-BIND-TARGET for this compositor specialization. Preserve component ownership, protocol ordering, and the generic function's return contract."
   (declare (ignore renderer))
   (%gl-bind-framebuffer
    +gl-framebuffer+ (frame-context-scene-framebuffer frame-context))
@@ -822,6 +850,7 @@ void main() {
 
 (defmethod renderer-bind-target
     ((renderer direct-gles-renderer) frame-context (target (eql :output)))
+  "Implement RENDERER-BIND-TARGET for this compositor specialization. Preserve component ownership, protocol ordering, and the generic function's return contract."
   (declare (ignore renderer))
   (%gl-bind-framebuffer
    +gl-framebuffer+ (frame-context-framebuffer frame-context))
@@ -867,6 +896,7 @@ void main() {
 
 (defmethod renderer-begin-frame
     ((renderer direct-gles-renderer) output frame-context)
+  "Implement RENDERER-BEGIN-FRAME while preserving frame ordering and damage correctness. Never retain transient render data past the documented frame boundary."
   (let ((target
           (ensure-retained-output-target
            renderer output (frame-context-width frame-context)
@@ -891,6 +921,7 @@ void main() {
 
 (defmethod renderer-end-frame
     ((renderer direct-gles-renderer) frame-context)
+  "Implement RENDERER-END-FRAME while preserving frame ordering and damage correctness. Never retain transient render data past the documented frame boundary."
   (declare (ignore renderer))
   (when (frame-context-scene-updated-p frame-context)
     (setf (retained-target-valid-p (frame-context-scene-target frame-context))
@@ -908,6 +939,7 @@ void main() {
 
 (defmethod renderer-abort-frame
     ((renderer direct-gles-renderer) frame-context reason)
+  "Implement RENDERER-ABORT-FRAME while preserving frame ordering and damage correctness. Never retain transient render data past the documented frame boundary."
   (declare (ignore renderer reason))
   (when (and (frame-context-scene-target frame-context)
              (frame-context-scene-updated-p frame-context))

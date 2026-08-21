@@ -9,22 +9,30 @@
   ((definitions :initform (make-hash-table :test #'eq)
                 :reader animation-policy-definitions)
    (fallback :initarg :fallback :initform nil
-             :accessor animation-policy-fallback)))
+             :accessor animation-policy-fallback))
+  (:documentation
+   "Defines the replaceable animation policy. It owns policy-specific state and must satisfy compositor generics without mutating Runtime objects directly."))
 
 (defclass animation-track ()
   ((property :initarg :property :reader animation-track-property)
    (from :initarg :from :reader animation-track-from)
    (to :initarg :to :reader animation-track-to)
    (interpolator :initarg :interpolator :initform #'ease-out-cubic
-                 :reader animation-track-interpolator)))
+                 :reader animation-track-interpolator))
+  (:documentation
+   "Represents compositor animation track. Mutate it only on the compositor owner thread and preserve the ownership invariants exposed by its accessors."))
 
 (defclass shader-uniform-binding ()
-  ((name :initarg :name :reader shader-uniform-binding-name)))
+  ((name :initarg :name :reader shader-uniform-binding-name))
+  (:documentation
+   "Binds shader uniform binding to a concrete target. Samples must update only the declared property and preserve unrelated presentation state."))
 
 (defclass animation-definition ()
   ((duration :initarg :duration :reader animation-definition-duration)
    (tracks :initarg :tracks :reader animation-definition-tracks)
-   (name :initarg :name :initform nil :reader animation-definition-name)))
+   (name :initarg :name :initform nil :reader animation-definition-name))
+  (:documentation
+   "Represents compositor animation definition. Mutate it only on the compositor owner thread and preserve the ownership invariants exposed by its accessors."))
 
 (defclass animation-instance ()
   ((subject :initarg :subject :reader animation-instance-subject)
@@ -34,27 +42,41 @@
    (started-at :initarg :started-at :reader animation-instance-started-at)
    (state :initform :running :accessor animation-instance-state)
    (resources-finalized-p :initform nil
-                          :accessor animation-resources-finalized-p)))
+                          :accessor animation-resources-finalized-p))
+  (:documentation
+   "Represents compositor animation instance. Mutate it only on the compositor owner thread and preserve the ownership invariants exposed by its accessors."))
 
 (defclass animation-engine (compositor-component)
   ((active :initform nil :accessor animation-engine-active)
    (default-resolver :initarg :default-resolver
                      :initform #'default-animation-definition
-                     :reader animation-engine-default-resolver)))
+                     :reader animation-engine-default-resolver))
+  (:documentation
+   "Owns animation engine subsystem state. Attach and detach it on the owner thread, and keep its tables synchronized with object lifecycle events."))
 
-(defgeneric resolve-animation (engine subject descriptor context))
-(defgeneric apply-animation-sample (subject property value context))
-(defgeneric finalize-animation-property (property subject instance reason))
+(defgeneric resolve-animation (engine subject descriptor context)
+  (:documentation
+   "Implement RESOLVE-ANIMATION for compositor implementations. Preserve component ownership, protocol ordering, and the generic function's return contract."))
+(defgeneric apply-animation-sample (subject property value context)
+  (:documentation
+   "Implement APPLY-ANIMATION-SAMPLE for compositor implementations. Preserve component ownership, protocol ordering, and the generic function's return contract."))
+(defgeneric finalize-animation-property (property subject instance reason)
+  (:documentation
+   "Implement FINALIZE-ANIMATION-PROPERTY for compositor implementations. Preserve component ownership, protocol ordering, and the generic function's return contract."))
 (defgeneric prepare-animation-property-for-policy
-    (property policy instance))
+    (property policy instance)
+  (:documentation
+   "Implement PREPARE-ANIMATION-PROPERTY-FOR-POLICY for compositor implementations. Preserve component ownership, protocol ordering, and the generic function's return contract."))
 
 (defmethod finalize-animation-property
     (property subject instance reason)
+  "Implement FINALIZE-ANIMATION-PROPERTY for this compositor specialization. Preserve component ownership, protocol ordering, and the generic function's return contract."
   (declare (ignore property subject instance reason))
   nil)
 
 (defmethod prepare-animation-property-for-policy
     (property (policy behavior-policy) instance)
+  "Implement PREPARE-ANIMATION-PROPERTY-FOR-POLICY for this compositor specialization. Preserve component ownership, protocol ordering, and the generic function's return contract."
   (declare (ignore property policy instance))
   t)
 
@@ -79,6 +101,7 @@
 
 (defmethod resolve-animation
     ((engine animation-engine) (subject view) descriptor context)
+  "Implement RESOLVE-ANIMATION for this compositor specialization. Preserve component ownership, protocol ordering, and the generic function's return contract."
   (behavior-resolve-animation
    (compositor-behavior-policy (component-compositor engine))
    engine subject descriptor context))
@@ -103,6 +126,7 @@
 
 (defmethod apply-animation-sample
     ((subject view) property value context)
+  "Implement APPLY-ANIMATION-SAMPLE for this compositor specialization. Preserve component ownership, protocol ordering, and the generic function's return contract."
   (declare (ignore context))
   (let ((state (view-presentation-state subject)))
     (typecase property
@@ -119,12 +143,16 @@
       (t (error 'compositor-error))))
   subject)
 
-(defgeneric animation-property-key (property))
+(defgeneric animation-property-key (property)
+  (:documentation
+   "Implement ANIMATION-PROPERTY-KEY for compositor implementations. Preserve component ownership, protocol ordering, and the generic function's return contract."))
 
 (defmethod animation-property-key (property)
+  "Implement ANIMATION-PROPERTY-KEY for this compositor specialization. Preserve component ownership, protocol ordering, and the generic function's return contract."
   property)
 
 (defmethod animation-property-key ((property shader-uniform-binding))
+  "Implement ANIMATION-PROPERTY-KEY for this compositor specialization. Preserve component ownership, protocol ordering, and the generic function's return contract."
   (list :shader-uniform (shader-uniform-binding-name property)))
 
 (defun conflicting-animation-properties (definition)
@@ -272,6 +300,7 @@
   (not (null (animation-engine-active engine))))
 
 (defmethod detach-component :before ((engine animation-engine) reason)
+  "Prepare or validate DETACH-COMPONENT before primary dispatch. Do not consume ownership or perform the primary operation early."
   (declare (ignore reason))
   (let ((timestamp (monotonic-seconds)))
     (dolist (instance (animation-engine-active engine))

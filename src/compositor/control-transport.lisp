@@ -68,10 +68,16 @@
    (output :initform (make-array 0 :element-type '(unsigned-byte 8)
                                    :adjustable t :fill-pointer 0)
            :accessor connection-output)
-   (closed-p :initform nil :accessor connection-closed-p)))
+   (closed-p :initform nil :accessor connection-closed-p))
+  (:documentation
+   "Represents compositor control connection. Mutate it only on the compositor owner thread and preserve the ownership invariants exposed by its accessors."))
 
-(defgeneric decode-control-action (control principal specification))
-(defgeneric decode-control-placement (policy specification))
+(defgeneric decode-control-action (control principal specification)
+  (:documentation
+   "Implement DECODE-CONTROL-ACTION after validating the principal and referenced objects. Execute mutations only at an owner-thread safe point."))
+(defgeneric decode-control-placement (policy specification)
+  (:documentation
+   "Implement DECODE-CONTROL-PLACEMENT after validating the principal and referenced objects. Execute mutations only at an owner-thread safe point."))
 
 (defun default-control-socket-path ()
   (or (uiop:getenv "ATAXIA_CONTROL_SOCKET")
@@ -222,6 +228,7 @@
 
 (defmethod decode-control-placement
     ((policy planar-behavior-policy) specification)
+  "Implement DECODE-CONTROL-PLACEMENT after validating the principal and referenced objects. Execute mutations only at an owner-thread safe point."
   (make-instance
    'planar-placement
    :x (coerce (required-command-value specification :x) 'double-float)
@@ -232,6 +239,7 @@
 
 (defmethod decode-control-placement
     ((policy spherical-behavior-policy) specification)
+  "Implement DECODE-CONTROL-PLACEMENT after validating the principal and referenced objects. Execute mutations only at an owner-thread safe point."
   (make-instance
    'spherical-placement
    :longitude
@@ -246,6 +254,7 @@
 
 (defmethod decode-control-action
     ((control control-system) (principal control-principal) specification)
+  "Implement DECODE-CONTROL-ACTION after validating the principal and referenced objects. Execute mutations only at an owner-thread safe point."
   (unless (and (consp specification) (keywordp (first specification)))
     (error 'control-request-rejected
            :action :decode :reason :invalid-action))

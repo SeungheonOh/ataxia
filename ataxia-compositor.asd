@@ -23,6 +23,7 @@
      (:file "graphics")
      (:file "presentation")
      (:file "behavior")
+     (:file "spherical")
      (:file "interaction")
      (:file "control")
      (:file "compositor")

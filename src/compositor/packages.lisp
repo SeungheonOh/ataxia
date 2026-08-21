@@ -137,6 +137,18 @@
    #:behavior-policy-revision
    #:planar-behavior-policy
    #:planar-behavior-state
+   #:spherical-behavior-policy
+   #:spherical-behavior-state
+   #:spherical-placement
+   #:spherical-longitude
+   #:spherical-latitude
+   #:spherical-angular-width
+   #:spherical-angular-height
+   #:spherical-depth
+   #:spherical-camera
+   #:camera-longitude
+   #:camera-latitude
+   #:camera-field-of-view
    #:behavior-portable-state
    #:portable-state-source-policy
    #:portable-state-view-states
@@ -349,6 +361,8 @@
    #:interactive-operation-button
    #:interactive-operation-start-x
    #:interactive-operation-start-y
+   #:interactive-operation-original-width
+   #:interactive-operation-original-height
    #:interactive-operation-original-placement
    #:begin-interactive-operation
    #:begin-interactive-move

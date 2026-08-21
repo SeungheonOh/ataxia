@@ -19,6 +19,10 @@
    (button :initarg :button :reader interactive-operation-button)
    (start-x :initarg :start-x :reader interactive-operation-start-x)
    (start-y :initarg :start-y :reader interactive-operation-start-y)
+   (original-width :initarg :original-width
+                   :reader interactive-operation-original-width)
+   (original-height :initarg :original-height
+                    :reader interactive-operation-original-height)
    (original-placement :initarg :original-placement
                        :reader interactive-operation-original-placement)))
 
@@ -117,6 +121,8 @@
    :edges edges :button button
    :start-x (seat-pointer-x seat)
    :start-y (seat-pointer-y seat)
+   :original-width (view-width view)
+   :original-height (view-height view)
    :original-placement
    (copy-world-placement policy (view-placement view))))
 
@@ -247,7 +253,7 @@
     (values placement old-placement)))
 
 (defmethod behavior-focus-changed
-    ((policy planar-behavior-policy) seat previous view)
+    ((policy behavior-policy) seat previous view)
   (declare (ignore seat previous))
   (when view
     (desktop-raise-view
@@ -273,7 +279,7 @@
     edges))
 
 (defmethod behavior-handle-pointer-button
-    ((policy planar-behavior-policy) interaction seat hit button state time)
+    ((policy behavior-policy) interaction seat hit button state time)
   (declare (ignore policy interaction time))
   (let ((view (and hit (seat-hit-view hit))))
     (if (and (eq state :pressed) view)

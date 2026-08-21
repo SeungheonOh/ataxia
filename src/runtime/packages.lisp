@@ -96,6 +96,7 @@
    #:%output-damage-region
    #:%region-rectangle-count
    #:%region-rectangle-at
+   #:%output-state-set-damage-rectangles
    #:%output-present-commit-sequence
    #:%output-presented
    #:%output-present-seconds
@@ -327,6 +328,7 @@
    #:output-state-set-enabled
    #:output-state-set-mode
    #:output-state-set-custom-mode
+   #:output-state-set-damage
    #:output-test-state
    #:output-commit-state
    #:output-schedule-frame

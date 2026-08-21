@@ -188,6 +188,26 @@ bool ataxia_region_rectangle_at(const void *region_pointer, uint32_t index,
 	return true;
 }
 
+void ataxia_output_state_set_damage_rectangles(struct wlr_output_state *state,
+		const int32_t *rectangles, uint32_t rectangle_count) {
+	if (state == NULL) {
+		return;
+	}
+	pixman_region32_t damage;
+	pixman_region32_init(&damage);
+	for (uint32_t index = 0; rectangles != NULL && index < rectangle_count;
+			index++) {
+		const int32_t *rectangle = &rectangles[index * 4];
+		if (rectangle[2] > 0 && rectangle[3] > 0) {
+			pixman_region32_union_rect(&damage, &damage, rectangle[0],
+				rectangle[1], (uint32_t)rectangle[2],
+				(uint32_t)rectangle[3]);
+		}
+	}
+	wlr_output_state_set_damage(state, &damage);
+	pixman_region32_fini(&damage);
+}
+
 uint32_t ataxia_output_present_commit_sequence(
 		const struct wlr_output_event_present *event) {
 	return event == NULL ? 0 : event->commit_seq;

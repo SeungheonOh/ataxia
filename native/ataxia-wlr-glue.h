@@ -12,7 +12,7 @@
 #include <stdint.h>
 
 #define ATAXIA_WLR_GLUE_API __attribute__((visibility("default")))
-#define ATAXIA_WLR_GLUE_ABI_VERSION 2u
+#define ATAXIA_WLR_GLUE_ABI_VERSION 3u
 
 struct wl_signal;
 struct wlr_allocator;
@@ -111,6 +111,9 @@ ATAXIA_WLR_GLUE_API uint32_t ataxia_region_rectangle_count(
 ATAXIA_WLR_GLUE_API bool ataxia_region_rectangle_at(
 	const void *region, uint32_t index, int32_t *x1, int32_t *y1,
 	int32_t *x2, int32_t *y2);
+ATAXIA_WLR_GLUE_API void ataxia_output_state_set_damage_rectangles(
+	struct wlr_output_state *state, const int32_t *rectangles,
+	uint32_t rectangle_count);
 ATAXIA_WLR_GLUE_API uint32_t ataxia_output_present_commit_sequence(
 	const struct wlr_output_event_present *event);
 ATAXIA_WLR_GLUE_API bool ataxia_output_presented(

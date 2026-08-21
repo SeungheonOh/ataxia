@@ -79,6 +79,12 @@
   (y1 :pointer)
   (x2 :pointer)
   (y2 :pointer))
+(defcfun ("ataxia_output_state_set_damage_rectangles"
+          %output-state-set-damage-rectangles)
+    :void
+  (state :pointer)
+  (rectangles :pointer)
+  (rectangle-count :uint32))
 (defcfun ("ataxia_output_present_commit_sequence"
           %output-present-commit-sequence)
     :uint32
@@ -325,6 +331,32 @@
    (%native-runtime state) :output-state-set-custom-mode)
   (ataxia.runtime.raw:%wlr-output-state-set-custom-mode
    (%object-pointer state) width height refresh-millihertz)
+  state)
+
+(defun output-state-set-damage (state rectangles)
+  (check-type state wlr-output-state)
+  (%assert-runtime-live (%native-runtime state) :output-state-set-damage)
+  (let ((rectangles (remove-if-not
+                     (lambda (rectangle)
+                       (and (plusp (damage-rectangle-width rectangle))
+                            (plusp (damage-rectangle-height rectangle))))
+                     rectangles)))
+    (if rectangles
+        (cffi:with-foreign-object (native :int32 (* 4 (length rectangles)))
+          (loop for rectangle in rectangles
+                for offset from 0 by 4
+                do (setf (cffi:mem-aref native :int32 offset)
+                         (damage-rectangle-x rectangle)
+                         (cffi:mem-aref native :int32 (+ offset 1))
+                         (damage-rectangle-y rectangle)
+                         (cffi:mem-aref native :int32 (+ offset 2))
+                         (damage-rectangle-width rectangle)
+                         (cffi:mem-aref native :int32 (+ offset 3))
+                         (damage-rectangle-height rectangle)))
+          (ataxia.runtime.raw:%output-state-set-damage-rectangles
+           (%object-pointer state) native (length rectangles)))
+        (ataxia.runtime.raw:%output-state-set-damage-rectangles
+         (%object-pointer state) (cffi:null-pointer) 0)))
   state)
 
 (defun %assert-output-state-pair (output state operation)

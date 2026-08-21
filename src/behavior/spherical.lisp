@@ -42,6 +42,10 @@
                  :reader spherical-mesh-columns)
    (mesh-rows :initarg :mesh-rows :initform 8
               :reader spherical-mesh-rows)
+   (mesh-cache :initform (make-hash-table :test #'equal)
+               :reader spherical-mesh-cache)
+   (mesh-cache-revision :initform -1
+                        :accessor spherical-mesh-cache-revision)
    (shadow-style :initarg :shadow-style
                  :initform (make-instance 'soft-shadow-style)
                  :accessor behavior-shadow-style)))
@@ -520,6 +524,33 @@
     (unless (zerop (length vertices))
       (make-mesh-geometry vertices))))
 
+(defun spherical-mesh-cache-key (policy output placement)
+  (let ((camera (output-behavior-state output)))
+    (list output
+          (ataxia.runtime:output-width (output-native output))
+          (ataxia.runtime:output-height (output-native output))
+          (camera-longitude camera) (camera-latitude camera)
+          (camera-field-of-view camera)
+          (spherical-mesh-columns policy) (spherical-mesh-rows policy)
+          (spherical-longitude placement) (spherical-latitude placement)
+          (spherical-angular-width placement)
+          (spherical-angular-height placement))))
+
+(defun cached-spherical-patch-mesh
+    (policy output projector placement)
+  (let ((revision (behavior-policy-revision policy)))
+    (unless (= revision (spherical-mesh-cache-revision policy))
+      (clrhash (spherical-mesh-cache policy))
+      (setf (spherical-mesh-cache-revision policy) revision))
+    (let ((key (spherical-mesh-cache-key policy output placement)))
+      (multiple-value-bind (geometry present-p)
+          (gethash key (spherical-mesh-cache policy))
+        (if present-p
+            geometry
+            (setf (gethash key (spherical-mesh-cache policy))
+                  (make-spherical-patch-mesh
+                   policy projector placement)))))))
+
 (defun transform-mesh-geometry
     (geometry source-x source-y source-width source-height
      target-x target-y target-width target-height)
@@ -537,7 +568,8 @@
     (make-mesh-geometry vertices)))
 
 (defclass spherical-surface-mapping (presentation-mapping)
-  ((placement :initarg :placement
+  ((output :initarg :output :reader spherical-mapping-output)
+   (placement :initarg :placement
               :reader spherical-mapping-placement)
    (projector :initarg :projector
               :reader spherical-mapping-projector)
@@ -574,8 +606,8 @@
 
 (defun spherical-mapping-geometry (policy mapping)
   (let ((geometry
-          (make-spherical-patch-mesh
-           policy
+          (cached-spherical-patch-mesh
+           policy (spherical-mapping-output mapping)
            (spherical-mapping-projector mapping)
            (spherical-mapping-placement mapping))))
     (when geometry
@@ -630,7 +662,7 @@
             :depth (spherical-depth parent-placement))))
     (make-instance
      'spherical-surface-mapping
-     :placement placement
+     :output (spherical-mapping-output parent) :placement placement
      :projector (spherical-mapping-projector parent)
      :source-width child-width :source-height child-height
      :base-x (spherical-mapping-base-x parent)
@@ -685,13 +717,15 @@
              (make-spherical-projector
               (output-behavior-state output) output))
            (content-geometry
-             (make-spherical-patch-mesh policy projector placement))
+             (cached-spherical-patch-mesh
+              policy output projector placement))
            (frame-geometry
-             (make-spherical-patch-mesh policy projector frame-placement))
+             (cached-spherical-patch-mesh
+              policy output projector frame-placement))
            (title-geometry
              (and decorated-p
-                  (make-spherical-patch-mesh
-                   policy projector title-placement))))
+                  (cached-spherical-patch-mesh
+                   policy output projector title-placement))))
       (when (and content-geometry frame-geometry
                  (or (not decorated-p) title-geometry))
         (multiple-value-bind (base-x base-y base-width base-height)
@@ -703,7 +737,7 @@
             (let* ((mapping
                      (make-instance
                       'spherical-surface-mapping
-                      :placement placement :projector projector
+                      :output output :placement placement :projector projector
                       :source-width
                       (max 1d0
                            (coerce (surface-record-width record)

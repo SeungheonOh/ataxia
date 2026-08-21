@@ -294,6 +294,7 @@
    #:make-material-program-descriptor
    #:make-texture-program-descriptor
    #:replace-shader-program
+   #:release-shader-program-owner
    #:shader-program-installed-p
    #:set-view-shader-program
    #:set-view-shader-uniform

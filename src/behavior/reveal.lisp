@@ -137,29 +137,30 @@ void main() {
      subject (reveal-binding-previous-program property)))
   subject)
 
-(defun install-codec-reveal-variant (renderer kind external-p)
+(defun install-codec-reveal-variant (policy renderer kind external-p)
   (unless (shader-program-installed-p
-           renderer +codec-reveal-program-name+ kind)
+           renderer +codec-reveal-program-name+ kind policy)
     (replace-shader-program
      renderer +codec-reveal-program-name+
      (make-texture-program-descriptor
       (codec-reveal-fragment-shader external-p)
-      +codec-reveal-uniforms+ kind))))
+      +codec-reveal-uniforms+ kind)
+     policy)))
 
 (defun ensure-codec-reveal-programs (policy)
   (let ((renderer (compositor-graphics (component-compositor policy))))
     (dolist (variant '((:texture-2d nil) (:texture-external t)))
       (handler-case
           (install-codec-reveal-variant
-           renderer (first variant) (second variant))
+           policy renderer (first variant) (second variant))
         (graphics-failure (condition)
           (format *error-output*
                   "[behavior] codec reveal ~A unavailable: ~A~%"
                   (first variant) condition))))
     (or (shader-program-installed-p
-         renderer +codec-reveal-program-name+ :texture-2d)
+         renderer +codec-reveal-program-name+ :texture-2d policy)
         (shader-program-installed-p
-         renderer +codec-reveal-program-name+ :texture-external))))
+         renderer +codec-reveal-program-name+ :texture-external policy))))
 
 (defun codec-reveal-seed (view)
   (coerce (mod (+ (* (view-id view) 37) 11) 997) 'double-float))

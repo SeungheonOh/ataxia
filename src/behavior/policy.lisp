@@ -184,7 +184,13 @@
 
 (defmethod detach-component :before
     ((policy behavior-policy) reason)
-  (quiesce-behavior-policy policy reason))
+  (quiesce-behavior-policy policy reason)
+  (let* ((compositor (component-compositor policy))
+         (renderer
+           (and (slot-boundp compositor 'graphics)
+                (compositor-graphics compositor))))
+    (when (and renderer (eq (component-state renderer) :attached))
+      (release-shader-program-owner renderer policy))))
 
 (defmethod behavior-handle-pointer-axis
     ((policy behavior-policy) interaction seat input)

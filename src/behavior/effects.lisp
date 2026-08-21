@@ -89,12 +89,13 @@ void main() {
 (defun ensure-soft-shadow-program (policy)
   (let ((renderer (compositor-graphics (component-compositor policy))))
     (unless (shader-program-installed-p
-             renderer +soft-shadow-program-name+ :material)
+             renderer +soft-shadow-program-name+ :material policy)
       (replace-shader-program
        renderer +soft-shadow-program-name+
        (make-material-program-descriptor
         +soft-shadow-fragment-shader+
-        '(color rectangle-size shadow-inset corner-radius blur-radius))))))
+        '(color rectangle-size shadow-inset corner-radius blur-radius))
+       policy))))
 
 (defun interpolate-effect-value (from to progress)
   (+ from (* (- to from) progress)))

@@ -451,20 +451,20 @@ void main() {
     (setf (renderer-vertex-scratch renderer) nil
           (renderer-vertex-scratch-capacity renderer) 0)))
 
-(defun shader-program-key (name kind)
-  (list name kind))
+(defun shader-program-key (owner name kind)
+  (list owner name kind))
 
-(defun registered-shader-program (renderer name kind)
-  (gethash (shader-program-key name kind) (renderer-programs renderer)))
+(defun registered-shader-program (renderer name kind &optional owner)
+  (gethash (shader-program-key owner name kind) (renderer-programs renderer)))
 
-(defun replace-shader-program (renderer name descriptor)
+(defun replace-shader-program (renderer name descriptor &optional owner)
   (assert-compositor-owner
    (component-compositor renderer) :replace-shader-program)
   (check-type name (or symbol string))
   (let ((runtime (compositor-runtime (component-compositor renderer))))
     (ataxia.runtime:with-egl-context ((ataxia.runtime:runtime-egl runtime))
       (let* ((kind (program-descriptor-kind descriptor))
-             (key (shader-program-key name kind))
+             (key (shader-program-key owner name kind))
              (candidate (compile-shader-program descriptor))
              (previous (gethash key (renderer-programs renderer))))
         (handler-case
@@ -492,11 +492,28 @@ void main() {
             (delete-shader-program candidate)
             (error condition)))))))
 
-(defun shader-program-installed-p (renderer name &optional kind)
+(defun release-shader-program-owner (renderer owner)
+  (assert-compositor-owner
+   (component-compositor renderer) :release-shader-program-owner)
+  (let ((keys nil)
+        (runtime (compositor-runtime (component-compositor renderer))))
+    (maphash
+     (lambda (key program)
+       (declare (ignore program))
+       (when (eq owner (first key))
+         (push key keys)))
+     (renderer-programs renderer))
+    (ataxia.runtime:with-egl-context ((ataxia.runtime:runtime-egl runtime))
+      (dolist (key keys)
+        (delete-shader-program (gethash key (renderer-programs renderer)))
+        (remhash key (renderer-programs renderer)))))
+  nil)
+
+(defun shader-program-installed-p (renderer name &optional kind owner)
   (labels ((live-kind-p (candidate-kind)
              (let ((program
                      (registered-shader-program
-                      renderer name candidate-kind)))
+                      renderer name candidate-kind owner)))
                (and program (eq (shader-program-state program) :live)))))
     (if kind
         (live-kind-p kind)
@@ -510,18 +527,29 @@ void main() {
   (let* ((kind (if (= target +gl-texture-2d+)
                    :texture-2d
                    :texture-external))
+         (owner
+           (compositor-behavior-policy (component-compositor renderer)))
          (candidate
-           (and name (registered-shader-program renderer name kind))))
-    (if candidate
-        candidate
-        (if (= target +gl-texture-2d+)
-            (renderer-texture-program renderer)
-            (renderer-external-program renderer)))))
+           (and name
+                (or (registered-shader-program renderer name kind owner)
+                    (registered-shader-program renderer name kind)))))
+    (cond
+      (candidate candidate)
+      (name
+       (error 'graphics-failure
+              :operation :draw-texture
+              :detail (format nil "unknown ~A program ~A" kind name)))
+      ((= target +gl-texture-2d+) (renderer-texture-program renderer))
+      (t (renderer-external-program renderer)))))
 
 (defun shader-program-for-material (renderer name)
-  (let ((program
-          (and name
-               (registered-shader-program renderer name :material))))
+  (let* ((owner
+           (compositor-behavior-policy (component-compositor renderer)))
+         (program
+           (and name
+                (or (registered-shader-program
+                     renderer name :material owner)
+                    (registered-shader-program renderer name :material)))))
     (unless program
       (error 'graphics-failure
              :operation :draw-material
@@ -542,11 +570,17 @@ void main() {
   (check-type view view)
   (when name
     (check-type name (or symbol string))
-    (unless (or (shader-program-installed-p renderer name :texture-2d)
-                (shader-program-installed-p renderer name :texture-external))
-      (error 'graphics-failure
-             :operation :set-view-shader-program
-             :detail (format nil "unknown texture program ~A" name))))
+    (let ((owner
+            (compositor-behavior-policy (component-compositor renderer))))
+      (unless (or (shader-program-installed-p
+                   renderer name :texture-2d owner)
+                  (shader-program-installed-p
+                   renderer name :texture-external owner)
+                  (shader-program-installed-p renderer name :texture-2d)
+                  (shader-program-installed-p renderer name :texture-external))
+        (error 'graphics-failure
+               :operation :set-view-shader-program
+               :detail (format nil "unknown texture program ~A" name)))))
   (setf (view-shader-program-name view) name)
   (schedule-presentation
    (compositor-presentation (component-compositor renderer)))

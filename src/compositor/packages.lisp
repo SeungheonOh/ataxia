@@ -127,6 +127,7 @@
    #:view-presentable-p
    #:view-maximized-p
    #:view-fullscreen-p
+   #:view-fullscreen-output
    #:view-minimized-p
    #:view-animation-policy
    #:view-shader-program-name

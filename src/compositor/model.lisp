@@ -47,6 +47,7 @@
    (presentable-p :initform nil :accessor view-presentable-p)
    (maximized-p :initform nil :accessor view-maximized-p)
    (fullscreen-p :initform nil :accessor view-fullscreen-p)
+   (fullscreen-output :initform nil :accessor view-fullscreen-output)
    (minimized-p :initform nil :accessor view-minimized-p)
    (revision :initform 0 :accessor view-revision)))
 

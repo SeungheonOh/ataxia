@@ -147,7 +147,7 @@
     (policy interaction seat view kind edges button))
 (defgeneric behavior-update-operation (policy interaction operation))
 (defgeneric behavior-configure-view-for-output
-    (policy compositor view fullscreen-p))
+    (policy compositor view output fullscreen-p))
 (defgeneric behavior-restore-view (policy compositor view))
 (defgeneric behavior-pan-output (policy output delta-x delta-y))
 (defgeneric behavior-zoom-output

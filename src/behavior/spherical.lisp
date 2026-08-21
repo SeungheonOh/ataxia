@@ -996,8 +996,8 @@
                                (view-height view)))))
 
 (defmethod behavior-configure-view-for-output
-    ((policy spherical-behavior-policy) compositor view fullscreen-p)
-  (let ((output (first-policy-output policy)))
+    ((policy spherical-behavior-policy) compositor view output fullscreen-p)
+  (let ((output (or output (first-policy-output policy))))
     (if (null output)
         (make-instance 'view-configuration-decision
                        :width (view-width view) :height (view-height view))

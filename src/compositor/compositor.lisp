@@ -245,6 +245,8 @@
     (when output
       (behavior-output-added
        (compositor-behavior-policy compositor) output)
+      (dolist (seat (interaction-seats (compositor-interaction compositor)))
+        (clamp-seat-pointer (compositor-interaction compositor) seat))
       ;; The initial modeset already queues the first frame event. Scheduling
       ;; here can race a pending DRM page flip on physical backends.
       )
@@ -339,7 +341,23 @@
          (surface-leave-output record output))
        (surface-records (compositor-surfaces compositor))))
     (unregister-compositor-output
-     (compositor-outputs compositor) native-output)))
+     (compositor-outputs compositor) native-output)
+    (when output
+      (dolist (seat (interaction-seats (compositor-interaction compositor)))
+        (when (eq output (seat-pointer-output seat))
+          (ataxia.runtime:seat-pointer-notify-clear-focus (seat-native seat))
+          (setf (seat-pointer-focus-surface seat) nil
+                (seat-pointer-focus-view seat) nil))
+        (clamp-seat-pointer (compositor-interaction compositor) seat))
+      (dolist (view (desktop-views (compositor-desktop compositor)))
+        (when (eq output (view-fullscreen-output view))
+          (setf (view-fullscreen-output view) nil)
+          (when (view-fullscreen-p view)
+            (configure-view-for-output
+             compositor view :output (preferred-output-for-view compositor view)
+             :fullscreen-p t)
+            (ataxia.runtime:xdg-toplevel-set-size
+             (view-native view) (view-width view) (view-height view))))))))
 
 (defmethod ataxia.runtime:backend-new-input
     ((compositor compositor) runtime device)
@@ -511,7 +529,9 @@
            toplevel width height)
           (cond
             ((view-fullscreen-p view)
-             (configure-view-for-output compositor view :fullscreen-p t)
+             (configure-view-for-output
+              compositor view :output (view-fullscreen-output view)
+              :fullscreen-p t)
              (ataxia.runtime:xdg-toplevel-set-fullscreen toplevel t))
             ((view-maximized-p view)
              (configure-view-for-output compositor view)
@@ -632,12 +652,25 @@
    (behavior-restore-view
     (compositor-behavior-policy compositor) compositor view)))
 
-(defun configure-view-for-output (compositor view &key fullscreen-p)
+(defun preferred-output-for-view (compositor view)
+  (or (loop for seat in (interaction-seats (compositor-interaction compositor))
+            when (and (eq view (seat-focused-view seat))
+                      (seat-pointer-output seat))
+              return (seat-pointer-output seat))
+      (let ((membership
+              (surface-record-entered-outputs (view-surface view))))
+        (find-if (lambda (output) (gethash output membership))
+                 (compositor-outputs-list (compositor-outputs compositor))))
+      (default-compositor-output compositor)))
+
+(defun configure-view-for-output
+    (compositor view &key output fullscreen-p)
   (apply-view-configuration-decision
    view
    (behavior-configure-view-for-output
     (compositor-behavior-policy compositor)
-    compositor view (not (null fullscreen-p)))))
+    compositor view (or output (preferred-output-for-view compositor view))
+    (not (null fullscreen-p)))))
 
 (defmethod ataxia.runtime:xdg-toplevel-request-maximize
     ((compositor compositor) toplevel requested-p)
@@ -667,12 +700,23 @@
     ((compositor compositor) request)
   (let* ((toplevel (ataxia.runtime:xdg-fullscreen-toplevel request))
          (requested-p (ataxia.runtime:xdg-fullscreen-requested-p request))
+         (requested-native-output (ataxia.runtime:xdg-fullscreen-output request))
+         (requested-output
+           (and requested-native-output
+                (find-compositor-output
+                 (compositor-outputs compositor) requested-native-output)))
          (view (desktop-find-view (compositor-desktop compositor) toplevel)))
     (when view
-      (setf (view-fullscreen-p view) requested-p)
+      (setf (view-fullscreen-p view) requested-p
+            (view-fullscreen-output view)
+            (and requested-p
+                 (or requested-output
+                     (preferred-output-for-view compositor view))))
       (when (view-initialized-p view)
         (if requested-p
-            (configure-view-for-output compositor view :fullscreen-p t)
+            (configure-view-for-output
+             compositor view :output (view-fullscreen-output view)
+             :fullscreen-p t)
             (if (view-maximized-p view)
                 (configure-view-for-output compositor view)
                 (restore-view-placement compositor view)))

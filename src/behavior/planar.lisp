@@ -110,7 +110,7 @@
   (declare (ignore interaction))
   (make-instance
    'interactive-operation :kind kind :seat seat :view view
-   :edges edges :button button
+   :output (seat-pointer-output seat) :edges edges :button button
    :start-x (seat-pointer-x seat)
    :start-y (seat-pointer-y seat)
    :original-width (view-width view)
@@ -118,8 +118,9 @@
    :original-placement
    (copy-behavior-placement policy (view-placement view))))
 
-(defun planar-pointer-scale (policy seat)
-  (let ((output (or (seat-pointer-output seat)
+(defun planar-pointer-scale (policy operation)
+  (let ((output (or (interactive-operation-output operation)
+                    (seat-pointer-output (interactive-operation-seat operation))
                     (default-compositor-output
                      (component-compositor policy)))))
     (if output (viewport-scale (output-viewport output)) 1d0)))
@@ -128,7 +129,7 @@
   (let* ((seat (interactive-operation-seat operation))
          (view (interactive-operation-view operation))
          (original (interactive-operation-original-placement operation))
-         (scale (planar-pointer-scale policy seat))
+         (scale (planar-pointer-scale policy operation))
          (delta-x (/ (- (seat-pointer-x seat)
                         (interactive-operation-start-x operation)) scale))
          (delta-y (/ (- (seat-pointer-y seat)
@@ -142,7 +143,7 @@
   (let* ((seat (interactive-operation-seat operation))
          (view (interactive-operation-view operation))
          (original (interactive-operation-original-placement operation))
-         (scale (planar-pointer-scale policy seat))
+         (scale (planar-pointer-scale policy operation))
          (delta-x (/ (- (seat-pointer-x seat)
                         (interactive-operation-start-x operation)) scale))
          (delta-y (/ (- (seat-pointer-y seat)
@@ -195,8 +196,8 @@
                      :height (placement-height placement)))))
 
 (defmethod behavior-configure-view-for-output
-    ((policy planar-behavior-policy) compositor view fullscreen-p)
-  (let ((output (default-compositor-output compositor)))
+    ((policy planar-behavior-policy) compositor view output fullscreen-p)
+  (let ((output (or output (default-compositor-output compositor))))
     (if (null output)
         (make-instance 'view-configuration-decision
                        :width (view-width view) :height (view-height view))

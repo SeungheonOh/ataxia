@@ -41,7 +41,10 @@
    (mesh-columns :initarg :mesh-columns :initform 12
                  :reader spherical-mesh-columns)
    (mesh-rows :initarg :mesh-rows :initform 8
-              :reader spherical-mesh-rows)))
+              :reader spherical-mesh-rows)
+   (shadow-style :initarg :shadow-style
+                 :initform (make-instance 'soft-shadow-style)
+                 :accessor behavior-shadow-style)))
 
 (defun normalize-longitude (longitude)
   (- (mod (+ (coerce longitude 'double-float) pi) +two-pi+) pi))
@@ -739,16 +742,12 @@
           (mesh-geometry-bounds geometry)
         (multiple-value-bind (shader-name shader-uniforms)
             (presentation-shader-values owner)
-          (make-instance
-           'presentation-item :kind :surface :owner owner
-           :surface (surface-record-native record)
-           :x x :y y :width width :height height
-           :geometry geometry :mapping mapping
-           :texture
+          (make-surface-item
+           (surface-record-native record) x y width height
            (ataxia.runtime:texture-gles-attributes
             (surface-record-texture record))
-           :shader-program-name shader-name
-           :shader-uniforms shader-uniforms
+           :owner owner :geometry geometry :mapping mapping
+           :program-name shader-name :uniforms shader-uniforms
            :opacity (spherical-owner-opacity owner)
            :interactive-p t :hit-kind hit-kind
            :source-width (max 1 (surface-record-width record))
@@ -799,12 +798,11 @@
                      items
                      (append
                       (unless (view-fullscreen-p view)
-                        (list
-                         (make-shadow-item
-                          (- frame-x 24d0) (- frame-y 24d0)
-                          (+ frame-width 48d0) (+ frame-height 48d0)
-                          '(0.0 0.0 0.0 0.42) 24d0 12d0 8d0
-                          :owner view)))
+                        (let ((shadow
+                                (make-soft-shadow-item
+                                 policy view frame-x frame-y
+                                 frame-width frame-height)))
+                          (and shadow (list shadow))))
                       (when title-geometry
                         (multiple-value-bind
                               (title-x title-y title-width title-height)

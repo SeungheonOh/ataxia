@@ -99,8 +99,24 @@
                                  (- maximum-x minimum-x)
                                  (- maximum-y minimum-y)))))))
 
+(defclass presentation-material () ())
+
+(defclass solid-color-material (presentation-material)
+  ((color :initarg :color :reader material-color)))
+
+(defclass surface-texture-material (presentation-material)
+  ((texture :initarg :texture :reader material-texture)
+   (opacity :initarg :opacity :initform 1d0 :reader material-opacity)
+   (program-name :initarg :program-name :initform nil
+                 :reader material-program-name)
+   (uniforms :initarg :uniforms :initform nil :reader material-uniforms)))
+
+(defclass shader-material (presentation-material)
+  ((program-name :initarg :program-name :reader material-program-name)
+   (uniforms :initarg :uniforms :initform nil :reader material-uniforms)))
+
 (defclass presentation-item ()
-  ((kind :initarg :kind :reader presentation-item-kind)
+  ((material :initarg :material :reader presentation-item-material)
    (owner :initarg :owner :initform nil :reader presentation-item-owner)
    (surface :initarg :surface :initform nil :reader presentation-item-surface)
    (x :initarg :x :reader presentation-item-x)
@@ -111,19 +127,6 @@
              :reader presentation-item-geometry)
    (mapping :initarg :mapping :initform nil
             :reader presentation-item-mapping)
-   (texture :initarg :texture :initform nil :reader presentation-item-texture)
-   (shader-program-name :initarg :shader-program-name :initform nil
-                        :reader presentation-item-shader-program-name)
-   (shader-uniforms :initarg :shader-uniforms :initform nil
-                    :reader presentation-item-shader-uniforms)
-   (color :initarg :color :initform nil :reader presentation-item-color)
-   (shadow-inset :initarg :shadow-inset :initform 0d0
-                  :reader presentation-item-shadow-inset)
-   (corner-radius :initarg :corner-radius :initform 0d0
-                  :reader presentation-item-corner-radius)
-   (blur-radius :initarg :blur-radius :initform 0d0
-                :reader presentation-item-blur-radius)
-   (opacity :initarg :opacity :initform 1d0 :reader presentation-item-opacity)
    (interactive-p :initarg :interactive-p :initform nil
                   :reader presentation-item-interactive-p)
    (hit-kind :initarg :hit-kind :initform nil :reader presentation-item-hit-kind)
@@ -303,16 +306,33 @@
 (defun make-solid-item
     (x y width height color &key owner interactive-p hit-kind geometry)
   (make-instance 'presentation-item
-                 :kind :solid :x x :y y :width width :height height
-                 :color color :owner owner :interactive-p interactive-p
+                 :material (make-instance 'solid-color-material :color color)
+                 :x x :y y :width width :height height
+                 :owner owner :interactive-p interactive-p
                  :hit-kind hit-kind :geometry geometry))
 
-(defun make-shadow-item (x y width height color inset corner-radius blur-radius
-                         &key owner)
+(defun make-surface-item
+    (surface x y width height texture
+     &key owner (opacity 1d0) program-name uniforms geometry mapping
+       interactive-p hit-kind (source-width 1d0) (source-height 1d0))
   (make-instance
-   'presentation-item :kind :shadow :x x :y y :width width :height height
-   :color color :shadow-inset inset :corner-radius corner-radius
-   :blur-radius blur-radius :owner owner))
+   'presentation-item
+   :material (make-instance 'surface-texture-material
+                            :texture texture :opacity opacity
+                            :program-name program-name :uniforms uniforms)
+   :surface surface :x x :y y :width width :height height
+   :owner owner :geometry geometry :mapping mapping
+   :interactive-p interactive-p :hit-kind hit-kind
+   :source-width source-width :source-height source-height))
+
+(defun make-shader-item
+    (x y width height program-name uniforms &key owner geometry)
+  "Create geometry whose visual meaning is entirely defined by a shader material."
+  (make-instance
+   'presentation-item
+   :material (make-instance 'shader-material
+                            :program-name program-name :uniforms uniforms)
+   :x x :y y :width width :height height :owner owner :geometry geometry))
 
 (defun scaled-view-geometry (x y width height state)
   (let* ((scale (presentation-scale state))
@@ -454,36 +474,42 @@
 (defmethod renderer-draw-item
     ((renderer direct-gles-renderer) frame-context
      (item presentation-item))
-  (ecase (presentation-item-kind item)
-    (:shadow
-     (draw-shadow-rectangle
-      renderer (frame-context-width frame-context)
-      (frame-context-height frame-context)
-      (presentation-item-x item) (presentation-item-y item)
-      (presentation-item-width item) (presentation-item-height item)
-      (presentation-item-color item)
-      (presentation-item-shadow-inset item)
-      (presentation-item-corner-radius item)
-      (presentation-item-blur-radius item)))
-    (:solid
-     (draw-solid-rectangle
-      renderer (frame-context-width frame-context)
-      (frame-context-height frame-context)
-      (presentation-item-x item) (presentation-item-y item)
-      (presentation-item-width item) (presentation-item-height item)
-      (presentation-item-color item)
-      (presentation-item-geometry item)))
-    (:surface
-     (draw-textured-rectangle
-      renderer (frame-context-width frame-context)
-      (frame-context-height frame-context)
-      (presentation-item-x item) (presentation-item-y item)
-      (presentation-item-width item) (presentation-item-height item)
-      (presentation-item-texture item) (presentation-item-opacity item)
-      (presentation-item-shader-program-name item)
-      (presentation-item-shader-uniforms item)
-      (presentation-item-geometry item))))
+  (renderer-draw-material
+   renderer frame-context item (presentation-item-material item))
   item)
+
+(defmethod renderer-draw-material
+    ((renderer direct-gles-renderer) frame-context
+     (item presentation-item) (material solid-color-material))
+  (draw-solid-rectangle
+   renderer (frame-context-width frame-context)
+   (frame-context-height frame-context)
+   (presentation-item-x item) (presentation-item-y item)
+   (presentation-item-width item) (presentation-item-height item)
+   (material-color material) (presentation-item-geometry item)))
+
+(defmethod renderer-draw-material
+    ((renderer direct-gles-renderer) frame-context
+     (item presentation-item) (material surface-texture-material))
+  (draw-textured-rectangle
+   renderer (frame-context-width frame-context)
+   (frame-context-height frame-context)
+   (presentation-item-x item) (presentation-item-y item)
+   (presentation-item-width item) (presentation-item-height item)
+   (material-texture material) (material-opacity material)
+   (material-program-name material) (material-uniforms material)
+   (presentation-item-geometry item)))
+
+(defmethod renderer-draw-material
+    ((renderer direct-gles-renderer) frame-context
+     (item presentation-item) (material shader-material))
+  (draw-shader-material
+   renderer (frame-context-width frame-context)
+   (frame-context-height frame-context)
+   (presentation-item-x item) (presentation-item-y item)
+   (presentation-item-width item) (presentation-item-height item)
+   (material-program-name material) (material-uniforms material)
+   (presentation-item-geometry item)))
 
 (defmethod render-presentation-frame
     ((presentation presentation-system) (output compositor-output)

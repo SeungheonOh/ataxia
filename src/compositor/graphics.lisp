@@ -1,7 +1,8 @@
 ;;;; Direct OpenGL ES graphics executor.
 ;;;;
 ;;;; The renderer uses Runtime's wlroots-owned EGL context, scanout-compatible
-;;;; buffers, and GLES texture names. Shader policy remains replaceable in Lisp.
+;;;; buffers, and GLES texture names. It executes generic shader materials while
+;;;; behavior modules own the visual effects those materials implement.
 
 (in-package #:ataxia.compositor)
 
@@ -29,6 +30,8 @@
 (defconstant +gl-link-status+ #x8B82)
 (defconstant +gl-info-log-length+ #x8B84)
 (defconstant +gl-no-error+ 0)
+
+(defparameter +renderer-clear-color+ '(0.0 0.0 0.0 0.0))
 
 (cffi:defcfun ("glCreateShader" %gl-create-shader) :uint32
   (shader-type :uint32))
@@ -114,33 +117,6 @@ void main() {
 uniform vec4 color;
 void main() { gl_FragColor = color; }")
 
-(defparameter +builtin-shadow-fragment-shader+
-  "precision mediump float;
-varying vec2 texture_coordinate;
-uniform vec4 color;
-uniform vec2 rectangle_size;
-uniform float shadow_inset;
-uniform float corner_radius;
-uniform float blur_radius;
-
-float rounded_box_distance(vec2 point, vec2 half_size, float radius) {
-  vec2 corner = abs(point) - max(half_size - vec2(radius), vec2(0.0));
-  return length(max(corner, vec2(0.0)))
-       + min(max(corner.x, corner.y), 0.0) - radius;
-}
-
-void main() {
-  vec2 pixel = texture_coordinate * rectangle_size;
-  vec2 half_size = max(rectangle_size * 0.5 - vec2(shadow_inset), vec2(1.0));
-  float radius = min(corner_radius, min(half_size.x, half_size.y));
-  float distance = rounded_box_distance(
-      pixel - rectangle_size * 0.5, half_size, radius);
-  float sigma = max(blur_radius, 0.5);
-  float exterior = max(distance, 0.0);
-  float alpha = color.a * exp(-0.5 * exterior * exterior / (sigma * sigma));
-  gl_FragColor = vec4(color.rgb * alpha, alpha);
-}")
-
 (defparameter +builtin-texture-fragment-shader+
   "precision mediump float;
 varying vec2 texture_coordinate;
@@ -181,20 +157,17 @@ void main() {
 
 (defclass direct-gles-renderer (compositor-component)
   ((solid-program :initform nil :accessor renderer-solid-program)
-   (shadow-program :initform nil :accessor renderer-shadow-program)
    (texture-program :initform nil :accessor renderer-texture-program)
    (external-program :initform nil :accessor renderer-external-program)
    (programs :initform (make-hash-table :test #'equal)
              :reader renderer-programs)
    (vertex-scratch :initform nil :accessor renderer-vertex-scratch)
    (vertex-scratch-capacity :initform 0
-                            :accessor renderer-vertex-scratch-capacity)
-   (background :initarg :background
-               :initform '(0.035 0.045 0.065 1.0)
-               :reader renderer-background)))
+                            :accessor renderer-vertex-scratch-capacity)))
 
 (defgeneric renderer-begin-frame (renderer output frame-context))
 (defgeneric renderer-draw-item (renderer frame-context item))
+(defgeneric renderer-draw-material (renderer frame-context item material))
 (defgeneric renderer-end-frame (renderer frame-context))
 (defgeneric renderer-abort-frame (renderer frame-context reason))
 
@@ -271,9 +244,7 @@ void main() {
              (error 'graphics-failure
                     :operation :link-program :detail (program-log program)))
            (let ((uniforms (make-hash-table :test #'equal)))
-             (dolist (name (append (program-uniform-names descriptor)
-                                   '(texture-sampler opacity
-                                     texture-has-alpha)))
+             (dolist (name (program-uniform-names descriptor))
                (setf (gethash (shader-interface-name name) uniforms)
                      (%gl-get-uniform-location
                       program (shader-interface-name name))))
@@ -297,6 +268,15 @@ void main() {
                  :vertex-source +builtin-vertex-shader+
                  :fragment-source fragment :uniforms uniforms :kind kind))
 
+(defun make-material-program-descriptor
+    (fragment-source uniforms &key (vertex-source +builtin-vertex-shader+))
+  "Describe an untextured GLES material without assigning it visual meaning."
+  (make-instance 'shader-program-descriptor
+                 :vertex-source vertex-source
+                 :fragment-source fragment-source
+                 :uniforms uniforms
+                 :kind :material))
+
 (defmethod attach-component :after ((renderer direct-gles-renderer))
   (let* ((compositor (component-compositor renderer))
          (runtime (compositor-runtime compositor)))
@@ -308,12 +288,6 @@ void main() {
             (compile-shader-program
              (builtin-program-descriptor
               +builtin-solid-fragment-shader+ '(color) :solid))
-            (renderer-shadow-program renderer)
-            (compile-shader-program
-             (builtin-program-descriptor
-              +builtin-shadow-fragment-shader+
-              '(color rectangle-size shadow-inset corner-radius blur-radius)
-              :shadow))
             (renderer-texture-program renderer)
             (compile-shader-program
              (builtin-program-descriptor
@@ -336,7 +310,6 @@ void main() {
                        '(:ready :running :stopping)))
       (ataxia.runtime:with-egl-context ((ataxia.runtime:runtime-egl runtime))
         (delete-shader-program (renderer-solid-program renderer))
-        (delete-shader-program (renderer-shadow-program renderer))
         (delete-shader-program (renderer-texture-program renderer))
         (delete-shader-program (renderer-external-program renderer))
         (maphash (lambda (key program)
@@ -354,17 +327,22 @@ void main() {
   (check-type name (or symbol string))
   (let ((runtime (compositor-runtime (component-compositor renderer))))
     (ataxia.runtime:with-egl-context ((ataxia.runtime:runtime-egl runtime))
-      (let* ((candidate (compile-shader-program descriptor))
+      (let* ((kind (program-descriptor-kind descriptor))
+             (candidate (compile-shader-program descriptor))
              (previous (gethash name (renderer-programs renderer))))
         (handler-case
             (progn
-              (unless (member (program-descriptor-kind descriptor)
-                              '(:texture-2d :texture-external) :test #'eq)
+              (unless (member kind
+                              '(:material :texture-2d :texture-external)
+                              :test #'eq)
                 (error 'graphics-failure
                        :operation :replace-shader
-                       :detail "per-view programs must sample a texture"))
-              (when (or (minusp (uniform-location candidate 'texture-sampler))
-                        (minusp (uniform-location candidate 'opacity)))
+                       :detail "unsupported shader program kind"))
+              (when (and (member kind '(:texture-2d :texture-external)
+                                 :test #'eq)
+                         (or (minusp
+                              (uniform-location candidate 'texture-sampler))
+                             (minusp (uniform-location candidate 'opacity))))
                 (error 'graphics-failure
                        :operation :replace-shader
                        :detail "texture_sampler and opacity are required"))
@@ -376,6 +354,15 @@ void main() {
           (serious-condition (condition)
             (delete-shader-program candidate)
             (error condition)))))))
+
+(defun shader-program-installed-p (renderer name &optional kind)
+  (let ((program (gethash name (renderer-programs renderer))))
+    (and program
+         (eq (shader-program-state program) :live)
+         (or (null kind)
+             (eq kind
+                 (program-descriptor-kind
+                  (shader-program-descriptor program)))))))
 
 (defun uniform-location (program name)
   (or (gethash (shader-interface-name name) (shader-uniforms program)) -1))
@@ -393,6 +380,17 @@ void main() {
             (renderer-texture-program renderer)
             (renderer-external-program renderer)))))
 
+(defun shader-program-for-material (renderer name)
+  (let ((program (and name (gethash name (renderer-programs renderer)))))
+    (unless (and program
+                 (eq :material
+                     (program-descriptor-kind
+                      (shader-program-descriptor program))))
+      (error 'graphics-failure
+             :operation :draw-material
+             :detail (format nil "unknown material program ~A" name)))
+    program))
+
 (defun shader-uniform-value-p (value)
   (or (integerp value)
       (realp value)
@@ -407,10 +405,15 @@ void main() {
   (check-type view view)
   (when name
     (check-type name (or symbol string))
-    (unless (gethash name (renderer-programs renderer))
-      (error 'graphics-failure
-             :operation :set-view-shader-program
-             :detail (format nil "unknown program ~A" name))))
+    (let ((program (gethash name (renderer-programs renderer))))
+      (unless (and program
+                   (member
+                    (program-descriptor-kind
+                     (shader-program-descriptor program))
+                    '(:texture-2d :texture-external) :test #'eq))
+        (error 'graphics-failure
+               :operation :set-view-shader-program
+               :detail (format nil "unknown texture program ~A" name)))))
   (setf (view-shader-program-name view) name)
   (schedule-presentation
    (compositor-presentation (component-compositor renderer)))
@@ -550,32 +553,19 @@ void main() {
        (coerce blue 'single-float) (coerce alpha 'single-float)))
     (%gl-draw-arrays +gl-triangles+ 0 vertex-count)))
 
-(defun draw-shadow-rectangle
-    (renderer output-width output-height x y width height color inset
-     corner-radius blur-radius)
-  "Draw a soft rounded shadow as one analytic quad without an intermediate texture."
-  (let ((program (renderer-shadow-program renderer)))
-    (fill-rectangle-vertices
-     renderer output-width output-height x y width height)
+(defun draw-shader-material
+    (renderer output-width output-height x y width height program-name
+     uniform-values &optional geometry)
+  "Execute a policy-provided untextured material over a quad or mesh."
+  (let ((program (shader-program-for-material renderer program-name))
+        (vertex-count
+          (fill-item-vertices
+           renderer output-width output-height x y width height geometry)))
     (%gl-use-program (shader-native-program program))
     (bind-rectangle-vertices renderer)
-    (destructuring-bind (red green blue alpha) color
-      (%gl-uniform-4f
-       (uniform-location program 'color)
-       (coerce red 'single-float) (coerce green 'single-float)
-       (coerce blue 'single-float) (coerce alpha 'single-float)))
-    (%gl-uniform-2f
-     (uniform-location program 'rectangle-size)
-     (coerce width 'single-float) (coerce height 'single-float))
-    (%gl-uniform-1f
-     (uniform-location program 'shadow-inset) (coerce inset 'single-float))
-    (%gl-uniform-1f
-     (uniform-location program 'corner-radius)
-     (coerce corner-radius 'single-float))
-    (%gl-uniform-1f
-     (uniform-location program 'blur-radius)
-     (coerce blur-radius 'single-float))
-    (%gl-draw-arrays +gl-triangles+ 0 6)))
+    (dolist (uniform uniform-values)
+      (apply-shader-uniform program (car uniform) (cdr uniform)))
+    (%gl-draw-arrays +gl-triangles+ 0 vertex-count)))
 
 (defun draw-textured-rectangle
     (renderer output-width output-height x y width height attributes opacity
@@ -614,7 +604,7 @@ void main() {
   (%gl-viewport 0 0
                 (frame-context-width frame-context)
                 (frame-context-height frame-context))
-  (destructuring-bind (red green blue alpha) (renderer-background renderer)
+  (destructuring-bind (red green blue alpha) +renderer-clear-color+
     (%gl-clear-color
      (coerce red 'single-float) (coerce green 'single-float)
      (coerce blue 'single-float) (coerce alpha 'single-float)))

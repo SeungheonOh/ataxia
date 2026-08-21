@@ -272,6 +272,7 @@
    #:direct-gles-renderer
    #:renderer-begin-frame
    #:renderer-draw-item
+   #:renderer-draw-material
    #:renderer-end-frame
    #:renderer-abort-frame
    #:shader-program-descriptor
@@ -284,7 +285,9 @@
    #:shader-uniforms
    #:shader-program-state
    #:compile-shader-program
+   #:make-material-program-descriptor
    #:replace-shader-program
+   #:shader-program-installed-p
    #:set-view-shader-program
    #:set-view-shader-uniform
    #:presentation-system
@@ -296,6 +299,15 @@
    #:snapshot-timestamp
    #:snapshot-revision
    #:snapshot-items
+   #:presentation-material
+   #:solid-color-material
+   #:surface-texture-material
+   #:shader-material
+   #:material-color
+   #:material-texture
+   #:material-opacity
+   #:material-program-name
+   #:material-uniforms
    #:presentation-item
    #:presentation-geometry
    #:mesh-geometry
@@ -303,7 +315,7 @@
    #:mesh-geometry-vertex-count
    #:make-mesh-geometry
    #:mesh-geometry-bounds
-   #:presentation-item-kind
+   #:presentation-item-material
    #:presentation-item-owner
    #:presentation-item-surface
    #:presentation-item-x
@@ -312,18 +324,21 @@
    #:presentation-item-height
    #:presentation-item-geometry
    #:presentation-item-mapping
-   #:presentation-item-texture
-   #:presentation-item-shader-program-name
-   #:presentation-item-shader-uniforms
-   #:presentation-item-color
-   #:presentation-item-shadow-inset
-   #:presentation-item-corner-radius
-   #:presentation-item-blur-radius
-   #:presentation-item-opacity
    #:presentation-item-interactive-p
    #:presentation-item-hit-kind
    #:presentation-item-source-width
    #:presentation-item-source-height
+   #:make-solid-item
+   #:make-surface-item
+   #:make-shader-item
+   #:soft-shadow-style
+   #:soft-shadow-enabled-p
+   #:soft-shadow-color
+   #:soft-shadow-inset
+   #:soft-shadow-corner-radius
+   #:soft-shadow-blur-radius
+   #:behavior-shadow-style
+   #:behavior-background-color
    #:presentation-hit
    #:presentation-hit-item
    #:presentation-hit-owner

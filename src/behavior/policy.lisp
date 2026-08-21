@@ -55,7 +55,10 @@
 
 (defclass behavior-policy (compositor-component)
   ((active-p :initform nil :accessor behavior-policy-active-p)
-   (revision :initform 0 :accessor behavior-policy-revision)))
+   (revision :initform 0 :accessor behavior-policy-revision)
+   (background-color :initarg :background-color
+                     :initform '(0.035 0.045 0.065 1.0)
+                     :accessor behavior-background-color)))
 
 (defclass behavior-placement () ())
 
@@ -83,7 +86,10 @@
   ((cascade-x :initform 48d0 :accessor planar-cascade-x)
    (cascade-y :initform 68d0 :accessor planar-cascade-y)
    (cascade-step :initform 36d0 :reader planar-cascade-step)
-   (next-z :initform 0d0 :accessor planar-next-z)))
+   (next-z :initform 0d0 :accessor planar-next-z)
+   (shadow-style :initarg :shadow-style
+                 :initform (make-instance 'soft-shadow-style)
+                 :accessor behavior-shadow-style)))
 
 (defclass behavior-portable-state ()
   ((source-policy :initarg :source-policy

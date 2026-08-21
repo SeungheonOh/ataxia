@@ -59,14 +59,10 @@
                        items
                        (append
                         (unless (view-fullscreen-p view)
-                          (let ((shadow-inset 24d0))
-                            (list
-                             (make-shadow-item
-                              (- x shadow-inset) (- y shadow-inset)
-                              (+ width (* 2d0 shadow-inset))
-                              (+ height (* 2d0 shadow-inset))
-                              '(0.0 0.0 0.0 0.42) shadow-inset 12d0 8d0
-                              :owner view))))
+                          (let ((shadow
+                                  (make-soft-shadow-item
+                                   policy view x y width height)))
+                            (and shadow (list shadow))))
                         (when (and (not (view-fullscreen-p view))
                                    (view-server-decorated-p view))
                           (list
@@ -78,16 +74,13 @@
                             x y width title-height '(0.095 0.12 0.18 1.0)
                             :owner view :interactive-p t :hit-kind :titlebar)))
                         (list
-                         (make-instance
-                          'presentation-item
-                          :kind :surface :owner view
-                          :surface (surface-record-native record)
-                          :x x :y content-y :width width :height content-height
-                          :texture
+                         (make-surface-item
+                          (surface-record-native record)
+                          x content-y width content-height
                           (ataxia.runtime:texture-gles-attributes
                            (surface-record-texture record))
-                          :shader-program-name shader-name
-                          :shader-uniforms shader-uniforms
+                          :owner view :program-name shader-name
+                          :uniforms shader-uniforms
                           :opacity opacity :interactive-p t :hit-kind :content
                           :source-width (max 1 (surface-record-width record))
                           :source-height

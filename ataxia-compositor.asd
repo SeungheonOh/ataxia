@@ -32,7 +32,8 @@
    (:module "behavior-implementations"
     :pathname "src/behavior"
     :components
-    ((:file "scene")
+    ((:file "effects")
+     (:file "scene")
      (:file "animation")
      (:file "planar")
      (:file "spherical")))

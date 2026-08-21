@@ -41,16 +41,14 @@
                   (nconc
                    items
                    (list
-                    (make-instance
-                     'presentation-item :kind :surface :owner owner
-                     :surface surface :x child-x :y child-y
-                     :width (* (surface-record-width record) scale-x)
-                     :height (* (surface-record-height record) scale-y)
-                     :texture
+                    (make-surface-item
+                     surface child-x child-y
+                     (* (surface-record-width record) scale-x)
+                     (* (surface-record-height record) scale-y)
                      (ataxia.runtime:texture-gles-attributes
                       (surface-record-texture record))
-                     :shader-program-name shader-name
-                     :shader-uniforms shader-uniforms
+                     :owner owner :program-name shader-name
+                     :uniforms shader-uniforms
                      :interactive-p t :hit-kind :subsurface
                      :source-width (max 1 (surface-record-width record))
                      :source-height
@@ -94,17 +92,14 @@
                     (nconc
                      items
                      (list
-                      (make-instance
-                       'presentation-item :kind :surface :owner popup
-                       :surface (surface-record-native record)
-                       :x x :y y
-                       :width (* (surface-record-width record) scale-x)
-                       :height (* (surface-record-height record) scale-y)
-                       :texture
+                      (make-surface-item
+                       (surface-record-native record) x y
+                       (* (surface-record-width record) scale-x)
+                       (* (surface-record-height record) scale-y)
                        (ataxia.runtime:texture-gles-attributes
                         (surface-record-texture record))
-                       :shader-program-name shader-name
-                       :shader-uniforms shader-uniforms
+                       :owner popup :program-name shader-name
+                       :uniforms shader-uniforms
                        :interactive-p t :hit-kind :popup
                        :source-width (max 1 (surface-record-width record))
                        :source-height
@@ -138,16 +133,15 @@
                  (nconc
                   items
                   (list
-                   (make-instance
-                    'presentation-item :kind :surface :owner seat
-                    :surface (surface-record-native cursor-record)
-                    :x (- x (seat-cursor-hotspot-x seat))
-                    :y (- y (seat-cursor-hotspot-y seat))
-                    :width (surface-record-width cursor-record)
-                    :height (surface-record-height cursor-record)
-                    :texture
+                   (make-surface-item
+                    (surface-record-native cursor-record)
+                    (- x (seat-cursor-hotspot-x seat))
+                    (- y (seat-cursor-hotspot-y seat))
+                    (surface-record-width cursor-record)
+                    (surface-record-height cursor-record)
                     (ataxia.runtime:texture-gles-attributes
-                     (surface-record-texture cursor-record))))))))
+                     (surface-record-texture cursor-record))
+                    :owner seat))))))
         (:default
          (setf items
                (nconc items
@@ -188,7 +182,14 @@
   "Build the ordered scene while core retains snapshot and frame ownership."
   (let* ((compositor (component-compositor presentation))
          (desktop (compositor-desktop compositor))
-         (items nil)
+         (native-output (output-native output))
+         (items
+           (list
+            (make-solid-item
+             0d0 0d0
+             (coerce (ataxia.runtime:output-width native-output) 'double-float)
+             (coerce (ataxia.runtime:output-height native-output) 'double-float)
+             (behavior-background-color policy))))
          (titlebar-height (presentation-titlebar-height presentation)))
     (dolist (view (desktop-stacking-order desktop))
       (setf items

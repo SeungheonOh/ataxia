@@ -16,6 +16,23 @@
    (shader-uniforms :initform (make-hash-table :test #'equal)
                     :reader presentation-shader-uniforms)))
 
+(defclass behavior-view-state ()
+  ((placement :initarg :placement :initform nil
+              :accessor behavior-state-placement)
+   (width :initarg :width :initform 900
+          :accessor behavior-state-width)
+   (height :initarg :height :initform 650
+           :accessor behavior-state-height)
+   (restore-state :initarg :restore-state :initform nil
+                  :accessor behavior-state-restore-state)
+   (animation-policy :initarg :animation-policy :initform nil
+                     :accessor behavior-state-animation-policy)
+   (shader-program-name :initarg :shader-program-name :initform nil
+                        :accessor behavior-state-shader-program-name)
+   (presentation-state :initarg :presentation-state
+                       :initform (make-instance 'presentation-state)
+                       :reader behavior-state-presentation-state)))
+
 (defclass surface-record ()
   ((native :initarg :native :reader surface-record-native)
    (buffer :initform nil :accessor surface-record-buffer)
@@ -43,9 +60,8 @@
    (native :initarg :native :reader view-native)
    (surface :initarg :surface :reader view-surface)
    (application :initarg :application :accessor view-application)
-   (placement :initform nil :accessor view-placement)
-   (width :initform 900 :accessor view-width)
-   (height :initform 650 :accessor view-height)
+   (behavior-state :initform (make-instance 'behavior-view-state)
+                   :accessor view-behavior-state)
    (title :initarg :title :initform nil :accessor view-title)
    (decoration-mode :initform :client-side :accessor view-decoration-mode)
    (initialized-p :initform nil :accessor view-initialized-p)
@@ -54,12 +70,46 @@
    (maximized-p :initform nil :accessor view-maximized-p)
    (fullscreen-p :initform nil :accessor view-fullscreen-p)
    (minimized-p :initform nil :accessor view-minimized-p)
-   (restore-placement :initform nil :accessor view-restore-placement)
-   (animation-policy :initform nil :accessor view-animation-policy)
-   (shader-program-name :initform nil :accessor view-shader-program-name)
-   (presentation-state :initform (make-instance 'presentation-state)
-                       :reader view-presentation-state)
    (revision :initform 0 :accessor view-revision)))
+
+(defun view-placement (view)
+  (behavior-state-placement (view-behavior-state view)))
+
+(defun (setf view-placement) (placement view)
+  (setf (behavior-state-placement (view-behavior-state view)) placement))
+
+(defun view-width (view)
+  (behavior-state-width (view-behavior-state view)))
+
+(defun (setf view-width) (width view)
+  (setf (behavior-state-width (view-behavior-state view)) width))
+
+(defun view-height (view)
+  (behavior-state-height (view-behavior-state view)))
+
+(defun (setf view-height) (height view)
+  (setf (behavior-state-height (view-behavior-state view)) height))
+
+(defun view-restore-placement (view)
+  (behavior-state-restore-state (view-behavior-state view)))
+
+(defun (setf view-restore-placement) (state view)
+  (setf (behavior-state-restore-state (view-behavior-state view)) state))
+
+(defun view-animation-policy (view)
+  (behavior-state-animation-policy (view-behavior-state view)))
+
+(defun (setf view-animation-policy) (policy view)
+  (setf (behavior-state-animation-policy (view-behavior-state view)) policy))
+
+(defun view-shader-program-name (view)
+  (behavior-state-shader-program-name (view-behavior-state view)))
+
+(defun (setf view-shader-program-name) (name view)
+  (setf (behavior-state-shader-program-name (view-behavior-state view)) name))
+
+(defun view-presentation-state (view)
+  (behavior-state-presentation-state (view-behavior-state view)))
 
 (defun view-server-decorated-p (view)
   (eq :server-side (view-decoration-mode view)))

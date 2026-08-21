@@ -11,7 +11,7 @@
    (surfaces :reader compositor-surfaces)
    (desktop :reader compositor-desktop)
    (interaction :reader compositor-interaction)
-   (world :accessor compositor-world)
+   (behavior-policy :accessor compositor-behavior-policy)
    (presentation :reader compositor-presentation)
    (graphics :reader compositor-graphics)
    (extensions :reader compositor-extensions)
@@ -19,10 +19,16 @@
    (owner-thread :reader compositor-owner-thread)
    (state :initform :constructing :accessor compositor-state)))
 
+(defmethod compositor-world ((compositor compositor))
+  (compositor-behavior-policy compositor))
+
+(defmethod (setf compositor-world) (policy (compositor compositor))
+  (setf (compositor-behavior-policy compositor) policy))
+
 (defun compositor-components (compositor)
   (remove nil
-          (list (and (slot-boundp compositor 'world)
-                     (compositor-world compositor))
+          (list (and (slot-boundp compositor 'behavior-policy)
+                     (compositor-behavior-policy compositor))
                 (and (slot-boundp compositor 'graphics)
                      (compositor-graphics compositor))
                 (and (slot-boundp compositor 'outputs)
@@ -56,10 +62,16 @@
          :compositor compositor initialization-arguments))
 
 (defmethod make-compositor-component
+    ((compositor compositor) (role (eql :behavior-policy))
+     &rest initialization-arguments)
+  (apply #'make-instance 'planar-behavior-policy
+         :compositor compositor initialization-arguments))
+
+(defmethod make-compositor-component
     ((compositor compositor) (role (eql :world))
      &rest initialization-arguments)
-  (apply #'make-instance 'planar-world
-         :compositor compositor initialization-arguments))
+  (apply #'make-compositor-component
+         compositor :behavior-policy initialization-arguments))
 
 (defmethod make-compositor-component
     ((compositor compositor) (role (eql :graphics))
@@ -111,8 +123,8 @@
          (presentation
            (make-compositor-component
             compositor :presentation :animation-engine animation)))
-    (setf (slot-value compositor 'world)
-          (make-compositor-component compositor :world)
+    (setf (slot-value compositor 'behavior-policy)
+          (make-compositor-component compositor :behavior-policy)
           (slot-value compositor 'graphics)
           (make-compositor-component compositor :graphics)
           (slot-value compositor 'outputs)
@@ -207,8 +219,8 @@
                           (compositor-extensions compositor))
                      (and (slot-boundp compositor 'desktop)
                           (compositor-desktop compositor))
-                     (and (slot-boundp compositor 'world)
-                          (compositor-world compositor)))))
+                     (and (slot-boundp compositor 'behavior-policy)
+                          (compositor-behavior-policy compositor)))))
     (when (eq (component-state component) :attached)
       (detach-component component reason)))
   compositor)
@@ -490,13 +502,16 @@
             (compositor-desktop compositor) toplevel record
             (ataxia.runtime:xdg-toplevel-app-id toplevel)
             (ataxia.runtime:xdg-toplevel-title toplevel))))
-    (world-place-view (compositor-world compositor) view nil)
+    (behavior-view-created (compositor-behavior-policy compositor) view)
     view))
 
 (defmethod ataxia.runtime:xdg-toplevel-committed
     ((compositor compositor) toplevel commit initial-commit-p configured-p)
   (let ((view (desktop-find-view (compositor-desktop compositor) toplevel)))
     (when view
+      (behavior-view-committed
+       (compositor-behavior-policy compositor)
+       view commit initial-commit-p)
       (when (and initial-commit-p (not configured-p))
         (setf (view-initialized-p view) t)
         (let* ((output (primary-output (compositor-interaction compositor)))
@@ -555,6 +570,7 @@
       (send-surface-enter-all-outputs
        compositor (surface-record-native (view-surface view)))
       (desktop-raise-view (compositor-desktop compositor) view)
+      (behavior-view-mapped (compositor-behavior-policy compositor) view)
       (start-view-visibility-transition compositor view t)
       (let ((seat
               (interaction-default-seat
@@ -570,6 +586,7 @@
     (when view
       (setf (view-mapped-p view) nil
             (view-presentable-p view) nil)
+      (behavior-view-unmapped (compositor-behavior-policy compositor) view)
       (dolist (seat (interaction-seats (compositor-interaction compositor)))
         (when (eq view (seat-focused-view seat))
           (focus-view (compositor-interaction compositor) seat nil))
@@ -583,23 +600,31 @@
 
 (defmethod ataxia.runtime:xdg-toplevel-destroying
     ((compositor compositor) toplevel)
-  (prog1
-      (desktop-remove-view (compositor-desktop compositor) toplevel)
-    (schedule-presentation (compositor-presentation compositor))))
+  (let ((view (desktop-find-view (compositor-desktop compositor) toplevel)))
+    (when view
+      (behavior-view-destroying
+       (compositor-behavior-policy compositor) view))
+    (prog1
+        (desktop-remove-view (compositor-desktop compositor) toplevel)
+      (schedule-presentation (compositor-presentation compositor)))))
 
 (defmethod ataxia.runtime:xdg-toplevel-title-changed
     ((compositor compositor) toplevel title)
   (let ((view (desktop-find-view (compositor-desktop compositor) toplevel)))
     (when view
       (desktop-update-view-identity
-       (compositor-desktop compositor) view nil title))))
+       (compositor-desktop compositor) view nil title)
+      (behavior-view-identity-changed
+       (compositor-behavior-policy compositor) view :title title))))
 
 (defmethod ataxia.runtime:xdg-toplevel-app-id-changed
     ((compositor compositor) toplevel app-id)
   (let ((view (desktop-find-view (compositor-desktop compositor) toplevel)))
     (when view
       (desktop-update-view-identity
-       (compositor-desktop compositor) view app-id nil))))
+       (compositor-desktop compositor) view app-id nil)
+      (behavior-view-identity-changed
+       (compositor-behavior-policy compositor) view :app-id app-id))))
 
 (defmethod ataxia.runtime:xdg-toplevel-request-move
     ((compositor compositor) event)

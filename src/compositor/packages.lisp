@@ -23,6 +23,7 @@
    #:compositor-surfaces
    #:compositor-desktop
    #:compositor-interaction
+   #:compositor-behavior-policy
    #:compositor-world
    #:compositor-presentation
    #:compositor-graphics
@@ -86,6 +87,7 @@
    #:view-native
    #:view-surface
    #:view-application
+   #:view-behavior-state
    #:view-placement
    #:view-width
    #:view-height
@@ -101,6 +103,14 @@
    #:view-animation-policy
    #:view-shader-program-name
    #:view-presentation-state
+   #:behavior-view-state
+   #:behavior-state-placement
+   #:behavior-state-width
+   #:behavior-state-height
+   #:behavior-state-restore-state
+   #:behavior-state-animation-policy
+   #:behavior-state-shader-program-name
+   #:behavior-state-presentation-state
    #:popup-view
    #:popup-native
    #:popup-surface
@@ -115,6 +125,31 @@
    #:desktop-stacking-order
    #:desktop-find-view
    #:desktop-raise-view
+   #:behavior-policy
+   #:behavior-policy-active-p
+   #:behavior-policy-revision
+   #:planar-behavior-policy
+   #:planar-behavior-state
+   #:activate-behavior-policy
+   #:quiesce-behavior-policy
+   #:behavior-view-created
+   #:behavior-view-committed
+   #:behavior-view-mapped
+   #:behavior-view-unmapped
+   #:behavior-view-destroying
+   #:behavior-view-identity-changed
+   #:behavior-place-view
+   #:behavior-update-placement
+   #:behavior-project-view
+   #:behavior-unproject-point
+   #:copy-behavior-view-state
+   #:behavior-build-view-items
+   #:behavior-begin-operation
+   #:behavior-update-operation
+   #:behavior-configure-view-for-output
+   #:behavior-restore-view
+   #:behavior-pan-output
+   #:behavior-zoom-output
    #:world
    #:planar-world
    #:world-placement

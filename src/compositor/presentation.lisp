@@ -109,6 +109,8 @@
    (height :initarg :height :reader presentation-item-height)
    (geometry :initarg :geometry :initform nil
              :reader presentation-item-geometry)
+   (mapping :initarg :mapping :initform nil
+            :reader presentation-item-mapping)
    (texture :initarg :texture :initform nil :reader presentation-item-texture)
    (shader-program-name :initarg :shader-program-name :initform nil
                         :reader presentation-item-shader-program-name)
@@ -436,6 +438,11 @@
   (dolist (view (desktop-stacking-order desktop) items)
     (setf items (append-popup-tree-items items desktop view))))
 
+(defmethod behavior-build-popup-items
+    ((policy behavior-policy) items desktop output timestamp)
+  (declare (ignore policy output timestamp))
+  (append-popup-items items desktop))
+
 (defun append-cursor-items (items compositor output)
   (declare (ignore output))
   (dolist (seat (interaction-seats (compositor-interaction compositor)) items)
@@ -471,45 +478,57 @@
                        (make-solid-item (+ x 1d0) (+ y 1d0) 1d0 16d0
                                         '(0.95 0.97 1.0 1.0))))))))))
 
-(defmethod build-presentation-snapshot
-    ((presentation presentation-system) (output compositor-output) timestamp)
+(defun append-panel-items (items presentation output desktop)
+  (unless
+      (find-if
+       (lambda (view)
+         (and (view-mapped-p view) (view-fullscreen-p view)))
+       (desktop-stacking-order desktop))
+    (let ((panel-height (presentation-panel-height presentation))
+          (output-width
+            (coerce
+             (ataxia.runtime:output-width (output-native output))
+             'double-float)))
+      (setf items
+            (nconc
+             items
+             (list
+              (make-solid-item
+               0d0 0d0 output-width panel-height
+               '(0.055 0.072 0.11 0.98))
+              (make-solid-item
+               0d0 (- panel-height 2d0) output-width 2d0
+               '(0.18 0.55 0.95 1.0)))))))
+  items)
+
+(defmethod behavior-build-scene
+    ((policy behavior-policy) (presentation presentation-system)
+     (output compositor-output) timestamp)
+  "Build the ordered scene while core retains snapshot and frame ownership."
   (let* ((compositor (component-compositor presentation))
          (desktop (compositor-desktop compositor))
-         (policy (compositor-behavior-policy compositor))
          (items nil)
          (titlebar-height (presentation-titlebar-height presentation)))
-    (sample-animations (presentation-animation-engine presentation) timestamp)
     (dolist (view (desktop-stacking-order desktop))
       (setf items
             (behavior-build-view-items
              policy items output view timestamp titlebar-height)))
-    (setf items (append-popup-items items desktop))
-    (let ((panel-height (presentation-panel-height presentation)))
-      (setf items
-            (nconc items
-                   (unless
-                       (find-if
-                        (lambda (view)
-                          (and (view-mapped-p view)
-                               (view-fullscreen-p view)))
-                        (desktop-stacking-order desktop))
-                     (list
-                    (make-solid-item
-                     0d0 0d0
-                     (coerce
-                      (ataxia.runtime:output-width (output-native output))
-                      'double-float)
-                     panel-height '(0.055 0.072 0.11 0.98))
-                    (make-solid-item
-                     0d0 (- panel-height 2d0)
-                     (coerce
-                      (ataxia.runtime:output-width (output-native output))
-                      'double-float)
-                     2d0 '(0.18 0.55 0.95 1.0)))))))
-    (setf items (append-cursor-items items compositor output))
+    (setf items
+          (behavior-build-popup-items
+           policy items desktop output timestamp)
+          items (append-panel-items items presentation output desktop)
+          items (append-cursor-items items compositor output))
+    items))
+
+(defmethod build-presentation-snapshot
+    ((presentation presentation-system) (output compositor-output) timestamp)
+  (let* ((compositor (component-compositor presentation))
+         (policy (compositor-behavior-policy compositor)))
+    (sample-animations (presentation-animation-engine presentation) timestamp)
     (make-instance
      'presentation-snapshot :output output :timestamp timestamp
-     :revision (incf (presentation-revision presentation)) :items items)))
+     :revision (incf (presentation-revision presentation))
+     :items (behavior-build-scene policy presentation output timestamp))))
 
 (defun point-in-item-p (item x y)
   (and (<= (presentation-item-x item) x

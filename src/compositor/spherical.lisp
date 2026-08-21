@@ -530,6 +530,252 @@
                       (* (- (aref source (+ offset 1)) source-y) scale-y))))
     (make-mesh-geometry vertices)))
 
+(defclass spherical-surface-mapping ()
+  ((placement :initarg :placement
+              :reader spherical-mapping-placement)
+   (projector :initarg :projector
+              :reader spherical-mapping-projector)
+   (source-width :initarg :source-width
+                 :reader spherical-mapping-source-width)
+   (source-height :initarg :source-height
+                  :reader spherical-mapping-source-height)
+   (base-x :initarg :base-x :reader spherical-mapping-base-x)
+   (base-y :initarg :base-y :reader spherical-mapping-base-y)
+   (base-width :initarg :base-width
+               :reader spherical-mapping-base-width)
+   (base-height :initarg :base-height
+                :reader spherical-mapping-base-height)
+   (draw-x :initarg :draw-x :reader spherical-mapping-draw-x)
+   (draw-y :initarg :draw-y :reader spherical-mapping-draw-y)
+   (draw-width :initarg :draw-width
+               :reader spherical-mapping-draw-width)
+   (draw-height :initarg :draw-height
+                :reader spherical-mapping-draw-height)))
+
+(defstruct (spherical-view-scene
+             (:constructor make-spherical-view-scene
+                 (&key mapping content-geometry frame-geometry
+                       title-geometry)))
+  mapping content-geometry frame-geometry title-geometry)
+
+(defun spherical-mapping-geometry (policy mapping)
+  (let ((geometry
+          (make-spherical-patch-mesh
+           policy
+           (spherical-mapping-projector mapping)
+           (spherical-mapping-placement mapping))))
+    (when geometry
+      (transform-mesh-geometry
+       geometry
+       (spherical-mapping-base-x mapping)
+       (spherical-mapping-base-y mapping)
+       (spherical-mapping-base-width mapping)
+       (spherical-mapping-base-height mapping)
+       (spherical-mapping-draw-x mapping)
+       (spherical-mapping-draw-y mapping)
+       (spherical-mapping-draw-width mapping)
+       (spherical-mapping-draw-height mapping)))))
+
+(defun derive-spherical-surface-mapping
+    (parent offset-x offset-y source-width source-height)
+  "Map a child surface through the same spherical patch and animation transform."
+  (let* ((parent-placement (spherical-mapping-placement parent))
+         (parent-width (max 1d0 (spherical-mapping-source-width parent)))
+         (parent-height (max 1d0 (spherical-mapping-source-height parent)))
+         (child-width (max 1d0 (coerce source-width 'double-float)))
+         (child-height (max 1d0 (coerce source-height 'double-float)))
+         (center-x (/ (+ (coerce offset-x 'double-float)
+                         (/ child-width 2d0))
+                      parent-width))
+         (center-y (/ (+ (coerce offset-y 'double-float)
+                         (/ child-height 2d0))
+                      parent-height))
+         (parent-latitude (spherical-latitude parent-placement))
+         (longitude-span
+           (/ (spherical-angular-width parent-placement)
+              (max 0.2d0 (cos parent-latitude))))
+         (latitude
+           (clamp-latitude
+            (+ parent-latitude
+               (* (- 0.5d0 center-y)
+                  (spherical-angular-height parent-placement)))))
+         (placement
+           (make-instance
+            'spherical-placement
+            :longitude
+            (normalize-longitude
+             (+ (spherical-longitude parent-placement)
+                (* (- center-x 0.5d0) longitude-span)))
+            :latitude latitude
+            :angular-width
+            (* longitude-span (/ child-width parent-width)
+               (max 0.2d0 (cos latitude)))
+            :angular-height
+            (* (spherical-angular-height parent-placement)
+               (/ child-height parent-height))
+            :depth (spherical-depth parent-placement))))
+    (make-instance
+     'spherical-surface-mapping
+     :placement placement
+     :projector (spherical-mapping-projector parent)
+     :source-width child-width :source-height child-height
+     :base-x (spherical-mapping-base-x parent)
+     :base-y (spherical-mapping-base-y parent)
+     :base-width (spherical-mapping-base-width parent)
+     :base-height (spherical-mapping-base-height parent)
+     :draw-x (spherical-mapping-draw-x parent)
+     :draw-y (spherical-mapping-draw-y parent)
+     :draw-width (spherical-mapping-draw-width parent)
+     :draw-height (spherical-mapping-draw-height parent))))
+
+(defun build-spherical-view-scene
+    (policy output view titlebar-height)
+  (let* ((record (view-surface view))
+         (placement (view-placement view))
+         (decorated-p
+           (and (not (view-fullscreen-p view))
+                (view-server-decorated-p view)))
+         (title-angular-height
+           (if decorated-p
+               (* (spherical-angular-height placement)
+                  (/ titlebar-height
+                     (max 1d0 (coerce (view-height view) 'double-float))))
+               0d0))
+         (full-placement (copy-spherical-placement placement))
+         (title-placement (copy-spherical-placement placement))
+         (frame-placement (copy-spherical-placement placement))
+         (border-angular-width
+           (* (spherical-angular-width placement)
+              (/ 4d0 (max 1d0 (coerce (view-width view) 'double-float)))))
+         (border-angular-height
+           (* (spherical-angular-height placement)
+              (/ 4d0 (max 1d0 (coerce (view-height view) 'double-float))))))
+    (setf (spherical-latitude full-placement)
+          (clamp-latitude
+           (+ (spherical-latitude placement) (/ title-angular-height 2d0)))
+          (spherical-angular-height full-placement)
+          (+ (spherical-angular-height placement) title-angular-height)
+          (spherical-latitude title-placement)
+          (clamp-latitude
+           (+ (spherical-latitude placement)
+              (/ (spherical-angular-height placement) 2d0)
+              (/ title-angular-height 2d0)))
+          (spherical-angular-height title-placement) title-angular-height
+          (spherical-latitude frame-placement)
+          (spherical-latitude full-placement)
+          (spherical-angular-width frame-placement)
+          (+ (spherical-angular-width full-placement) border-angular-width)
+          (spherical-angular-height frame-placement)
+          (+ (spherical-angular-height full-placement) border-angular-height))
+    (let* ((projector
+             (make-spherical-projector
+              (output-behavior-state output) output))
+           (content-geometry
+             (make-spherical-patch-mesh policy projector placement))
+           (frame-geometry
+             (make-spherical-patch-mesh policy projector frame-placement))
+           (title-geometry
+             (and decorated-p
+                  (make-spherical-patch-mesh
+                   policy projector title-placement))))
+      (when (and content-geometry frame-geometry
+                 (or (not decorated-p) title-geometry))
+        (multiple-value-bind (base-x base-y base-width base-height)
+            (mesh-geometry-bounds frame-geometry)
+          (multiple-value-bind (draw-x draw-y draw-width draw-height)
+              (scaled-view-geometry
+               base-x base-y base-width base-height
+               (view-presentation-state view))
+            (let* ((mapping
+                     (make-instance
+                      'spherical-surface-mapping
+                      :placement placement :projector projector
+                      :source-width
+                      (max 1d0
+                           (coerce (surface-record-width record)
+                                   'double-float))
+                      :source-height
+                      (max 1d0
+                           (coerce (surface-record-height record)
+                                   'double-float))
+                      :base-x base-x :base-y base-y
+                      :base-width base-width :base-height base-height
+                      :draw-x draw-x :draw-y draw-y
+                      :draw-width draw-width :draw-height draw-height))
+                   (mapped-content
+                     (spherical-mapping-geometry policy mapping))
+                   (mapped-frame
+                     (transform-mesh-geometry
+                      frame-geometry base-x base-y base-width base-height
+                      draw-x draw-y draw-width draw-height))
+                   (mapped-title
+                     (and title-geometry
+                          (transform-mesh-geometry
+                           title-geometry base-x base-y
+                           base-width base-height
+                           draw-x draw-y draw-width draw-height))))
+              (when mapped-content
+                (make-spherical-view-scene
+                 :mapping mapping :content-geometry mapped-content
+                 :frame-geometry mapped-frame
+                 :title-geometry mapped-title)))))))))
+
+(defun spherical-owner-opacity (owner)
+  (let ((view (typecase owner
+                (view owner)
+                (popup-view (popup-parent-view owner)))))
+    (if view
+        (presentation-opacity (view-presentation-state view))
+        1d0)))
+
+(defun make-spherical-surface-item
+    (policy owner record mapping hit-kind &optional geometry)
+  (let ((geometry (or geometry (spherical-mapping-geometry policy mapping))))
+    (when (and geometry (surface-record-texture record))
+      (multiple-value-bind (x y width height)
+          (mesh-geometry-bounds geometry)
+        (multiple-value-bind (shader-name shader-uniforms)
+            (presentation-shader-values owner)
+          (make-instance
+           'presentation-item :kind :surface :owner owner
+           :surface (surface-record-native record)
+           :x x :y y :width width :height height
+           :geometry geometry :mapping mapping
+           :texture
+           (ataxia.runtime:texture-gles-attributes
+            (surface-record-texture record))
+           :shader-program-name shader-name
+           :shader-uniforms shader-uniforms
+           :opacity (spherical-owner-opacity owner)
+           :interactive-p t :hit-kind hit-kind
+           :source-width (max 1 (surface-record-width record))
+           :source-height (max 1 (surface-record-height record))))))))
+
+(defun append-spherical-subsurface-tree-items
+    (policy items compositor parent-surface owner parent-mapping)
+  (let ((surfaces (compositor-surfaces compositor)))
+    (dolist (subsurface
+              (surface-child-subsurfaces surfaces parent-surface) items)
+      (let* ((surface (ataxia.runtime:subsurface-surface subsurface))
+             (record (gethash surface (surface-records surfaces))))
+        (when (and record (surface-record-mapped-p record)
+                   (surface-record-texture record))
+          (let* ((mapping
+                   (derive-spherical-surface-mapping
+                    parent-mapping
+                    (ataxia.runtime:subsurface-x subsurface)
+                    (ataxia.runtime:subsurface-y subsurface)
+                    (surface-record-width record)
+                    (surface-record-height record)))
+                 (item
+                   (make-spherical-surface-item
+                    policy owner record mapping :subsurface)))
+            (when item
+              (setf items (nconc items (list item))
+                    items
+                    (append-spherical-subsurface-tree-items
+                     policy items compositor surface owner mapping)))))))))
+
 (defmethod behavior-build-view-items
     ((policy spherical-behavior-policy) items output view timestamp
      titlebar-height)
@@ -537,143 +783,94 @@
   (let ((record (view-surface view)))
     (when (and (view-mapped-p view) (not (view-minimized-p view))
                (view-presentable-p view) (surface-record-texture record))
-      (let* ((placement (view-placement view))
-             (decorated-p
-               (and (not (view-fullscreen-p view))
-                    (view-server-decorated-p view)))
-             (title-angular-height
-               (if decorated-p
-                   (* (spherical-angular-height placement)
-                      (/ titlebar-height
-                         (max 1d0 (coerce (view-height view)
-                                         'double-float))))
-                   0d0))
-             (full-placement (copy-spherical-placement placement))
-             (title-placement (copy-spherical-placement placement))
-             (frame-placement (copy-spherical-placement placement))
-             (border-angular-width
-               (* (spherical-angular-width placement)
-                  (/ 4d0 (max 1d0 (coerce (view-width view)
-                                          'double-float)))))
-             (border-angular-height
-               (* (spherical-angular-height placement)
-                  (/ 4d0 (max 1d0 (coerce (view-height view)
-                                          'double-float))))))
-        (setf (spherical-latitude full-placement)
-              (clamp-latitude
-               (+ (spherical-latitude placement)
-                  (/ title-angular-height 2d0)))
-              (spherical-angular-height full-placement)
-              (+ (spherical-angular-height placement) title-angular-height)
-              (spherical-latitude title-placement)
-              (clamp-latitude
-               (+ (spherical-latitude placement)
-                  (/ (spherical-angular-height placement) 2d0)
-                  (/ title-angular-height 2d0)))
-              (spherical-angular-height title-placement)
-              title-angular-height
-              (spherical-latitude frame-placement)
-              (spherical-latitude full-placement)
-              (spherical-angular-width frame-placement)
-              (+ (spherical-angular-width full-placement)
-                 border-angular-width)
-              (spherical-angular-height frame-placement)
-              (+ (spherical-angular-height full-placement)
-                 border-angular-height))
-        (let* ((projector
-                 (make-spherical-projector
-                  (output-behavior-state output) output))
-               (content-geometry
-                 (make-spherical-patch-mesh policy projector placement))
-               (full-geometry
-                 (make-spherical-patch-mesh policy projector full-placement))
-               (frame-geometry
-                 (make-spherical-patch-mesh policy projector frame-placement))
-               (title-geometry
-                 (and decorated-p
-                      (make-spherical-patch-mesh
-                       policy projector title-placement))))
-          (when (and content-geometry full-geometry frame-geometry)
-            (multiple-value-bind (base-x base-y base-width base-height)
+      (let ((scene
+              (build-spherical-view-scene
+               policy output view titlebar-height)))
+        (when scene
+          (let ((frame-geometry (spherical-view-scene-frame-geometry scene))
+                (title-geometry (spherical-view-scene-title-geometry scene)))
+            (multiple-value-bind (frame-x frame-y frame-width frame-height)
                 (mesh-geometry-bounds frame-geometry)
-              (multiple-value-bind (draw-x draw-y draw-width draw-height)
-                  (scaled-view-geometry
-                   base-x base-y base-width base-height
-                   (view-presentation-state view))
-                (setf content-geometry
-                      (transform-mesh-geometry
-                       content-geometry base-x base-y base-width base-height
-                       draw-x draw-y draw-width draw-height)
-                      full-geometry
-                      (transform-mesh-geometry
-                       full-geometry base-x base-y base-width base-height
-                       draw-x draw-y draw-width draw-height)
-                      frame-geometry
-                      (transform-mesh-geometry
-                       frame-geometry base-x base-y base-width base-height
-                       draw-x draw-y draw-width draw-height)
-                      title-geometry
-                      (and title-geometry
-                           (transform-mesh-geometry
-                            title-geometry base-x base-y
-                            base-width base-height
-                            draw-x draw-y draw-width draw-height)))
-                (multiple-value-bind
-                      (content-x content-y content-width content-height)
-                    (mesh-geometry-bounds content-geometry)
-                  (multiple-value-bind
-                        (frame-x frame-y frame-width frame-height)
-                      (mesh-geometry-bounds frame-geometry)
-                    (multiple-value-bind (shader-name shader-uniforms)
-                        (presentation-shader-values view)
-                      (setf items
-                            (nconc
-                             items
-                             (append
-                              (unless (view-fullscreen-p view)
-                                (list
-                                 (make-shadow-item
-                                  (- frame-x 24d0) (- frame-y 24d0)
-                                  (+ frame-width 48d0) (+ frame-height 48d0)
-                                  '(0.0 0.0 0.0 0.42) 24d0 12d0 8d0
-                                  :owner view)))
-                              (when decorated-p
-                                (multiple-value-bind
-                                      (title-x title-y title-width title-height)
-                                    (mesh-geometry-bounds title-geometry)
-                                  (list
-                                   (make-solid-item
-                                    frame-x frame-y frame-width frame-height
-                                    '(0.12 0.15 0.21 1.0) :owner view
-                                    :interactive-p t :hit-kind :frame
-                                    :geometry frame-geometry)
-                                   (make-solid-item
-                                    title-x title-y title-width title-height
-                                    '(0.095 0.12 0.18 1.0) :owner view
-                                    :interactive-p t :hit-kind :titlebar
-                                    :geometry title-geometry))))
-                              (list
-                               (make-instance
-                                'presentation-item :kind :surface :owner view
-                                :surface (surface-record-native record)
-                                :x content-x :y content-y
-                                :width content-width :height content-height
-                                :geometry content-geometry
-                                :texture
-                                (ataxia.runtime:texture-gles-attributes
-                                 (surface-record-texture record))
-                                :shader-program-name shader-name
-                                :shader-uniforms shader-uniforms
-                                :opacity
-                                (presentation-opacity
-                                 (view-presentation-state view))
-                                :interactive-p t :hit-kind :content
-                                :source-width
-                                (max 1 (surface-record-width record))
-                                :source-height
-                                (max 1
-                                     (surface-record-height record)))))))))))))))))
+              (setf items
+                    (nconc
+                     items
+                     (append
+                      (unless (view-fullscreen-p view)
+                        (list
+                         (make-shadow-item
+                          (- frame-x 24d0) (- frame-y 24d0)
+                          (+ frame-width 48d0) (+ frame-height 48d0)
+                          '(0.0 0.0 0.0 0.42) 24d0 12d0 8d0
+                          :owner view)))
+                      (when title-geometry
+                        (multiple-value-bind
+                              (title-x title-y title-width title-height)
+                            (mesh-geometry-bounds title-geometry)
+                          (list
+                           (make-solid-item
+                            frame-x frame-y frame-width frame-height
+                            '(0.12 0.15 0.21 1.0) :owner view
+                            :interactive-p t :hit-kind :frame
+                            :geometry frame-geometry)
+                           (make-solid-item
+                            title-x title-y title-width title-height
+                            '(0.095 0.12 0.18 1.0) :owner view
+                            :interactive-p t :hit-kind :titlebar
+                            :geometry title-geometry)))))))
+              (let ((item
+                      (make-spherical-surface-item
+                       policy view record
+                       (spherical-view-scene-mapping scene) :content
+                       (spherical-view-scene-content-geometry scene))))
+                (when item
+                  (setf items (nconc items (list item))
+                        items
+                        (append-spherical-subsurface-tree-items
+                         policy items (component-compositor policy)
+                         (surface-record-native record) view
+                         (spherical-view-scene-mapping scene)))))))))))
   items)
+
+(defun append-spherical-popup-tree-items
+    (policy items desktop parent)
+  (dolist (popup (desktop-popups desktop) items)
+    (when (and (eq parent (popup-parent popup)) (popup-mapped-p popup))
+      (let* ((record (popup-surface popup))
+             (parent-surface
+               (typecase parent
+                 (view (surface-record-native (view-surface parent)))
+                 (popup-view
+                  (surface-record-native (popup-surface parent)))))
+             (parent-item
+               (find-surface-presentation-item items parent-surface))
+             (parent-mapping
+               (and parent-item (presentation-item-mapping parent-item))))
+        (when (and (typep parent-mapping 'spherical-surface-mapping)
+                   (surface-record-texture record))
+          (let* ((mapping
+                   (derive-spherical-surface-mapping
+                    parent-mapping (popup-x popup) (popup-y popup)
+                    (surface-record-width record)
+                    (surface-record-height record)))
+                 (item
+                   (make-spherical-surface-item
+                    policy popup record mapping :popup)))
+            (when item
+              (setf items (nconc items (list item))
+                    items
+                    (append-spherical-subsurface-tree-items
+                     policy items (component-compositor desktop)
+                     (surface-record-native record) popup mapping)
+                    items
+                    (append-spherical-popup-tree-items
+                     policy items desktop popup)))))))))
+
+(defmethod behavior-build-popup-items
+    ((policy spherical-behavior-policy) items desktop output timestamp)
+  (declare (ignore output timestamp))
+  (dolist (view (desktop-stacking-order desktop) items)
+    (setf items
+          (append-spherical-popup-tree-items policy items desktop view))))
 
 (defmethod behavior-begin-operation
     ((policy spherical-behavior-policy) interaction seat view kind edges button)

@@ -180,7 +180,9 @@
    #:migrate-behavior-output-state
    #:behavior-export-state
    #:behavior-import-state
+   #:behavior-build-scene
    #:behavior-build-view-items
+   #:behavior-build-popup-items
    #:behavior-begin-operation
    #:behavior-update-operation
    #:behavior-configure-view-for-output
@@ -299,6 +301,7 @@
    #:presentation-item-width
    #:presentation-item-height
    #:presentation-item-geometry
+   #:presentation-item-mapping
    #:presentation-item-texture
    #:presentation-item-shader-program-name
    #:presentation-item-shader-uniforms

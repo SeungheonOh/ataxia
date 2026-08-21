@@ -80,8 +80,12 @@
     (old-policy new-policy output state))
 (defgeneric behavior-export-state (policy compositor context))
 (defgeneric behavior-import-state (policy portable-state context))
+(defgeneric behavior-build-scene
+    (policy presentation output timestamp))
 (defgeneric behavior-build-view-items
     (policy items output view timestamp titlebar-height))
+(defgeneric behavior-build-popup-items
+    (policy items desktop output timestamp))
 (defgeneric behavior-begin-operation
     (policy interaction seat view kind edges button))
 (defgeneric behavior-update-operation (policy interaction operation))

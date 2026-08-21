@@ -204,7 +204,9 @@
 
 (defmethod ataxia.runtime:output-needs-frame
     ((compositor compositor) native-output)
-  (ataxia.runtime:output-frame compositor native-output))
+  ;; NEEDS-FRAME reports scheduling intent; only the FRAME signal is a safe
+  ;; point to acquire and commit the next scanout buffer.
+  (declare (ignore compositor native-output)))
 
 (defmethod ataxia.runtime:output-damaged
     ((compositor compositor) event)

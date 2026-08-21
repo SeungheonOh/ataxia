@@ -83,10 +83,9 @@
                  :socket-p socket-p :debug-p debug-p))
           (multiple-value-bind (animation presentation)
               (construct-compositor-components compositor)
-            (declare (ignore presentation))
+            (declare (ignore animation presentation))
             (dolist (component (compositor-components compositor))
-              (attach-component component))
-            (attach-component animation))
+              (attach-component component)))
           (ataxia.runtime:create-xdg-shell (compositor-runtime compositor))
           (ataxia.runtime:create-data-device-manager
            (compositor-runtime compositor))

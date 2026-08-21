@@ -25,6 +25,18 @@
                  :reader presentation-panel-height)
    (revision :initform 0 :accessor presentation-revision)))
 
+(defmethod attach-component :before ((presentation presentation-system))
+  (let ((animation (presentation-animation-engine presentation)))
+    (validate-component animation (component-compositor presentation))
+    (unless (eq (component-state animation) :attached)
+      (attach-component animation))))
+
+(defmethod detach-component :before
+    ((presentation presentation-system) reason)
+  (let ((animation (presentation-animation-engine presentation)))
+    (when (eq (component-state animation) :attached)
+      (detach-component animation reason))))
+
 (defclass presentation-item ()
   ((kind :initarg :kind :reader presentation-item-kind)
    (owner :initarg :owner :initform nil :reader presentation-item-owner)

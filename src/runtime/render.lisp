@@ -2,7 +2,8 @@
 ;;;;
 ;;;; This module makes the GLES renderer's wlroots-owned EGL context current
 ;;;; for a dynamic Lisp extent and restores the prior EGL state afterward.
-;;;; Shader compilation, draw submission, and render policy remain in Layer 2.
+;;;; Shader compilation, draw submission, and render policy remain in the
+;;;; compositor system.
 
 (in-package #:ataxia.runtime.raw)
 
@@ -22,6 +23,21 @@
 (defcfun ("eglGetError" %egl-get-error) :uint32)
 (defcfun ("wlr_buffer_unlock" %wlr-buffer-unlock) :void
   (buffer :pointer))
+(defcfun ("wlr_surface_send_enter" %wlr-surface-send-enter) :void
+  (surface :pointer)
+  (output :pointer))
+(defcfun ("wlr_surface_send_leave" %wlr-surface-send-leave) :void
+  (surface :pointer)
+  (output :pointer))
+(defcstruct timespec
+  (seconds :long)
+  (nanoseconds :long))
+(defcfun ("clock_gettime" %clock-gettime) :int
+  (clock-id :int)
+  (time (:pointer (:struct timespec))))
+(defcfun ("wlr_surface_send_frame_done" %wlr-surface-send-frame-done) :void
+  (surface :pointer)
+  (time (:pointer (:struct timespec))))
 (defcfun ("wlr_texture_is_gles2" %wlr-texture-is-gles2) :boolean
   (texture :pointer))
 (defcfun ("ataxia_surface_lock_buffer" %surface-lock-buffer) :pointer
@@ -48,6 +64,7 @@
 
 (defconstant +egl-draw-surface+ #x3059)
 (defconstant +egl-read-surface+ #x305a)
+(defconstant +clock-monotonic+ 1)
 
 (defclass wlr-buffer (native-object)
   ((width :initarg :width :reader buffer-width)
@@ -114,6 +131,38 @@
      :target (ataxia.runtime.raw:%gles2-texture-target pointer)
      :name (ataxia.runtime.raw:%gles2-texture-name pointer)
      :has-alpha-p (ataxia.runtime.raw:%gles2-texture-has-alpha pointer))))
+
+(defun %assert-surface-output-pair (surface output operation)
+  (check-type surface wlr-surface)
+  (check-type output wlr-output)
+  (let ((runtime (%native-runtime surface)))
+    (%assert-runtime-live runtime operation)
+    (%assert-object-runtime runtime output operation))
+  surface)
+
+(defun surface-send-enter (surface output)
+  (%assert-surface-output-pair surface output :surface-send-enter)
+  (ataxia.runtime.raw:%wlr-surface-send-enter
+   (%object-pointer surface) (%object-pointer output))
+  surface)
+
+(defun surface-send-leave (surface output)
+  (%assert-surface-output-pair surface output :surface-send-leave)
+  (ataxia.runtime.raw:%wlr-surface-send-leave
+   (%object-pointer surface) (%object-pointer output))
+  surface)
+
+(defun surface-send-frame-done (surface)
+  (check-type surface wlr-surface)
+  (%assert-runtime-live (%native-runtime surface) :surface-send-frame-done)
+  (cffi:with-foreign-object
+      (timestamp '(:struct ataxia.runtime.raw::timespec))
+    (unless (zerop
+             (ataxia.runtime.raw:%clock-gettime +clock-monotonic+ timestamp))
+      (error 'native-call-failed :name :clock-gettime))
+    (ataxia.runtime.raw:%wlr-surface-send-frame-done
+     (%object-pointer surface) timestamp))
+  surface)
 
 (defun release-buffer (buffer)
   (check-type buffer wlr-buffer)

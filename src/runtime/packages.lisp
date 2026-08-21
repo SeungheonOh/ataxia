@@ -45,6 +45,10 @@
    #:%egl-make-current
    #:%egl-get-error
    #:%wlr-buffer-unlock
+   #:%wlr-surface-send-enter
+   #:%wlr-surface-send-leave
+   #:%clock-gettime
+   #:%wlr-surface-send-frame-done
    #:%wlr-texture-is-gles2
    #:%surface-lock-buffer
    #:%buffer-width
@@ -109,6 +113,11 @@
    #:%wlr-output-test-state
    #:%wlr-output-commit-state
    #:%wlr-output-schedule-frame
+   #:%wlr-output-configure-primary-swapchain
+   #:%wlr-swapchain-acquire
+   #:%wlr-swapchain-destroy
+   #:%wlr-output-state-set-buffer
+   #:%wlr-gles2-renderer-get-buffer-fbo
    #:%output-state-create
    #:%output-state-destroy
    #:%input-device-event-destroy
@@ -388,6 +397,9 @@
    #:subsurface-synchronized-p
    #:surface-mapped-p
    #:surface-at
+   #:surface-send-enter
+   #:surface-send-leave
+   #:surface-send-frame-done
    #:surface-commit-event
    #:surface-commit-sequence
    #:surface-commit-fields
@@ -433,6 +445,8 @@
    #:xdg-fullscreen-requested-p
    #:xdg-fullscreen-output
    #:wlr-egl
+   #:wlr-output-swapchain
+   #:output-swapchain-output
    #:wlr-buffer
    #:buffer-width
    #:buffer-height
@@ -449,6 +463,11 @@
    #:texture-gles-attributes
    #:call-with-egl-context
    #:with-egl-context
+   #:configure-output-swapchain
+   #:acquire-output-buffer
+   #:output-state-set-buffer
+   #:output-buffer-framebuffer
+   #:destroy-output-swapchain
    #:runtime-sink
    #:diagnostic-sink
    #:runtime

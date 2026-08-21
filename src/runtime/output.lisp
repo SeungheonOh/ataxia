@@ -39,6 +39,24 @@
   (state :pointer))
 (defcfun ("wlr_output_schedule_frame" %wlr-output-schedule-frame) :void
   (output :pointer))
+(defcfun ("wlr_output_configure_primary_swapchain"
+          %wlr-output-configure-primary-swapchain)
+    :boolean
+  (output :pointer)
+  (state :pointer)
+  (swapchain :pointer))
+(defcfun ("wlr_swapchain_acquire" %wlr-swapchain-acquire) :pointer
+  (swapchain :pointer))
+(defcfun ("wlr_swapchain_destroy" %wlr-swapchain-destroy) :void
+  (swapchain :pointer))
+(defcfun ("wlr_output_state_set_buffer" %wlr-output-state-set-buffer) :void
+  (state :pointer)
+  (buffer :pointer))
+(defcfun ("wlr_gles2_renderer_get_buffer_fbo"
+          %wlr-gles2-renderer-get-buffer-fbo)
+    :uint32
+  (renderer :pointer)
+  (buffer :pointer))
 (defcfun ("ataxia_output_state_create" %output-state-create) :pointer)
 (defcfun ("ataxia_output_state_destroy" %output-state-destroy) :void
   (state :pointer))
@@ -92,6 +110,9 @@
   ((output :initarg :output :reader %output-state-output)
    (borrowed-p :initarg :borrowed-p :initform nil
                :reader %output-state-borrowed-p)))
+
+(defclass wlr-output-swapchain (native-object)
+  ((output :initarg :output :reader output-swapchain-output)))
 
 (defstruct (damage-rectangle
              (:constructor %make-damage-rectangle (&key x y width height))
@@ -334,6 +355,92 @@
   (%assert-runtime-live (%native-runtime output) :output-schedule-frame)
   (ataxia.runtime.raw:%wlr-output-schedule-frame (%object-pointer output))
   output)
+
+(defun configure-output-swapchain (output &optional swapchain state)
+  (check-type output wlr-output)
+  (when swapchain
+    (check-type swapchain wlr-output-swapchain))
+  (when state
+    (%assert-output-state-pair output state :configure-output-swapchain))
+  (let ((runtime (%native-runtime output)))
+    (%assert-runtime-live runtime :configure-output-swapchain)
+    (when swapchain
+      (%assert-object-runtime runtime swapchain :configure-output-swapchain)
+      (unless (eq output (output-swapchain-output swapchain))
+        (error 'native-call-failed
+               :name :configure-output-swapchain
+               :detail "swapchain belongs to a different output")))
+    (cffi:with-foreign-object (swapchain-cell :pointer)
+      (setf (cffi:mem-ref swapchain-cell :pointer)
+            (if swapchain
+                (%object-pointer swapchain)
+                (ataxia.runtime.raw:null-pointer)))
+      (unless
+          (ataxia.runtime.raw:%wlr-output-configure-primary-swapchain
+           (%object-pointer output)
+           (if state
+               (%object-pointer state)
+               (ataxia.runtime.raw:null-pointer))
+           swapchain-cell)
+        (error 'native-call-failed
+               :name :wlr-output-configure-primary-swapchain
+               :detail (output-name output)))
+      (let ((pointer (cffi:mem-ref swapchain-cell :pointer)))
+        (if swapchain
+            (progn
+              (setf (%native-pointer swapchain) pointer)
+              swapchain)
+            (%wrap-pointer 'wlr-output-swapchain pointer runtime
+                           :output output))))))
+
+(defun acquire-output-buffer (swapchain)
+  (check-type swapchain wlr-output-swapchain)
+  (let* ((runtime (%native-runtime swapchain))
+         (pointer
+           (progn
+             (%assert-runtime-live runtime :acquire-output-buffer)
+             (%require-pointer
+              (ataxia.runtime.raw:%wlr-swapchain-acquire
+               (%object-pointer swapchain))
+              :wlr-swapchain-acquire))))
+    (%wrap-pointer
+     'wlr-buffer pointer runtime
+     :width (ataxia.runtime.raw:%buffer-width pointer)
+     :height (ataxia.runtime.raw:%buffer-height pointer))))
+
+(defun output-state-set-buffer (state buffer)
+  (check-type state wlr-output-state)
+  (check-type buffer wlr-buffer)
+  (let ((runtime (%native-runtime state)))
+    (%assert-runtime-live runtime :output-state-set-buffer)
+    (%assert-object-runtime runtime buffer :output-state-set-buffer)
+    (ataxia.runtime.raw:%wlr-output-state-set-buffer
+     (%object-pointer state) (%object-pointer buffer)))
+  state)
+
+(defun output-buffer-framebuffer (renderer buffer)
+  (check-type renderer wlr-renderer)
+  (check-type buffer wlr-buffer)
+  (let ((runtime (%native-runtime renderer)))
+    (%assert-runtime-live runtime :output-buffer-framebuffer)
+    (%assert-object-runtime runtime buffer :output-buffer-framebuffer)
+    (let ((framebuffer
+            (ataxia.runtime.raw:%wlr-gles2-renderer-get-buffer-fbo
+             (%object-pointer renderer) (%object-pointer buffer))))
+      (when (zerop framebuffer)
+        (error 'native-call-failed
+               :name :wlr-gles2-renderer-get-buffer-fbo))
+      framebuffer)))
+
+(defun destroy-output-swapchain (swapchain)
+  (check-type swapchain wlr-output-swapchain)
+  (when (native-object-live-p swapchain)
+    (%assert-owner-thread (%native-runtime swapchain)
+                          :destroy-output-swapchain)
+    (ataxia.runtime.raw:%wlr-swapchain-destroy
+     (%object-pointer swapchain))
+    (%invalidate-native-object swapchain))
+  nil)
 
 (defun destroy-output-state (state)
   (check-type state wlr-output-state)

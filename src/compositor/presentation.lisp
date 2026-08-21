@@ -51,6 +51,7 @@
    (revision :initform 0 :accessor presentation-revision)))
 
 (defgeneric build-presentation-snapshot (presentation output timestamp))
+(defgeneric build-frame-plan (presentation output snapshot timestamp))
 (defgeneric presentation-hit-test (snapshot output-x output-y))
 (defgeneric render-presentation-frame (presentation output snapshot))
 (defgeneric present-output (presentation output))
@@ -149,6 +150,21 @@
    (timestamp :initarg :timestamp :reader snapshot-timestamp)
    (revision :initarg :revision :reader snapshot-revision)
    (items :initarg :items :reader snapshot-items)))
+
+(defclass render-pass ()
+  ((name :initarg :name :initform nil :reader render-pass-name)
+   (target :initarg :target :initform :output :reader render-pass-target)
+   (damage-mode :initarg :damage-mode :initform :frame
+                :reader render-pass-damage-mode)))
+
+(defclass item-render-pass (render-pass)
+  ((items :initarg :items :reader render-pass-items)))
+
+(defclass frame-plan ()
+  ((snapshot :initarg :snapshot :reader frame-plan-snapshot)
+   (passes :initarg :passes :reader frame-plan-passes)
+   (continuous-p :initarg :continuous-p :initform nil
+                 :reader frame-plan-continuous-p)))
 
 (defclass frame-context ()
   ((output :initarg :output :reader frame-context-output)
@@ -438,6 +454,13 @@
      :revision (incf (presentation-revision presentation))
      :items (behavior-build-scene policy presentation output timestamp))))
 
+(defmethod build-frame-plan
+    ((presentation presentation-system) (output compositor-output)
+     (snapshot presentation-snapshot) timestamp)
+  (behavior-compose-frame
+   (compositor-behavior-policy (component-compositor presentation))
+   presentation output snapshot timestamp))
+
 (defun point-in-item-p (item x y)
   (and (<= (presentation-item-x item) x
            (+ (presentation-item-x item) (presentation-item-width item)))
@@ -571,6 +594,19 @@
    renderer frame-context item (presentation-item-material item))
   item)
 
+(defmethod renderer-execute-pass
+    ((renderer direct-gles-renderer) frame-context (pass item-render-pass))
+  (dolist (item (render-pass-items pass))
+    (renderer-draw-item renderer frame-context item))
+  pass)
+
+(defmethod renderer-execute-pass
+    ((renderer direct-gles-renderer) frame-context (pass render-pass))
+  (declare (ignore renderer frame-context))
+  (error 'graphics-failure
+         :operation :execute-render-pass
+         :detail (format nil "No executor for ~S" (class-of pass))))
+
 (defmethod renderer-draw-material
     ((renderer direct-gles-renderer) frame-context
      (item presentation-item) (material solid-color-material))
@@ -624,8 +660,9 @@
 
 (defmethod render-presentation-frame
     ((presentation presentation-system) (output compositor-output)
-     (snapshot presentation-snapshot))
+     (plan frame-plan))
   (let* ((compositor (component-compositor presentation))
+         (snapshot (frame-plan-snapshot plan))
          (runtime (compositor-runtime compositor))
          (renderer (compositor-graphics compositor))
          (native (output-native output))
@@ -653,8 +690,8 @@
                (renderer-begin-frame renderer output frame)
                (handler-case
                    (progn
-                     (dolist (item (snapshot-items snapshot))
-                       (renderer-draw-item renderer frame item))
+                     (dolist (pass (frame-plan-passes plan))
+                       (renderer-execute-pass renderer frame pass))
                      (renderer-end-frame renderer frame))
                  (serious-condition (condition)
                    (renderer-abort-frame renderer frame condition)
@@ -671,34 +708,37 @@
       (when (and buffer (ataxia.runtime:native-object-live-p buffer))
         (ataxia.runtime:release-buffer buffer))
       (ataxia.runtime:destroy-output-state state)))
-  (setf (output-last-snapshot output) snapshot)
+  (setf (output-last-snapshot output) (frame-plan-snapshot plan))
   (incf (output-frame-revision output))
   (let ((surfaces
-          (remove-duplicates
+           (remove-duplicates
            (remove nil (mapcar #'presentation-item-surface
-                               (snapshot-items snapshot)))
+                               (snapshot-items (frame-plan-snapshot plan))))
            :test #'eq)))
     (dolist (surface surfaces)
       (when (ataxia.runtime:native-object-live-p surface)
         (ataxia.runtime:surface-send-frame-done surface))))
-  snapshot)
+  (frame-plan-snapshot plan))
 
 (defmethod present-output
     ((presentation presentation-system) (output compositor-output))
   (handler-case
-      (let ((snapshot
-              (build-presentation-snapshot
-               presentation output (monotonic-seconds))))
+      (let* ((timestamp (monotonic-seconds))
+             (snapshot
+               (build-presentation-snapshot presentation output timestamp))
+             (plan
+               (build-frame-plan presentation output snapshot timestamp)))
         (setf (output-redraw-pending-p output) nil)
-        (render-presentation-frame presentation output snapshot)
+        (render-presentation-frame presentation output plan)
         (setf (output-commit-pending-p output) t)
         (trace-output
          "[output] commit ~A revision=~D native-pending=~A~%"
          (ataxia.runtime:output-name (output-native output))
          (output-frame-revision output)
          (ataxia.runtime:output-frame-pending-p (output-native output)))
-        (when (active-animations-p
-               (presentation-animation-engine presentation))
+        (when (or (frame-plan-continuous-p plan)
+                  (active-animations-p
+                   (presentation-animation-engine presentation)))
           (setf (output-redraw-pending-p output) t))
         snapshot)
     (serious-condition (condition)

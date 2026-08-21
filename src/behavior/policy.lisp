@@ -139,6 +139,8 @@
 (defgeneric behavior-import-state (policy portable-state context))
 (defgeneric behavior-build-scene
     (policy presentation output timestamp))
+(defgeneric behavior-compose-frame
+    (policy presentation output snapshot timestamp))
 (defgeneric behavior-build-view-items
     (policy items output view timestamp titlebar-height))
 (defgeneric behavior-build-popup-items

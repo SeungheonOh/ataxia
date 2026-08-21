@@ -168,6 +168,7 @@ void main() {
 (defgeneric renderer-begin-frame (renderer output frame-context))
 (defgeneric renderer-draw-item (renderer frame-context item))
 (defgeneric renderer-draw-material (renderer frame-context item material))
+(defgeneric renderer-execute-pass (renderer frame-context pass))
 (defgeneric renderer-end-frame (renderer frame-context))
 (defgeneric renderer-abort-frame (renderer frame-context reason))
 

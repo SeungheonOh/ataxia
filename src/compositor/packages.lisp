@@ -202,6 +202,7 @@
    #:behavior-export-state
    #:behavior-import-state
    #:behavior-build-scene
+   #:behavior-compose-frame
    #:behavior-build-view-items
    #:behavior-build-popup-items
    #:behavior-begin-operation
@@ -277,6 +278,7 @@
    #:renderer-begin-frame
    #:renderer-draw-item
    #:renderer-draw-material
+   #:renderer-execute-pass
    #:renderer-end-frame
    #:renderer-abort-frame
    #:shader-program-descriptor
@@ -304,6 +306,16 @@
    #:snapshot-timestamp
    #:snapshot-revision
    #:snapshot-items
+   #:render-pass
+   #:render-pass-name
+   #:render-pass-target
+   #:render-pass-damage-mode
+   #:item-render-pass
+   #:render-pass-items
+   #:frame-plan
+   #:frame-plan-snapshot
+   #:frame-plan-passes
+   #:frame-plan-continuous-p
    #:presentation-material
    #:solid-color-material
    #:surface-texture-material
@@ -376,6 +388,7 @@
    #:presentation-hit-kind
    #:make-presentation-hit
    #:build-presentation-snapshot
+   #:build-frame-plan
    #:presentation-hit-test
    #:render-presentation-frame
    #:present-output

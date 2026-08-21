@@ -200,3 +200,13 @@
           items (append-panel-items items presentation output desktop)
           items (append-cursor-items items compositor output))
     items))
+
+(defmethod behavior-compose-frame
+    ((policy behavior-policy) presentation output snapshot timestamp)
+  (declare (ignore policy presentation output timestamp))
+  (make-instance
+   'frame-plan :snapshot snapshot
+   :passes
+   (list (make-instance 'item-render-pass
+                        :name :scene :target :output
+                        :items (snapshot-items snapshot)))))

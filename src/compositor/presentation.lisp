@@ -70,6 +70,13 @@
 
 (defclass presentation-geometry () ())
 
+(defclass presentation-mapping () ())
+
+(defclass functional-presentation-mapping (presentation-mapping)
+  ((function :initarg :function :reader presentation-mapping-function)))
+
+(defgeneric map-presentation-point (mapping item output-x output-y))
+
 (defclass mesh-geometry (presentation-geometry)
   ((vertices :initarg :vertices :reader mesh-geometry-vertices)
    (vertex-count :initarg :vertex-count :reader mesh-geometry-vertex-count)))
@@ -477,7 +484,13 @@
                              (* texture-y source-height))))))
           finally (return (values nil 0d0 0d0)))))
 
-(defun presentation-item-local-point (item output-x output-y)
+(defmethod map-presentation-point
+    ((mapping functional-presentation-mapping) item output-x output-y)
+  (funcall (presentation-mapping-function mapping)
+           item output-x output-y))
+
+(defmethod map-presentation-point
+    ((mapping null) item output-x output-y)
   (let ((geometry (presentation-item-geometry item)))
     (if (typep geometry 'mesh-geometry)
         (mesh-local-point
@@ -492,6 +505,10 @@
          (* (/ (- output-y (presentation-item-y item))
                (max 1d0 (presentation-item-height item)))
             (presentation-item-source-height item))))))
+
+(defun presentation-item-local-point (item output-x output-y)
+  (map-presentation-point
+   (presentation-item-mapping item) item output-x output-y))
 
 (defun presentation-item-live-p (item)
   "Reject geometry that still references a surface retired after the snapshot."

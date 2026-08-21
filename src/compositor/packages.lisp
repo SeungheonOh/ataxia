@@ -315,6 +315,10 @@
    #:material-uniforms
    #:presentation-item
    #:presentation-geometry
+   #:presentation-mapping
+   #:functional-presentation-mapping
+   #:presentation-mapping-function
+   #:map-presentation-point
    #:mesh-geometry
    #:mesh-geometry-vertices
    #:mesh-geometry-vertex-count

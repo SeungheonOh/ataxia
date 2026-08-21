@@ -536,7 +536,7 @@
                       (* (- (aref source (+ offset 1)) source-y) scale-y))))
     (make-mesh-geometry vertices)))
 
-(defclass spherical-surface-mapping ()
+(defclass spherical-surface-mapping (presentation-mapping)
   ((placement :initarg :placement
               :reader spherical-mapping-placement)
    (projector :initarg :projector
@@ -556,7 +556,15 @@
    (draw-width :initarg :draw-width
                :reader spherical-mapping-draw-width)
    (draw-height :initarg :draw-height
-                :reader spherical-mapping-draw-height)))
+                 :reader spherical-mapping-draw-height)))
+
+(defmethod map-presentation-point
+    ((mapping spherical-surface-mapping) item output-x output-y)
+  (declare (ignore mapping))
+  (mesh-local-point
+   (presentation-item-geometry item) output-x output-y
+   (presentation-item-source-width item)
+   (presentation-item-source-height item)))
 
 (defstruct (spherical-view-scene
              (:constructor make-spherical-view-scene

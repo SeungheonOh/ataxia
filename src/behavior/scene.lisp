@@ -47,7 +47,7 @@
                      (* (surface-record-height record) scale-y)
                      (ataxia.runtime:texture-gles-attributes
                       (surface-record-texture record))
-                     :owner owner :program-name shader-name
+                     :record record :owner owner :program-name shader-name
                      :uniforms shader-uniforms
                      :interactive-p t :hit-kind :subsurface
                      :source-width (max 1 (surface-record-width record))
@@ -98,7 +98,7 @@
                        (* (surface-record-height record) scale-y)
                        (ataxia.runtime:texture-gles-attributes
                         (surface-record-texture record))
-                       :owner popup :program-name shader-name
+                       :record record :owner popup :program-name shader-name
                        :uniforms shader-uniforms
                        :interactive-p t :hit-kind :popup
                        :source-width (max 1 (surface-record-width record))
@@ -140,7 +140,7 @@
                     (surface-record-height cursor-record)
                     (ataxia.runtime:texture-gles-attributes
                      (surface-record-texture cursor-record))
-                    :owner seat))))))
+                    :record cursor-record :owner seat))))))
         (:default
          (setf items
                (nconc items

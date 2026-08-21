@@ -78,7 +78,7 @@
                           x content-y width content-height
                           (ataxia.runtime:texture-gles-attributes
                            (surface-record-texture record))
-                          :owner view :program-name shader-name
+                          :record record :owner view :program-name shader-name
                           :uniforms shader-uniforms
                           :opacity opacity :interactive-p t :hit-kind :content
                           :source-width (max 1 (surface-record-width record))

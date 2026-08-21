@@ -65,6 +65,12 @@
    #:%wlr-allocator-destroy
    #:%wlr-compositor-create
    #:%wlr-subcompositor-create
+   #:%wlr-viewporter-create
+   #:%wlr-fractional-scale-manager-v1-create
+   #:%wlr-fractional-scale-v1-notify-scale
+   #:%wlr-surface-set-preferred-buffer-scale
+   #:%wlr-presentation-create
+   #:%wlr-presentation-surface-textured-on-output
    #:%wlr-seat-create
    #:%wlr-seat-destroy
    #:%wlr-seat-set-capabilities
@@ -91,6 +97,7 @@
    #:%output-description
    #:%output-width
    #:%output-height
+   #:%output-scale
    #:%output-enabled
    #:%output-frame-pending
    #:%output-damage-region
@@ -193,6 +200,8 @@
    #:%surface-current-height
    #:%surface-current-buffer-width
    #:%surface-current-buffer-height
+   #:%surface-current-transform
+   #:%surface-buffer-source-box
    #:%surface-mapped
    #:%wlr-surface-surface-at
    #:%subsurface-event-destroy
@@ -299,6 +308,7 @@
    #:output-description
    #:output-width
    #:output-height
+   #:output-scale
    #:output-enabled-p
    #:output-global-p
    #:damage-rectangle
@@ -418,6 +428,9 @@
    #:surface-commit-mapped-p
    #:wlr-seat
    #:wlr-data-device-manager
+   #:wlr-viewporter
+   #:wlr-fractional-scale-manager-v1
+   #:wlr-presentation
    #:seat-cursor-request
    #:seat-cursor-request-seat
    #:seat-cursor-request-surface
@@ -560,6 +573,13 @@
    #:create-seat
    #:create-data-device-manager
    #:runtime-data-device-manager
+   #:create-presentation-protocols
+   #:runtime-viewporter
+   #:runtime-fractional-scale-manager
+   #:runtime-presentation
+   #:notify-surface-preferred-scale
+   #:mark-surface-textured-on-output
+   #:surface-content-layout
    #:set-seat-capabilities
    #:set-seat-name
    #:set-seat-keyboard

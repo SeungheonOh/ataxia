@@ -146,6 +146,10 @@ int32_t ataxia_output_height(const struct wlr_output *output) {
 	return output == NULL ? 0 : output->height;
 }
 
+float ataxia_output_scale(const struct wlr_output *output) {
+	return output == NULL ? 1.0f : output->scale;
+}
+
 bool ataxia_output_enabled(const struct wlr_output *output) {
 	return output != NULL && output->enabled;
 }
@@ -485,6 +489,26 @@ int32_t ataxia_surface_current_buffer_width(const struct wlr_surface *surface) {
 
 int32_t ataxia_surface_current_buffer_height(const struct wlr_surface *surface) {
 	return surface == NULL ? 0 : surface->current.buffer_height;
+}
+
+uint32_t ataxia_surface_current_transform(const struct wlr_surface *surface) {
+	return surface == NULL ? WL_OUTPUT_TRANSFORM_NORMAL :
+		(uint32_t)surface->current.transform;
+}
+
+bool ataxia_surface_buffer_source_box(struct wlr_surface *surface,
+		double *x, double *y, double *width, double *height) {
+	if (surface == NULL || x == NULL || y == NULL ||
+			width == NULL || height == NULL) {
+		return false;
+	}
+	struct wlr_fbox box;
+	wlr_surface_get_buffer_source_box(surface, &box);
+	*x = box.x;
+	*y = box.y;
+	*width = box.width;
+	*height = box.height;
+	return box.width > 0.0 && box.height > 0.0;
 }
 
 bool ataxia_surface_mapped(const struct wlr_surface *surface) {

@@ -47,6 +47,10 @@
    (xdg-shell :initform nil :accessor %runtime-xdg-shell)
    (data-device-manager :initform nil
                         :accessor %runtime-data-device-manager)
+   (viewporter :initform nil :accessor %runtime-viewporter)
+   (fractional-scale-manager
+    :initform nil :accessor %runtime-fractional-scale-manager)
+   (presentation :initform nil :accessor %runtime-presentation)
    (xdg-toplevels :initform (make-hash-table :test #'eql)
                   :reader %runtime-xdg-toplevel-table)
    (xdg-popups :initform (make-hash-table :test #'eql)
@@ -844,7 +848,10 @@
                             (%runtime-egl runtime)
                             (%runtime-compositor-global runtime)
                             (%runtime-subcompositor-global runtime)
-                            (%runtime-data-device-manager runtime)))
+                            (%runtime-data-device-manager runtime)
+                            (%runtime-viewporter runtime)
+                            (%runtime-fractional-scale-manager runtime)
+                            (%runtime-presentation runtime)))
         (when object (%invalidate-native-object object)))
       (clrhash (%runtime-output-table runtime))
       (clrhash (%runtime-input-table runtime))
@@ -863,6 +870,9 @@
             (%runtime-subcompositor-global runtime) nil
             (%runtime-xdg-shell runtime) nil
             (%runtime-data-device-manager runtime) nil
+            (%runtime-viewporter runtime) nil
+            (%runtime-fractional-scale-manager runtime) nil
+            (%runtime-presentation runtime) nil
             (%runtime-socket-name runtime) nil
             (%runtime-state runtime) :stopped))))
   nil)

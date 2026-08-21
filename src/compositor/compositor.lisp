@@ -157,6 +157,8 @@
           (ataxia.runtime:create-xdg-shell (compositor-runtime compositor))
           (ataxia.runtime:create-data-device-manager
            (compositor-runtime compositor))
+          (ataxia.runtime:create-presentation-protocols
+           (compositor-runtime compositor))
           (create-logical-seat (compositor-interaction compositor) "seat0")
           (setf (compositor-state compositor) :ready)
           compositor)

@@ -788,7 +788,7 @@
            (surface-record-native record) x y width height
            (ataxia.runtime:texture-gles-attributes
             (surface-record-texture record))
-           :owner owner :geometry geometry :mapping mapping
+           :record record :owner owner :geometry geometry :mapping mapping
            :program-name shader-name :uniforms shader-uniforms
            :opacity (spherical-owner-opacity owner)
            :interactive-p t :hit-kind hit-kind

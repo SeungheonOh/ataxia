@@ -128,6 +128,13 @@
 
 (defclass surface-texture-material (presentation-material)
   ((texture :initarg :texture :reader material-texture)
+   (source-x :initarg :source-x :initform 0d0 :reader material-source-x)
+   (source-y :initarg :source-y :initform 0d0 :reader material-source-y)
+   (source-width :initarg :source-width :initform 1d0
+                 :reader material-source-width)
+   (source-height :initarg :source-height :initform 1d0
+                  :reader material-source-height)
+   (transform :initarg :transform :initform 0 :reader material-transform)
    (opacity :initarg :opacity :initform 1d0 :reader material-opacity)
    (program-name :initarg :program-name :initform nil
                  :reader material-program-name)
@@ -491,11 +498,31 @@
 (defun make-surface-item
     (surface x y width height texture
      &key owner (opacity 1d0) program-name uniforms geometry mapping
-       interactive-p hit-kind (source-width 1d0) (source-height 1d0))
+       record interactive-p hit-kind (source-width 1d0) (source-height 1d0)
+       (texture-source-x 0d0) (texture-source-y 0d0)
+       (texture-source-width 1d0) (texture-source-height 1d0)
+       (texture-transform 0))
   (make-instance
    'presentation-item
    :material (make-instance 'surface-texture-material
                             :texture texture :opacity opacity
+                            :source-x
+                            (if record (surface-record-texture-source-x record)
+                                texture-source-x)
+                            :source-y
+                            (if record (surface-record-texture-source-y record)
+                                texture-source-y)
+                            :source-width
+                            (if record
+                                (surface-record-texture-source-width record)
+                                texture-source-width)
+                            :source-height
+                            (if record
+                                (surface-record-texture-source-height record)
+                                texture-source-height)
+                            :transform
+                            (if record (surface-record-texture-transform record)
+                                texture-transform)
                             :program-name program-name :uniforms uniforms)
    :surface surface :x x :y y :width width :height height
    :owner owner :geometry geometry :mapping mapping
@@ -759,7 +786,10 @@
    (presentation-item-width item) (presentation-item-height item)
    (material-texture material) (material-opacity material)
    (material-program-name material) (material-uniforms material)
-   (presentation-item-geometry item)))
+   (presentation-item-geometry item)
+   (material-source-x material) (material-source-y material)
+   (material-source-width material) (material-source-height material)
+   (material-transform material)))
 
 (defun synchronize-output-surface-membership (compositor output snapshot)
   "Synchronize wl_surface output membership with one committed snapshot."
@@ -777,6 +807,17 @@
            (surface-enter-output record output)
            (surface-leave-output record output)))
      records))
+  snapshot)
+
+(defun mark-snapshot-presentation-feedback (output snapshot)
+  (dolist (surface
+            (remove-duplicates
+             (remove nil (mapcar #'presentation-item-surface
+                                 (snapshot-items snapshot)))
+             :test #'eq))
+    (when (ataxia.runtime:native-object-live-p surface)
+      (ataxia.runtime:mark-surface-textured-on-output
+       surface (output-native output))))
   snapshot)
 
 (defmethod renderer-draw-material
@@ -837,6 +878,7 @@
                 (damage-box-x box) (damage-box-y box)
                 (damage-box-width box) (damage-box-height box)))
              (frame-damage-boxes (frame-plan-damage plan))))
+           (mark-snapshot-presentation-feedback output snapshot)
            (ataxia.runtime:release-buffer buffer)
            (setf buffer nil)
            (unless (ataxia.runtime:output-test-state native state)

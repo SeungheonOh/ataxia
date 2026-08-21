@@ -12,7 +12,7 @@
 #include <stdint.h>
 
 #define ATAXIA_WLR_GLUE_API __attribute__((visibility("default")))
-#define ATAXIA_WLR_GLUE_ABI_VERSION 3u
+#define ATAXIA_WLR_GLUE_ABI_VERSION 4u
 
 struct wl_signal;
 struct wlr_allocator;
@@ -99,6 +99,8 @@ ATAXIA_WLR_GLUE_API const char *ataxia_output_description(
 ATAXIA_WLR_GLUE_API int32_t ataxia_output_width(
 	const struct wlr_output *output);
 ATAXIA_WLR_GLUE_API int32_t ataxia_output_height(
+	const struct wlr_output *output);
+ATAXIA_WLR_GLUE_API float ataxia_output_scale(
 	const struct wlr_output *output);
 ATAXIA_WLR_GLUE_API bool ataxia_output_enabled(
 	const struct wlr_output *output);
@@ -260,6 +262,11 @@ ATAXIA_WLR_GLUE_API int32_t ataxia_surface_current_buffer_width(
 	const struct wlr_surface *surface);
 ATAXIA_WLR_GLUE_API int32_t ataxia_surface_current_buffer_height(
 	const struct wlr_surface *surface);
+ATAXIA_WLR_GLUE_API uint32_t ataxia_surface_current_transform(
+	const struct wlr_surface *surface);
+ATAXIA_WLR_GLUE_API bool ataxia_surface_buffer_source_box(
+	struct wlr_surface *surface, double *x, double *y,
+	double *width, double *height);
 ATAXIA_WLR_GLUE_API bool ataxia_surface_mapped(
 	const struct wlr_surface *surface);
 ATAXIA_WLR_GLUE_API struct wl_signal *ataxia_subsurface_event_destroy(

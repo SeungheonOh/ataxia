@@ -14,6 +14,13 @@
    (texture :initform nil :accessor surface-record-texture)
    (width :initform 0 :accessor surface-record-width)
    (height :initform 0 :accessor surface-record-height)
+   (texture-source-x :initform 0d0 :accessor surface-record-texture-source-x)
+   (texture-source-y :initform 0d0 :accessor surface-record-texture-source-y)
+   (texture-source-width :initform 1d0
+                         :accessor surface-record-texture-source-width)
+   (texture-source-height :initform 1d0
+                          :accessor surface-record-texture-source-height)
+   (texture-transform :initform 0 :accessor surface-record-texture-transform)
    (mapped-p :initform nil :accessor surface-record-mapped-p)
    (entered-outputs :initform (make-hash-table :test #'eq)
                     :reader surface-record-entered-outputs)
@@ -97,14 +104,24 @@
   (setf (surface-record-buffer record) nil
         (surface-record-texture record) nil
         (surface-record-width record) 0
-        (surface-record-height record) 0)
+        (surface-record-height record) 0
+        (surface-record-texture-source-x record) 0d0
+        (surface-record-texture-source-y record) 0d0
+        (surface-record-texture-source-width record) 1d0
+        (surface-record-texture-source-height record) 1d0
+        (surface-record-texture-transform record) 0)
   record)
 
 (defun surface-enter-output (record output)
   (unless (gethash output (surface-record-entered-outputs record))
     (ataxia.runtime:surface-send-enter
      (surface-record-native record) (output-native output))
-    (setf (gethash output (surface-record-entered-outputs record)) t))
+    (setf (gethash output (surface-record-entered-outputs record)) t)
+    (ataxia.runtime:notify-surface-preferred-scale
+     (surface-record-native record)
+     (loop for candidate being the hash-keys
+             of (surface-record-entered-outputs record)
+           maximize (ataxia.runtime:output-scale (output-native candidate)))))
   record)
 
 (defun surface-leave-output (record output)
@@ -115,6 +132,14 @@
       (ataxia.runtime:surface-send-leave
        (surface-record-native record) (output-native output)))
     (remhash output (surface-record-entered-outputs record)))
+  (when (ataxia.runtime:native-object-live-p (surface-record-native record))
+    (ataxia.runtime:notify-surface-preferred-scale
+     (surface-record-native record)
+     (loop for candidate being the hash-keys
+             of (surface-record-entered-outputs record)
+           maximize (ataxia.runtime:output-scale (output-native candidate))
+             into maximum
+           finally (return (max 1d0 maximum)))))
   record)
 
 (defun surface-leave-all-outputs (record)
@@ -141,16 +166,25 @@
     (when (and new-buffer (null new-texture))
       (ataxia.runtime:release-buffer new-buffer)
       (setf new-buffer nil))
-    (release-surface-content record)
-    (setf (surface-record-buffer record) new-buffer
-          (surface-record-texture record) new-texture
-          (surface-record-width record)
-          (if new-buffer (ataxia.runtime:buffer-width new-buffer) 0)
-          (surface-record-height record)
-          (if new-buffer (ataxia.runtime:buffer-height new-buffer) 0)
-          (surface-record-mapped-p record) mapped-p
-          (surface-record-commit-sequence record)
-          (ataxia.runtime:surface-commit-sequence commit)))
+    (multiple-value-bind
+          (logical-width logical-height source-x source-y
+           source-width source-height transform)
+        (if new-buffer
+            (ataxia.runtime:surface-content-layout surface)
+            (values 0 0 0d0 0d0 1d0 1d0 0))
+      (release-surface-content record)
+      (setf (surface-record-buffer record) new-buffer
+            (surface-record-texture record) new-texture
+            (surface-record-width record) logical-width
+            (surface-record-height record) logical-height
+            (surface-record-texture-source-x record) source-x
+            (surface-record-texture-source-y record) source-y
+            (surface-record-texture-source-width record) source-width
+            (surface-record-texture-source-height record) source-height
+            (surface-record-texture-transform record) transform
+            (surface-record-mapped-p record) mapped-p
+            (surface-record-commit-sequence record)
+            (ataxia.runtime:surface-commit-sequence commit))))
   (when (and *trace-graphics-p* (surface-record-texture record))
     (let ((attributes
             (ataxia.runtime:texture-gles-attributes

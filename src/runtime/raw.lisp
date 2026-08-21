@@ -5,7 +5,7 @@
 
 (in-package #:ataxia.runtime.raw)
 
-(defconstant +expected-glue-abi+ 3)
+(defconstant +expected-glue-abi+ 4)
 (defparameter +expected-wlroots-version+ "0.20.2")
 
 (define-foreign-library libwayland-server
@@ -248,6 +248,8 @@
   (output :pointer))
 (defcfun ("ataxia_output_height" %output-height) :int32
   (output :pointer))
+(defcfun ("ataxia_output_scale" %output-scale) :float
+  (output :pointer))
 (defcfun ("ataxia_output_enabled" %output-enabled) :boolean
   (output :pointer))
 (defcfun ("ataxia_output_frame_pending" %output-frame-pending) :boolean
@@ -384,5 +386,15 @@
           %surface-current-buffer-height)
     :int32
   (surface :pointer))
+(defcfun ("ataxia_surface_current_transform" %surface-current-transform)
+    :uint32
+  (surface :pointer))
+(defcfun ("ataxia_surface_buffer_source_box" %surface-buffer-source-box)
+    :boolean
+  (surface :pointer)
+  (x :pointer)
+  (y :pointer)
+  (width :pointer)
+  (height :pointer))
 (defcfun ("ataxia_surface_mapped" %surface-mapped) :boolean
   (surface :pointer))

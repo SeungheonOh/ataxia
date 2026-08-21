@@ -649,8 +649,41 @@ void main() {
             (renderer-vertex-scratch-capacity renderer) capacity)))
   (renderer-vertex-scratch renderer))
 
+(defun transform-texture-coordinate
+    (texture-x texture-y source-x source-y source-width source-height transform)
+  ;; Match wlroots' GLES source transform, including its texture-origin fix for
+  ;; the two non-reflected quarter turns.
+  (let ((effective-transform
+          (if (and (logbitp 0 transform) (not (logbitp 2 transform)))
+              (logxor transform 2)
+              transform)))
+    (multiple-value-bind (mapped-x mapped-y)
+        (case effective-transform
+          (0 (values texture-x texture-y))
+          (1 (values texture-y (- 1d0 texture-x)))
+          (2 (values (- 1d0 texture-x) (- 1d0 texture-y)))
+          (3 (values (- 1d0 texture-y) texture-x))
+          (4 (values (- 1d0 texture-x) texture-y))
+          (5 (values texture-y texture-x))
+          (6 (values texture-x (- 1d0 texture-y)))
+          (7 (values (- 1d0 texture-y) (- 1d0 texture-x)))
+          (otherwise (values texture-x texture-y)))
+      (values (+ source-x (* source-width mapped-x))
+              (+ source-y (* source-height mapped-y))))))
+
+(defun put-transformed-vertex
+    (scratch index x y texture-x texture-y
+     source-x source-y source-width source-height transform)
+  (multiple-value-bind (mapped-x mapped-y)
+      (transform-texture-coordinate
+       texture-x texture-y source-x source-y
+       source-width source-height transform)
+    (put-vertex scratch index x y mapped-x mapped-y)))
+
 (defun fill-rectangle-vertices
-    (renderer output-width output-height x y width height)
+    (renderer output-width output-height x y width height
+     &optional (source-x 0d0) (source-y 0d0)
+       (source-width 1d0) (source-height 1d0) (transform 0))
   (let* ((left (- (* 2d0 (/ x output-width)) 1d0))
          (right (- (* 2d0 (/ (+ x width) output-width)) 1d0))
          ;; wlroots exposes an FBO whose scanout orientation is inverted from
@@ -659,16 +692,24 @@ void main() {
          (top (- (* 2d0 (/ y output-height)) 1d0))
          (bottom (- (* 2d0 (/ (+ y height) output-height)) 1d0))
          (scratch (renderer-vertex-scratch renderer)))
-    (put-vertex scratch 0 left top 0d0 0d0)
-    (put-vertex scratch 1 right top 1d0 0d0)
-    (put-vertex scratch 2 right bottom 1d0 1d0)
-    (put-vertex scratch 3 left top 0d0 0d0)
-    (put-vertex scratch 4 right bottom 1d0 1d0)
-    (put-vertex scratch 5 left bottom 0d0 1d0)
+    (put-transformed-vertex scratch 0 left top 0d0 0d0
+                            source-x source-y source-width source-height transform)
+    (put-transformed-vertex scratch 1 right top 1d0 0d0
+                            source-x source-y source-width source-height transform)
+    (put-transformed-vertex scratch 2 right bottom 1d0 1d0
+                            source-x source-y source-width source-height transform)
+    (put-transformed-vertex scratch 3 left top 0d0 0d0
+                            source-x source-y source-width source-height transform)
+    (put-transformed-vertex scratch 4 right bottom 1d0 1d0
+                            source-x source-y source-width source-height transform)
+    (put-transformed-vertex scratch 5 left bottom 0d0 1d0
+                            source-x source-y source-width source-height transform)
     scratch))
 
 (defun fill-mesh-vertices
-    (renderer output-width output-height geometry)
+    (renderer output-width output-height geometry
+     &optional (source-x 0d0) (source-y 0d0)
+       (source-width 1d0) (source-height 1d0) (transform 0))
   (let* ((vertices (mesh-geometry-vertices geometry))
          (vertex-count (mesh-geometry-vertex-count geometry))
          (scratch
@@ -677,23 +718,28 @@ void main() {
           for offset = (* vertex-index 4)
           for x = (aref vertices offset)
           for y = (aref vertices (+ offset 1))
-          do (put-vertex
+          do (put-transformed-vertex
               scratch vertex-index
               (- (* 2d0 (/ x output-width)) 1d0)
               (- (* 2d0 (/ y output-height)) 1d0)
               (aref vertices (+ offset 2))
-              (aref vertices (+ offset 3))))
+              (aref vertices (+ offset 3))
+              source-x source-y source-width source-height transform))
     scratch))
 
 (defun fill-item-vertices
-    (renderer output-width output-height x y width height geometry)
+    (renderer output-width output-height x y width height geometry
+     &optional (source-x 0d0) (source-y 0d0)
+       (source-width 1d0) (source-height 1d0) (transform 0))
   (if (typep geometry 'mesh-geometry)
       (progn
-        (fill-mesh-vertices renderer output-width output-height geometry)
+        (fill-mesh-vertices renderer output-width output-height geometry
+                            source-x source-y source-width source-height transform)
         (mesh-geometry-vertex-count geometry))
       (progn
         (fill-rectangle-vertices
-         renderer output-width output-height x y width height)
+         renderer output-width output-height x y width height
+         source-x source-y source-width source-height transform)
         6)))
 
 (defun bind-rectangle-vertices (renderer)
@@ -736,12 +782,15 @@ void main() {
 
 (defun draw-textured-rectangle
     (renderer output-width output-height x y width height attributes opacity
-     program-name uniform-values &optional geometry)
+     program-name uniform-values &optional geometry
+       (source-x 0d0) (source-y 0d0)
+       (source-width 1d0) (source-height 1d0) (transform 0))
   (let* ((target (ataxia.runtime:gles-texture-target attributes))
          (program (shader-program-for-texture renderer program-name target))
          (vertex-count
            (fill-item-vertices
-            renderer output-width output-height x y width height geometry)))
+            renderer output-width output-height x y width height geometry
+            source-x source-y source-width source-height transform)))
     (%gl-use-program (shader-native-program program))
     (bind-rectangle-vertices renderer)
     (%gl-active-texture +gl-texture0+)

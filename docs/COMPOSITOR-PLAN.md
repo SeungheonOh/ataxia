@@ -5,12 +5,13 @@ Status: planning only. This document does not authorize implementation.
 ## 1. Objective
 
 Build a Common Lisp Wayland compositor whose native boundary is small, whose
-desktop behavior is assembled from independently replaceable CLOS services, and
+desktop behavior is assembled from directly connected CLOS components owned by
+one compositor object, and
 whose rendering, spatial model, input routing, animation, and agent control can
 be changed without rewriting the Wayland bridge.
 
 The design must support both ordinary desktop use and nontraditional worlds.
-The conventional desktop is a plugin configuration, not a kernel assumption.
+The conventional desktop is a profile configuration, not a compositor-core assumption.
 
 The two previous attempts exposed two distinct failure modes:
 
@@ -20,14 +21,16 @@ The two previous attempts exposed two distinct failure modes:
    its supposedly generic protocols to wlroots object layouts, rendering
    choices, and feature-specific event handling.
 
-This plan keeps the proposed two-layer model, but tightens the boundary around
-**mechanism versus policy**, not around the misleading distinction of “logic
-versus no logic.”
+This plan rejects both a monolithic binding/runtime and the later independent
+policy microkernel. It keeps one narrow **native mechanism versus compositor
+policy** boundary inside Common Lisp. The policy side is one owner-thread
+compositor object graph, not a set of communicating actors.
 
 ## 2. Executive Assessment
 
-The proposal is practical when Layer 1 is treated as a **direct Common Lisp
-binding to wlroots**, not as a generic native compositor host.
+The proposal is practical when the native side is a **direct Common Lisp binding
+to wlroots**, not a generic native compositor host, and the policy side is one
+directly connected compositor aggregate.
 
 The corrected split is:
 
@@ -35,25 +38,29 @@ The corrected split is:
   backends, renderer primitives, allocator primitives, and DRM/KMS mechanics.
 - **Ataxia-authored C** contains only listener trampolines, version probes, and
   wrappers for macros or inline ABI details that CFFI cannot express directly.
-- **Layer 1 Common Lisp** owns server construction, event-loop control, typed
+- **Direct binding Common Lisp packages** own server construction, event-loop control, typed
   wlroots wrappers, exact signal subscriptions, callback-lifetime copying,
   specialized buffer/FD cleanup, and direct typed native calls.
-- **Layer 2 Common Lisp** owns every compositor policy: semantic objects, shell,
-  worlds, placement, input routing, focus, cursor, animation, presentation,
-  rendering strategy, output policy, hooks, plugins, and agents.
+- **The `compositor` aggregate** owns every compositor component and object:
+  applications, views, outputs, seats, shell, worlds, placement, input routing,
+  focus, cursor, animation, presentation, rendering strategy, output policy,
+  hooks, plugins, and agent control.
 
-Layer 1 and Layer 2 communicate through protocol-specific Common Lisp generic
-functions. An XDG resize request remains an XDG resize request; pointer motion
-remains a concrete wlroots pointer event; an output frame remains a concrete
-wlroots output signal. Layer 2 calls typed functions such as XDG configure,
-seat notification, buffer, render-pass, and output-state operations directly.
+Binding packages call protocol-specific generic functions on the compositor or
+exact owning component. An XDG resize request remains an XDG resize request;
+pointer motion remains a concrete wlroots pointer event; an output frame remains
+a concrete wlroots output signal. Components call typed functions such as XDG
+configure, seat notification, buffer, render-pass, and output-state operations
+directly.
 
 There is no invented native event protocol between the layers. In particular,
 there is no generic module catalog, event/command envelope, numeric object
 handle, completion protocol, or universal lease registry.
 
 The exact boundary is specified in
-[wlroots–Common Lisp Boundary and Layer 1–Layer 2 Interface](LAYER-1-2-INTERFACE.md).
+[wlroots–Compositor Common Lisp Interface](WLROOTS-COMPOSITOR-INTERFACE.md).
+The compositor object graph is specified in
+[Compositor Object Graph Design](COMPOSITOR-OBJECT-DESIGN.md).
 
 ## 3. Critical Corrections to the Initial Boundary
 
@@ -67,24 +74,24 @@ directions as undifferentiated events would lose required semantics.
 The design preserves three concrete semantic categories:
 
 1. **Notifications**: facts that already happened in native state.
-2. **Requests for policy**: client/backend requests that Layer 2 may accept,
+2. **Requests for policy**: client/backend requests that the compositor may accept,
    reject, or answer.
-3. **Typed compositor actions**: Layer 2 decisions executed through the exact
-   Layer 1 wrapper for the relevant wlroots/libwayland operation.
+3. **Typed compositor actions**: compositor decisions executed through the exact
+   binding wrapper for the relevant wlroots/libwayland operation.
 
-Layer 2 still handles all policy. Layer 1 preserves these distinctions through
+The compositor still handles all policy. Binding packages preserve these distinctions through
 protocol-specific callback and function names rather than a common event class.
 
 ### 3.2 “No parsing” is too strict
 
 libwayland and wlroots already parse the wire protocol and maintain protocol
-state machines. Layer 1 must additionally copy callback-only data into stable
+state machines. The binding packages must additionally copy callback-only data into stable
 Lisp values, wrap native objects with typed Lisp objects, duplicate or consume
 file descriptors correctly, and validate typed arguments before calling wlroots.
 
 That is translation and lifetime enforcement, not compositor policy.
 
-Layer 1 must not decide:
+The binding packages must not decide:
 
 - where a window belongs;
 - whether a window should be focused;
@@ -94,7 +101,7 @@ Layer 1 must not decide:
 - what should be drawn;
 - which agent action is authorized.
 
-Layer 1 must enforce:
+The binding packages must enforce:
 
 - whether a typed wrapper is live and of the correct native type;
 - whether an operation is legal in the current protocol state;
@@ -111,9 +118,9 @@ buffer may need to be locked during the commit callback or it can be released
 immediately afterward. File descriptors supplied by selection and drag-and-drop
 requests also have exact ownership rules.
 
-The wlroots listener enters Common Lisp synchronously. Layer 1 must copy the
+The wlroots listener enters Common Lisp synchronously. The binding package must copy the
 exact transient fields or call the concrete retention primitive while that
-callback is active. It then invokes the protocol-specific Layer 2 sink. There is
+callback is active. It then invokes the compositor or exact owning component. There is
 no native queue and no generic lease. A retained surface buffer, owned FD, output
 state, or render pass has its own concrete Lisp lifetime type.
 
@@ -133,15 +140,15 @@ These operations cross wlroots, EGL, GBM, DRM, and kernel lifetime domains. A ra
 EGL context alone is insufficient, but that does not justify an Ataxia-specific
 C graphics protocol.
 
-wlroots owns the native mechanisms. Layer 1 exposes their exact typed APIs in
-Common Lisp. A Layer 2 renderer owns frame orchestration, shaders, draw ordering,
+wlroots owns the native mechanisms. Binding packages expose their exact typed APIs in
+Common Lisp. The compositor renderer owns frame orchestration, shaders, draw ordering,
 damage, effects, color decisions, direct-scanout policy, and every
 pixel-producing algorithm.
 
 ### 3.5 Security protocols need fail-closed sequencing
 
 Session locking is the clearest example. Normal content must be hidden before
-the compositor reports that the session is locked. Layer 2 therefore stops
+the compositor reports that the session is locked. The compositor therefore stops
 ordinary presentation, commits blank or valid lock frames, isolates input, and
 only then calls the exact wlroots acknowledgement function. If Lisp fails
 before acknowledgement, the lock was not established; if it fails afterward,
@@ -152,10 +159,10 @@ native policy runtime.
 
 ### 3.6 Responsibility matrix
 
-| Concern | Layer 1 responsibility | Layer 2 responsibility |
+| Concern | Binding responsibility | Compositor responsibility |
 |---|---|---|
 | `wl_surface.commit` | copy applied state and retain the exact buffer through typed Lisp wrappers | update semantic content, invalidate scenes, decide presentation |
-| XDG configure | expose exact setters/scheduler and ack/commit callbacks | decide geometry/states and match serials to policy transactions |
+| XDG configure | expose exact setters/scheduler and ack/commit callbacks | decide geometry/states and track the actual pending configure serials |
 | Move/resize request | deliver typed seat/serial/edges callback | authorize and run the interactive operation |
 | Input | deliver exact device callbacks and expose typed seat notification functions | mapping, grabs, hit testing, focus, cursor, shortcuts, accessibility |
 | Logical seat lifecycle | expose exact create/name/capabilities/keyboard/destroy calls and seat request callbacks | decide seat count, identity, device assignment, focus, and capabilities |
@@ -172,9 +179,9 @@ Native events must distinguish **requested**, **applied**, **committed**, and
 them into a generic “changed” event would make configure/ack, synchronized
 subsurface commits, frame callbacks, and rollback behavior ambiguous.
 
-## 4. Layer 1: Direct wlroots Bindings in Common Lisp
+## 4. Direct wlroots Bindings in Common Lisp
 
-Layer 1 has three implementation pieces:
+The binding side has three implementation pieces:
 
 - wlroots/libwayland as external native libraries;
 - a tiny Ataxia C shim only for listeners, macros, inline ABI details, and
@@ -182,11 +189,11 @@ Layer 1 has three implementation pieces:
 - Common Lisp CFFI declarations, typed wrappers, exact signal bindings, and
   protocol-specific functions.
 
-Neither Ataxia-authored C nor Layer 1 Lisp contains desktop behavior.
+Neither Ataxia-authored C nor the binding packages contain desktop behavior.
 
 ### 4.1 Lisp-owned runtime
 
-Layer 1 Common Lisp directly owns the root runtime:
+The direct bindings own the root runtime:
 
 - creates and destroys `wl_display` and its event loop;
 - creates the Wayland socket and starts/stops the backend;
@@ -198,10 +205,10 @@ Layer 1 Common Lisp directly owns the root runtime:
 - exposes structured Lisp conditions around exact native failures.
 
 It exposes exact typed constructors/destructors for server-owned objects whose
-existence is selected by the composition root or Layer 2 policy: backends,
+existence is selected by the compositor or its components: backends,
 renderers, allocators, protocol globals, logical seats, headless/nested outputs,
 server-published protocol handles, output cursor/layer objects, Xwayland, and
-scoped render/response resources. The same rule covers service-owned event-loop
+scoped render/response resources. The same rule covers component-owned event-loop
 sources, explicitly provisioned clients from owned FDs, synthetic input
 providers, server-originated activation tokens, and policy-granted native
 objects such as DRM leases.
@@ -213,7 +220,7 @@ their actual provenance.
 
 wlroots signals enter Lisp synchronously on the compositor owner thread. The
 callback copies transient fields or retains the exact concrete resource, then
-calls a protocol-specific Layer 2 generic function. There is no native event
+calls a protocol-specific compositor/component generic function. There is no native event
 queue.
 
 ### 4.2 Protocol-specific Lisp packages
@@ -224,7 +231,7 @@ Each protocol family is a separate Common Lisp package with:
 - typed wrapper classes for its real wlroots objects;
 - listeners for its exact wlroots signals;
 - concrete structs for callback data that must be copied;
-- protocol-specific Layer 2 sink generic functions;
+- protocol-specific compositor sink generic functions;
 - exact constructors/destructors for server-owned objects in that protocol;
 - typed functions that directly call the relevant `wlr_*` or `wl_*` API;
 - no dependency on world, scene, animation, focus, shell, or agent packages.
@@ -249,7 +256,7 @@ Examples:
 
 ### 4.3 Horizontal protocol expansion
 
-Layer 1 is horizontally extensible through peer Common Lisp packages around
+The bindings are horizontally extensible through peer Common Lisp packages around
 actual wlroots protocol implementations:
 
 ```text
@@ -273,16 +280,16 @@ Adding a protocol already implemented by wlroots requires:
 1. raw CFFI declarations for the pinned wlroots header;
 2. typed Lisp wrapper classes and exact signal listeners;
 3. concrete copied callback structs where necessary;
-4. protocol-specific Layer 2 sink generic functions;
+4. protocol-specific compositor sink generic functions;
 5. direct typed outbound functions;
-6. a Layer 2 policy service if behavior is optional.
+6. component methods or a compositor-mediated operation if behavior is optional.
 
 It does not require changes to the event-loop core, a module registry, a schema,
 an opcode router, a native queue, or a public C ABI.
 
 #### 4.3.1 Exact callback contracts
 
-The Layer 1–Layer 2 interface is Common Lisp. Each package exports exact names,
+The binding–compositor interface is Common Lisp. Each package exports exact names,
 for example:
 
 ```lisp
@@ -299,7 +306,7 @@ There is no shared subject/related/payload prefix.
 
 #### 4.3.2 Exact outbound contracts
 
-Layer 2 calls direct typed wrappers, for example:
+Compositor components call direct typed wrappers, for example:
 
 ```lisp
 (xdg-toplevel-set-size toplevel width height)
@@ -318,11 +325,11 @@ through their real typed signals.
 
 Ataxia pins one wlroots release line and checks that its raw bindings and tiny C
 shim were built against matching headers. A wlroots upgrade is an explicit
-binding migration, not a negotiated Layer 1 schema upgrade.
+binding migration, not a negotiated internal schema upgrade.
 
 Wayland advertised protocol versions remain separate. Lisp protocol packages
-record the globals and versions they actually created, and Layer 2 service
-metadata may require those concrete features.
+record the globals and versions they actually created, and compositor component
+validation may require those concrete features.
 
 #### 4.3.4 Per-client global filtering
 
@@ -350,52 +357,53 @@ This is a Wayland lifetime constraint, not a reason for a native plugin ABI.
 
 #### 4.3.7 Example: XDG toplevel
 
-1. The XDG Layer 1 package creates `wlr_xdg_shell` and installs listeners.
+1. The XDG binding package creates `wlr_xdg_shell` and installs listeners.
 2. A client creates a toplevel. The listener wraps the exact
    `wlr_xdg_toplevel` and calls `xdg-new-toplevel`.
-3. The Layer 2 XDG sink creates or updates a view and asks shell/placement
-   services for initial policy.
-4. Layer 2 calls the typed size/state setters and schedules a configure.
+3. The compositor creates or updates a view and directly asks its shell and
+   world components for initial policy.
+4. The shell calls the typed size/state setters and schedules a configure.
 5. The direct wrapper returns the concrete configure serial.
 6. The client acknowledges and commits. Exact ack and surface-commit callbacks
-   enter their respective Layer 2 sinks.
-7. Layer 2 correlates the serial, publishes the view mutation, and schedules
+   enter their respective owning compositor components.
+7. The shell correlates the serial, updates the view, and schedules
    presentation.
 8. A client move or resize request arrives as a policy request containing the
    seat, serial, and edge—not as an automatically executed native operation.
-9. The Layer 2 shell service owns the interactive operation and calls typed seat
+9. The shell owns the interactive operation and calls typed seat
    delivery/configure functions as needed.
 
 #### 4.3.8 Example: fractional scale
 
-1. The fractional-scale Layer 1 package wraps the real protocol object and calls
+1. The fractional-scale binding package wraps the real protocol object and calls
    its exact lifecycle sink methods.
-2. Layer 2 computes preferred scale from the surface’s current presentation
-   across output viewports.
-3. Layer 2 calls the concrete preferred-scale wrapper.
+2. The presentation engine computes preferred scale from the surface’s current
+   presentation across output viewports.
+3. It calls the concrete preferred-scale wrapper.
 4. wlroots/libwayland emit the correct protocol event.
 
-No world coordinate or output arrangement policy exists in Layer 1.
+No world coordinate or output arrangement policy exists in the bindings.
 
 #### 4.3.9 Example: session lock
 
-1. The exact wlroots lock request callback enters the Layer 2 security service.
-2. Layer 2 accepts or rejects it through concrete protocol calls.
-3. On acceptance, Layer 2 stops ordinary presentation and input routing.
+1. The exact wlroots lock request callback enters the compositor security policy.
+2. The compositor accepts or rejects it through concrete protocol calls.
+3. On acceptance, it directly stops ordinary presentation and input routing.
 4. It commits blank or valid lock frames for every affected output.
 5. It acknowledges the locked state only after those commits are established.
-6. Lock-surface callbacks remain exact protocol callbacks; Layer 2 decides output
-   assignment and presentation.
+6. Lock-surface callbacks remain exact protocol callbacks; the compositor
+   decides output assignment and presentation.
 
 #### 4.3.10 Example: capture
 
-1. The capture Layer 1 package delivers the exact request and target-buffer
-   wrappers to the Layer 2 capture policy.
-2. Layer 2 authorizes it and asks the current capture service for a frame tied to
-   a presentation revision.
+1. The capture binding package delivers the exact request and target-buffer
+   wrappers to the compositor capture component.
+2. The compositor authorizes it and directly asks the capture component for a
+   frame tied to a presentation snapshot.
 3. The current renderer performs readback or copy into the concrete capture
    buffer.
-4. Layer 2 calls the protocol-specific success/damage/timestamp functions.
+4. The capture component calls the protocol-specific success/damage/timestamp
+   functions.
 5. Concrete buffer and FD wrappers enforce their documented ownership.
 
 The capture package never reaches into renderer internals, and the renderer never
@@ -411,8 +419,8 @@ Every native object used above raw bindings has a typed Lisp wrapper containing:
 - its authoritative destroy listener;
 - optional immutable creation metadata.
 
-Layer 2 receives typed wrappers, never raw pointers. The destroy signal marks a
-wrapper dead and clears its pointer. A later typed call signals
+Compositor components receive typed wrappers, never raw pointers. The destroy
+signal marks a wrapper dead and clears its pointer. A later typed call signals
 `dead-wlr-object` before entering C. A weak pointer-to-wrapper table preserves
 identity without duplicating the wlroots object graph.
 
@@ -422,17 +430,17 @@ Lisp lifetime objects and matching direct native operations.
 ### 4.5 Incoming callback contract
 
 Every callback is defined by its protocol package and contains only exact fields
-from the pinned wlroots signal. Lifecycle, discrete input, protocol transaction,
-and output-frame callbacks are delivered synchronously in wlroots order. Layer 1
-does not coalesce or drop them.
+from the pinned wlroots signal. Lifecycle, discrete input, protocol state,
+and output-frame callbacks are delivered synchronously in wlroots order. The
+binding does not coalesce or drop them.
 
-The callback barrier copies transient fields, pins the active sink generation,
-contains Lisp conditions, tracks nested callback depth, and runs deferred
-destruction/effects when the outermost callback exits.
+The callback barrier copies transient fields, retains the active sink for the
+callback extent, contains Lisp conditions, tracks nested callback depth, and
+runs typed deferred destruction/actions when the outermost callback exits.
 
 ### 4.6 Outgoing typed-function contract
 
-Each public Layer 1 function documents:
+Each public binding function documents:
 
 - accepted concrete wrapper classes;
 - liveness and owner-thread requirements;
@@ -440,8 +448,8 @@ Each public Layer 1 function documents:
 - exact buffer, array, string, and FD ownership;
 - concrete native return value and Lisp conditions.
 
-Layer 2 must never infer success: it observes the direct return value or the
-later real protocol callback.
+The compositor must never infer success: it observes the direct return value or
+the later real protocol callback.
 
 ### 4.7 Required synchronous mechanisms
 
@@ -458,11 +466,11 @@ unsafe:
 The Ataxia C shim does none of this policy or bookkeeping. It only delivers the
 native callback to Lisp while the data is valid.
 
-### 4.8 Layer 2-requested native objects
+### 4.8 Compositor-requested native objects
 
-Layer 2 may request a native object only when the object exists because of
-compositor policy. Every request uses the exact constructor in the owning Layer
-1 package; there is no generic factory keyed by a type symbol.
+The compositor may request a native object only when the object exists because
+of compositor policy. Every request uses the exact constructor in the owning
+binding package; there is no generic factory keyed by a type symbol.
 
 Persistent examples include:
 
@@ -483,7 +491,8 @@ Persistent examples include:
 Concrete provider plugins may additionally implement backend, renderer, output,
 buffer, or input subtypes through the exact public wlroots interface
 `init`/`finish` functions. Such subtypes remain provider-owned and enter the rest
-of Layer 2 through the same typed contracts as stock wlroots implementations.
+of the compositor through the same typed contracts as stock wlroots
+implementations.
 
 Policy-created operation results include server-originated activation tokens,
 granted DRM leases, compositor-initiated drags, presentation feedback, custom
@@ -493,12 +502,12 @@ Scoped examples include output states, render passes, output configuration
 responses, textures, swapchains, render timers, and operation-local foreign
 arrays.
 
-Creation is a `required-before-publish` Layer 2 effect: validate policy first,
-call the exact owner-thread constructor, install required listeners/sink, receive
-a typed wrapper, then publish the semantic entity related to that wrapper.
-Constructor failure publishes nothing. Destruction retires semantic use first,
-then calls the exact destructor at an outermost safe point; the native destroy
-callback invalidates the wrapper.
+Creation follows construct-before-expose ordering: validate policy first, call
+the exact owner-thread constructor, install required listeners/sink, receive a
+typed wrapper, construct and wire the owning Lisp object, then expose it to peer
+components. Constructor failure exposes nothing. Destruction retires the Lisp
+object first, then calls the exact destructor at an outermost safe point; the
+native destroy callback invalidates the wrapper.
 
 Physical outputs/devices, backend-reported modes, ordinary connected clients,
 surfaces, XDG/layer/lock roles, client data objects, constraints, inhibitors,
@@ -506,7 +515,7 @@ client activation-token requests, and client capture requests are observed and
 never use this path. Server-originated variants are always separate typed APIs.
 
 The complete inventory and seat reference API are specified in
-[wlroots–Common Lisp Boundary and Layer 1–Layer 2 Interface](LAYER-1-2-INTERFACE.md).
+[wlroots–Compositor Common Lisp Interface](WLROOTS-COMPOSITOR-INTERFACE.md).
 
 ## 5. Rendering and DRM Boundary
 
@@ -517,11 +526,12 @@ Three approaches are technically possible:
 | Approach | Boundary quality | Practicality | Decision |
 |---|---|---|---|
 | Use `wlr_scene` as the framework model | Couples world, scene, and hit testing to wlroots 2D policy | Easiest conventional desktop | Reject as the common model |
-| Layer 2 renderer uses typed Lisp wrappers around wlroots render passes | Keeps policy/math in Lisp while wlroots owns GPU/backend mechanics | Practical first implementation | Recommended default |
-| Layer 2 renderer uses direct Lisp EGL/GLES bindings plus wlroots interop | Maximum shader/control flexibility with stricter lifetime work | Practical specialized backend | Supported plugin |
+| Compositor renderer uses typed Lisp wrappers around wlroots render passes | Keeps policy/math in Lisp while wlroots owns GPU/backend mechanics | Practical first implementation | Recommended default |
+| Compositor renderer uses direct Lisp EGL/GLES bindings plus wlroots interop | Maximum shader/control flexibility with stricter lifetime work | Practical specialized backend | Supported plugin |
 
-The renderer is always a Layer 2 service. Its concrete implementation may call
-wlroots renderer, allocator, buffer, render-pass, and output APIs through Layer 1
+The renderer is always a component stored directly on the compositor. Its
+concrete implementation may call wlroots renderer, allocator, buffer,
+render-pass, and output APIs through the binding packages
 or may use direct Lisp EGL/GLES bindings where wlroots exposes the required
 interop. No Ataxia-authored C renderer protocol is introduced.
 
@@ -536,16 +546,16 @@ and hit-test contracts cannot use its geometry as their source of truth.
 Using `wlr_renderer` does not require using `wlr_scene`. The initial compositor
 may create `wlr_renderer` and `wlr_allocator`, use their exact public buffer and
 render-pass APIs, and still keep all scene construction, projection, animation,
-damage policy, and hit testing in Layer 2.
+damage policy, and hit testing in compositor components.
 
-If a renderer needs direct client-buffer access, Layer 1 creates a concrete
+If a renderer needs direct client-buffer access, the binding package creates a concrete
 `surface-buffer-snapshot` during the surface commit callback using the exact
 wlroots retention primitive. It is released explicitly when superseded and is
 not represented by a generic lease ID.
 
-### 5.4 Graphics service boundary
+### 5.4 Renderer component boundary
 
-The selected Layer 2 graphics service owns:
+The selected renderer component owns:
 
 - renderer/device selection policy;
 - shader compilation and program caches;
@@ -556,31 +566,32 @@ The selected Layer 2 graphics service owns:
 - synchronization strategy;
 - direct-scanout eligibility and fallback.
 
-Layer 1 exposes typed Lisp wrappers for the concrete wlroots renderer, allocator,
+Binding packages expose typed Lisp wrappers for the concrete wlroots renderer, allocator,
 buffer, texture, render-pass, output-state, and presentation APIs. wlroots and
 its backend own DRM/KMS, GBM/EGL internals, scanout allocation, and native buffer
-release. Layer 1 does not wrap those mechanisms in a second C graphics runtime.
+release. The bindings do not wrap those mechanisms in a second C graphics runtime.
 
 All native graphics calls remain owner-thread-bound. A direct GLES plugin uses
 an explicit Lisp dynamic extent for the current context and never exposes it to
 agent/control threads.
 
-### 5.5 Frame transaction
+### 5.5 Frame operation
 
-A frame is a Layer 2 transaction over concrete wlroots wrappers:
+A frame is a specialized output/presentation operation over concrete wlroots wrappers:
 
-1. The exact `wlr_output.events.frame` callback enters the output service.
-2. Layer 2 freezes one presentation snapshot and its hit-test index.
+1. The exact `wlr_output.events.frame` callback enters the output manager.
+2. The presentation engine freezes one frame-local snapshot and its hit-test
+   index.
 3. The selected renderer acquires or configures a concrete wlroots render buffer
-   through typed Layer 1 calls.
+   through typed binding calls.
 4. It compiles and executes the render plan using wlroots render passes or the
    selected direct graphics binding.
-5. Layer 2 builds a concrete `wlr_output_state`, including damage and buffer.
+5. The output manager builds a concrete `wlr_output_state`, including damage and buffer.
 6. It calls the direct output test function and selects fallback on failure.
 7. It calls the direct output commit function.
 8. Exact presentation/release callbacks reconcile the frame.
-9. Layer 2 sends frame-done and presentation feedback only for surfaces actually
-   sampled by a successfully submitted frame.
+9. The presentation engine sends frame-done and presentation feedback only for
+   surfaces actually sampled by a successfully submitted frame.
 10. Specialized buffer/render-pass/output-state objects are finished or released
     on success, cancellation, output loss, and shutdown.
 
@@ -603,170 +614,185 @@ No renderer plugin may guess whether a buffer is inverted.
 
 ### 5.7 Performance constraints
 
-- CLOS dispatch is allowed at service, event, plan, and pass boundaries, not per
-  pixel or per vertex.
+- CLOS dispatch is allowed at component, callback, plan, and pass boundaries,
+  not per pixel or per vertex.
 - Render-pass descriptors and GPU data cross FFI at coarse operations.
 - A renderer may own one Lisp-managed foreign arena per frame where its concrete
   API benefits from it.
 - Shader/program state is cached by immutable descriptor.
 - Damage history is per output buffer, not just per output.
-- Direct scanout is a Layer 2 proposal tested by the concrete wlroots output API,
-  never assumed.
+- Direct scanout is a compositor proposal tested by the concrete wlroots output
+  API, never assumed.
 - Capture, software cursor, effects, and color conversion can veto direct scanout.
 - Synchronization starts correctness-first; fence-based pipelining is enabled
   only when the backend and GPU executor advertise compatible capabilities.
 
-## 6. Layer 2: Compositor Framework
+## 6. Compositor Aggregate and Direct Object Graph
 
-Layer 2 is not one “compositor” class. It is a small single-writer kernel plus
-independent domain protocols.
+Ataxia has one `compositor` object. It is the aggregate root for the native
+runtime wrapper, components, live compositor objects, callback depth, safe-point
+actions, external ingress, and lifecycle ordering.
 
-The concrete CLOS class, service, transaction, and package design is specified in
-[Layer 2 CLOS System Design](LAYER-2-CLOS-DESIGN.md).
+The previous independent kernel/services/transactions model is removed. The
+concrete object graph is specified in
+[Compositor Object Graph Design](COMPOSITOR-OBJECT-DESIGN.md).
 
-### 6.1 Runtime kernel
+### 6.1 Aggregate ownership
 
-The runtime kernel owns only:
+The compositor directly owns slots for:
 
-- owner-thread identity;
-- native callback depth and safe points;
-- stable framework object identities;
-- resource lifecycle;
-- service registry and atomic replacement;
-- hook registry and dispatch;
-- command mailbox;
-- clocks and frame scheduling coordination;
-- observation publication;
-- orderly shutdown.
+- native runtime;
+- output, seat, and surface managers;
+- shell and input router;
+- focus and cursor managers;
+- world and presentation engine;
+- renderer and animation engine;
+- hook registry and control plane;
+- application/view registries;
+- callback depth, typed deferred actions, clocks, and external inbox;
+- orderly startup, component replacement, and shutdown.
 
-It does not own window location, focus rules, renderer behavior, cursor behavior,
-or animation definitions.
+Managers own their live objects. For example, `seat-manager` owns seat objects
+and `output-manager` owns output objects, but every object remains reachable
+from the compositor aggregate.
+
+### 6.2 Direct component communication
+
+Components communicate through synchronous ordinary functions and CLOS generic
+functions on the owner thread. A component reaches a peer through an explicit
+compositor accessor or a direct peer reference wired by the compositor.
+
+Use a method on `compositor` when an operation coordinates several component
+invariants. For example, `begin-interactive-move` validates shell/seat state,
+establishes an input grab, updates focus and cursor state, resolves animation,
+and schedules presentation in one visible call sequence.
+
+Core components never communicate through:
+
+- internal mailboxes;
+- generic event/command envelopes;
+- promise/future completion on the owner thread;
+- publish/subscribe as the only path for required behavior;
+- service-key lookup or generation-pinned service references.
+
+### 6.3 Runtime turn
 
 A runtime turn is:
 
-1. drain agent/control commands and due Lisp timers;
+1. drain the one external agent/worker/control inbox and due Lisp timers;
 2. call `wl_event_loop_dispatch` for a bounded interval;
-3. let exact wlroots callbacks invoke protocol-specific Layer 2 sinks;
-4. commit their framework transactions and outermost-safe-point native effects;
-5. advance active clocks and animation graphs;
-6. freeze requested presentation snapshots;
-7. build, render, and submit frames through typed Layer 1 calls;
-8. publish observations and retire dead semantic/native wrappers;
+3. let exact wlroots callbacks invoke the compositor or owning component;
+4. let those objects call peer components directly;
+5. run typed outermost-safe-point destruction/actions;
+6. advance active clocks and animation instances;
+7. build, render, and submit requested frames through typed binding calls;
+8. emit bounded observations and retire dead wrappers/objects;
 9. flush Wayland clients.
 
-### 6.2 Framework object model
+The external inbox is only for crossing into the owner thread. No further inbox
+hop occurs after a request reaches the compositor.
 
-Do not make one large `application` object with fixed location, animation, and
-render slots. Separate identity from composition.
+### 6.4 Object model
 
-Recommended semantic objects:
+Recommended live objects are ordinary mutable owner-thread CLOS instances:
 
 - **client**: one Wayland connection and security identity;
-- **surface**: one protocol surface and committed content state;
+- **surface binding**: one native surface wrapper and committed content state;
 - **role**: XDG toplevel, popup, layer surface, cursor, drag icon, lock surface,
-  input popup, or another protocol role;
+  input popup, or another concrete protocol role;
 - **view**: a user-manageable presentation of one role/surface tree;
-- **application session**: a best-effort grouping of clients/views, never derived
-  solely from `app_id` and never used as a native identity;
-- **placement**: an opaque value supplied by a world service;
-- **presentation entity**: a semantic scene item that can produce render and hit
-  content;
+- **application**: a best-effort grouping of clients/views, never derived solely
+  from `app_id` and never used as a native identity;
+- **placement**: an object supplied and understood by the active world;
 - **seat**: logical input/focus state independent of a physical device;
-- **output viewport**: one output’s view into one world or output-local overlay;
-- **agent principal**: provenance and capabilities for automated actions.
+- **output**: native wrapper, viewport, render state, and frame state;
+- **interactive operation**: move/resize/gesture state and serial provenance;
+- **animation definition/instance**;
+- **frame context**: one output frame's specialized pending state.
 
-Objects have a bounded component map keyed by service-owned component types.
-For example, a view may have a planar placement component under one world plugin
-or a spherical placement component under another. The base view never exposes
-`x`, `y`, latitude, or quaternion slots.
+Core state uses explicit typed slots, not a generic immutable component map.
+Optional low-frequency extension metadata may use a bounded property table.
 
-Components are replaced through their owning service protocol, not mutated by
-unrelated plugins.
+Wayland does not define a canonical application. One process may create many
+clients, and one client may create independently managed toplevels. Placement
+therefore belongs to each view. Application grouping policy may request several
+view operations but does not replace their identities.
 
-Wayland does not define a canonical “application” object. One process may create
-many clients, one client may create many independently managed toplevels, and an
-`app_id` is metadata rather than a secure or unique identity. Placement therefore
-belongs to a **view**, not an application session. A grouping policy may move all
-views in an application, but it does so through view-placement operations.
+### 6.5 Direct mutation and specialized pending state
 
-### 6.3 Service registry
+Ordinary methods validate and mutate their owning objects directly. There is no
+universal transaction, mutation descriptor, write set, revision conflict system,
+or effect queue.
 
-Every interchangeable component is accessed through a named service:
+Real asynchronous protocols retain specialized pending objects for:
 
-- services have identity, version, capabilities, dependencies, and generation;
-- acquisition returns a generation-pinned service reference for the duration of
-  one event or frame transaction;
-- replacement constructs and validates a candidate scope before publication;
-- failure leaves the prior scope active;
-- teardown occurs after no transaction retains the old generation;
-- service replacement and plugin activation run only on the owner thread.
+- XDG configure/ack state;
+- output test/commit/page-flip state;
+- presentation feedback;
+- transfer and owned-FD state;
+- session lock acquisition;
+- capture completion;
+- interactive operations;
+- animation instances.
 
-Hot lookup is not performed inside inner rendering or hit-test loops. A frame
-pins the relevant service generations once.
+These model the real protocol or operation and are owned by the relevant
+component. They do not derive from a general transaction class.
 
-### 6.4 Hooks
+### 6.6 Component replacement
 
-Hooks observe or modify framework transitions. They are not substitutes for
-domain protocols.
+Replaceable strategies are explicit compositor slots. Replacement occurs only
+at an owner-thread safe point:
 
-Each hook declares:
+1. construct and validate the candidate;
+2. verify or reject migration of live owned objects;
+3. detach the old component from new calls;
+4. swap the compositor slot and rewire declared direct references;
+5. attach the candidate and migrate/rebuild supported state;
+6. destroy the old component after retained frames/callbacks release it.
 
-- name and version;
-- argument schema;
-- reduction rule;
-- ordering rule;
-- whether veto is allowed;
-- failure policy;
-- whether it is security critical;
-- observation classification.
+There is no service scope or generation lookup. Replacement may be rejected when
+the native API, active frames, or placement representation cannot migrate safely.
 
-Handlers have stable identities and real-valued priorities. Mutation during
-dispatch applies to the next dispatch, never the current snapshot.
+### 6.7 Hooks and general operation contexts
 
-Critical hooks cannot silently ignore failures. Veto results must be honored by
-the transaction that dispatched them.
+Hooks are typed, synchronous extension points, not component communication.
+Required focus, cursor, input, shell, or renderer behavior uses direct calls.
 
-### 6.5 General mutation events
-
-Do not hard-code animation and policy around a short list such as `map`,
-`pickup`, and `drop`.
-
-All meaningful framework changes use a common mutation descriptor:
+Do not hard-code animation/policy around a short list such as `map`, `pickup`,
+and `drop`. Hook and animation matching receive a typed operation context with:
 
 - subject;
-- component or semantic property path;
-- operation;
-- old and proposed values;
-- cause;
-- provenance;
-- timestamp;
-- transaction identity;
-- arbitrary bounded metadata.
+- operation descriptor;
+- old and proposed state where meaningful;
+- cause and provenance;
+- timestamp and phase;
+- bounded operation-specific metadata.
 
-Domain services publish more specific event types when needed, but animation,
-observation, and agent policies can match the general descriptor. A plugin may
-introduce a new property and transition without changing the animation core.
+Hook points explicitly declare observe, veto, transform, or carefully controlled
+around behavior. Slow observation happens outside the compositor thread after a
+bounded snapshot crosses the external control boundary.
 
 ## 7. Domain Component Structure
 
-### 7.1 Protocol policy adapters
+### 7.1 Protocol-owning components
 
-One Layer 2 sink service per protocol family handles the exact Layer 1 callback
-generics and proposes semantic framework operations. Sinks contain policy-facing
-translation, not raw native storage.
+The compositor or one exact owning component per protocol family handles the
+binding callback generics and directly invokes the relevant shell/input/output/
+transfer operation. Sinks contain policy-facing translation, not raw native
+storage.
 
 Examples:
 
 - XDG move request -> shell operation request with seat and serial provenance;
 - XDG resize request -> interactive resize session;
 - layer surface commit -> output-space reservation update;
-- surface commit -> content snapshot replacement and damage notification;
+- surface commit -> direct content state replacement and damage notification;
 - selection request -> transfer-policy decision;
-- session lock request -> security-policy transaction.
+- session lock request -> compositor-mediated fail-closed lock operation.
 
 ### 7.2 World and placement
 
-The world service owns all spatial meaning:
+The active world object owns all spatial meaning:
 
 - placement construction and replacement;
 - relative placement composition;
@@ -776,14 +802,14 @@ The world service owns all spatial meaning:
 - visibility, ordering, and spatial navigation;
 - serialization for agents and persistence.
 
-The compositor kernel never performs arithmetic on placements.
+Other compositor components never perform arithmetic on placements.
 
 A conventional desktop world may expose Euclidean helpers, but those helpers are
-part of that plugin, not a shared kernel requirement.
+part of that plugin, not a shared compositor requirement.
 
 ### 7.3 Scene and presentation
 
-Scene sources enumerate semantic entities. A presentation builder freezes:
+Scene sources enumerate live compositor objects. The presentation engine freezes:
 
 - output and viewport state;
 - projected render geometry;
@@ -793,8 +819,8 @@ Scene sources enumerate semantic entities. A presentation builder freezes:
 - animation samples;
 - semantic metadata for observations.
 
-The snapshot is immutable. Rendering and input hit testing must use the same
-snapshot revision. This prevents animated or transformed windows from being
+The frame-local snapshot is immutable for its frame. Rendering and input hit
+testing must use the same projected geometry. This prevents animated or transformed windows from being
 drawn in one location but receiving input in another.
 
 Output-local overlays, including panels, lock surfaces, notifications, and
@@ -825,7 +851,7 @@ seat removal, or cancellation.
 
 ### 7.5 Input pipeline
 
-Input flows through replaceable stages:
+Input flows through directly called stages/components:
 
 1. native device event normalization;
 2. device-to-logical-seat assignment;
@@ -841,12 +867,13 @@ Pointer, keyboard, touch, tablet, switches, and synthetic agent input remain
 distinct typed events. Synthetic events carry provenance and cannot impersonate
 physical input.
 
-Protocol delivery is a seat-sink service. It calls public typed Layer 1 seat
-functions and never imports raw CFFI bindings.
+Protocol delivery is owned by the seat/input objects. They call public typed
+seat binding functions and never import raw CFFI bindings.
 
 ### 7.6 Cursor
 
-Cursor responsibilities are separate services:
+Cursor responsibilities are coordinated by the cursor manager with direct calls
+to input, focus, world, animation, and presentation:
 
 - motion interpretation;
 - constraints;
@@ -863,7 +890,7 @@ causes the “cursor cannot interact with the window below” failure.
 
 ### 7.7 Animation
 
-Animation consists of independent protocols:
+Animation consists of replaceable objects and generic functions for:
 
 - clock;
 - event/transition matcher;
@@ -877,8 +904,8 @@ Animation consists of independent protocols:
 
 An animation definition is resolved using the full context:
 
-- subject and its components;
-- mutation descriptor;
+- subject and its direct state;
+- transition/operation descriptor;
 - cause and provenance;
 - current world/profile;
 - output and presentation context;
@@ -890,8 +917,8 @@ transition kinds require no animation-core edit.
 
 Animations may target either:
 
-- authoritative model properties, through a domain service mutation; or
-- presentation-only properties, through an immutable presentation overlay.
+- authoritative model properties, through the owning object's operation; or
+- presentation-only properties, through a frame-local presentation overlay.
 
 Presentation animation must update render and hit geometry together. Resize
 animation must respect XDG configure/ack/commit boundaries rather than issuing
@@ -909,7 +936,8 @@ Performance rules:
 
 ### 7.8 Output management
 
-Separate services own:
+The output manager owns outputs and directly coordinates components responsible
+for:
 
 - output discovery and identity;
 - mode/scale/transform policy;
@@ -921,8 +949,8 @@ Separate services own:
 - variable refresh and tearing policy;
 - direct-scanout policy.
 
-Layer 2 builds concrete output states and invokes typed Layer 1 test/commit
-functions. Layer 2 handles failure and selects fallback; Layer 1 never silently
+The output manager builds concrete output states and invokes typed binding
+test/commit functions. It handles failure and selects fallback; the bindings never silently
 picks a desktop arrangement.
 
 ### 7.9 Transfer, text, and auxiliary protocols
@@ -936,8 +964,8 @@ was announced. Completion requires explicit terminal state and cleanup.
 
 ## 8. Agentic Control Plane
 
-Agent control is not a parallel compositor. It enters the same transactions and
-service boundaries as human input and shell policy.
+Agent control is not a parallel compositor. After one external-inbox hop, it
+invokes the same compositor methods as human input and shell policy.
 
 ### 8.1 Principals and provenance
 
@@ -948,28 +976,29 @@ provenance containing:
 - request identity;
 - declared and granted capabilities;
 - timestamp and deadline;
-- optional parent transaction;
+- optional parent operation/request;
 - audit classification.
 
 ### 8.2 Typed actions
 
-Agents submit typed actions, not arbitrary wlroots calls. Action providers
-declare schemas, capabilities, preflight, preparation, and commit behavior.
+Agents submit typed actions, not arbitrary wlroots calls. Action handlers
+declare schemas, capabilities, validation, and execution behavior.
 
 Examples:
 
 - discover semantic objects;
 - focus or activate a view;
-- request a placement mutation;
+- request a placement operation;
 - invoke shell operations;
 - inject bounded input through a selected logical seat;
 - configure outputs;
 - request a capture;
-- install or replace an approved service/plugin;
+- install or replace an approved component/plugin;
 - step a virtual clock or frame scheduler.
 
-Authorization, validation, and service generation are pinned across prepare and
-commit to prevent time-of-check/time-of-use changes.
+Authorization and validation run on the owner thread immediately before the
+direct operation. Long work must finish before re-entry and is revalidated when
+its result reaches the external inbox.
 
 ### 8.3 Observations
 
@@ -979,7 +1008,7 @@ Agents consume versioned semantic snapshots and diffs:
 - focus and active operations;
 - outputs and presentation revisions;
 - animation and frame state;
-- plugin/service generations;
+- active component types and lifecycle state;
 - structured failures and traces.
 
 Observations are bounded and classified. Secure or sensitive content is filtered
@@ -1053,7 +1082,7 @@ than one vague completeness claim.
 - security-context tagging where available;
 - virtual input exposed only through capability policy;
 - capture/clipboard/input authorization;
-- bounded semantic registries, observations, agent mailboxes, and per-client
+- bounded object registries, observations, the external control inbox, and per-client
   resources;
 - privileged protocol filtering by client principal.
 
@@ -1065,7 +1094,7 @@ and real-client evidence.
 
 The repository should enforce boundaries through separate ASDF systems.
 
-### 10.1 Layer 1 systems
+### 10.1 Direct binding systems
 
 - `ataxia.wlr.raw.*`: private CFFI declarations pinned to wlroots/libwayland;
 - `ataxia.wlr.glue`: loading and the minimal listener/inline shim;
@@ -1077,24 +1106,21 @@ The repository should enforce boundaries through separate ASDF systems.
 - `ataxia.wlr.protocol.*`: one typed package per protocol family;
 - native `libataxia-wlr-glue`: only direct wlroots/libwayland ABI helpers.
 
-Layer 2 systems may import public typed Layer 1 packages but never raw CFFI
-packages or foreign pointers.
+Compositor/component systems may import public typed binding packages but never
+raw CFFI packages or foreign pointers.
 
-### 10.2 Layer 2 kernel systems
+### 10.2 Compositor aggregate systems
 
-- `ataxia.kernel.identity`;
-- `ataxia.kernel.resources`;
-- `ataxia.kernel.events`;
-- `ataxia.kernel.services`;
-- `ataxia.kernel.hooks`;
-- `ataxia.kernel.plugins`;
-- `ataxia.kernel.mailbox`;
-- `ataxia.kernel.runtime`;
-- `ataxia.kernel.observation`.
+- `ataxia.compositor`: aggregate, owner-thread runtime, direct orchestration;
+- `ataxia.compositor.objects`: application, view, output, seat, operations;
+- `ataxia.compositor.lifecycle`: construction, safe points, replacement, shutdown;
+- `ataxia.compositor.inbox`: the single external ingress boundary.
 
-### 10.3 Layer 2 domain systems
+The aggregate systems contain no domain component or protocol-specific policy.
 
-- `ataxia.protocol-policy.*`;
+### 10.3 Direct component systems
+
+- `ataxia.protocol.*`;
 - `ataxia.world`;
 - `ataxia.scene`;
 - `ataxia.presentation`;
@@ -1110,7 +1136,9 @@ packages or foreign pointers.
 - `ataxia.capture`;
 - `ataxia.security`;
 - `ataxia.agent`;
-- `ataxia.control`.
+- `ataxia.control`;
+- `ataxia.hooks`;
+- `ataxia.observation`.
 
 ### 10.4 Profile/plugin systems
 
@@ -1123,26 +1151,27 @@ packages or foreign pointers.
 - default shell/focus/input/cursor/animation policy;
 - headless deterministic profile.
 
-No default plugin may be required by the kernel to start.
+No default profile may be required by the compositor aggregate to construct.
 
 ## 11. Failure Containment and Replacement
 
-### 11.1 Transaction boundaries
+### 11.1 Operation boundaries
 
-The following are atomic from Layer 2’s perspective:
+There is no general compositor transaction. Each operation declares its real
+validation, mutation, native-call, and failure boundary. Specialized boundaries
+include:
 
-- plugin/service replacement;
-- one protocol policy response;
-- one framework mutation;
+- one safe-point component replacement;
+- one concrete protocol policy response;
 - one input protocol frame;
-- one animation sample publication;
-- one presentation snapshot;
-- one output frame submission;
-- one multi-output configuration;
-- one agent action batch when its provider declares atomic support.
+- one animation sampling pass;
+- one frame-local presentation snapshot and output submission;
+- one multi-output configuration using the native facilities available;
+- one agent action, or an explicitly implemented composite action.
 
-Native operations that cannot be rolled back must return honest partial or
-terminal state. The framework must not claim rollback it cannot perform.
+Native operations that cannot be rolled back return honest partial or terminal
+state. Compositor methods repair owned state without claiming rollback they
+cannot perform.
 
 ### 11.2 Cleanup ordering
 
@@ -1150,10 +1179,10 @@ Cleanup proceeds from policy toward native mechanism:
 
 1. stop accepting new control work;
 2. cancel interactive operations and animation bindings;
-3. quiesce protocol policy sinks;
+3. quiesce protocol-owning components;
 4. release presentation and surface-buffer snapshots;
-5. cancel frame transactions;
-6. retire framework resources;
+5. cancel or finish outstanding frame contexts;
+6. retire compositor objects and detach components;
 7. detach listeners, destroy protocol globals, and invalidate typed wrappers;
 8. stop backends and destroy EGL/GBM/Wayland objects.
 
@@ -1161,10 +1190,10 @@ Every cleanup operation is idempotent.
 
 ### 11.3 Owner-thread rule
 
-All native calls, framework mutations, plugin replacement, and REPL evaluation
+All native calls, compositor mutations, component replacement, and REPL evaluation
 occur on the compositor owner thread. Worker threads may compile shaders, encode
 captures, or perform agent computation only against detached immutable data and
-must return results through the mailbox.
+must return results through the external inbox.
 
 ## 12. Performance Feasibility
 
@@ -1184,15 +1213,15 @@ The architecture is performant if it avoids fine-grained boundary crossings.
 
 - direct listener-token lookup on the callback path;
 - specialized callback structs and foreign-memory arenas where measured;
-- immutable snapshots with structural sharing;
-- cached service-generation lookup per transaction;
+- frame-local immutable presentation snapshots;
+- direct compositor slot access, fetched once before tight loops;
 - compiled render and animation descriptors;
 - bulk FFI arrays rather than one call per vertex;
 - spatial acceleration owned by the active world implementation;
 - dirty propagation and per-output damage;
 - no full-scene semantic serialization on every observation;
 - frame scheduling driven by output deadlines and active work;
-- profiling counters at every layer boundary.
+- profiling counters at binding callbacks and component hot-path boundaries.
 
 ### 12.3 Performance gates
 
@@ -1201,11 +1230,11 @@ Before adding visual complexity, the implementation must measure:
 - native-callback-to-policy latency under high-rate pointer motion;
 - frame build, render, and commit time separately;
 - allocation volume per idle and animated frame;
-- callback depth, duration, and any Layer 2 coalescing counts;
+- callback depth, duration, and any explicit input/frame coalescing counts;
 - buffer age and damaged area;
 - animation count and sample time;
 - hit-test query time;
-- agent observation queue pressure;
+- external inbox and agent observation pressure;
 - missed presentation deadlines.
 
 The target is not “zero CLOS dispatch.” The target is no unbounded allocation or
@@ -1221,9 +1250,10 @@ protocol before a real client works.
 Deliverables:
 
 - approve this architecture and unresolved decisions;
-- freeze typed Layer 1 callback/function ownership rules;
+- freeze typed binding callback/function ownership rules;
+- freeze compositor slots, component ownership, and direct call paths;
 - freeze exact native-object factory and destruction/quiescing rules;
-- freeze coordinate, buffer, and frame transaction contracts;
+- freeze coordinate, buffer, and specialized frame-operation contracts;
 - define dependency rules enforced by ASDF/package boundaries.
 
 Evidence:
@@ -1245,7 +1275,7 @@ Deliverables:
 Evidence:
 
 - headless process starts, reports devices, dispatches, and stops cleanly;
-- a Layer 2-created seat is advertised only after its sink/listeners are ready
+- a compositor-created seat is advertised only after its sink/listeners are ready
   and is removed cleanly through `wlr_seat_destroy`;
 - Ataxia-authored C contains only audited wlroots/libwayland ABI glue.
 
@@ -1256,7 +1286,7 @@ Deliverables:
 - core surface/subsurface and XDG toplevel callbacks;
 - surface-buffer snapshots;
 - wlroots render-pass or direct-GLES output path;
-- one Layer 2 planar renderer and presentation snapshot;
+- one compositor-owned planar renderer and frame-local presentation snapshot;
 - exact frame-done and presentation calls/callbacks.
 
 Evidence:
@@ -1303,7 +1333,7 @@ Evidence:
 
 Deliverables:
 
-- mutation matcher, definition resolver, clocks, timelines, bindings, and
+- transition matcher, definition resolver, clocks, timelines, bindings, and
   presentation integration;
 - per-object and per-context animation policy;
 - bounded active-set scheduler.
@@ -1319,7 +1349,7 @@ Evidence:
 
 Deliverables:
 
-- typed RPC, observation diffs, provenance, capabilities, action providers;
+- typed RPC, observation diffs, provenance, capabilities, action handlers;
 - input injection through the live input pipeline;
 - semantic discovery, focus, placement, output, capture, and plugin actions;
 - trusted local Lisp REPL.
@@ -1327,7 +1357,8 @@ Deliverables:
 Evidence:
 
 - unauthorized requests have zero compositor effects;
-- service replacement is visible immediately and remains rollback-safe;
+- component replacement is visible at one safe point or rejected without
+  corrupting the active component;
 - agents can operate terminal and Firefox through semantic and input actions.
 
 ### Milestone 7: Production protocol and DRM coverage
@@ -1358,14 +1389,18 @@ Evidence:
   to all framework code.
 - Raw native pointers as framework identities.
 - A bridge that owns window movement, focus, scene layout, or animation policy.
+- Independent compositor components communicating through internal mailboxes.
+- A general transaction/mutation/effect framework around every callback.
+- Service scopes, service generations, and runtime service-key lookup.
+- Immutable entity-component storage as the primary compositor state model.
 - A framework that pretends buffer/fence/KMS lifetime can be handled after the
   native callback has returned.
 - `wlr_scene` as the universal world and hit-test model.
 - A fixed Euclidean position slot on applications or views.
 - Feature-specific animation triggers hard-coded into the animation core.
 - Separate render and input geometry calculations.
-- One global cursor service that combines motion, focus, surface requests,
-  appearance, and rendering.
+- A cursor component that privately reimplements motion, focus, world mapping,
+  surface requests, and rendering instead of calling their owning components.
 - Agents mutating compositor objects from control threads.
 - Advertising protocol globals before their lifecycle and security semantics are
   implemented.
@@ -1376,7 +1411,7 @@ Evidence:
 
 The following choices remain explicit approval points:
 
-1. **Graphics execution**: choose the initial Layer 2 renderer implementation:
+1. **Graphics execution**: choose the initial compositor renderer implementation:
    typed wlroots render passes or direct Lisp EGL/GLES.
 2. **Lisp implementation**: choose SBCL-only initial bindings or immediate
    portability across multiple Common Lisp implementations.
@@ -1385,7 +1420,7 @@ The following choices remain explicit approval points:
 4. **Plugin trust**: decide whether plugins are trusted in-process Lisp only, or
    whether untrusted/out-of-process extensions are a first-class requirement.
 5. **Agent trust model**: define which local principals may use the trusted REPL,
-   inject input, capture content, read clipboard data, and replace services.
+   inject input, capture content, read clipboard data, and replace components.
 6. **Default desktop**: approve the conventional planar profile as the initial
    usability target while retaining world independence in every contract.
 7. **Protocol target**: select the pinned wlroots and wayland-protocols versions

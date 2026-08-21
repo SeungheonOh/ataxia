@@ -7,7 +7,7 @@ running compositor. It owns the native runtime wrapper, all compositor
 components, all live compositor objects, lifecycle ordering, and the owner-thread
 execution context.
 
-The previous independent Layer 2 kernel/service/transaction design is removed.
+The previous independent policy-kernel/service/transaction design is removed.
 There is no internal actor system, service scope, component-schema registry,
 generic event bus, immutable entity-component store, or mailbox between
 compositor components.
@@ -584,9 +584,11 @@ capabilities and redaction policy.
 
 Suggested Common Lisp systems:
 
-- `ataxia.native.*`: direct typed wlroots/libwayland packages;
-- `ataxia.compositor`: aggregate, lifecycle, safe points, external ingress;
+- `ataxia.wlr.*`: direct typed wlroots/libwayland packages;
+- `ataxia.compositor`: aggregate and direct orchestration;
 - `ataxia.compositor.objects`: application, view, output, seat, operation;
+- `ataxia.compositor.lifecycle`: construction, safe points, replacement, shutdown;
+- `ataxia.compositor.inbox`: the single external ingress boundary;
 - `ataxia.output`;
 - `ataxia.surface`;
 - `ataxia.shell`;
@@ -599,6 +601,7 @@ Suggested Common Lisp systems:
 - `ataxia.animation`;
 - `ataxia.hooks`;
 - `ataxia.control`;
+- `ataxia.observation`;
 - profile packages that construct and wire concrete component objects.
 
 Domain packages may depend on shared value/object packages and public typed

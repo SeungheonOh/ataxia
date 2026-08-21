@@ -364,6 +364,8 @@ The physical boundary is:
   coordinate policy;
 - `src/behavior/effects.lisp`: policy-owned shader sources, effect styles, and
   effect presentation items;
+- `src/behavior/reveal.lisp`: policy-owned application reveal materials,
+  target-specific shader variants, and reveal animation bindings;
 - `src/behavior/scene.lisp`: shared policy-owned scene assembly;
 - `src/behavior/animation.lisp`: policy animation resolution;
 - `src/behavior/planar.lisp`: planar interaction and scene projection;
@@ -384,11 +386,14 @@ The physical boundary is:
 8. Behavior animation tracks can target per-view effect parameters. The planar
    and spherical policies use an `elevation` parameter to animate ambient and
    cast shadows across move pickup and settle transitions.
-9. Transactional policy replacement migrates live views and outputs and rolls
+9. New applications use a behavior-owned codec-corruption reveal. Its shader
+   parameters animate independently per view and the prior view shader is
+   restored when the reveal resolves.
+10. Transactional policy replacement migrates live views and outputs and rolls
    back failed trial snapshots.
-10. The spherical policy renders curved root surfaces, subsurfaces, and popups
+11. The spherical policy renders curved root surfaces, subsurfaces, and popups
    and supports bidirectional live migration with the planar policy.
-11. Projected partial damage remains a performance refinement; correctness uses
+12. Projected partial damage remains a performance refinement; correctness uses
    the full-output redraw fallback.
 
 ## Completion Criteria

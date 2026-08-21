@@ -111,8 +111,20 @@ Effect parameters are stored per view and may drive any behavior material.
 The default move interaction animates `elevation`; the shadow behavior maps it
 to cast offset and blur while retaining a close ambient shadow on every edge.
 Shader programs are compiled in the live EGL context, registered by name, and
-selected per view. Agents with local shader capability can replace source and
-update uniforms through typed control actions.
+selected per view. One logical texture-program name may own separate
+`sampler2D` and `samplerExternalOES` variants, so a behavior effect remains
+consistent across SHM and imported DMA-BUF surface textures. Agents with local
+shader capability can replace source and update uniforms through typed control
+actions.
+
+The default application reveal is behavior-owned. A newly mapped view
+temporarily selects a codec-corruption texture program while animation tracks
+drive macroblock displacement, chroma separation, posterization, and a moving
+corruption phase toward a clean sample. The program and its uniforms are stored
+per view, apply to its root surface, subsurfaces, and popups, and restore the
+view's previous shader when the reveal completes. This is a real-time
+MPEG/datamosh-inspired spatial effect; it does not retain prior decoded frames
+and therefore is not temporal video datamoshing.
 
 Animation lifecycle hooks are `animation-resolving`,
 `before-animation-start`, `after-animation-start`, `animation-cancelled`, and

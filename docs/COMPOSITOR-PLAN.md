@@ -223,7 +223,267 @@ Examples:
 - tablet, relative pointer, constraints, and gestures;
 - Xwayland association.
 
-### 4.3 Object identity and lifetime
+### 4.3 Horizontal protocol expansion
+
+Layer 1 is horizontally extensible. The native runtime is a host substrate and
+each Wayland protocol family is a peer module attached to that host:
+
+```text
+                         +-- core surface module
+                         +-- XDG shell module
+                         +-- layer shell module
+Wayland/wlroots host ----+-- seat/input module
+                         +-- data-transfer module
+                         +-- session-lock module
+                         +-- DMA-BUF/sync module
+                         +-- capture module
+                         +-- future protocol module
+```
+
+No protocol module sits “above” another protocol module as a framework layer.
+Dependencies are declared, but every module speaks to the same host interfaces.
+
+Adding an ordinary protocol must not require editing the event-loop core, object
+registry, queue implementation, or server lifecycle. It adds:
+
+1. one native module implementing wire/native mechanics;
+2. one Common Lisp Layer 1 decoder/command wrapper;
+3. one Layer 2 policy adapter if the protocol has compositor policy;
+4. one or more Layer 2 service extensions where its semantics belong.
+
+#### 4.3.1 Native module descriptor
+
+Each native protocol module declares a descriptor containing:
+
+- stable module name and numeric namespace;
+- module schema version;
+- required native-host ABI range;
+- protocol interface names and maximum advertised versions;
+- required host capabilities;
+- dependencies on other protocol modules;
+- initialization, start, quiesce, and finish functions;
+- event schema table;
+- command schema and executor table;
+- native object-kind table;
+- default global-exposure classification;
+- resource and queue quotas.
+
+The host discovers all linked descriptors, validates dependency closure, and
+starts modules in topological order. It stops them in reverse order.
+
+The first implementation should compile modules as separate translation units
+linked into one native library. This provides source and ownership separation
+without prematurely freezing a `dlopen` plugin ABI. Runtime enable/disable and
+per-client global filtering are still supported. Dynamically loaded native
+modules can be added after the host ABI and failure model are proven.
+
+Common Lisp protocol and policy modules remain dynamically replaceable from the
+beginning.
+
+#### 4.3.2 Native host interface
+
+Protocol modules receive a narrow internal host interface instead of the whole
+server structure. It provides only mechanisms:
+
+- allocate, look up, and retire typed handles;
+- attach wrappers to client and parent lifetimes;
+- publish a bounded typed event;
+- register a command executor;
+- acquire and release buffer, FD, timeline, and frame-target leases;
+- read server/backend capability snapshots;
+- request mandatory protocol disconnect/error reporting;
+- write structured diagnostics;
+- query owner-thread and shutdown state.
+
+The host interface does not expose world, view, focus, shell, animation, scene,
+or agent objects because those exist only in Layer 2.
+
+A module must not reach into another module’s private wrapper. Cross-protocol
+relationships use typed handles and declared host queries. For example, an XDG
+toplevel refers to its core surface handle rather than a foreign
+`struct atx_surface *` field owned by another translation unit.
+
+#### 4.3.3 Extensible event envelope
+
+The public event ABI must not be one ever-growing C union. That design makes each
+new protocol change the size and layout of all events and eventually recreates a
+monolithic bridge.
+
+Use a fixed event envelope:
+
+- native-host ABI version;
+- module namespace;
+- module schema version;
+- module-local event opcode;
+- event flags and loss class;
+- sequence and timestamp;
+- subject, related, and parent handles;
+- payload size and payload identity.
+
+The payload is a bounded, size-prefixed, pointer-free module record. Variable
+strings and arrays live in a bounded event-owned blob and are copied before the
+event is acknowledged. The Lisp decoder for that module knows the record schema.
+Unknown optional fields are ignored by size; unknown required schema versions are
+rejected during module negotiation.
+
+This preserves static type checking inside each protocol module without making
+the host event structure grow for every extension. It is preferable to a
+string-keyed property list at the native boundary because native payloads need
+precise bounds, ownership, and ABI layouts.
+
+#### 4.3.4 Extensible command envelope
+
+Outgoing operations use the corresponding fixed command envelope:
+
+- module namespace and schema version;
+- module-local command opcode;
+- command/correlation identity;
+- target handle and expected object kind;
+- bounded pointer-free command payload;
+- optional lease identities;
+- required state/generation preconditions.
+
+The host routes the command directly to the owning protocol module. The module
+revalidates native state at execution time, performs the wlroots/libwayland call,
+and returns a typed completion payload.
+
+Layer 2 can therefore “emit all events” in the policy sense: it chooses every
+optional compositor-to-client message by submitting a command. Layer 1 remains
+the component that serializes that choice into the correct native protocol event
+and enforces ordering and lifetime.
+
+Protocol-mandated housekeeping may remain automatic in Layer 1. Examples include
+destroying inert resources, replying to mandatory display mechanics, and posting
+a protocol error for an invalid request. These are not policy choices.
+
+#### 4.3.5 Capability and schema negotiation
+
+At startup, the Lisp bridge queries the native module catalog. A Layer 1 Lisp
+module activates only if:
+
+- the native module is present;
+- its schema version is supported;
+- required host capabilities are available;
+- its dependency modules are active.
+
+Layer 2 sees protocol capabilities through immutable service metadata. A policy
+plugin can require `xdg-shell >= 7`, `linux-dmabuf >= 5`, or an explicit-sync
+capability without importing native constants.
+
+Protocol XML version, native module schema version, Layer 1 host ABI version, and
+Layer 2 service version are separate values. Conflating them would make upgrades
+unnecessarily coupled.
+
+#### 4.3.6 Per-client global filtering
+
+Privileged and optional globals cannot simply be advertised to every client.
+Because a Wayland global-filter callback is synchronous, Layer 2 publishes an
+immutable access-policy snapshot to Layer 1 at safe points. Protocol modules
+label globals with access classes, and the native host evaluates the frozen
+snapshot during registry advertisement/bind.
+
+Layer 1 defaults security-sensitive globals to hidden until a policy snapshot
+explicitly permits them. The access-policy snapshot contains only native-matchable
+client labels and decisions; arbitrary Lisp is never called from the filter.
+
+#### 4.3.7 Module failure containment
+
+Each module has separate accounting for:
+
+- live native wrappers;
+- tombstones;
+- pending critical events;
+- coalescible events;
+- payload/blob bytes;
+- retained buffers and file descriptors;
+- pending commands.
+
+One module exhausting diagnostic or motion capacity must not block lifecycle
+events from another module. A module that cannot preserve a protocol-critical
+event must disconnect the responsible client or fail the operation explicitly;
+it must not silently desynchronize Layer 2 from native state.
+
+Linked native modules share an address space, so this design contains logical
+and resource failures, not arbitrary memory corruption. Native memory safety
+still depends on review, sanitizers, and eventually a stable narrow ABI if
+out-of-process protocol helpers are desired.
+
+#### 4.3.8 When a protocol requires a host extension
+
+Most protocol additions are pure horizontal modules. A protocol requires a host
+extension only when it introduces a new cross-cutting native lifetime primitive.
+
+Examples:
+
+- a metadata/hint protocol needs only a protocol module;
+- XDG decoration needs the core-surface and XDG-shell modules, not a host change;
+- layer shell needs output and core-surface handles, not a host change;
+- DMA-BUF required the host’s buffer/FD lease primitives;
+- explicit synchronization required timeline/fence leases;
+- DRM lease requires ownership of a new DRM lease primitive;
+- capture requires a renderer/capture completion bridge.
+
+When this happens, extend the generic host mechanism first and version it. Do not
+smuggle a raw native pointer through a protocol-specific payload.
+
+#### 4.3.9 Example: XDG toplevel
+
+1. The XDG native module creates the global and registers wlroots listeners.
+2. A client creates a toplevel. The module allocates XDG-role handles related to
+   the core surface and emits `toplevel-created`.
+3. The Layer 2 XDG adapter creates or updates a view and asks shell/placement
+   services for initial policy.
+4. Layer 2 submits `configure-toplevel` with size and state suggestions.
+5. The native module validates the handle, sends the configure, and completes
+   with its serial.
+6. The client acknowledges and commits. Layer 1 emits distinct ack and applied
+   commit events.
+7. Layer 2 correlates the serial, publishes the view mutation, and schedules
+   presentation.
+8. A client move or resize request arrives as a policy request containing the
+   seat, serial, and edge—not as an automatically executed native operation.
+9. The Layer 2 shell service owns the interactive operation and sends only seat
+   delivery/configure commands back through Layer 1.
+
+#### 4.3.10 Example: fractional scale
+
+1. The native module associates a fractional-scale object with a surface and
+   emits lifecycle changes.
+2. Layer 2 computes preferred scale from the surface’s current presentation
+   across output viewports.
+3. Layer 2 submits a preferred-scale command.
+4. Layer 1 emits the protocol event and reports completion.
+
+No world coordinate or output arrangement policy exists in the native module.
+
+#### 4.3.11 Example: session lock
+
+1. The native module receives a lock request and immediately enters a protected
+   pending state that cannot show another unlocked frame.
+2. It emits a lock policy request.
+3. Layer 2 security policy accepts or rejects it.
+4. Layer 1 completes the native handshake and enforces blanking/input isolation.
+5. Lock-surface lifecycle is translated like other surfaces; Layer 2 decides
+   output assignment and presentation.
+6. If Layer 2 fails, the native module remains fail-closed.
+
+This is horizontally modular even though it uses the host’s security-emergency
+mechanism.
+
+#### 4.3.12 Example: capture
+
+1. The capture native module validates the client request and target buffer
+   mechanics, then emits a capture policy request.
+2. Layer 2 authorizes it and asks the current capture service for a frame tied to
+   a presentation revision.
+3. The current renderer performs readback or copy into a capture lease.
+4. Layer 2 submits success/damage/timestamp metadata to the native module.
+5. Layer 1 copies or releases native buffers and emits the protocol completion.
+
+The capture module never reaches into renderer internals, and the renderer never
+marshals Wayland protocol events.
+
+### 4.4 Object identity and lifetime
 
 Every native object exposed to Lisp has:
 
@@ -240,7 +500,7 @@ server lifetime. Destruction is idempotent. A command on a retired handle return
 Buffer, frame-target, and file-descriptor objects use explicit leases. A lease
 documents who owns the native reference and which operation releases it.
 
-### 4.4 Incoming event contract
+### 4.5 Incoming event contract
 
 Every event contains a common prefix:
 
@@ -267,7 +527,7 @@ Event classes have different loss rules:
 A single full diagnostic queue must never poison the compositor. Critical and
 coalescible traffic need separate capacity or reserved capacity.
 
-### 4.5 Outgoing command contract
+### 4.6 Outgoing command contract
 
 Commands are typed, bounded, and versioned. Every command contains:
 
@@ -290,7 +550,7 @@ Commands return a completion value:
 
 Layer 2 must never infer success from enqueueing a command.
 
-### 4.6 Required synchronous mechanisms
+### 4.7 Required synchronous mechanisms
 
 The following remain native because deferring them is unsafe:
 

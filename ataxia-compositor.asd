@@ -22,6 +22,7 @@
      (:file "animation")
      (:file "graphics")
      (:file "presentation")
+     (:file "behavior")
      (:file "interaction")
      (:file "control")
      (:file "compositor")

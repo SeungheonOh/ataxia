@@ -651,49 +651,14 @@
        interaction seat view (ataxia.runtime:xdg-resize-edges event)
        :serial (ataxia.runtime:xdg-resize-serial event)))))
 
-(defun restore-view-placement (view)
-  (when (view-restore-placement view)
-    (setf (view-placement view) (view-restore-placement view)
-          (view-restore-placement view) nil
-          (view-width view) (round (placement-width (view-placement view)))
-          (view-height view) (round (placement-height (view-placement view)))))
-  view)
+(defun restore-view-placement (compositor view)
+  (behavior-restore-view
+   (compositor-behavior-policy compositor) compositor view))
 
 (defun configure-view-for-output (compositor view &key fullscreen-p)
-  (let ((output (primary-output (compositor-interaction compositor))))
-    (when output
-      (unless (view-restore-placement view)
-        (setf (view-restore-placement view)
-              (copy-planar-placement (view-placement view))))
-      (let* ((native (output-native output))
-             (panel (if fullscreen-p
-                        0d0
-                        (presentation-panel-height
-                         (compositor-presentation compositor))))
-             (titlebar
-               (if (or fullscreen-p
-                       (not (view-server-decorated-p view)))
-                   0d0
-                   (presentation-titlebar-height
-                    (compositor-presentation compositor))))
-             (scale (viewport-scale (output-viewport output)))
-             (placement (view-placement view))
-             (width (/ (ataxia.runtime:output-width native) scale))
-             (height (/ (- (ataxia.runtime:output-height native)
-                           panel titlebar)
-                        scale)))
-        (multiple-value-bind (world-x world-y)
-            (world-unproject (compositor-world compositor) output
-                             (output-viewport output) 0d0 panel)
-          (setf (placement-x placement) world-x
-                (placement-y placement) world-y
-                (placement-width placement) width
-                (placement-height placement) height
-                (view-width view) (max 1 (round width))
-                (view-height view) (max 1 (round height)))
-          (ataxia.runtime:xdg-toplevel-set-size
-           (view-native view) (view-width view) (view-height view))))))
-  view)
+  (behavior-configure-view-for-output
+   (compositor-behavior-policy compositor)
+   compositor view (not (null fullscreen-p))))
 
 (defmethod ataxia.runtime:xdg-toplevel-request-maximize
     ((compositor compositor) toplevel requested-p)
@@ -706,7 +671,7 @@
         (unless (view-fullscreen-p view)
           (if requested-p
               (configure-view-for-output compositor view)
-              (restore-view-placement view)))
+              (restore-view-placement compositor view)))
         (ataxia.runtime:xdg-toplevel-set-maximized toplevel requested-p)
         (ataxia.runtime:xdg-toplevel-set-size
          toplevel (view-width view) (view-height view)))
@@ -731,7 +696,7 @@
             (configure-view-for-output compositor view :fullscreen-p t)
             (if (view-maximized-p view)
                 (configure-view-for-output compositor view)
-                (restore-view-placement view)))
+                (restore-view-placement compositor view)))
         (ataxia.runtime:xdg-toplevel-set-fullscreen toplevel requested-p)
         (ataxia.runtime:xdg-toplevel-set-size
          toplevel (view-width view) (view-height view)))

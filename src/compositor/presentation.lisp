@@ -338,85 +338,6 @@
                  items compositor surface owner child-x child-y
                  scale-x scale-y)))))))
 
-(defun append-view-items
-    (items world output view timestamp titlebar-height)
-  (let ((record (view-surface view)))
-    (when (and (view-mapped-p view)
-               (not (view-minimized-p view))
-               (view-presentable-p view)
-               (surface-record-texture record))
-      (multiple-value-bind (world-x world-y world-width world-height)
-          (world-project world output (output-viewport output) view timestamp)
-        (let ((effective-titlebar-height
-                (if (or (view-fullscreen-p view)
-                        (not (view-server-decorated-p view)))
-                    0d0
-                    titlebar-height)))
-          (multiple-value-bind (x y width height)
-              (scaled-view-geometry
-               world-x world-y world-width
-               (+ world-height effective-titlebar-height)
-               (view-presentation-state view))
-            (let* ((scale (/ width world-width))
-                   (title-height (* effective-titlebar-height scale))
-                   (content-y (+ y title-height))
-                   (content-height (- height title-height))
-                   (opacity
-                     (presentation-opacity (view-presentation-state view))))
-              (multiple-value-bind (shader-name shader-uniforms)
-                  (presentation-shader-values view)
-                (setf items
-                      (nconc
-                       items
-                       (append
-                        (unless (view-fullscreen-p view)
-                          (let ((shadow-inset 24d0))
-                            (list
-                             (make-shadow-item
-                              (- x shadow-inset) (- y shadow-inset)
-                              (+ width (* 2d0 shadow-inset))
-                              (+ height (* 2d0 shadow-inset))
-                              '(0.0 0.0 0.0 0.42) shadow-inset 12d0 8d0
-                              :owner view))))
-                        (when (and (not (view-fullscreen-p view))
-                                   (view-server-decorated-p view))
-                          (list
-                           (make-solid-item
-                            (- x 2d0) (- y 2d0) (+ width 4d0) (+ height 4d0)
-                            '(0.12 0.15 0.21 1.0) :owner view
-                            :interactive-p t :hit-kind :frame)
-                           (make-solid-item
-                            x y width title-height '(0.095 0.12 0.18 1.0)
-                            :owner view :interactive-p t :hit-kind :titlebar)))
-                        (list
-                         (make-instance
-                          'presentation-item
-                          :kind :surface :owner view
-                          :surface (surface-record-native record)
-                          :x x :y content-y :width width :height content-height
-                          :texture
-                          (ataxia.runtime:texture-gles-attributes
-                           (surface-record-texture record))
-                          :shader-program-name shader-name
-                          :shader-uniforms shader-uniforms
-                          :opacity opacity :interactive-p t :hit-kind :content
-                          :source-width (max 1 (surface-record-width record))
-                          :source-height
-                          (max 1 (surface-record-height record))))))))
-              (setf items
-                    (append-subsurface-tree-items
-                     items (component-compositor world)
-                     (surface-record-native record) view x content-y
-                     (/ width
-                        (max 1d0
-                             (coerce (surface-record-width record)
-                                     'double-float)))
-                     (/ content-height
-                        (max 1d0
-                             (coerce (surface-record-height record)
-                                     'double-float))))))))))
-  items))
-
 (defun find-surface-presentation-item (items surface)
   (find surface items :key #'presentation-item-surface :test #'eq
         :from-end t))
@@ -515,14 +436,14 @@
     ((presentation presentation-system) (output compositor-output) timestamp)
   (let* ((compositor (component-compositor presentation))
          (desktop (compositor-desktop compositor))
-         (world (compositor-world compositor))
+         (policy (compositor-behavior-policy compositor))
          (items nil)
          (titlebar-height (presentation-titlebar-height presentation)))
     (sample-animations (presentation-animation-engine presentation) timestamp)
     (dolist (view (desktop-stacking-order desktop))
       (setf items
-            (append-view-items
-             items world output view timestamp titlebar-height)))
+            (behavior-build-view-items
+             policy items output view timestamp titlebar-height)))
     (setf items (append-popup-items items desktop))
     (let ((panel-height (presentation-panel-height presentation)))
       (setf items

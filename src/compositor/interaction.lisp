@@ -6,12 +6,6 @@
 
 (in-package #:ataxia.compositor)
 
-(defconstant +resize-edge-top+ 1)
-(defconstant +resize-edge-bottom+ 2)
-(defconstant +resize-edge-left+ 4)
-(defconstant +resize-edge-right+ 8)
-(defconstant +button-left+ 272)
-
 (defparameter *trace-input-p*
   (not (null (uiop:getenv "ATAXIA_TRACE_INPUT"))))
 
@@ -46,17 +40,6 @@
    (pressed-buttons :initform (make-hash-table :test #'eql)
                     :reader seat-pressed-buttons)
    (operation :initform nil :accessor seat-operation)))
-
-(defclass interactive-operation ()
-  ((kind :initarg :kind :reader interactive-operation-kind)
-   (seat :initarg :seat :reader interactive-operation-seat)
-   (view :initarg :view :reader interactive-operation-view)
-   (edges :initarg :edges :initform 0 :reader interactive-operation-edges)
-   (button :initarg :button :reader interactive-operation-button)
-   (start-x :initarg :start-x :reader interactive-operation-start-x)
-   (start-y :initarg :start-y :reader interactive-operation-start-y)
-   (original-placement :initarg :original-placement
-                       :reader interactive-operation-original-placement)))
 
 (defgeneric create-logical-seat
     (interaction name &key pointer-x pointer-y))
@@ -372,13 +355,6 @@
        (compositor-presentation (component-compositor interaction)))))
   view)
 
-(defun copy-planar-placement (placement)
-  (make-instance 'planar-placement
-                 :x (placement-x placement) :y (placement-y placement)
-                 :width (placement-width placement)
-                 :height (placement-height placement)
-                 :z (placement-z placement)))
-
 (defun interaction-hook-context (interaction view descriptor phase)
   (make-instance
    'hook-context :subject view :operation descriptor
@@ -428,15 +404,11 @@
       (run-hook hooks 'before-interactive-operation context)
       (cancel-interactive-operation interaction seat)
       (setf (seat-operation seat)
-            (make-instance
-             'interactive-operation :kind kind :seat seat :view view
-             :edges edges :button (or button (pressed-operation-button seat))
-             :start-x (seat-pointer-x seat)
-             :start-y (seat-pointer-y seat)
-             :original-placement
-             (copy-world-placement
-              (compositor-world (component-compositor interaction))
-              placement)))
+            (behavior-begin-operation
+             (compositor-behavior-policy
+              (component-compositor interaction))
+             interaction seat view kind edges
+             (or button (pressed-operation-button seat))))
       (when (eq kind :resize)
         (ataxia.runtime:xdg-toplevel-set-resizing (view-native view) t))
       (focus-view interaction seat view)
@@ -485,77 +457,12 @@
          (compositor-presentation (component-compositor interaction)))))
     operation))
 
-(defun update-interactive-move (interaction operation)
-  (let* ((seat (interactive-operation-seat operation))
-         (view (interactive-operation-view operation))
-         (original (interactive-operation-original-placement operation))
-         (output (primary-output interaction))
-         (scale (if output
-                    (viewport-scale (output-viewport output))
-                    1d0))
-         (delta-x (/ (- (seat-pointer-x seat)
-                        (interactive-operation-start-x operation)) scale))
-         (delta-y (/ (- (seat-pointer-y seat)
-                        (interactive-operation-start-y operation)) scale))
-         (placement (view-placement view)))
-    (setf (placement-x placement) (+ (placement-x original) delta-x)
-          (placement-y placement) (+ (placement-y original) delta-y))
-    placement))
-
-(defun update-interactive-resize (interaction operation)
-  (let* ((seat (interactive-operation-seat operation))
-         (view (interactive-operation-view operation))
-         (original (interactive-operation-original-placement operation))
-         (output (primary-output interaction))
-         (scale (if output
-                    (viewport-scale (output-viewport output))
-                    1d0))
-         (delta-x (/ (- (seat-pointer-x seat)
-                        (interactive-operation-start-x operation)) scale))
-         (delta-y (/ (- (seat-pointer-y seat)
-                        (interactive-operation-start-y operation)) scale))
-         (edges (interactive-operation-edges operation))
-         (left (placement-x original))
-         (top (placement-y original))
-         (right (+ left (placement-width original)))
-         (bottom (+ top (placement-height original))))
-    (when (logtest +resize-edge-left+ edges) (incf left delta-x))
-    (when (logtest +resize-edge-right+ edges) (incf right delta-x))
-    (when (logtest +resize-edge-top+ edges) (incf top delta-y))
-    (when (logtest +resize-edge-bottom+ edges) (incf bottom delta-y))
-    (when (< (- right left) 120d0)
-      (if (logtest +resize-edge-left+ edges)
-          (setf left (- right 120d0))
-          (setf right (+ left 120d0))))
-    (when (< (- bottom top) 80d0)
-      (if (logtest +resize-edge-top+ edges)
-          (setf top (- bottom 80d0))
-          (setf bottom (+ top 80d0))))
-    (let ((placement (view-placement view)))
-      (setf (placement-x placement) left
-            (placement-y placement) top
-            (placement-width placement) (- right left)
-            (placement-height placement) (- bottom top)
-            (view-width view) (max 1 (round (- right left)))
-            (view-height view) (max 1 (round (- bottom top))))
-      (ataxia.runtime:xdg-toplevel-set-size
-       (view-native view) (view-width view) (view-height view))
-      placement)))
-
-(defmethod world-update-interactive-operation
-    ((world planar-world) (interaction interaction-system)
-     (operation interactive-operation))
-  (declare (ignore world))
-  (ecase (interactive-operation-kind operation)
-    (:move (update-interactive-move interaction operation))
-    (:resize (update-interactive-resize interaction operation))))
-
 (defmethod update-interactive-operation
     ((interaction interaction-system) (seat logical-seat))
   (let ((operation (seat-operation seat)))
     (when operation
-      (world-update-interactive-operation
-       (compositor-world (component-compositor interaction))
+      (behavior-update-operation
+       (compositor-behavior-policy (component-compositor interaction))
        interaction operation)
       (schedule-presentation
        (compositor-presentation (component-compositor interaction))))

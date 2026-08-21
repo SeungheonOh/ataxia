@@ -871,6 +871,23 @@ void main() {
 (defun renderer-clear-current-target ()
   (%gl-clear +gl-color-buffer-bit+))
 
+(defun renderer-clear-damage-boxes (boxes color)
+  "Clear only BOXES on the current target with one diagnostic COLOR."
+  (destructuring-bind (red green blue alpha) color
+    (%gl-clear-color
+     (coerce red 'single-float) (coerce green 'single-float)
+     (coerce blue 'single-float) (coerce alpha 'single-float)))
+  (unwind-protect
+       (dolist (box boxes)
+         (renderer-clip-damage-box box)
+         (renderer-clear-current-target))
+    (renderer-disable-damage-clip)
+    (destructuring-bind (red green blue alpha) +renderer-clear-color+
+      (%gl-clear-color
+       (coerce red 'single-float) (coerce green 'single-float)
+       (coerce blue 'single-float) (coerce alpha 'single-float))))
+  boxes)
+
 (defun renderer-present-retained-scene (renderer frame-context)
   (let ((program (renderer-texture-program renderer))
         (texture (frame-context-scene-texture frame-context)))

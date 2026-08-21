@@ -308,6 +308,8 @@
    #:presentation-animation-engine
    #:presentation-panel-height
    #:presentation-titlebar-height
+   #:presentation-damage-debug-p
+   #:set-damage-debug-mode
    #:presentation-snapshot
    #:snapshot-output
    #:snapshot-timestamp
@@ -431,6 +433,7 @@
    #:renderer-disable-damage-clip
    #:renderer-clip-damage-box
    #:renderer-clear-current-target
+   #:renderer-clear-damage-boxes
    #:renderer-present-retained-scene
    #:frame-context-width
    #:frame-context-height

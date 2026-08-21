@@ -8,6 +8,10 @@
 (defparameter *trace-output-p*
   (not (null (uiop:getenv "ATAXIA_TRACE_OUTPUT"))))
 
+(defparameter +damage-debug-colors+
+  '((0.95 0.12 0.32 1.0)
+    (0.10 0.72 1.0 1.0)))
+
 (defun trace-output (control &rest arguments)
   (when *trace-output-p*
     (apply #'format *error-output* control arguments)
@@ -61,6 +65,8 @@
                     :reader presentation-titlebar-height)
    (queued-outputs :initform nil :accessor presentation-queued-outputs)
    (render-source :initform nil :accessor presentation-render-source)
+   (damage-debug-p :initarg :damage-debug-p :initform nil
+                   :accessor presentation-damage-debug-p)
    (revision :initform 0 :accessor presentation-revision))
   (:documentation
    "Owns presentation system subsystem state. Attach and detach it on the owner thread, and keep its tables synchronized with object lifecycle events."))
@@ -83,6 +89,17 @@
 (defgeneric schedule-presentation (presentation &optional output damage)
   (:documentation
    "Implement SCHEDULE-PRESENTATION while preserving frame ordering and damage correctness. Never retain transient render data past the documented frame boundary."))
+
+(defun set-damage-debug-mode (presentation enabled)
+  "Toggle damage visualization and redraw every output to expose the change."
+  (check-type presentation presentation-system)
+  (check-type enabled boolean)
+  (assert-compositor-owner
+   (component-compositor presentation) :set-damage-debug-mode)
+  (unless (eql enabled (presentation-damage-debug-p presentation))
+    (setf (presentation-damage-debug-p presentation) enabled)
+    (schedule-presentation presentation nil :full))
+  enabled)
 
 (defmethod attach-component :before ((presentation presentation-system))
   "Prepare or validate ATTACH-COMPONENT before primary dispatch. Do not consume ownership or perform the primary operation early."
@@ -887,7 +904,20 @@
     ((renderer direct-gles-renderer) frame-context (pass present-render-pass))
   "Implement RENDERER-EXECUTE-PASS for this compositor specialization. Preserve component ownership, protocol ordering, and the generic function's return contract."
   (declare (ignore pass))
-  (renderer-present-retained-scene renderer frame-context))
+  (renderer-present-retained-scene renderer frame-context)
+  (let* ((presentation
+           (compositor-presentation (component-compositor renderer)))
+         (output (frame-context-output frame-context)))
+    (when (presentation-damage-debug-p presentation)
+      ;; The scene stays visible for context; only the submitted damage region
+      ;; receives the diagnostic color overlay.
+      (renderer-clear-damage-boxes
+       (frame-damage-boxes
+        (frame-plan-damage (frame-context-plan frame-context)))
+       (nth (mod (output-frame-revision output)
+                 (length +damage-debug-colors+))
+            +damage-debug-colors+))))
+  frame-context)
 
 (defmethod renderer-execute-pass :around
     ((renderer direct-gles-renderer) frame-context (pass render-pass))

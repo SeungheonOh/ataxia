@@ -1050,6 +1050,16 @@
      (%object-pointer seat)))
   seat)
 
+(defun seat-validate-pointer-grab-serial (seat origin serial)
+  (check-type origin wlr-surface)
+  (check-type serial (unsigned-byte 32))
+  (let ((runtime (%native-runtime seat)))
+    (%assert-runtime-live runtime :seat-validate-pointer-grab-serial)
+    (%assert-object-runtime runtime origin
+                            :seat-validate-pointer-grab-serial)
+    (ataxia.runtime.raw:%wlr-seat-validate-pointer-grab-serial
+     (%object-pointer seat) (%object-pointer origin) serial)))
+
 (defun seat-keyboard-notify-key (seat time-msec keycode state)
   (check-type time-msec (unsigned-byte 32))
   (check-type keycode (unsigned-byte 32))

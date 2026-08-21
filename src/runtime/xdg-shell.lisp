@@ -77,6 +77,14 @@
   (toplevel :pointer))
 (defcfun ("wlr_xdg_popup_destroy" %wlr-xdg-popup-destroy) :void
   (popup :pointer))
+(defcfun ("wlr_xdg_popup_get_position" %wlr-xdg-popup-get-position) :void
+  (popup :pointer)
+  (surface-x :pointer)
+  (surface-y :pointer))
+(defcfun ("wlr_xdg_surface_schedule_configure"
+          %wlr-xdg-surface-schedule-configure)
+    :uint32
+  (surface :pointer))
 
 (define-signal-binding %xdg-shell-event-new-toplevel
   "ataxia_xdg_shell_event_new_toplevel" shell)
@@ -745,3 +753,22 @@
   (ataxia.runtime.raw:%wlr-xdg-popup-destroy (%object-pointer popup))
   (%run-safe-point-actions (%native-runtime popup))
   nil)
+
+(defun xdg-popup-position (popup)
+  (check-type popup wlr-xdg-popup)
+  (%assert-runtime-live (%native-runtime popup) :xdg-popup-position)
+  (cffi:with-foreign-objects ((surface-x :double) (surface-y :double))
+    (ataxia.runtime.raw:%wlr-xdg-popup-get-position
+     (%object-pointer popup) surface-x surface-y)
+    (values (cffi:mem-ref surface-x :double)
+            (cffi:mem-ref surface-y :double))))
+
+(defun xdg-surface-schedule-configure (object)
+  (unless (typep object '(or wlr-xdg-toplevel wlr-xdg-popup))
+    (error 'type-error
+           :datum object
+           :expected-type '(or wlr-xdg-toplevel wlr-xdg-popup)))
+  (%assert-runtime-live
+   (%native-runtime object) :xdg-surface-schedule-configure)
+  (ataxia.runtime.raw:%wlr-xdg-surface-schedule-configure
+   (%xdg-base-pointer object)))

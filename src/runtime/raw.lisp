@@ -165,6 +165,12 @@
 (defcfun ("wlr_seat_pointer_notify_frame" %wlr-seat-pointer-notify-frame)
     :void
   (seat :pointer))
+(defcfun ("wlr_seat_validate_pointer_grab_serial"
+          %wlr-seat-validate-pointer-grab-serial)
+    :boolean
+  (seat :pointer)
+  (origin :pointer)
+  (serial :uint32))
 (defcfun ("wlr_seat_keyboard_notify_key" %wlr-seat-keyboard-notify-key) :void
   (seat :pointer)
   (time-msec :uint32)

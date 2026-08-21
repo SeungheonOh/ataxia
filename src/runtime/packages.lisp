@@ -175,6 +175,7 @@
    #:%wlr-seat-pointer-notify-button
    #:%wlr-seat-pointer-notify-axis
    #:%wlr-seat-pointer-notify-frame
+   #:%wlr-seat-validate-pointer-grab-serial
    #:%wlr-seat-keyboard-notify-key
    #:%wlr-seat-keyboard-notify-clear-focus
    #:%seat-keyboard-notify-modifiers-current
@@ -214,6 +215,8 @@
    #:%wlr-xdg-toplevel-set-constrained
    #:%wlr-xdg-toplevel-send-close
    #:%wlr-xdg-popup-destroy
+   #:%wlr-xdg-popup-get-position
+   #:%wlr-xdg-surface-schedule-configure
    #:%xdg-shell-event-new-toplevel
    #:%xdg-shell-event-new-popup
    #:%xdg-shell-event-destroy
@@ -561,6 +564,7 @@
    #:seat-pointer-notify-button
    #:seat-pointer-notify-axis
    #:seat-pointer-notify-frame
+   #:seat-validate-pointer-grab-serial
    #:seat-keyboard-notify-key
    #:seat-keyboard-notify-modifiers
    #:seat-keyboard-notify-enter
@@ -582,6 +586,8 @@
    #:xdg-toplevel-set-constrained
    #:xdg-toplevel-send-close
    #:xdg-popup-destroy
+   #:xdg-popup-position
+   #:xdg-surface-schedule-configure
    #:+seat-capability-pointer+
    #:+seat-capability-keyboard+
    #:+seat-capability-touch+

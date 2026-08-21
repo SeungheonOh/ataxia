@@ -12,7 +12,9 @@
   ((opacity :initform 1d0 :accessor presentation-opacity)
    (scale :initform 1d0 :accessor presentation-scale)
    (offset-x :initform 0d0 :accessor presentation-offset-x)
-   (offset-y :initform 0d0 :accessor presentation-offset-y)))
+   (offset-y :initform 0d0 :accessor presentation-offset-y)
+   (shader-uniforms :initform (make-hash-table :test #'equal)
+                    :reader presentation-shader-uniforms)))
 
 (defclass surface-record ()
   ((native :initarg :native :reader surface-record-native)
@@ -52,6 +54,7 @@
    (minimized-p :initform nil :accessor view-minimized-p)
    (restore-placement :initform nil :accessor view-restore-placement)
    (animation-policy :initform nil :accessor view-animation-policy)
+   (shader-program-name :initform nil :accessor view-shader-program-name)
    (presentation-state :initform (make-instance 'presentation-state)
                        :reader view-presentation-state)
    (revision :initform 0 :accessor view-revision)))

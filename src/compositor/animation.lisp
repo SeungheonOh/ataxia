@@ -18,6 +18,9 @@
    (interpolator :initarg :interpolator :initform #'ease-out-cubic
                  :reader animation-track-interpolator)))
 
+(defclass shader-uniform-binding ()
+  ((name :initarg :name :reader shader-uniform-binding-name)))
+
 (defclass animation-definition ()
   ((duration :initarg :duration :reader animation-definition-duration)
    (tracks :initarg :tracks :reader animation-definition-tracks)
@@ -94,15 +97,29 @@
     ((subject view) property value context)
   (declare (ignore context))
   (let ((state (view-presentation-state subject)))
-    (ecase property
-      (opacity (setf (presentation-opacity state) value))
-      (scale (setf (presentation-scale state) value))
-      (offset-x (setf (presentation-offset-x state) value))
-      (offset-y (setf (presentation-offset-y state) value))))
+    (typecase property
+      (shader-uniform-binding
+       (setf (gethash (shader-uniform-binding-name property)
+                      (presentation-shader-uniforms state))
+             value))
+      (symbol
+       (ecase property
+         (opacity (setf (presentation-opacity state) value))
+         (scale (setf (presentation-scale state) value))
+         (offset-x (setf (presentation-offset-x state) value))
+         (offset-y (setf (presentation-offset-y state) value))))
+      (t (error 'compositor-error))))
   subject)
 
+(defun animation-property-key (property)
+  (typecase property
+    (shader-uniform-binding
+     (list :shader-uniform (shader-uniform-binding-name property)))
+    (t property)))
+
 (defun conflicting-animation-properties (definition)
-  (mapcar #'animation-track-property
+  (mapcar (lambda (track)
+            (animation-property-key (animation-track-property track)))
           (animation-definition-tracks definition)))
 
 (defun start-transition (engine subject descriptor context)
@@ -116,7 +133,8 @@
                       (intersection
                        properties
                        (conflicting-animation-properties
-                        (animation-instance-definition instance)))))
+                        (animation-instance-definition instance))
+                       :test #'equal)))
                (animation-engine-active engine))))
       (let ((instance
               (make-instance 'animation-instance

@@ -88,6 +88,7 @@
    #:view-fullscreen-p
    #:view-minimized-p
    #:view-animation-policy
+   #:view-shader-program-name
    #:view-presentation-state
    #:popup-view
    #:desktop-system
@@ -123,8 +124,11 @@
    #:presentation-scale
    #:presentation-offset-x
    #:presentation-offset-y
+   #:presentation-shader-uniforms
    #:animation-policy
    #:animation-track
+   #:shader-uniform-binding
+   #:shader-uniform-binding-name
    #:animation-definition
    #:animation-definition-duration
    #:animation-instance
@@ -140,12 +144,17 @@
    #:renderer-end-frame
    #:renderer-abort-frame
    #:shader-program-descriptor
+   #:program-descriptor-kind
    #:shader-program
    #:compile-shader-program
    #:replace-shader-program
+   #:set-view-shader-program
+   #:set-view-shader-uniform
    #:presentation-system
    #:presentation-snapshot
    #:presentation-item
+   #:presentation-item-shader-program-name
+   #:presentation-item-shader-uniforms
    #:presentation-hit
    #:build-presentation-snapshot
    #:presentation-hit-test

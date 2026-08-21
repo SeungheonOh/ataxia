@@ -63,6 +63,10 @@
   (location :int) (value :int))
 (cffi:defcfun ("glUniform1f" %gl-uniform-1f) :void
   (location :int) (value :float))
+(cffi:defcfun ("glUniform2f" %gl-uniform-2f) :void
+  (location :int) (first :float) (second :float))
+(cffi:defcfun ("glUniform3f" %gl-uniform-3f) :void
+  (location :int) (first :float) (second :float) (third :float))
 (cffi:defcfun ("glUniform4f" %gl-uniform-4f) :void
   (location :int) (red :float) (green :float) (blue :float) (alpha :float))
 (cffi:defcfun ("glEnableVertexAttribArray" %gl-enable-vertex-attrib-array)
@@ -138,6 +142,8 @@ void main() {
 (defclass shader-program-descriptor ()
   ((vertex-source :initarg :vertex-source :reader program-vertex-source)
    (fragment-source :initarg :fragment-source :reader program-fragment-source)
+   (kind :initarg :kind :initform :texture-2d
+         :reader program-descriptor-kind)
    (uniforms :initarg :uniforms :initform nil :reader program-uniform-names)))
 
 (defclass shader-program ()
@@ -150,7 +156,7 @@ void main() {
   ((solid-program :initform nil :accessor renderer-solid-program)
    (texture-program :initform nil :accessor renderer-texture-program)
    (external-program :initform nil :accessor renderer-external-program)
-   (programs :initform (make-hash-table :test #'eq)
+   (programs :initform (make-hash-table :test #'equal)
              :reader renderer-programs)
    (vertex-scratch :initform nil :accessor renderer-vertex-scratch)
    (background :initarg :background
@@ -234,9 +240,11 @@ void main() {
                                    program +gl-link-status+))
              (error 'graphics-failure
                     :operation :link-program :detail (program-log program)))
-           (let ((uniforms (make-hash-table :test #'eq)))
-             (dolist (name (program-uniform-names descriptor))
-               (setf (gethash name uniforms)
+           (let ((uniforms (make-hash-table :test #'equal)))
+             (dolist (name (append (program-uniform-names descriptor)
+                                   '(texture-sampler opacity
+                                     texture-has-alpha)))
+               (setf (gethash (shader-interface-name name) uniforms)
                      (%gl-get-uniform-location
                       program (shader-interface-name name))))
              (prog1
@@ -254,10 +262,10 @@ void main() {
     (setf (shader-program-state program) :retired))
   nil)
 
-(defun builtin-program-descriptor (fragment uniforms)
+(defun builtin-program-descriptor (fragment uniforms kind)
   (make-instance 'shader-program-descriptor
                  :vertex-source +builtin-vertex-shader+
-                 :fragment-source fragment :uniforms uniforms))
+                 :fragment-source fragment :uniforms uniforms :kind kind))
 
 (defmethod attach-component :after ((renderer direct-gles-renderer))
   (let* ((compositor (component-compositor renderer))
@@ -268,18 +276,19 @@ void main() {
             (renderer-solid-program renderer)
             (compile-shader-program
              (builtin-program-descriptor
-              +builtin-solid-fragment-shader+ '(color)))
+              +builtin-solid-fragment-shader+ '(color) :solid))
             (renderer-texture-program renderer)
             (compile-shader-program
              (builtin-program-descriptor
               +builtin-texture-fragment-shader+
-              '(texture-sampler opacity texture-has-alpha)))
+              '(texture-sampler opacity texture-has-alpha) :texture-2d))
             (renderer-external-program renderer)
             (compile-shader-program
              (builtin-program-descriptor
               +builtin-external-fragment-shader+
-              '(texture-sampler opacity texture-has-alpha))))))
-  renderer)
+              '(texture-sampler opacity texture-has-alpha)
+              :texture-external))))
+  renderer))
 
 (defmethod detach-component :before
     ((renderer direct-gles-renderer) reason)
@@ -301,16 +310,116 @@ void main() {
     (setf (renderer-vertex-scratch renderer) nil)))
 
 (defun replace-shader-program (renderer name descriptor)
+  (assert-compositor-owner
+   (component-compositor renderer) :replace-shader-program)
+  (check-type name (or symbol string))
   (let ((runtime (compositor-runtime (component-compositor renderer))))
     (ataxia.runtime:with-egl-context ((ataxia.runtime:runtime-egl runtime))
       (let* ((candidate (compile-shader-program descriptor))
              (previous (gethash name (renderer-programs renderer))))
-        (setf (gethash name (renderer-programs renderer)) candidate)
-        (delete-shader-program previous)
-        candidate))))
+        (handler-case
+            (progn
+              (unless (member (program-descriptor-kind descriptor)
+                              '(:texture-2d :texture-external) :test #'eq)
+                (error 'graphics-failure
+                       :operation :replace-shader
+                       :detail "per-view programs must sample a texture"))
+              (when (or (minusp (uniform-location candidate 'texture-sampler))
+                        (minusp (uniform-location candidate 'opacity)))
+                (error 'graphics-failure
+                       :operation :replace-shader
+                       :detail "texture_sampler and opacity are required"))
+              (setf (gethash name (renderer-programs renderer)) candidate)
+              (delete-shader-program previous)
+              (schedule-presentation
+               (compositor-presentation (component-compositor renderer)))
+              candidate)
+          (serious-condition (condition)
+            (delete-shader-program candidate)
+            (error condition)))))))
 
 (defun uniform-location (program name)
-  (or (gethash name (shader-uniforms program)) -1))
+  (or (gethash (shader-interface-name name) (shader-uniforms program)) -1))
+
+(defun shader-program-for-texture (renderer name target)
+  (let ((candidate (and name (gethash name (renderer-programs renderer)))))
+    (if (and candidate
+             (eq (program-descriptor-kind
+                  (shader-program-descriptor candidate))
+                 (if (= target +gl-texture-2d+)
+                     :texture-2d
+                     :texture-external)))
+        candidate
+        (if (= target +gl-texture-2d+)
+            (renderer-texture-program renderer)
+            (renderer-external-program renderer)))))
+
+(defun shader-uniform-value-p (value)
+  (or (integerp value)
+      (realp value)
+      (and (typep value 'sequence)
+           (not (stringp value))
+           (<= 2 (length value) 4)
+           (every #'realp value))))
+
+(defun set-view-shader-program (renderer view name)
+  (assert-compositor-owner
+   (component-compositor renderer) :set-view-shader-program)
+  (check-type view view)
+  (when name
+    (check-type name (or symbol string))
+    (unless (gethash name (renderer-programs renderer))
+      (error 'graphics-failure
+             :operation :set-view-shader-program
+             :detail (format nil "unknown program ~A" name))))
+  (setf (view-shader-program-name view) name)
+  (schedule-presentation
+   (compositor-presentation (component-compositor renderer)))
+  view)
+
+(defun set-view-shader-uniform (renderer view name value)
+  (assert-compositor-owner
+   (component-compositor renderer) :set-view-shader-uniform)
+  (check-type view view)
+  (check-type name (or symbol string))
+  (unless (shader-uniform-value-p value)
+    (error 'graphics-failure
+           :operation :set-view-shader-uniform
+           :detail (format nil "unsupported value for ~A" name)))
+  (setf (gethash name
+                 (presentation-shader-uniforms
+                  (view-presentation-state view)))
+        value)
+  (schedule-presentation
+   (compositor-presentation (component-compositor renderer)))
+  view)
+
+(defun apply-shader-uniform (program name value)
+  "Set scalar or two-to-four component values supported by the shell API."
+  (let ((location (uniform-location program name)))
+    (unless (minusp location)
+      (cond
+        ((integerp value) (%gl-uniform-1i location value))
+        ((realp value)
+         (%gl-uniform-1f location (coerce value 'single-float)))
+        (t
+         (let ((values (coerce value 'list)))
+           (ecase (length values)
+             (2 (%gl-uniform-2f
+                 location
+                 (coerce (first values) 'single-float)
+                 (coerce (second values) 'single-float)))
+             (3 (%gl-uniform-3f
+                 location
+                 (coerce (first values) 'single-float)
+                 (coerce (second values) 'single-float)
+                 (coerce (third values) 'single-float)))
+             (4 (%gl-uniform-4f
+                 location
+                 (coerce (first values) 'single-float)
+                 (coerce (second values) 'single-float)
+                 (coerce (third values) 'single-float)
+                 (coerce (fourth values) 'single-float))))))))))
 
 (defun put-vertex (scratch index x y texture-x texture-y)
   (let ((offset (* index 4)))
@@ -362,12 +471,10 @@ void main() {
     (%gl-draw-arrays +gl-triangles+ 0 6)))
 
 (defun draw-textured-rectangle
-    (renderer output-width output-height x y width height attributes opacity)
+    (renderer output-width output-height x y width height attributes opacity
+     program-name uniform-values)
   (let* ((target (ataxia.runtime:gles-texture-target attributes))
-         (program
-           (if (= target +gl-texture-2d+)
-               (renderer-texture-program renderer)
-               (renderer-external-program renderer))))
+         (program (shader-program-for-texture renderer program-name target)))
     (fill-rectangle-vertices
      renderer output-width output-height x y width height)
     (%gl-use-program (shader-native-program program))
@@ -378,6 +485,8 @@ void main() {
     ;; sampling must provide it or the imported non-mipmapped texture is black.
     (%gl-tex-parameter-i target +gl-texture-min-filter+ +gl-linear+)
     (%gl-tex-parameter-i target +gl-texture-mag-filter+ +gl-linear+)
+    (dolist (uniform uniform-values)
+      (apply-shader-uniform program (car uniform) (cdr uniform)))
     (%gl-uniform-1i (uniform-location program 'texture-sampler) 0)
     (%gl-uniform-1f
      (uniform-location program 'opacity) (coerce opacity 'single-float))

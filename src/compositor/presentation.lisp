@@ -46,6 +46,10 @@
    (width :initarg :width :reader presentation-item-width)
    (height :initarg :height :reader presentation-item-height)
    (texture :initarg :texture :initform nil :reader presentation-item-texture)
+   (shader-program-name :initarg :shader-program-name :initform nil
+                        :reader presentation-item-shader-program-name)
+   (shader-uniforms :initarg :shader-uniforms :initform nil
+                    :reader presentation-item-shader-uniforms)
    (color :initarg :color :initform nil :reader presentation-item-color)
    (opacity :initarg :opacity :initform 1d0 :reader presentation-item-opacity)
    (interactive-p :initarg :interactive-p :initform nil
@@ -154,6 +158,21 @@
                (presentation-offset-y state))
             scaled-width scaled-height)))
 
+(defun presentation-shader-values (owner)
+  ;; Copy values into the frame snapshot so shell edits cannot mutate a frame
+  ;; while its items are being submitted.
+  (let* ((view (typecase owner
+                 (view owner)
+                 (popup-view (popup-parent-view owner))))
+         (state (and view (view-presentation-state view))))
+    (values
+     (and view (view-shader-program-name view))
+     (when state
+       (loop for name being the hash-keys
+               of (presentation-shader-uniforms state)
+             using (hash-value value)
+             collect (cons name value))))))
+
 (defun append-subsurface-tree-items
     (items compositor parent-surface owner x y scale-x scale-y)
   ;; Runtime reports exact parent-relative offsets. Keeping traversal here lets
@@ -169,22 +188,26 @@
                               scale-y))))
         (when (and record (surface-record-mapped-p record)
                    (surface-record-texture record))
-          (setf items
-                (nconc
-                 items
-                 (list
-                  (make-instance
-                   'presentation-item :kind :surface :owner owner
-                   :surface surface :x child-x :y child-y
-                   :width (* (surface-record-width record) scale-x)
-                   :height (* (surface-record-height record) scale-y)
-                   :texture
-                   (ataxia.runtime:texture-gles-attributes
-                    (surface-record-texture record))
-                   :interactive-p t :hit-kind :subsurface
-                   :source-width (max 1 (surface-record-width record))
-                   :source-height
-                   (max 1 (surface-record-height record))))))
+          (multiple-value-bind (shader-name shader-uniforms)
+              (presentation-shader-values owner)
+            (setf items
+                  (nconc
+                   items
+                   (list
+                    (make-instance
+                     'presentation-item :kind :surface :owner owner
+                     :surface surface :x child-x :y child-y
+                     :width (* (surface-record-width record) scale-x)
+                     :height (* (surface-record-height record) scale-y)
+                     :texture
+                     (ataxia.runtime:texture-gles-attributes
+                      (surface-record-texture record))
+                     :shader-program-name shader-name
+                     :shader-uniforms shader-uniforms
+                     :interactive-p t :hit-kind :subsurface
+                     :source-width (max 1 (surface-record-width record))
+                     :source-height
+                     (max 1 (surface-record-height record)))))))
           (setf items
                 (append-subsurface-tree-items
                  items compositor surface owner child-x child-y
@@ -212,35 +235,39 @@
                    (content-height (- height title-height))
                    (opacity
                      (presentation-opacity (view-presentation-state view))))
-              (setf items
-                    (nconc
-                     items
-                     (append
-                      (unless (view-fullscreen-p view)
+              (multiple-value-bind (shader-name shader-uniforms)
+                  (presentation-shader-values view)
+                (setf items
+                      (nconc
+                       items
+                       (append
+                        (unless (view-fullscreen-p view)
+                          (list
+                           (make-solid-item
+                            (- x 7d0) (- y 7d0) (+ width 14d0) (+ height 14d0)
+                            '(0.0 0.0 0.0 0.28) :owner view)
+                           (make-solid-item
+                            (- x 2d0) (- y 2d0) (+ width 4d0) (+ height 4d0)
+                            '(0.12 0.15 0.21 1.0) :owner view
+                            :interactive-p t :hit-kind :frame)
+                           (make-solid-item
+                            x y width title-height '(0.095 0.12 0.18 1.0)
+                            :owner view :interactive-p t :hit-kind :titlebar)))
                         (list
-                         (make-solid-item
-                          (- x 7d0) (- y 7d0) (+ width 14d0) (+ height 14d0)
-                          '(0.0 0.0 0.0 0.28) :owner view)
-                         (make-solid-item
-                          (- x 2d0) (- y 2d0) (+ width 4d0) (+ height 4d0)
-                          '(0.12 0.15 0.21 1.0) :owner view
-                          :interactive-p t :hit-kind :frame)
-                         (make-solid-item
-                          x y width title-height '(0.095 0.12 0.18 1.0)
-                          :owner view :interactive-p t :hit-kind :titlebar)))
-                      (list
-                       (make-instance
-                        'presentation-item
-                        :kind :surface :owner view
-                        :surface (surface-record-native record)
-                        :x x :y content-y :width width :height content-height
-                        :texture
-                        (ataxia.runtime:texture-gles-attributes
-                         (surface-record-texture record))
-                        :opacity opacity :interactive-p t :hit-kind :content
-                        :source-width (max 1 (surface-record-width record))
-                        :source-height
-                        (max 1 (surface-record-height record)))))))
+                         (make-instance
+                          'presentation-item
+                          :kind :surface :owner view
+                          :surface (surface-record-native record)
+                          :x x :y content-y :width width :height content-height
+                          :texture
+                          (ataxia.runtime:texture-gles-attributes
+                           (surface-record-texture record))
+                          :shader-program-name shader-name
+                          :shader-uniforms shader-uniforms
+                          :opacity opacity :interactive-p t :hit-kind :content
+                          :source-width (max 1 (surface-record-width record))
+                          :source-height
+                          (max 1 (surface-record-height record))))))))
               (setf items
                     (append-subsurface-tree-items
                      items (component-compositor world)
@@ -268,24 +295,28 @@
              output (output-viewport output) parent 0d0)
           (declare (ignore parent-width parent-height))
           (let ((scale (viewport-scale (output-viewport output))))
-            (setf items
-                  (nconc
-                   items
-                   (list
-                    (make-instance
-                     'presentation-item :kind :surface :owner popup
-                     :surface (surface-record-native record)
-                     :x (+ parent-x (* (popup-x popup) scale))
-                     :y (+ parent-y titlebar-height (* (popup-y popup) scale))
-                     :width (* (surface-record-width record) scale)
-                     :height (* (surface-record-height record) scale)
-                     :texture
-                     (ataxia.runtime:texture-gles-attributes
-                      (surface-record-texture record))
-                     :interactive-p t :hit-kind :popup
-                     :source-width (max 1 (surface-record-width record))
-                     :source-height
-                     (max 1 (surface-record-height record))))))
+            (multiple-value-bind (shader-name shader-uniforms)
+                (presentation-shader-values popup)
+              (setf items
+                    (nconc
+                     items
+                     (list
+                      (make-instance
+                       'presentation-item :kind :surface :owner popup
+                       :surface (surface-record-native record)
+                       :x (+ parent-x (* (popup-x popup) scale))
+                       :y (+ parent-y titlebar-height (* (popup-y popup) scale))
+                       :width (* (surface-record-width record) scale)
+                       :height (* (surface-record-height record) scale)
+                       :texture
+                       (ataxia.runtime:texture-gles-attributes
+                        (surface-record-texture record))
+                       :shader-program-name shader-name
+                       :shader-uniforms shader-uniforms
+                       :interactive-p t :hit-kind :popup
+                       :source-width (max 1 (surface-record-width record))
+                       :source-height
+                       (max 1 (surface-record-height record)))))))
             (setf items
                   (append-subsurface-tree-items
                    items (component-compositor desktop)
@@ -421,7 +452,9 @@
       (frame-context-height frame-context)
       (presentation-item-x item) (presentation-item-y item)
       (presentation-item-width item) (presentation-item-height item)
-      (presentation-item-texture item) (presentation-item-opacity item))))
+      (presentation-item-texture item) (presentation-item-opacity item)
+      (presentation-item-shader-program-name item)
+      (presentation-item-shader-uniforms item))))
   item)
 
 (defun render-presentation-frame (presentation output snapshot)

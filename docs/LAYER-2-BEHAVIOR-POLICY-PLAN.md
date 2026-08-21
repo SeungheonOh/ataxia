@@ -1,4 +1,4 @@
-# Layer 2 Behavior Policy Plan
+# Layer 2 Behavior Policy Design and Implementation
 
 ## Goal
 
@@ -12,6 +12,8 @@ defines what that compositor feels and behaves like.
 ## Final Decisions
 
 - Keep the core and behavior policy in `ataxia.compositor`.
+- Keep every behavior contract and implementation in `src/behavior`; core
+  compositor mechanisms remain in `src/compositor`.
 - Use one process, one Lisp image, and one compositor owner thread.
 - Use direct synchronous CLOS calls; add no internal mailbox.
 - Make one behavior-policy aggregate the unit of live replacement.
@@ -25,13 +27,11 @@ defines what that compositor feels and behaves like.
 
 ## Why a Separate Internal Boundary Is Still Required
 
-What will not work is keeping the current Layer 2 structure and only adding
-more methods to `world`. Placement assumptions already exist in view state,
-move and resize operations, maximization, presentation, hit testing, damage,
-animation, and control actions. Extending each of those components separately
-would make a new workspace model depend on coordinated subclasses throughout
-the compositor. The behavior policy provides the required ownership boundary
-without creating another package or runtime layer.
+What will not work is distributing workspace semantics across core view,
+interaction, presentation, and animation classes. A new workspace model would
+then require coordinated subclasses throughout the compositor. The behavior
+policy provides one ownership boundary without creating another package,
+runtime layer, mailbox, or owner thread.
 
 ## Layer Boundaries
 
@@ -56,10 +56,8 @@ flowchart TD
 
 ## Behavior Policy
 
-installed or replaced at runtime.
 The compositor owns one active `behavior-policy`. The policy is the unit that
 can be installed or replaced at runtime.
-installed or replaced at runtime.
 
 A policy may be implemented as one CLOS object or as several private objects.
 The core should not prescribe its internal structure. Components inside a
@@ -77,7 +75,7 @@ Example policies include:
 Layer 2 views retain protocol information such as the native XDG toplevel,
 surface tree, application identity, configure state, and mapped state.
 
-World-specific state moves into an opaque policy-owned object. For example, a
+Behavior-specific state lives in an opaque policy-owned object. For example, a
 planar policy may store `x`, `y`, `width`, and `height`, while a spherical
 policy stores longitude, latitude, angular size, and orientation.
 
@@ -148,42 +146,34 @@ validates and executes through typed operations.
 | State export | Core → old Policy | Replacement context and destination policy identity | Returns portable semantic state without native wrappers |
 | State import | Core → new Policy | Portable state and live core objects | Creates new policy state or rejects the migration before activation |
 
-### Proposed CLOS Boundary
+### Implemented CLOS Boundary
 
-The first interface should remain small enough to audit while allowing typed
-request subclasses to expand horizontally.
+The interface remains small enough to audit while typed decisions and input
+objects expand horizontally.
 
 ```lisp
-(defgeneric behavior-attach (policy compositor capabilities))
-(defgeneric behavior-activate (policy core-state))
-(defgeneric behavior-quiesce (policy reason))
-(defgeneric behavior-detach (policy reason))
-
-(defgeneric behavior-output-event (policy output event))
-(defgeneric behavior-view-event (policy view event))
-(defgeneric behavior-popup-event (policy popup event))
-
-(defgeneric behavior-handle-request (policy request context))
-(defgeneric behavior-handle-input (policy input context))
-
-(defgeneric behavior-build-scene
-    (policy output timestamp damage-context scene-builder))
-(defgeneric map-instance-point (surface-map output-x output-y))
-(defgeneric map-instance-damage (surface-map surface-damage))
+(defgeneric activate-behavior-policy (policy))
+(defgeneric quiesce-behavior-policy (policy reason))
+(defgeneric behavior-output-added (policy output))
+(defgeneric behavior-view-created (policy view))
+(defgeneric behavior-view-committed (policy view commit initial-commit-p))
+(defgeneric behavior-handle-pointer-button
+    (policy interaction seat hit button state time))
+(defgeneric behavior-handle-pointer-axis
+    (policy interaction seat input))
+(defgeneric behavior-handle-keyboard-key
+    (policy interaction seat input))
+(defgeneric behavior-build-scene (policy presentation output timestamp))
 
 (defgeneric behavior-resolve-animation
-    (policy subject transition context))
-(defgeneric behavior-execute-command (policy command context))
+    (policy engine subject transition context))
 
-(defgeneric behavior-export-state (policy replacement-context))
-(defgeneric behavior-import-state
-    (policy portable-state replacement-context))
+(defgeneric behavior-export-state (policy compositor context))
+(defgeneric behavior-import-state (policy portable-state context))
 ```
 
-`behavior-view-event` and related entry points dispatch on typed event classes,
-such as `view-mapped`, `view-committed`, or `view-identity-changed`. This avoids
-growing a single function with keyword-based branching while keeping the public
-boundary explicit.
+Separate lifecycle generics avoid one keyword-based event dispatcher. Typed
+objects are used where a payload or decision has multiple fields.
 
 ### Decision Objects
 
@@ -242,8 +232,8 @@ same geometry that produced the visible frame.
 2. Layer 2 collects surface-buffer damage and pending scene invalidation.
 3. Layer 2 creates a scene builder and calls `behavior-build-scene`.
 4. The behavior policy queries its spatial model and emits ordered instances.
-5. Layer 2 expands protocol-owned surface trees, validates resources, and
-   compiles instances into GLES render commands.
+5. The policy expands protocol surface trees according to its mapping model;
+   Layer 2 validates resources and executes the resulting GLES items.
 6. Layer 2 renders damaged regions, commits the output, and stores the immutable
    snapshot as the new input authority.
 7. Layer 2 sends frame completion and presentation feedback to sampled clients.
@@ -335,7 +325,8 @@ There is no universally correct conversion from an infinite plane to a sphere.
 - Dispatch CLOS methods at view, frame, and interaction boundaries, not per pixel.
 - Cache projections, meshes, and spatial indexes by revision.
 - Pick from the last rendered immutable snapshot.
-- Let policies provide projected damage, with full-output damage as a fallback.
+- Let policies provide projected damage; the current implementation uses the
+  correct full-output redraw fallback until buffer-age tracking is added.
 - Compile scene descriptions into compact GLES render commands before drawing.
 - Keep external agent requests as the only queued operations.
 
@@ -358,8 +349,8 @@ The following dependency rules must be enforced:
 2. All behavior-specific state remains behind the policy object.
 3. Scene construction and input meaning enter through the same typed interfaces
    described above.
-4. Policy replacement swaps one aggregate, not independent world,
-   interaction, presentation, and animation objects.
+4. Policy replacement swaps one aggregate, not independent placement,
+   interaction, presentation, and animation strategies.
 5. Adding a spherical implementation must not require modifying core protocol,
    input-delivery, or renderer-execution code.
 
@@ -367,21 +358,31 @@ The package remains `ataxia.compositor`. File boundaries, exported interfaces,
 and code review must therefore enforce the separation that a distinct package
 would otherwise make visible.
 
-## Implementation Order
+The physical boundary is:
 
-1. Inventory every planar assumption in model, output, presentation,
-   interaction, animation, and control code.
-2. Define boundary value objects, decisions, events, and capability descriptions.
-3. Add the policy lifecycle and one active behavior slot.
-4. Separate core view, popup, output, and seat state from behavior state.
-5. Introduce surface instances and their shared render, damage, and pick mapping.
-6. Move current planar placement, camera, layout, and spatial indexing into a
-   `planar-behavior-policy` without changing visible behavior.
-7. Move focus, stacking, move, resize, maximize, fullscreen, decorations, and
-   animation selection into the planar policy.
-8. Route typed agent commands and observations through the policy boundary.
-9. Implement transactional policy replacement and portable state migration.
-10. Build a spherical policy and its GLES geometry as the boundary proof.
+- `src/behavior/policy.lisp`: contract, opaque state, migration, and planar
+  coordinate policy;
+- `src/behavior/scene.lisp`: shared policy-owned scene assembly;
+- `src/behavior/animation.lisp`: policy animation resolution;
+- `src/behavior/planar.lisp`: planar interaction and scene projection;
+- `src/behavior/spherical.lisp`: spherical placement, camera, mesh mapping,
+  child surfaces, popups, interaction, and migration.
+
+## Implementation Status
+
+1. The compositor owns one active policy and calls it synchronously.
+2. View and output behavior state is opaque to core.
+3. Planar placement, camera, interaction, composition, and animation selection
+   live under `src/behavior`.
+4. Keyboard, pointer button, and pointer axis meaning use typed policy calls.
+5. Immutable presentation items share render geometry with pointer picking.
+6. Direct GLES supports both affine quads and arbitrary triangle meshes.
+7. Transactional policy replacement migrates live views and outputs and rolls
+   back failed trial snapshots.
+8. The spherical policy renders curved root surfaces, subsurfaces, and popups
+   and supports bidirectional live migration with the planar policy.
+9. Projected partial damage remains a performance refinement; correctness uses
+   the full-output redraw fallback.
 
 ## Completion Criteria
 
@@ -395,7 +396,8 @@ The behavior-policy boundary is complete when:
   outputs.
 - Active frames may retire safely after a policy swap.
 - Invalid behavior decisions cannot bypass Layer 2 protocol or security checks.
-- Adding the spherical policy changes only behavior and shader modules.
+- New policies live under `src/behavior` and use existing core scene and GLES
+  primitives without modifying protocol delivery code.
 
 The spherical policy is the architectural proof: it should require new behavior
 code and shaders, but no changes to Runtime or the Layer 2 compositor core.

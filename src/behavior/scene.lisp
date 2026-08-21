@@ -120,11 +120,10 @@
   (append-popup-items items desktop))
 
 (defun append-cursor-items (items compositor output)
-  (declare (ignore output))
   (dolist (seat (interaction-seats (compositor-interaction compositor)) items)
-    (let* ((x (seat-pointer-x seat))
-           (y (seat-pointer-y seat))
-           (cursor-record (seat-cursor-record seat)))
+    (when (eq output (seat-pointer-output seat))
+      (multiple-value-bind (x y) (seat-pointer-local-position seat output)
+        (let ((cursor-record (seat-cursor-record seat)))
       (ecase (seat-cursor-mode seat)
         (:hidden nil)
         (:surface
@@ -151,7 +150,7 @@
                        (make-solid-item (+ x 3d0) (+ y 3d0) 9d0 3d0
                                         '(0.04 0.04 0.05 1.0))
                        (make-solid-item (+ x 1d0) (+ y 1d0) 1d0 16d0
-                                        '(0.95 0.97 1.0 1.0))))))))))
+                                        '(0.95 0.97 1.0 1.0))))))))))))
 
 (defun append-panel-items (items presentation output desktop)
   (unless

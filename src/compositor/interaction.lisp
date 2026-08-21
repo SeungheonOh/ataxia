@@ -35,6 +35,7 @@
    (layout-group :initform 0 :accessor seat-layout-group)
    (pointer-x :initarg :pointer-x :initform 160d0 :accessor seat-pointer-x)
    (pointer-y :initarg :pointer-y :initform 100d0 :accessor seat-pointer-y)
+   (pointer-output :initform nil :accessor seat-pointer-output)
    (pointer-focus-surface :initform nil :accessor seat-pointer-focus-surface)
    (pointer-focus-view :initform nil :accessor seat-pointer-focus-view)
    (pointer-surface-x :initform 0d0 :accessor seat-pointer-surface-x)
@@ -74,10 +75,9 @@
 (defgeneric interaction-handle-keyboard-modifiers (interaction event))
 (defgeneric interaction-handle-cursor-request (interaction request))
 
-(defun primary-output (interaction)
-  (first
-   (compositor-outputs-list
-    (compositor-outputs (component-compositor interaction)))))
+(defun seat-pointer-local-position (seat &optional (output (seat-pointer-output seat)))
+  (when output
+    (output-local-position output (seat-pointer-x seat) (seat-pointer-y seat))))
 
 (defun interaction-owns-seat-p (interaction seat)
   (member seat (interaction-seats interaction) :test #'eq))
@@ -119,6 +119,7 @@
     (push seat (interaction-seats interaction))
     (unless (interaction-default-seat interaction)
       (setf (interaction-default-seat interaction) seat))
+    (clamp-seat-pointer interaction seat)
     (update-seat-capabilities seat)
     seat))
 
@@ -262,37 +263,32 @@
              output (monotonic-seconds)))))
 
 (defun interaction-hit-test (interaction x y)
-  (let ((output (primary-output interaction)))
+  (let* ((outputs (compositor-outputs (component-compositor interaction)))
+         (output (output-at-layout-position outputs x y)))
     (when output
-      (values
-       (presentation-hit-test
-        (current-input-snapshot interaction output) x y)
-       output))))
+      (multiple-value-bind (local-x local-y)
+          (output-local-position output x y)
+        (values
+         (presentation-hit-test
+          (current-input-snapshot interaction output) local-x local-y)
+         output)))))
 
 (defun clamp-seat-pointer (interaction seat)
-  (let ((output (primary-output interaction)))
+  (multiple-value-bind (output x y)
+      (confine-layout-position
+       (compositor-outputs (component-compositor interaction))
+       (seat-pointer-x seat) (seat-pointer-y seat))
+    (setf (seat-pointer-output seat) output)
     (when output
-      (setf (seat-pointer-x seat)
-            (max 0d0
-                 (min (coerce
-                       (max 0 (1- (ataxia.runtime:output-width
-                                  (output-native output))))
-                       'double-float)
-                      (seat-pointer-x seat)))
-            (seat-pointer-y seat)
-            (max 0d0
-                 (min (coerce
-                       (max 0 (1- (ataxia.runtime:output-height
-                                  (output-native output))))
-                       'double-float)
-                      (seat-pointer-y seat))))))
+      (setf (seat-pointer-x seat) x
+            (seat-pointer-y seat) y)))
   seat)
 
 (defun update-pointer-focus (interaction seat time-msec)
   (multiple-value-bind (hit output)
       (interaction-hit-test interaction
                             (seat-pointer-x seat) (seat-pointer-y seat))
-    (declare (ignore output))
+    (setf (seat-pointer-output seat) output)
     (let ((surface (and hit (presentation-hit-surface hit))))
       (cond
         (surface
@@ -508,17 +504,22 @@
            (interaction-seat-for-device
             interaction
             (ataxia.runtime:pointer-motion-absolute-pointer event)))
-         (output (and seat (primary-output interaction))))
-    (when (and seat output)
+         (outputs (compositor-outputs (component-compositor interaction))))
+    (when seat
       (trace-input "[input] absolute ~,3F ~,3F~%"
                    (ataxia.runtime:pointer-motion-absolute-x event)
                    (ataxia.runtime:pointer-motion-absolute-y event))
-      (setf (seat-pointer-x seat)
-            (* (ataxia.runtime:pointer-motion-absolute-x event)
-               (ataxia.runtime:output-width (output-native output)))
-            (seat-pointer-y seat)
-            (* (ataxia.runtime:pointer-motion-absolute-y event)
-               (ataxia.runtime:output-height (output-native output))))
+      (multiple-value-bind (minimum-x minimum-y maximum-x maximum-y)
+          (output-layout-bounds outputs)
+        (when minimum-x
+          (setf (seat-pointer-x seat)
+                (+ minimum-x
+                   (* (ataxia.runtime:pointer-motion-absolute-x event)
+                      (- maximum-x minimum-x)))
+                (seat-pointer-y seat)
+                (+ minimum-y
+                   (* (ataxia.runtime:pointer-motion-absolute-y event)
+                      (- maximum-y minimum-y))))))
       (clamp-seat-pointer interaction seat)
       (if (seat-operation seat)
           (update-interactive-operation interaction seat)

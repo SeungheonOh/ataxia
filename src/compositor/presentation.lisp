@@ -15,6 +15,8 @@
 
 (defclass compositor-output ()
   ((native :initarg :native :reader output-native)
+   (layout-x :initarg :layout-x :initform 0d0 :accessor output-layout-x)
+   (layout-y :initarg :layout-y :initform 0d0 :accessor output-layout-y)
    (behavior-state :initform nil :accessor output-behavior-state)
    (swapchain :initarg :swapchain :accessor output-swapchain)
    (last-snapshot :initform nil :accessor output-last-snapshot)
@@ -164,6 +166,78 @@
 (defun find-compositor-output (outputs native)
   (gethash native (output-table outputs)))
 
+(defun default-compositor-output (compositor)
+  (first (compositor-outputs-list (compositor-outputs compositor))))
+
+(defun output-layout-width (output)
+  (coerce (ataxia.runtime:output-width (output-native output)) 'double-float))
+
+(defun output-layout-height (output)
+  (coerce (ataxia.runtime:output-height (output-native output)) 'double-float))
+
+(defun output-contains-layout-point-p (output x y)
+  (and (<= (output-layout-x output) x)
+       (< x (+ (output-layout-x output) (output-layout-width output)))
+       (<= (output-layout-y output) y)
+       (< y (+ (output-layout-y output) (output-layout-height output)))))
+
+(defun output-at-layout-position (outputs x y)
+  (find-if (lambda (output) (output-contains-layout-point-p output x y))
+           (compositor-outputs-list outputs)))
+
+(defun output-local-position (output layout-x layout-y)
+  (values (- layout-x (output-layout-x output))
+          (- layout-y (output-layout-y output))))
+
+(defun output-layout-bounds (outputs)
+  (let ((available (compositor-outputs-list outputs)))
+    (when available
+      (values
+       (reduce #'min available :key #'output-layout-x)
+       (reduce #'min available :key #'output-layout-y)
+       (reduce #'max available
+               :key (lambda (output)
+                      (+ (output-layout-x output) (output-layout-width output))))
+       (reduce #'max available
+               :key (lambda (output)
+                      (+ (output-layout-y output) (output-layout-height output))))))))
+
+(defun confine-layout-position (outputs x y)
+  "Return the output and nearest valid layout position for X and Y."
+  (let ((containing (output-at-layout-position outputs x y)))
+    (when containing
+      (return-from confine-layout-position (values containing x y))))
+  (let ((best-output nil)
+        (best-x 0d0)
+        (best-y 0d0)
+        (best-distance most-positive-double-float))
+    (dolist (output (compositor-outputs-list outputs))
+      (let* ((minimum-x (output-layout-x output))
+             (minimum-y (output-layout-y output))
+             (maximum-x (+ minimum-x (max 0d0 (1- (output-layout-width output)))))
+             (maximum-y (+ minimum-y (max 0d0 (1- (output-layout-height output)))))
+             (candidate-x (max minimum-x (min maximum-x x)))
+             (candidate-y (max minimum-y (min maximum-y y)))
+             (distance (+ (expt (- candidate-x x) 2)
+                          (expt (- candidate-y y) 2))))
+        (when (< distance best-distance)
+          (setf best-output output
+                best-x candidate-x
+                best-y candidate-y
+                best-distance distance))))
+    (values best-output best-x best-y)))
+
+(defun next-horizontal-output-x (outputs)
+  (reduce #'max (compositor-outputs-list outputs)
+          :initial-value 0d0
+          :key (lambda (output)
+                 (+ (output-layout-x output) (output-layout-width output)))))
+
+(defun set-output-layout-position (output x y)
+  (setf (output-layout-x output) (coerce x 'double-float)
+        (output-layout-y output) (coerce y 'double-float))
+  output)
+
 (defun output-scanout-pending-p (output)
   (or (output-commit-pending-p output)
       (ataxia.runtime:output-frame-pending-p (output-native output))))
@@ -246,10 +320,12 @@
 
 (defun register-compositor-output (outputs runtime native)
   (handler-case
-      (let* ((swapchain (configure-native-output runtime native))
+      (let* ((layout-x (next-horizontal-output-x outputs))
+             (swapchain (configure-native-output runtime native))
              (output
                (make-instance 'compositor-output
-                              :native native :swapchain swapchain))
+                              :native native :swapchain swapchain
+                              :layout-x layout-x :layout-y 0d0))
              (published-p nil))
         (unwind-protect
              (progn

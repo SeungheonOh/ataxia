@@ -15,6 +15,7 @@
   ((kind :initarg :kind :reader interactive-operation-kind)
    (seat :initarg :seat :reader interactive-operation-seat)
    (view :initarg :view :reader interactive-operation-view)
+   (output :initarg :output :initform nil :reader interactive-operation-output)
    (edges :initarg :edges :initform 0 :reader interactive-operation-edges)
    (button :initarg :button :reader interactive-operation-button)
    (start-x :initarg :start-x :reader interactive-operation-start-x)
@@ -117,18 +118,17 @@
    :original-placement
    (copy-behavior-placement policy (view-placement view))))
 
-(defun planar-pointer-scale (policy)
-  (let ((output
-          (first
-           (compositor-outputs-list
-            (compositor-outputs (component-compositor policy))))))
+(defun planar-pointer-scale (policy seat)
+  (let ((output (or (seat-pointer-output seat)
+                    (default-compositor-output
+                     (component-compositor policy)))))
     (if output (viewport-scale (output-viewport output)) 1d0)))
 
 (defun update-planar-move (policy operation)
   (let* ((seat (interactive-operation-seat operation))
          (view (interactive-operation-view operation))
          (original (interactive-operation-original-placement operation))
-         (scale (planar-pointer-scale policy))
+         (scale (planar-pointer-scale policy seat))
          (delta-x (/ (- (seat-pointer-x seat)
                         (interactive-operation-start-x operation)) scale))
          (delta-y (/ (- (seat-pointer-y seat)
@@ -142,7 +142,7 @@
   (let* ((seat (interactive-operation-seat operation))
          (view (interactive-operation-view operation))
          (original (interactive-operation-original-placement operation))
-         (scale (planar-pointer-scale policy))
+         (scale (planar-pointer-scale policy seat))
          (delta-x (/ (- (seat-pointer-x seat)
                         (interactive-operation-start-x operation)) scale))
          (delta-y (/ (- (seat-pointer-y seat)
@@ -196,7 +196,7 @@
 
 (defmethod behavior-configure-view-for-output
     ((policy planar-behavior-policy) compositor view fullscreen-p)
-  (let ((output (primary-output (compositor-interaction compositor))))
+  (let ((output (default-compositor-output compositor)))
     (if (null output)
         (make-instance 'view-configuration-decision
                        :width (view-width view) :height (view-height view))
@@ -285,9 +285,10 @@
             'pointer-button-decision :focus-target view
             :operation-kind (and (= button +button-left+) :resize)
             :resize-edges
-            (resize-edges-at-point
-             (presentation-hit-item hit)
-             (seat-pointer-x seat) (seat-pointer-y seat))
+            (multiple-value-bind (local-x local-y)
+                (seat-pointer-local-position seat)
+              (resize-edges-at-point
+               (presentation-hit-item hit) local-x local-y))
             :deliver-p nil))
           (otherwise
            (make-instance 'pointer-button-decision :focus-target view)))

@@ -873,20 +873,23 @@
 
 (defmethod behavior-begin-operation
     ((policy spherical-behavior-policy) interaction seat view kind edges button)
-  (declare (ignore interaction))
-  (make-instance
-   'interactive-operation :kind kind :seat seat :view view
-   :edges edges :button button
-   :start-x (seat-pointer-x seat) :start-y (seat-pointer-y seat)
-   :original-width (view-width view)
-   :original-height (view-height view)
-   :original-placement (copy-spherical-placement (view-placement view))))
+  (declare (ignore interaction policy))
+  (let ((output (seat-pointer-output seat)))
+    (multiple-value-bind (start-x start-y)
+        (seat-pointer-local-position seat output)
+      (make-instance
+       'interactive-operation :kind kind :seat seat :view view
+       :output output :edges edges :button button
+       :start-x start-x :start-y start-y
+       :original-width (view-width view)
+       :original-height (view-height view)
+       :original-placement (copy-spherical-placement (view-placement view))))))
 
-(defun spherical-operation-output (policy)
-  (first-policy-output policy))
+(defun spherical-operation-output (operation)
+  (interactive-operation-output operation))
 
 (defun update-spherical-move (policy operation)
-  (let* ((output (spherical-operation-output policy))
+  (let* ((output (spherical-operation-output operation))
          (camera (and output (output-behavior-state output)))
          (seat (interactive-operation-seat operation))
          (original (interactive-operation-original-placement operation))
@@ -897,30 +900,36 @@
            policy output camera
            (interactive-operation-start-x operation)
            (interactive-operation-start-y operation))
-        (multiple-value-bind (current-longitude current-latitude)
-            (behavior-unproject-point
-             policy output camera (seat-pointer-x seat) (seat-pointer-y seat))
-          (setf (spherical-longitude placement)
-                (normalize-longitude
-                 (+ (spherical-longitude original)
-                    (normalize-longitude
-                     (- current-longitude start-longitude))))
-                (spherical-latitude placement)
-                (clamp-latitude
-                 (+ (spherical-latitude original)
-                    (- current-latitude start-latitude)))))))
+        (multiple-value-bind (current-x current-y)
+            (output-local-position output (seat-pointer-x seat) (seat-pointer-y seat))
+          (multiple-value-bind (current-longitude current-latitude)
+              (behavior-unproject-point
+               policy output camera current-x current-y)
+            (setf (spherical-longitude placement)
+                  (normalize-longitude
+                   (+ (spherical-longitude original)
+                      (normalize-longitude
+                       (- current-longitude start-longitude))))
+                  (spherical-latitude placement)
+                  (clamp-latitude
+                   (+ (spherical-latitude original)
+                      (- current-latitude start-latitude))))))))
     (incf (behavior-policy-revision policy))
     nil))
 
 (defun update-spherical-resize (policy operation)
-  (let* ((output (spherical-operation-output policy))
+  (let* ((output (spherical-operation-output operation))
          (seat (interactive-operation-seat operation))
          (view (interactive-operation-view operation))
          (original (interactive-operation-original-placement operation))
          (edges (interactive-operation-edges operation))
-         (delta-x (- (seat-pointer-x seat)
+         (current-x (and output
+                         (- (seat-pointer-x seat) (output-layout-x output))))
+         (current-y (and output
+                         (- (seat-pointer-y seat) (output-layout-y output))))
+         (delta-x (- (or current-x (interactive-operation-start-x operation))
                      (interactive-operation-start-x operation)))
-         (delta-y (- (seat-pointer-y seat)
+         (delta-y (- (or current-y (interactive-operation-start-y operation))
                      (interactive-operation-start-y operation)))
          (width-delta
            (cond ((logtest +resize-edge-left+ edges) (- delta-x))

@@ -385,6 +385,12 @@
    #:output-system
    #:compositor-output
    #:output-native
+   #:output-layout-x
+   #:output-layout-y
+   #:set-output-layout-position
+   #:output-at-layout-position
+   #:output-local-position
+   #:default-compositor-output
    #:output-behavior-state
    #:output-viewport
    #:output-last-snapshot
@@ -401,6 +407,8 @@
    #:seat-native
    #:seat-pointer-x
    #:seat-pointer-y
+   #:seat-pointer-output
+   #:seat-pointer-local-position
    #:seat-focused-view
    #:seat-cursor-mode
    #:seat-devices
@@ -416,6 +424,7 @@
    #:interactive-operation-kind
    #:interactive-operation-seat
    #:interactive-operation-view
+   #:interactive-operation-output
    #:interactive-operation-edges
    #:interactive-operation-button
    #:interactive-operation-start-x

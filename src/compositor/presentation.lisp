@@ -424,6 +424,12 @@
       (format *error-output* "[compositor] frame failed on ~A: ~A~%"
               (ataxia.runtime:output-name (output-native output)) condition)
       (finish-output *error-output*)
+      ;; Transient DRM busy failures must not strand the output without a
+      ;; future frame. wlroots coalesces this request until scanout is ready.
+      (when (and (output-available-p output)
+                 (ataxia.runtime:native-object-live-p
+                  (output-native output)))
+        (ataxia.runtime:output-schedule-frame (output-native output)))
       nil)))
 
 (defun schedule-presentation (presentation &optional output)

@@ -1,1513 +1,946 @@
-# Layer 1–Layer 2 Interface Contract
+# wlroots–Common Lisp Boundary and Layer 1–Layer 2 Interface
 
-Status: architecture planning only. The declarations in this document are the
-proposed interface, not checked-in C or Common Lisp implementation.
+Status: planning only. This document replaces the rejected generic bridge ABI.
 
-## 1. Purpose
+## 1. Decision
 
-This document defines the only supported connection between:
+Layer 1 is not a generic native host and Layer 2 does not communicate with it
+through an invented event protocol.
 
-- **Layer 1**, the native Wayland/wlroots/DRM/EGL substrate and its thin CFFI
-  decoding modules; and
-- **Layer 2**, the Common Lisp compositor framework, domain services, plugins,
-  hooks, rendering algorithms, animation, and agent control.
+The new boundary is:
 
-The boundary must remain stable while both sides expand horizontally. Adding a
-Wayland protocol must add a module, not add protocol-specific slots and foreign
-functions throughout the compositor runtime.
+- wlroots and libwayland remain the native implementation;
+- Ataxia-authored C contains only unavoidable wlroots/libwayland ABI glue;
+- Common Lisp owns server construction, event-loop control, object wrappers,
+  signal conversion, lifetime bookkeeping, protocol composition, and errors;
+- Layer 1 and Layer 2 communicate through protocol-specific Common Lisp
+  generic functions and ordinary typed return values;
+- incoming names and values preserve the exact wlroots signal or Wayland
+  protocol meaning;
+- outgoing operations are typed Lisp wrappers around concrete `wlr_*` or
+  `wl_*` calls;
+- there is no module catalog, event envelope, command envelope, opcode router,
+  native handle registry, completion protocol, or universal lease system.
 
-## 2. Interface Principles
+This is a deliberate in-process design. It favors directness, Lisp
+replaceability, and debuggability over a stable language-neutral ABI between
+the two layers.
 
-1. Layer 1 never calls arbitrary Lisp from a Wayland or wlroots callback.
-2. Layer 2 never receives a wlroots, Wayland, GBM, EGL, DRM, or Pixman pointer.
-3. Layer 1 reports facts and policy requests; Layer 2 decides policy.
-4. Layer 2 submits commands; Layer 1 validates and serializes native effects.
-5. Native handles are opaque, typed, monotonic, and never reused per server.
-6. Every variable-sized value is bounded and has explicit ownership.
-7. Every native lease has explicit retain, adopt, and release semantics.
-8. Events and commands use fixed envelopes plus module-specific payload records.
-9. Protocol schemas are negotiated independently from the host ABI.
-10. The hot path uses flat binary records and batches, not JSON, property lists,
-    foreign callbacks, or one FFI call per vertex.
-11. Layer 2 state is event-sourced from Layer 1 and does not inspect native
-    structures to discover hidden state.
-12. Native effects return honest completion; enqueueing does not imply success.
-
-## 3. Boundary Overview
+## 2. Corrected Boundary
 
 ```mermaid
 flowchart LR
-    subgraph NATIVE[Layer 1 native library]
-        WL[libwayland and wlroots]
-        HOST[Native host]
-        MODS[Protocol modules]
-        REG[Handle and lease registry]
-        EQ[Event queues]
-        CE[Command executors]
-        GFX[Graphics platform extensions]
+    CLIENT[Wayland clients]
+    WLR[libwayland and wlroots]
+    C[Tiny native ABI glue]
+
+    subgraph L1[Layer 1 in Common Lisp]
+        BIND[Direct CFFI bindings]
+        LOOP[Event-loop owner]
+        WRAP[Typed wlroots wrappers]
+        SIGNAL[Protocol-specific signal bindings]
     end
 
-    subgraph LISPBRIDGE[Layer 1 Common Lisp bridge]
-        CFFI[CFFI core binding]
-        CATALOG[Module catalog]
-        DECODERS[Module payload decoders]
-        GATEWAY[CFFI native gateway]
+    subgraph L2[Layer 2 in Common Lisp]
+        HANDLER[Protocol-specific handlers]
+        SERVICES[Shell, input, world, animation, render]
+        TX[Framework transactions]
     end
 
-    subgraph FRAMEWORK[Layer 2]
-        BRIDGE[Portable bridge protocol]
-        RUNTIME[Runtime and transactions]
-        ADAPTERS[Protocol policy adapters]
-        SERVICES[Domain services]
-    end
-
-    WL --> HOST
-    HOST --> MODS
-    HOST --> REG
-    MODS --> EQ
-    CE --> MODS
-    GFX --> HOST
-
-    EQ --> CFFI
-    CFFI --> DECODERS
-    CATALOG --> DECODERS
-    DECODERS --> GATEWAY
-    GATEWAY -.implements.-> BRIDGE
-
-    BRIDGE --> RUNTIME
-    RUNTIME --> ADAPTERS
-    ADAPTERS --> SERVICES
-    SERVICES --> BRIDGE
-    BRIDGE --> CFFI
-    CFFI --> CE
+    CLIENT <--> WLR
+    WLR <--> C
+    C <--> BIND
+    BIND --> LOOP
+    BIND --> WRAP
+    LOOP --> SIGNAL
+    SIGNAL --> HANDLER
+    HANDLER --> TX
+    TX --> SERVICES
+    SERVICES --> WRAP
 ```
 
-Layer 2 depends on the portable bridge protocol, not on CFFI. The concrete CFFI
-gateway is replaceable by a trace-replay gateway or deterministic development
-gateway without changing domain services.
+There are two different boundaries and they must not be conflated:
 
-## 4. Version Model
+1. **Native-to-Lisp boundary:** CFFI calls and callback trampolines whose types
+   follow the wlroots/libwayland ABI.
+2. **Layer 1-to-Layer 2 boundary:** Common Lisp protocol packages whose methods
+   follow concrete wlroots signals and concrete compositor actions.
 
-Four version domains remain separate:
+The second boundary has no C ABI at all.
 
-| Version | Scope | Compatibility rule |
-|---|---|---|
-| host ABI | fixed C entry points and common envelopes | major breaks; minor is additive |
-| native module schema | module event/command/object payloads | module-specific major/minor |
-| Wayland interface version | client-visible protocol XML version | negotiated per client binding |
-| Layer 2 service protocol | CLOS domain contract | service-specific compatibility |
+## 3. What Ataxia-Authored C May Contain
 
-The host ABI uses a 32-bit `major:minor` value. Size-prefixed structs allow new
-tail fields in a minor release. No module may treat the host ABI minor version as
-its protocol schema version.
+The native shim is allowed only where CFFI cannot safely or conveniently express
+the public native ABI.
 
-### 4.1 Startup negotiation
+### 3.1 Allowed native glue
+
+The initial shim may contain:
+
+- a compile-time wlroots/libwayland version fingerprint;
+- wrappers for required C macros or `static inline` functions;
+- allocation and destruction of a `wl_listener` holder;
+- the `wl_listener.notify` trampoline into one registered Lisp callback;
+- exact adaptors for callbacks whose native signature cannot be represented by
+  the chosen Lisp implementation;
+- a logging callback adaptor if direct CFFI callbacks are insufficient;
+- generated Wayland protocol descriptor data when a protocol is not supplied by
+  wlroots.
+
+A representative listener helper is intentionally mechanical:
+
+```c
+typedef void (*atx_wl_notify_fn)(uintptr_t token, void *data);
+
+struct atx_wl_listener {
+    struct wl_listener listener;
+    atx_wl_notify_fn notify;
+    uintptr_t token;
+};
+
+struct atx_wl_listener *atx_wl_listener_create(
+    atx_wl_notify_fn notify,
+    uintptr_t token);
+void atx_wl_listener_attach(
+    struct atx_wl_listener *listener,
+    struct wl_signal *signal);
+void atx_wl_listener_detach(struct atx_wl_listener *listener);
+void atx_wl_listener_destroy(struct atx_wl_listener *listener);
+```
+
+This helper does not identify event kinds, copy payloads, queue events, own
+wlroots objects, or route policy. The Lisp subscription represented by `token`
+already knows the exact signal type and exact `data` layout.
+
+### 3.2 Forbidden native infrastructure
+
+Ataxia-authored C must not contain:
+
+- a compositor server abstraction above wlroots;
+- protocol module descriptors or a module loader;
+- arbitrary event or command records;
+- numeric object handles or tombstone registries;
+- a native event queue;
+- a policy-request state machine;
+- generic buffer/FD/fence/frame leases;
+- scene, placement, focus, cursor, animation, or agent state;
+- a renderer abstraction or command-buffer format;
+- protocol-independent validation already performed by typed Lisp wrappers;
+- a second lifecycle model for objects already owned by wlroots.
+
+If new C starts accumulating switches over protocol names or compositor policy,
+the boundary has failed.
+
+## 4. Layer 1 Common Lisp Responsibilities
+
+Layer 1 is mostly Common Lisp. It contains the direct bindings and the smallest
+safe wrapper around wlroots.
+
+### 4.1 Server and event loop
+
+Common Lisp directly creates and controls:
+
+- `wl_display` and its `wl_event_loop`;
+- the selected `wlr_backend`;
+- `wlr_renderer` and `wlr_allocator` when used;
+- `wlr_compositor`, `wlr_subcompositor`, `wlr_data_device_manager`, and other
+  selected globals;
+- outputs, seats, input devices, protocol managers, and their listeners;
+- the Wayland socket and backend startup/shutdown sequence.
+
+The Lisp runtime calls `wl_event_loop_dispatch` itself instead of hiding the
+loop in a C `server_run` function. This makes native events, Lisp timers, agent
+mailboxes, and safe points visible in one place.
+
+### 4.2 Typed native wrappers
+
+Each public wlroots type used above the raw bindings has a Lisp wrapper class:
+
+```lisp
+(defclass wlr-object ()
+  ((pointer :initarg :pointer :reader %wlr-pointer)
+   (alive-p :initform t :reader wlr-object-alive-p)
+   (generation :initarg :generation :reader wlr-object-generation)
+   (destroy-listener :initform nil)))
+
+(defclass wlr-surface (wlr-object) ())
+(defclass wlr-xdg-toplevel (wlr-object) ())
+(defclass wlr-output (wlr-object) ())
+(defclass wlr-seat (wlr-object) ())
+```
+
+The raw foreign pointer is private to Layer 1 packages. Layer 2 receives the
+typed wrapper, not an opaque integer and not a naked CFFI pointer.
+
+Layer 1 maintains a weak pointer-to-wrapper table only to preserve Lisp identity
+while a wlroots object is alive. This is not an independent native handle
+registry. The wlroots destroy signal is authoritative.
+
+### 4.3 Object invalidation
+
+For an object destroy signal:
+
+1. Layer 1 enters the Lisp callback barrier.
+2. It delivers the exact typed `...-destroying` callback while the pointer is
+   still valid for documented inspection.
+3. Layer 2 detaches semantic objects and stages any effects.
+4. Layer 1 marks the wrapper dead, removes it from the identity table, clears
+   its foreign pointer, and detaches remaining listeners.
+5. Any later typed operation on the wrapper signals `dead-wlr-object` in Lisp
+   before entering C.
+
+The wrapper generation prevents an accidentally reused native address from
+being confused with the old object.
+
+### 4.4 Protocol packages
+
+Layer 1 is horizontally split into packages that mirror real wlroots areas:
+
+- `ataxia.wlr.core` — display, event loop, clients, surfaces, subsurfaces;
+- `ataxia.wlr.backend` — backend, outputs, input-device discovery;
+- `ataxia.wlr.render` — renderer, allocator, buffers, textures, render passes;
+- `ataxia.wlr.seat` — seats and input delivery;
+- `ataxia.wlr.xdg-shell` — XDG surfaces, toplevels, popups, positioners;
+- `ataxia.wlr.layer-shell` — layer surfaces;
+- `ataxia.wlr.data-device` — selections and drag-and-drop;
+- one package per optional wlroots protocol implementation;
+- `ataxia.wlr.raw.*` — generated/private CFFI declarations.
+
+No central package needs to know every protocol event.
+
+## 5. The Layer 1–Layer 2 Common Lisp Interface
+
+Every protocol family defines its own event sink protocol and typed outbound
+functions. There is no universal `bridge-event` or `execute-command` function.
+
+### 5.1 Protocol-specific sinks
+
+The XDG shell package can define:
+
+```lisp
+(defgeneric xdg-new-toplevel (sink toplevel))
+(defgeneric xdg-new-popup (sink popup))
+(defgeneric xdg-surface-map (sink xdg-surface))
+(defgeneric xdg-surface-unmap (sink xdg-surface))
+(defgeneric xdg-surface-commit (sink commit))
+(defgeneric xdg-toplevel-request-move (sink request))
+(defgeneric xdg-toplevel-request-resize (sink request))
+(defgeneric xdg-toplevel-request-maximize (sink request))
+(defgeneric xdg-toplevel-request-fullscreen (sink request))
+(defgeneric xdg-toplevel-destroying (sink toplevel))
+```
+
+The seat and input packages define different, equally concrete functions:
+
+```lisp
+(defgeneric pointer-motion (sink event))
+(defgeneric pointer-motion-absolute (sink event))
+(defgeneric pointer-button (sink event))
+(defgeneric pointer-axis (sink event))
+(defgeneric pointer-frame (sink pointer))
+(defgeneric keyboard-key (sink event))
+(defgeneric keyboard-modifiers (sink event))
+(defgeneric touch-down (sink event))
+(defgeneric touch-motion (sink event))
+(defgeneric touch-up (sink event))
+```
+
+The output package defines:
+
+```lisp
+(defgeneric backend-new-output (sink output))
+(defgeneric output-frame (sink output))
+(defgeneric output-needs-frame (sink output))
+(defgeneric output-request-state (sink request))
+(defgeneric output-present (sink presentation))
+(defgeneric output-destroying (sink output))
+```
+
+These names are intentionally specific. A new protocol adds new generic
+functions in its own package; it does not add an opcode to the kernel.
+
+### 5.2 Exact typed values
+
+Event values are protocol-specific structs or classes with named fields:
+
+```lisp
+(defstruct xdg-request-move
+  toplevel
+  seat
+  serial)
+
+(defstruct xdg-request-resize
+  toplevel
+  seat
+  serial
+  edges)
+
+(defstruct pointer-motion-event
+  device
+  time-msec
+  delta-x
+  delta-y
+  unaccel-delta-x
+  unaccel-delta-y)
+
+(defstruct output-present-event
+  output
+  commit-sequence
+  presented-p
+  refresh-nsec
+  when
+  flags)
+```
+
+Fields correspond to the wlroots signal data for the pinned wlroots version.
+There are no generic `subject`, `related`, `class`, `flags`, `payload`, or
+`correlation` fields unless that concrete native event actually defines them.
+
+Shared Lisp mixins may be used internally for logging or timestamps, but they
+are not part of the Layer 1–Layer 2 contract.
+
+### 5.3 Handler installation
+
+Each protocol manager has a typed handler slot installed at a runtime safe
+point:
+
+```lisp
+(install-xdg-shell-sink xdg-shell xdg-policy-service)
+(install-input-sink input-runtime input-service)
+(install-output-sink backend output-service)
+```
+
+Replacing a Layer 2 service swaps the corresponding Lisp sink. Native listeners
+remain attached and do not need to be recreated. Existing callback dispatch
+pins the current sink for the callback extent; the replacement is visible to
+the next callback.
+
+This provides hot-replaceable policy without a generic event router.
+
+### 5.4 Outgoing operations
+
+Layer 2 invokes concrete typed Layer 1 functions:
+
+```lisp
+(xdg-toplevel-set-size toplevel width height)
+(xdg-toplevel-set-maximized toplevel maximized-p)
+(xdg-toplevel-set-fullscreen toplevel fullscreen-p)
+(xdg-surface-schedule-configure xdg-surface)
+
+(seat-pointer-notify-enter seat surface sx sy)
+(seat-pointer-notify-motion seat time-msec sx sy)
+(seat-pointer-notify-button seat time-msec button state)
+(seat-keyboard-notify-enter seat surface pressed-keycodes modifiers)
+(seat-keyboard-notify-key seat time-msec keycode state)
+
+(surface-send-frame-done surface monotonic-time)
+(output-test-state output output-state)
+(output-commit-state output output-state)
+```
+
+Each wrapper:
+
+1. checks the concrete wrapper type and liveness in Lisp;
+2. checks owner-thread and callback-safety rules;
+3. converts exact arguments to the pinned wlroots ABI;
+4. calls the concrete native function;
+5. returns its concrete value or signals a typed Lisp condition.
+
+There is no encoded command and no generic completion. A configure function
+returns its serial. An output test/commit returns its native success value.
+Later acknowledgements, presentation reports, and buffer releases arrive through
+their real protocol-specific signals.
+
+## 6. Incoming Callback Flow
 
 ```mermaid
 sequenceDiagram
-    participant L2 as Layer 2 composition root
-    participant G as Portable native gateway
-    participant C as CFFI bridge
-    participant H as Layer 1 native host
+    participant W as wlroots signal
+    participant C as wl_listener trampoline
+    participant L1 as Typed Layer 1 callback
+    participant L2 as Protocol-specific Layer 2 sink
+    participant T as Layer 2 transaction
 
-    L2->>G: create gateway with requested host ABI range
-    G->>C: load native library
-    C->>H: query host ABI and capabilities
-    H-->>C: host version and capability words
-    C-->>G: copied host descriptor
-    G->>H: enumerate native module catalog
-    H-->>G: module names, schemas, dependencies, capabilities
-    G-->>L2: immutable catalog
-    L2->>L2: resolve required Layer 1 Lisp modules and Layer 2 adapters
-    L2->>G: enable selected native modules and options
-    G->>H: create and start server
-    H-->>G: lifecycle status and initial events
+    W->>C: notify(listener, native data)
+    C->>L1: callback(subscription token, native data)
+    L1->>L1: resolve exact subscription and wrapper
+    L1->>L1: copy transient fields or retain exact resource
+    L1->>L2: xdg-toplevel-request-resize(sink, request)
+    L2->>T: stage semantic mutations and native effects
+    L2-->>L1: return normally
+    L1->>L1: run callback-exit safe point
+    L1-->>C: status contained inside Lisp callback barrier
+    C-->>W: return without unwinding across C
 ```
 
-The server does not advertise a client protocol global until its native module
-and required policy adapter are ready, except mandatory core globals explicitly
-owned by the startup profile.
+Dispatch is synchronous on the compositor owner thread. That is also how a
+normal C wlroots compositor handles signals. Ataxia does not add a native queue
+or duplicate wlroots ordering.
 
-## 5. Minimal Public C ABI
+Layer 2 may stage work in its own transaction and effect queue. It must never
+retain the native callback-data pointer. Any value that must survive is copied
+or explicitly retained by a concrete Layer 1 operation before the callback
+returns.
 
-The public header includes only fixed-width C types. It contains no wlroots,
-Wayland, EGL, GBM, DRM, Pixman, or OpenGL declarations.
+## 7. Callback Lifetime and Error Rules
 
-### 5.1 Opaque and scalar types
+### 7.1 Callback barrier
 
-Proposed conceptual declarations:
+Every C-to-Lisp entry executes inside a callback barrier that:
 
-```c
-struct atx_server;
+- records callback depth and the exact active signal;
+- prevents a Lisp condition from unwinding through C;
+- pins the current protocol sink generation;
+- records a structured fault on failure;
+- runs deferred destruction and safe-point effects at outermost exit;
+- requests controlled compositor shutdown if a critical callback cannot be
+  completed safely.
 
-typedef uint64_t atx_handle;
-typedef uint64_t atx_sequence;
-typedef uint64_t atx_command_id;
-typedef uint64_t atx_correlation_id;
-typedef uint64_t atx_time_ns;
-typedef int32_t atx_status;
+Nested wlroots signals are legal. The callback-depth counter makes outermost
+exit explicit and prevents listener memory from being freed while a nested
+callback still uses it.
+
+### 7.2 Direct versus deferred native effects
+
+Typed wrapper operations declare one of three call modes in Lisp metadata:
+
+- **callback-safe** — may be called during its documented wlroots callback;
+- **outermost-safe-point** — staged until callback depth returns to zero;
+- **event-loop-only** — callable only from the top-level runtime turn.
+
+This metadata is attached to concrete functions, not encoded in a command
+envelope. Destructive operations default to deferred.
+
+### 7.3 No native event queue
+
+Because events are dispatched synchronously:
+
+- lifecycle and input events cannot be silently dropped by a bridge queue;
+- ordering is the wlroots signal order;
+- backpressure is simply time spent in the compositor callback;
+- latency is measurable without a hidden producer/consumer boundary;
+- coalescing, if desired, happens explicitly in the Layer 2 input or frame
+  service after receipt.
+
+The agent/control mailbox is unrelated. It is a Lisp mailbox awakened through
+an event-loop FD and drained by the owner thread.
+
+## 8. Specialized Lifetime Objects
+
+Removing generic leases does not remove native lifetime obligations. It replaces
+them with concrete Lisp types whose operations match the underlying API.
+
+### 8.1 Surface buffer snapshot
+
+A surface commit that must outlive the callback creates a
+`surface-buffer-snapshot` in Lisp:
+
+```lisp
+(defclass surface-buffer-snapshot ()
+  ((surface :initarg :surface :reader snapshot-surface)
+   (buffer :initarg :buffer :reader snapshot-buffer)
+   (commit-sequence :initarg :commit-sequence :reader snapshot-sequence)
+   (width :initarg :width :reader snapshot-width)
+   (height :initarg :height :reader snapshot-height)
+   (transform :initarg :transform :reader snapshot-transform)
+   (scale :initarg :scale :reader snapshot-scale)
+   (damage :initarg :damage :reader snapshot-damage)
+   (released-p :initform nil :reader snapshot-released-p)))
 ```
 
-`atx_handle` value zero is always null. Nonzero handle values are monotonic and
-never reused during one `atx_server` lifetime.
+Layer 1 calls the exact wlroots buffer-retention primitive during the surface
+commit callback, copies commit state into Lisp values, and returns the snapshot.
+`release-surface-buffer-snapshot` performs the matching wlroots release exactly
+once. `unwind-protect` provides semantic cleanup; a finalizer is only a leak
+safety net.
 
-### 5.2 Status values
+There is no numeric lease ID or native lease table.
 
-The common status domain is:
+### 8.2 File descriptors
 
-| Status | Meaning |
-|---|---|
-| `OK` | operation completed successfully |
-| `INVALID_ARGUMENT` | malformed size, field, enum, bounds, or payload |
-| `WRONG_THREAD` | owner-thread-only operation called elsewhere |
-| `INVALID_STATE` | legal object, illegal lifecycle phase |
-| `STALE_HANDLE` | handle was retired or never existed |
-| `WRONG_KIND` | handle exists but expected type differs |
-| `NOT_FOUND` | requested catalog or optional object absent |
-| `UNSUPPORTED` | capability or operation unavailable |
-| `AGAIN` | operation is legal but cannot complete yet |
-| `BUFFER_TOO_SMALL` | caller buffer is too small; required size returned |
-| `QUOTA_EXCEEDED` | bounded resource or queue limit reached |
-| `PROTOCOL_REJECTED` | request conflicts with protocol state/serial |
-| `NATIVE_FAILURE` | wlroots, EGL, DRM, or system operation failed |
-| `FAULTED` | server/module can no longer preserve invariants |
+`owned-fd` records one concrete ownership mode:
 
-The C API returns no borrowed error string. A separate structured error-copy
-operation returns bounded subsystem, operation, native code, and UTF-8 message.
+- borrowed for callback extent;
+- duplicated and owned by Lisp;
+- transferred to a wlroots/libwayland call;
+- closed.
 
-### 5.3 Lifecycle entry points
+Protocol-specific functions state their FD rule in their Lisp signature and
+documentation. A data-transfer call that consumes an FD marks that `owned-fd`
+closed only after the native call has taken ownership.
 
-The core ABI contains a small stable set of operations equivalent to:
+### 8.3 Output state and render resources
 
-```c
-uint32_t atx_host_abi_version(void);
-uint32_t atx_host_capability_word_count(void);
-uint64_t atx_host_capabilities(uint32_t word_index);
+`wlr-output-state`, `wlr-buffer`, `wlr-texture`, and `wlr-render-pass` wrappers
+each have their own initialization, finish, lock, unlock, submit, or destroy
+operations. They are not forced through a shared lease lifecycle.
 
-atx_status atx_server_options_init(void *options, uint32_t options_size);
-atx_status atx_server_create(
-    const void *options, uint32_t options_size,
-    struct atx_server **server_out);
-atx_status atx_server_enable_module(
-    struct atx_server *server,
-    const char *module_name, uint32_t name_size,
-    const void *options, uint32_t options_size);
-atx_status atx_server_add_socket_auto(
-    struct atx_server *server,
-    char *name, uint32_t capacity, uint32_t *needed);
-atx_status atx_server_start(struct atx_server *server);
-atx_status atx_server_dispatch(struct atx_server *server, int32_t timeout_ms);
-atx_status atx_server_stop(struct atx_server *server);
-atx_status atx_server_destroy(struct atx_server **server_io);
-```
+## 9. Surface Commit Contract
 
-The exact names may change before ABI freeze, but the surface area should remain
-this small. Protocol modules do not add one public C function for every request.
+`wlr_surface.events.commit` is handled directly and specifically.
 
-`destroy` is owner-thread-only, idempotent for a null pointer, and nulls the
-caller’s pointer only after successful destruction. It can therefore report
-wrong-thread or invalid-state errors instead of silently leaking or partially
-destroying the server.
+Layer 1 copies the applied state needed by Layer 2:
 
-The size-prefixed server options record contains bounded startup mechanisms, not
-desktop policy:
-
-- requested backend classes and preference order: DRM, nested Wayland, headless,
-  or automatic discovery;
-- critical, discrete-input, coalescible, and diagnostic queue capacities;
-- total native event-payload byte capacity;
-- live-handle, tombstone, lease, and in-flight command limits;
-- dispatch and structured-diagnostic flags;
-- optional render-device selector passed to graphics-platform modules;
-- feature flags required before native object creation.
-
-Output arrangement, workspace/profile, cursor, focus, and rendering policy are
-not server options.
-
-Modules may be enabled and configured after `create` but before `start`.
-Enablement after `start` returns `INVALID_STATE` in the first ABI. Future native
-hot loading requires a separate quiesce/activation transaction and is not
-silently implied by this interface.
-
-`dispatch` semantics are:
-
-- nonnegative timeout is milliseconds; `-1` means indefinite only for dedicated
-  tools, while the Layer 2 runtime always uses a bounded timeout;
-- if copied events are already pending, dispatch returns without blocking;
-- native callbacks only enqueue records;
-- client output is flushed before the call returns;
-- return status reports backend/display failure separately from event presence;
-- Layer 2 drains events only after `dispatch` has returned.
-
-### 5.4 Module catalog entry points
-
-The host exposes catalog enumeration through bounded copy operations:
-
-```c
-atx_status atx_server_module_count(
-    struct atx_server *server, uint32_t *count);
-atx_status atx_server_module_info(
-    struct atx_server *server, uint32_t index,
-    void *record, uint32_t capacity, uint32_t *needed);
-```
-
-A module-info record contains:
-
-- runtime module ID;
-- stable UTF-8 module name;
-- schema major/minor;
-- enabled/started state;
-- capability words;
-- dependency descriptors;
-- event, command, object-kind, and lease-kind schema summaries;
-- maximum payload and quota information.
-
-Module IDs are assigned per server startup and are not persisted. Stable module
-names and schema versions are authoritative. This avoids a global numeric-ID
-allocation bottleneck for horizontally added modules.
-
-### 5.5 Event and command entry points
-
-The hot-path core ABI is:
-
-```c
-atx_status atx_server_next_event(
-    struct atx_server *server,
-    void *record, uint32_t capacity, uint32_t *needed);
-
-atx_status atx_server_drain_events(
-    struct atx_server *server,
-    void *records, uint32_t capacity, uint32_t maximum_events,
-    uint32_t *bytes_written, uint32_t *events_written,
-    uint32_t *next_event_needed);
-
-atx_status atx_server_execute(
-    struct atx_server *server,
-    const void *command, uint32_t command_size,
-    void *completion, uint32_t completion_capacity,
-    uint32_t *completion_needed);
-
-atx_status atx_server_execute_batch(
-    struct atx_server *server,
-    const void *batch, uint32_t batch_size,
-    void *completions, uint32_t completion_capacity,
-    uint32_t *completion_needed);
-```
-
-`next_event` uses the standard two-call bounded-copy pattern:
-
-1. call with no buffer to obtain the exact required size;
-2. allocate from the current Lisp foreign arena;
-3. call again to copy and remove the event atomically.
-
-If the second call fails, the event remains at the queue head. The caller never
-receives a pointer into native queue storage.
-
-The Layer 2 runtime normally uses `drain_events`. It copies and removes as many
-whole aligned event records as fit, up to `maximum_events`, and never splits a
-record. If the first record does not fit, it returns `BUFFER_TOO_SMALL` with zero
-events written and reports `next_event_needed`. Lease ownership transfers only
-for records actually copied. This permits one FFI crossing for an event batch
-while retaining exact bounded behavior for an oversized record.
-
-`execute` runs on the owner thread after native dispatch has returned. It never
-invokes Lisp recursively. The returned completion reports immediate native
-execution. Later client/backend results arrive as correlated events.
-
-Every command schema declares its maximum completion-record size. `execute`
-checks the supplied completion capacity against that maximum before performing
-any side effect. `BUFFER_TOO_SMALL` therefore guarantees that the command did not
-execute and may be safely retried with the required capacity. A successfully
-executed command is never repeated merely to retrieve its completion.
-
-Batch execution computes the maximum completion aggregate for every command and
-validates output capacity before executing the first command. Capacity failure
-therefore has zero native effects for the entire batch.
-
-### 5.6 Error and statistics entry points
-
-```c
-atx_status atx_server_copy_error(
-    struct atx_server *server,
-    void *record, uint32_t capacity, uint32_t *needed);
-
-atx_status atx_server_statistics(
-    struct atx_server *server,
-    void *record, uint32_t capacity, uint32_t *needed);
-```
-
-Statistics include queue depth, high-water marks, coalesced/dropped diagnostics,
-live wrappers, tombstones, active leases, retained bytes, in-flight frames, and
-per-module quota usage.
-
-## 6. Flat Record Rules
-
-### 6.1 Common representation
-
-Every record crossing CFFI uses:
-
-- fixed-width integer and IEEE float fields;
-- no C `bool`, `enum`, `long`, `size_t`, or pointer fields;
-- explicit byte size and schema version;
-- explicit `fields` bitset for optional tail semantics;
-- reserved fields required to be zero on input;
-- relative offset/length pairs for embedded strings and arrays;
-- eight-byte record alignment;
-- UTF-8 strings without required trailing NUL;
-- finite numeric validation where the domain requires it.
-
-All offsets are relative to the start of the enclosing record. The decoder
-validates overflow, alignment, overlap rules, and bounds before constructing Lisp
-values.
-
-These are in-process native-endian ABI records. They are not written directly to
-disk or sent over a socket. Trace/replay tooling serializes decoded bridge values
-into a separate canonical versioned format so native padding, endianness, and
-module runtime IDs never become persistent data contracts.
-
-### 6.2 Common record prefix
-
-```c
-struct atx_record_prefix {
-    uint32_t record_size;
-    uint16_t schema_major;
-    uint16_t schema_minor;
-    uint64_t fields;
-    uint64_t flags;
-};
-```
-
-Additive minor versions append fields. A reader accepts a larger record when all
-required prefix fields are understood. A major mismatch is rejected.
-
-### 6.3 Slice descriptor
-
-```c
-struct atx_slice {
-    uint32_t offset;
-    uint32_t length;
-};
-```
-
-Slices contain bytes. Typed arrays additionally declare element size/count in
-their module record. No record contains a native pointer, even temporarily.
-
-## 7. Event Interface
-
-### 7.1 Event envelope
-
-```c
-struct atx_event_envelope {
-    struct atx_record_prefix record;
-    uint32_t module_id;
-    uint16_t module_schema_major;
-    uint16_t module_schema_minor;
-    uint32_t opcode;
-    uint32_t event_class;
-    uint64_t sequence;
-    uint64_t first_sequence;
-    uint64_t monotonic_time_ns;
-    uint64_t subject;
-    uint64_t subject_type;
-    uint64_t related;
-    uint64_t parent;
-    uint64_t correlation_id;
-    uint32_t lease_count;
-    uint32_t reserved;
-    struct atx_slice leases;
-    struct atx_slice payload;
-};
-```
-
-`subject_type` is a server-local composite of module ID and module-local object
-kind. Layer 2 resolves it through the catalog to stable names.
-
-`first_sequence` differs from `sequence` when coalescible events represent a
-range. Payload metadata includes the original sample count where relevant.
-
-Event sequences are global, nonzero, monotonic for one server, and may wrap only
-after the full 64-bit domain. Object-native revisions are independent per object.
-All event timestamps use the host monotonic clock in nanoseconds; protocol
-timestamps with different units are preserved separately inside module payloads.
-
-The common lease table is decoded before the module payload. Each entry contains
-the lease handle, stable lease kind, and transfer disposition. This lets the
-gateway release transferred resources even when a module decoder rejects a
-malformed or unsupported payload.
-
-### 7.2 Event classes
-
-| Class | Meaning | Loss behavior |
-|---|---|---|
-| lifecycle | create, retire, map, unmap | never dropped/coalesced |
-| state transaction | surface commit, configure ack, selection | never dropped |
-| policy request | move, resize, lock, capture, activation | never dropped |
-| discrete input | key/button/touch transitions | never dropped |
-| continuous input | pointer/tablet motion, axes | coalescible within protocol frame |
-| frame deadline | output ready/requested frame | latest pending per output |
-| native completion | asynchronous result/presentation/release | never dropped |
-| diagnostic | trace/counters/warnings | bounded and droppable |
-
-### 7.3 Event ownership
-
-Copying an event transfers ownership of every lease explicitly marked as
-`transferred` in its payload to the Layer 1 Lisp bridge. The bridge wraps the
-event in a dynamic cleanup extent:
-
-```text
-decode event
-  -> process event transaction
-  -> stage lease adoptions for components/snapshots
-  -> finalize staged adoptions only while publishing the transaction
-  -> release every unadopted event lease in unwind-protect cleanup
-```
-
-Garbage-collector finalizers are diagnostic fallbacks only. Correctness never
-depends on them.
-
-For a drained batch, the gateway validates every common envelope and constructs
-cleanup ownership for every transferred lease before invoking any module payload
-decoder. A decoder failure therefore cannot orphan leases belonging to later
-records already removed from the native queue.
-
-### 7.4 Event processing sequence
-
-```mermaid
-sequenceDiagram
-    participant H as Native host
-    participant Q as Native event queue
-    participant G as CFFI gateway
-    participant D as Module decoder
-    participant R as Layer 2 runtime
-    participant A as Protocol adapter
-    participant L as Lease registry
-
-    H->>Q: append pointer-free record and owned lease IDs
-    R->>G: drain bounded event batch into foreign arena
-    G->>Q: atomic whole-record copy and pop
-    Q-->>G: aligned event records
-    G->>G: validate all envelopes and lease tables
-    loop each copied event in sequence
-        G->>D: decode module payload
-        D-->>R: immutable bridge event
-        R->>A: process inside cleanup extent
-        A-->>R: transaction result with staged lease adoption
-        R->>L: finalize adoption during successful publication
-        R->>L: release all unadopted event leases
-    end
-```
-
-If the transaction aborts, its staged adoptions are discarded and the event
-cleanup releases those leases normally.
-
-## 8. Command and Completion Interface
-
-### 8.1 Command envelope
-
-```c
-struct atx_command_envelope {
-    struct atx_record_prefix record;
-    uint32_t module_id;
-    uint16_t module_schema_major;
-    uint16_t module_schema_minor;
-    uint32_t opcode;
-    uint32_t command_flags;
-    uint64_t command_id;
-    uint64_t correlation_id;
-    uint64_t target;
-    uint64_t expected_type;
-    uint64_t expected_native_revision;
-    uint32_t lease_count;
-    uint32_t reserved;
-    struct atx_slice leases;
-    struct atx_slice payload;
-};
-```
-
-`expected_native_revision` is optional. It lets Layer 2 reject stale decisions
-when a newer native commit has already changed the target.
-
-Command IDs are nonzero and unique per gateway session. Layer 2 allocates them.
-A correlation ID groups a command with a pending semantic operation and later
-events; it is not a native object identity and may span multiple commands.
-
-### 8.2 Completion envelope
-
-```c
-struct atx_completion_envelope {
-    struct atx_record_prefix record;
-    uint32_t module_id;
-    uint32_t opcode;
-    uint64_t command_id;
-    uint64_t correlation_id;
-    int32_t status;
-    uint32_t native_error_domain;
-    int64_t native_error_code;
-    uint64_t resulting_native_revision;
-    uint32_t lease_count;
-    uint32_t reserved;
-    struct atx_slice leases;
-    struct atx_slice payload;
-};
-```
-
-The module-specific completion payload may contain a configure serial, created
-handle, tested output capability, accepted action, or another bounded result.
-Transferred completion leases use the common lease table and the same explicit
-cleanup/adoption rules as event leases.
-
-### 8.3 Command execution sequence
-
-```mermaid
-sequenceDiagram
-    participant TX as Layer 2 transaction
-    participant G as Native gateway
-    participant H as Native host
-    participant M as Owning protocol module
-    participant W as wlroots or libwayland
-
-    TX->>G: execute typed bridge command
-    G->>G: encode bounded flat record
-    G->>H: execute command envelope
-    H->>H: validate owner thread, module, schema, target type
-    H->>M: dispatch module opcode
-    M->>M: revalidate native lifecycle, serial, and payload
-    M->>W: perform native mechanism
-    W-->>M: immediate native result
-    M-->>H: completion record
-    H-->>G: copied completion
-    G-->>TX: immutable bridge completion
-
-    Note over TX,W: Later client or backend outcomes arrive as correlated events
-```
-
-### 8.4 Batch execution
-
-A batch record contains an array of aligned command records plus batch flags.
-
-Initial batch modes:
-
-- `ordered`: execute in order; report every completion;
-- `stop-on-failure`: stop before the first unexecuted command after failure;
-- `validate-only`: perform all native/module validation without effects where the
-  module advertises support;
-- `module-atomic`: allowed only when one module explicitly guarantees native
-  atomicity, such as a tested multi-output state transaction.
-
-The bridge does not label an arbitrary cross-module batch atomic.
-
-## 9. Handle and Object Interface
-
-### 9.1 Handle rules
-
-- zero means no object;
-- nonzero values are unique for the server lifetime;
-- public operations always include expected type when practical;
-- retirement makes later commands return `STALE_HANDLE`;
-- destroy commands are explicitly marked idempotent or non-idempotent per schema;
-- related handles in an event are snapshots, not implicit retained references;
-- retaining a native object beyond its protocol lifetime is permitted only for
-  an explicit lease kind, never by retaining its ordinary handle.
-
-### 9.2 Layer 2 native resource mirror
-
-The Lisp bridge converts native handles into immutable values:
-
-| Field | Meaning |
-|---|---|
-| server identity | prevents handle use against another gateway |
-| handle ID | native opaque identity |
-| stable module name | resolved from runtime module ID |
-| stable object-kind name | resolved from module schema |
-| native revision | last reported native state revision |
-
-Layer 2’s `native-resource` entity owns this mirror. Domain entities relate to it
-but do not use its numeric handle as their semantic identity.
-
-### 9.3 Information queries
-
-Normal operation uses events to maintain Layer 2 mirrors. Protocol modules may
-provide snapshot commands for:
-
-- startup diagnostics;
-- explicit agent inspection;
-- recovery assertions;
-- details too large or rare for every event.
-
-Queries return immutable snapshots with native revision. Layer 2 must not poll
-queries each frame or use them as hidden mutable state access.
-
-## 10. Lease Interface
-
-### 10.1 Lease kinds
-
-Host-level lease mechanisms include:
-
-- surface-buffer snapshot;
-- graphics image/import resource;
-- output frame target;
-- file descriptor;
-- synchronization timeline/point;
-- capture destination/source;
-- DRM lease;
-- native string/blob only when too large for an event record.
-
-Module-specific lease kinds may build on these mechanisms but follow the same
-ownership protocol.
-
-### 10.2 Common lease binding
-
-```c
-struct atx_lease_binding {
-    uint64_t handle;
-    uint64_t lease_type;
-    uint32_t disposition;
-    uint32_t reserved;
-};
-```
-
-Event/completion dispositions include `transferred` and `borrowed-for-extent`.
-Command dispositions include `borrowed`, `consume-on-success`, and
-`consume-always`. The host validates that the disposition is legal for the
-command schema before executing it.
-
-### 10.3 Common lease operations
-
-The core ABI exposes equivalent operations:
-
-```c
-atx_status atx_lease_retain(
-    struct atx_server *server, atx_handle lease);
-atx_status atx_lease_release(
-    struct atx_server *server, atx_handle lease);
-atx_status atx_lease_info(
-    struct atx_server *server, atx_handle lease,
-    void *record, uint32_t capacity, uint32_t *needed);
-```
-
-Release is idempotent for a lease identity owned by the caller. Retain fails on a
-retired lease or an object that cannot legally be retained.
-
-### 10.4 Lisp lease states
-
-The portable bridge represents a lease with explicit local state:
-
-- `borrowed`: valid only inside an event/command cleanup extent;
-- `owned`: Layer 2 must release it;
-- `adopted`: ownership moved into a committed component/snapshot;
-- `released`: no further access permitted.
-
-The Lisp API signals a local condition before crossing CFFI when code uses a
-released or non-owned lease incorrectly.
-
-Adoption is not an immediate adapter operation. The transaction manager stages
-the adoption and finalizes it only in the non-failing publication phase after
-all validators, hooks, and required native effects have succeeded.
-
-### 10.5 FD transfer
-
-File descriptors never appear as plain integers in event payloads. An FD lease
-supports explicit operations:
-
-- duplicate with `CLOEXEC`, leaving the lease owned;
-- take ownership once, retiring the lease;
-- close/release without extracting it.
-
-Every command schema states whether an FD lease is borrowed, consumed on success,
-or consumed regardless of status.
-
-## 11. Surface Commit and Buffer Snapshot Interface
-
-### 11.1 Surface commit payload
-
-A committed-surface event contains stable protocol state:
-
-- surface handle and commit/native revision;
-- mapped and role state;
-- logical and buffer dimensions;
-- buffer scale and transform;
-- viewport source/destination;
-- damage regions;
+- commit sequence;
+- current surface size;
+- buffer size and transform;
+- scale and viewport source/destination;
+- surface and buffer damage;
 - opaque and input regions;
-- frame-callback presence/count;
-- synchronized-subsurface relationship metadata;
-- optional transferred buffer-snapshot lease;
-- explicit-sync acquire point when present.
+- subsurface synchronization state where applicable;
+- the exact retained buffer snapshot when sampling is required.
 
-The exact client buffer is captured and locked during the native commit callback
-when necessary. Layer 2 never queries `wlr_surface.current.buffer` afterward.
+The Layer 2 callback is:
 
-### 11.2 Snapshot lease
+```lisp
+(surface-commit surface-policy surface-commit-event)
+```
 
-A surface-buffer snapshot lease guarantees:
+Layer 2 decides whether this commit changes a view, invalidates presentation,
+starts an animation, supplies frame callbacks, or is never shown. Layer 1 does
+not translate it into a generic mutation.
 
-- immutable identity for one committed buffer state;
-- exact width, height, format, modifier, planes, transform, and opacity metadata;
-- a native buffer reference or an owned SHM upload snapshot;
-- acquire synchronization metadata;
-- validity until explicit release;
-- copy-on-write behavior when later commits replace the current buffer.
+The protocol adapter handling XDG semantics may observe the same committed
+surface through an explicit relationship to its `wlr-xdg-surface` wrapper. The
+core-surface package does not invent an application or window identity.
 
-The snapshot does not contain a wlroots texture. Import into a graphics device is
-the responsibility of the active Layer 2 renderer’s device provider.
+## 10. Rendering and DRM Practicality
 
-### 11.3 Commit flow
+The revised design keeps more graphics work in Common Lisp without pretending
+that DRM/KMS can be bypassed.
+
+### 10.1 Native mechanisms
+
+wlroots continues to own the selected backend and its DRM/KMS implementation.
+Common Lisp directly calls the public wlroots APIs for:
+
+- backend and renderer creation;
+- allocator and swapchain setup;
+- buffer lock/unlock and texture import;
+- output-state initialization and mutation;
+- render-pass creation and submission;
+- output-state test and commit;
+- presentation and buffer-release signals.
+
+There is no Ataxia C frame-target abstraction. The concrete Layer 2 renderer
+receives typed Lisp wrappers for the actual wlroots renderer, output, buffers,
+textures, and render passes.
+
+### 10.2 Replaceable renderer services
+
+Layer 2 retains its renderer service protocol:
 
 ```mermaid
-sequenceDiagram
-    participant C as Wayland client
-    participant S as Layer 1 surface module
-    participant B as Buffer lease registry
-    participant R as Layer 2 runtime
-    participant P as Presentation builder
-    participant G as Graphics device provider
+flowchart LR
+    FRAME[Typed output-frame callback]
+    COORD[Layer 2 frame coordinator]
+    SNAP[Immutable presentation snapshot]
+    RENDER[Selected renderer service]
+    WLRAPI[Typed Common Lisp wlr.render API]
+    WLR[wlroots renderer, allocator, output]
 
-    C->>S: wl_surface.commit
-    S->>S: copy applied state during callback
-    S->>B: capture exact committed buffer snapshot
-    B-->>S: transferred lease handle
-    S-->>R: surface-commit event with snapshot lease
-    R->>R: update native resource mirror
-    R->>P: adopt snapshot into committed surface component
-    P->>G: import snapshot when a frame samples it
-    G-->>P: renderer-owned texture/import cache reference
-    P->>B: release snapshot after no presentation/frame retains it
+    FRAME --> COORD
+    COORD --> SNAP
+    SNAP --> RENDER
+    RENDER --> WLRAPI
+    WLRAPI --> WLR
 ```
 
-## 12. Graphics Platform Extension
+Possible renderer services include:
 
-The core bridge remains renderer-neutral. The initial native catalog includes an
-`graphics.egl` host extension that provides an EGL/GLES frame-target mechanism to
-a Layer 2 render executor.
+- a default wlroots render-pass renderer;
+- a GLES renderer using Lisp EGL/GLES bindings and wlroots interop;
+- a software/headless renderer;
+- a capture renderer;
+- a future Vulkan renderer if the selected wlroots version exposes the needed
+  interop.
 
-### 12.1 Responsibility split
+World coordinates, projections, hit testing, scene construction, effects, and
+animation sampling remain entirely Layer 2 concerns. A spherical world changes
+the presentation snapshot and renderer math, not the wlroots bindings.
 
-Layer 1 graphics platform owns:
+### 10.3 Performance implication
 
-- DRM/GBM device and borrowed file-descriptor lifetime;
-- EGL display/context/config creation and destruction;
-- owner-thread current-context binding;
-- low-level DMA-BUF/SHM import into context-owned image resources;
-- output-compatible buffer allocation and swapchains;
-- framebuffer/EGLImage lifetime attached to frame targets;
-- synchronization import/export required by output commit;
-- output state test and commit;
-- release and presentation completion.
+CFFI calls per output-state operation or render-pass item are practical at
+ordinary compositor scale. The hot geometry, animation, culling, damage, and
+draw-list construction remain Lisp computations. A renderer should amortize FFI
+crossings by using wlroots render passes or GPU buffer uploads rather than
+placing policy in C.
 
-Layer 2 graphics device provider owns:
+If profiling later proves that one exact wlroots call pattern needs a native
+helper, that helper may batch only that concrete wlroots operation. It must not
+become a protocol-independent render command language.
 
-- device selection among advertised candidates;
-- shaders and programs;
-- texture import requests, sampling policy, and image caches;
-- render graph execution;
-- clipping, blending, effects, color transforms, and readback algorithms;
-- damage and sampled-surface reporting.
+### 10.4 Direct scanout
 
-### 12.2 Frame acquisition command
+Layer 2 may propose a concrete client `wlr_buffer` for direct scanout after its
+renderer and policy services verify eligibility. It then builds a typed
+`wlr-output-state` and calls the direct output test/commit wrappers. wlroots and
+the backend decide whether KMS accepts it. Failure returns to Layer 2, which
+renders a composed frame instead.
 
-`graphics.egl` exposes a command equivalent to `acquire-frame-target` with:
+## 11. Event Loop and Threading
 
-Input:
+The compositor owner thread executes a Lisp-controlled loop:
 
-- output handle and expected output revision;
-- desired logical/buffer dimensions;
-- desired color/format capability constraints;
-- preservation/damage-history requirements;
-- optional desired output state transaction identity.
-
-Completion:
-
-- frame-target lease;
-- graphics-device identity;
-- width, height, DRM format, modifier, and color description;
-- buffer age and required repaint region;
-- top-left logical origin contract;
-- supported synchronization path;
-- whether direct readback is available.
-
-### 12.3 Graphics-image lease
-
-Layer 2 cannot dereference a surface-buffer snapshot and must not receive a
-`wlr_buffer` or `EGLImage`. The `graphics.egl` extension therefore provides an
-`import-surface-snapshot` command.
-
-Input:
-
-- surface-buffer snapshot lease;
-- target graphics-device identity;
-- intended sampling/color usage;
-- optional cache identity from the Layer 2 graphics provider.
-
-Completion:
-
-- owned graphics-image lease;
-- matching graphics-device identity;
-- width, height, format, opacity, and color description;
-- sampling target kind such as 2D or external image;
-- declared texture origin and UV transform;
-- synchronization state.
-
-Layer 1 performs the low-level DMA-BUF EGLImage import or bounded SHM upload
-because it owns the native buffer/context lifetimes. This is resource import, not
-scene composition. Layer 2 still decides whether to import, cache, sample,
-transform, blend, filter, or ignore the image.
-
-Inside a matching frame-context extent, a `prepare-image-for-frame` command
-returns a short-lived binding descriptor containing the numeric GLES texture
-name/target and ensures the buffer acquire synchronization is satisfied. The
-descriptor is valid only for that graphics device and context extent. It contains
-no EGL or wlroots pointer.
-
-The graphics-image lease retains or copies everything needed from the underlying
-surface snapshot. Releasing the source snapshot before the image is safe only if
-the completion explicitly reports independent ownership. Otherwise the Layer 2
-image cache retains both leases.
-
-Releasing a graphics-image lease retires its public handle immediately. If the
-underlying GL/EGL object requires a current context for destruction, Layer 1
-queues bounded internal destruction and performs it at the next graphics safe
-point or during ordered shutdown with the owning context current.
-
-### 12.4 Context enter/leave
-
-The EGL extension exposes balanced owner-thread operations encoded through the
-generic command envelope. Its module-local commands are:
-
-```text
-graphics.egl / enter-frame-context
-graphics.egl / leave-frame-context
+```lisp
+(loop while (runtime-running-p runtime)
+      do (drain-agent-mailbox runtime)
+         (run-due-lisp-timers runtime)
+         (wl-event-loop-dispatch event-loop (next-timeout runtime))
+         (run-outermost-safe-point-effects runtime)
+         (schedule-requested-frames runtime)
+         (wl-display-flush-clients display)))
 ```
 
-Layer 1 Lisp wrappers encode these commands and call `atx_server_execute`; the
-module adds no EGL-specific public C symbol.
+Exact ordering remains subject to wlroots event-loop requirements, but ownership
+does not move into C.
 
-Entering makes the correct EGL context and target current. Target info contains
-graphics-API values required by the executor, such as framebuffer identity and
-declared origin, but never a wlroots pointer.
+Rules:
 
-The Layer 2 renderer invokes OpenGL/GLES only inside this dynamic extent. Leaving
-restores or clears current context according to the extension contract. Errors
-force the frame into cancel-only state.
+- all wlroots object mutation occurs on the compositor owner thread;
+- C callbacks always re-enter the same Lisp thread;
+- agent and shell threads submit Lisp commands through a mailbox;
+- an `eventfd` or pipe wakes the `wl_event_loop`;
+- worker results are immutable Lisp values until adopted on the owner thread;
+- workers never hold or call raw wlroots pointers;
+- callbacks never perform blocking agent, network, or disk operations.
 
-### 12.5 Frame submit/cancel
+## 12. Horizontal Protocol Expansion
 
-Submit command input includes:
-
-- frame target lease;
-- complete damage region;
-- GPU completion fence/timeline point or correctness-first finish status;
-- sampled surface commit identities;
-- optional output state changes;
-- presentation mode/tearing hint selected by Layer 2 policy.
-
-Layer 1 tests and commits output state. Submit consumes the frame lease on both
-success and terminal failure. Cancel is idempotent and valid before submission.
-
-### 12.6 Rendering sequence
+Protocols expand horizontally as Lisp packages around actual wlroots protocol
+implementations.
 
 ```mermaid
-sequenceDiagram
-    participant FC as Layer 2 frame coordinator
-    participant GW as Native gateway
-    participant EGL as Layer 1 graphics EGL extension
-    participant RE as Layer 2 render executor
-    participant OUT as Layer 1 output module
+flowchart TB
+    LOOP[Common Lisp wlroots runtime]
+    CORE[Core surface bindings]
+    XDG[XDG shell bindings and sink]
+    LAYER[Layer shell bindings and sink]
+    DATA[Data-device bindings and sink]
+    LOCK[Session-lock bindings and sink]
+    SYNC[Explicit-sync bindings and sink]
+    CAP[Capture bindings and sink]
 
-    FC->>GW: acquire frame target command
-    GW->>EGL: allocate or acquire compatible target
-    EGL-->>GW: owned frame lease and capabilities
-    GW-->>FC: bridge frame target
-    FC->>GW: enter EGL frame context
-    GW->>EGL: make context and FBO current
-    EGL-->>RE: target descriptor
-    RE->>GW: prepare sampled graphics-image leases
-    GW-->>RE: context-local texture bindings
-    RE->>RE: execute validated batched render graph
-    RE-->>FC: damage, samples, and GPU fence
-    FC->>GW: leave context
-    FC->>GW: submit frame command
-    GW->>OUT: test and commit buffer/state/fence
-    OUT-->>GW: immediate commit result
-    GW-->>FC: completion
-    OUT-->>FC: later presentation and release events
+    LOOP --> CORE
+    LOOP --> XDG
+    LOOP --> LAYER
+    LOOP --> DATA
+    LOOP --> LOCK
+    LOOP --> SYNC
+    LOOP --> CAP
 ```
 
-### 12.7 Future graphics APIs
+### 12.1 Protocol already implemented by wlroots
 
-A Vulkan or CPU executor adds another graphics-platform extension with the same
-Layer 2 frame-target protocol. It does not change protocol adapters, scene,
-projection, animation, or render-planner contracts.
+Adding such a protocol requires:
 
-## 13. Output Transactions
+1. raw CFFI declarations for the pinned wlroots header;
+2. typed Lisp wrappers for its objects and functions;
+3. `wl_listener` subscriptions for its exact signals;
+4. concrete Lisp event structs where signal data must be copied;
+5. protocol-specific sink generic functions;
+6. a Layer 2 policy service if any behavior is optional.
 
-### 13.1 Output event state
+It does not require native host registration or changes to a central router.
 
-Layer 1 reports:
+### 12.2 Protocol not implemented by wlroots
 
-- stable output handle and connector identity;
-- modes and current mode identities;
-- physical and effective dimensions;
-- scale, transform, subpixel, refresh, VRR, color, and timeline capabilities;
-- frame deadlines, damage requests, commit, presentation, and destruction;
-- native revision for state conflict detection.
+If only Wayland XML exists:
 
-Layer 1 reports capabilities, not desktop placement. Layer 2 owns viewports and
-output arrangement metadata.
+- `wayland-scanner` generated interface descriptors may be compiled as inert
+  ABI data;
+- Common Lisp binds the corresponding `wl_global`, `wl_resource`, dispatcher,
+  and generated interface symbols;
+- request callbacks are concrete to that protocol;
+- all protocol state and policy stay in Lisp;
+- any reusable native mechanism should preferably be added to wlroots rather
+  than hidden in an Ataxia-specific host framework.
 
-### 13.2 Test and commit
+This tier is more work because wlroots no longer supplies validation and state
+tracking. It is still horizontally additive, but it must implement the actual
+Wayland state machine faithfully.
 
-Output module commands support:
+### 12.3 Loading and replacement limits
 
-- test one output state;
-- commit one output state;
-- test a multi-output state set;
-- commit a previously tested compatible state set;
-- schedule a frame;
-- attach a rendered frame target to an output transaction.
+Lisp policy handlers, hooks, renderers, worlds, and animation services can be
+replaced at runtime.
 
-Multi-output atomicity is advertised precisely. Layer 2 must not infer atomicity
-when the backend cannot guarantee it.
+An advertised Wayland global and already-bound client resources cannot always
+be safely unloaded. A protocol implementation may be quiesced for new clients,
+but its old resource handlers must remain until all resources are destroyed.
+This is a Wayland lifetime constraint, not a reason to add a native module ABI.
 
-## 14. Input and Seat Delivery Interface
+## 13. Protocol Coverage Model
 
-### 14.1 Incoming events
+The boundary uses three families of exact callbacks:
 
-Input module payloads remain device-specific and preserve raw values:
+| Family | Examples | Meaning |
+|---|---|---|
+| Wayland/wlroots object lifecycle | surface commit/destroy, XDG map/unmap, popup creation | exact object or role transition |
+| Wayland policy request | request move/resize, set selection, activation, session lock | client request requiring Layer 2 policy |
+| wlroots backend/device signal | new output, output frame/present, pointer motion, key | compositor hardware/backend fact |
 
-- device add/remove and capability changes;
-- pointer motion absolute/relative, button, axis, frame;
-- keyboard key, modifiers, keymap, repeat information;
-- touch down/up/motion/cancel/frame;
-- tablet proximity, tip, axes, buttons, pad rings/strips/modes;
-- switches and other backend devices;
-- client cursor, constraints, gestures, and shortcut-inhibit requests.
+Backend and device signals are not mislabeled as Wayland wire events. They keep
+their wlroots-specific names.
 
-Layer 1 does not map them to outputs, choose focus, move a cursor, or execute a
-window operation.
+wlroots internally consumes some wire-level requests and emits only the policy
+signals its API exposes. Ataxia can expose every relevant wlroots signal, but it
+cannot observe a request that wlroots deliberately handles internally without
+patching wlroots or implementing that protocol directly. This is the principal
+tradeoff of direct wlroots integration.
 
-### 14.2 Outgoing seat command batches
+## 14. Security-Sensitive Synchronous Paths
 
-Layer 2 submits one ordered seat-delivery batch per logical protocol frame:
+### 14.1 Global filter
 
-- pointer enter/leave/motion/button/axis/frame;
-- keyboard enter/leave/key/modifiers/repeat/keymap;
-- touch focus/down/up/motion/cancel/frame;
-- tablet delivery;
-- cursor-surface acceptance or rejection;
-- LED updates.
+The Wayland global filter is synchronous. It may call a bounded Lisp predicate
+that consults a precomputed immutable client-policy snapshot. It must not invoke
+agents, hooks with unknown runtime, or blocking code.
 
-The seat module validates surface, client, serial, and logical-seat state before
-calling wlroots. A batch completion reports exactly which commands executed if
-the batch cannot be atomic.
+Sensitive globals default to hidden if the callback encounters an error.
 
-### 14.3 Serial-bearing requests
+### 14.2 Session lock
 
-Events containing move, resize, set-cursor, selection, DND, constraint, or other
-serial-bearing requests include:
+Session lock remains in Common Lisp. Correct sequencing provides fail-closed
+behavior without a native lock state machine:
 
-- original serial;
-- originating seat and client handles;
-- native validation state captured at request time;
-- correlation identity.
+1. receive the concrete lock request;
+2. stop scheduling ordinary content for affected outputs;
+3. commit blank or valid lock frames;
+4. redirect/suppress ordinary input in the Layer 2 seat policy;
+5. only then call the typed wlroots function that reports the session locked.
 
-Layer 1 revalidates the serial when executing the response command. Layer 2 must
-handle `PROTOCOL_REJECTED` instead of assuming a once-valid serial remains valid.
+If Lisp fails before step 5, the lock was never acknowledged. If it fails after
+step 5, the last committed output remains blank or locked. The implementation
+must never acknowledge first and hope to hide content later.
 
-## 15. Data Transfer and FD Interface
+### 14.3 Serial validation
 
-Selection and drag modules report source, offer, request, seat, MIME, action, and
-serial state through normal event records. Data FDs use leases.
+Move, resize, popup, selection, drag-and-drop, and activation requests retain
+their concrete Wayland serials. The protocol-specific Layer 2 handler authorizes
+the request, and the typed Layer 1 operation performs any wlroots validation
+required at the time of use. Serial handling is never reduced to a generic
+precondition field.
 
-Policy sequence:
+## 15. Performance Assessment
 
-1. Layer 1 reports source/offer/request lifecycle.
-2. Layer 2 transfer policy authorizes and stages a portable session.
-3. Layer 2 submits accept/reject/action commands.
-4. Layer 1 revalidates serial and native resource state.
-5. FD send/receive events transfer an FD lease.
-6. Layer 2 transport consumes or duplicates the lease explicitly.
-7. Terminal success/cancel/failure events reconcile portable state.
+This design is practical if the following disciplines are observed.
 
-The interface must not claim successful DND data transfer when the underlying
-protocol module cannot observe MIME receive/completion semantics. Such a module
-reports an explicit capability limitation.
+### 15.1 Callback cost
 
-## 16. Security and Session Lock Interface
+Pointer, tablet, and touch signals may arrive at high frequency, but a direct
+CFFI callback plus a specialized Lisp struct is not inherently expensive enough
+to justify a native event protocol. Layer 1 should:
 
-Session locking uses the same event/command contract plus a host emergency state.
+- avoid string conversion and hash-table discovery on the hot path;
+- resolve the subscription directly from the listener token;
+- use specialized numeric slot types where the Lisp implementation benefits;
+- avoid copying regions unless the signal requires persistence;
+- permit protocol-local object pools only after measurement;
+- measure callback, input-to-presentation, and GC pause time.
 
-```mermaid
-sequenceDiagram
-    participant CL as Lock client
-    participant SL as Layer 1 lock module
-    participant EH as Native emergency shield
-    participant L2 as Layer 2 security policy
-    participant OUT as Output module
+### 15.2 Rendering cost
 
-    CL->>SL: request session lock
-    SL->>EH: enter protected pending state
-    EH->>OUT: prevent another unlocked frame and blank as required
-    SL-->>L2: lock policy request event
-    L2->>SL: accept or reject command
-    alt accepted
-        SL->>OUT: confirm protected frame on every output
-        SL-->>CL: locked event
-    else rejected
-        SL->>EH: leave pending state if safe
-        SL-->>CL: finished event
-    end
+The dominant work is normally buffer import, GPU submission, effects, and KMS
+commit, not the Lisp-to-C call itself. Scene traversal, animation, spatial math,
+damage, and batching stay in Lisp. The concrete renderer minimizes native calls
+without moving policy into C.
 
-    Note over SL,L2: Layer 2 owns authorization; Layer 1 remains fail-closed
-```
+### 15.3 Garbage collection
 
-The emergency shield is a generic host capability used only for security
-invariants. It does not lay out or render lock-client surfaces beyond opaque
-blanking needed before Layer 2 can respond.
+Native callbacks may allocate Lisp values, so the implementation must use a Lisp
+runtime configuration suitable for a compositor and keep event objects short
+lived. Long-lived native resources use explicit cleanup; finalizers are never
+the primary release mechanism.
 
-## 17. Per-Client Global Access Interface
+An incremental or generational GC pause is a runtime concern to benchmark, not a
+reason to duplicate all events in a C queue. If a particular Lisp implementation
+cannot meet latency targets, the fallback is a protocol-specific optimization,
+not restoration of the rejected generic ABI.
 
-Layer 2 publishes an immutable native-matchable access snapshot containing:
+## 16. Versioning Strategy
 
-- client security labels assigned during connection setup;
-- stable module/global access classes;
-- allow/deny decisions;
-- snapshot generation.
+wlroots does not promise a stable ABI across arbitrary releases. Ataxia therefore:
 
-Layer 1 uses this snapshot synchronously from the Wayland global filter. It never
-calls Lisp from the filter. Sensitive globals default to deny before a snapshot
-permits them.
+- pins one wlroots release line;
+- compiles raw bindings and the tiny C shim against the same headers;
+- checks a build/runtime version fingerprint at startup;
+- treats a wlroots upgrade as an explicit binding migration;
+- names event structs and wrapper functions after the pinned API;
+- keeps Wayland advertised protocol versions separate from the wlroots library
+  version.
 
-Changing the policy affects future advertisements/binds as defined by Wayland;
-it does not pretend existing bound resources can always be revoked.
+There is no Layer 1–Layer 2 schema negotiation because both are Common Lisp
+systems loaded into one image. ASDF dependency versions and package contracts
+provide the normal Lisp compatibility boundary.
 
-## 18. Portable Common Lisp Bridge Protocol
+## 17. Layer 2 Integration
 
-Layer 2 imports a portable package containing no CFFI definitions.
+Layer 2 no longer has a `native gateway`, native event router, native completion
+reconciler, or numeric native-resource handle.
 
-### 18.1 Core classes
+Instead:
+
+- protocol policy services specialize the protocol-specific sink generics;
+- semantic entities may reference typed Layer 1 wrapper objects as provenance;
+- a callback opens or joins the current Layer 2 transaction;
+- protocol-specific methods stage semantic mutations and exact native effects;
+- native effects are ordinary typed function calls executed at their declared
+  safe point;
+- domain events are created only after protocol facts enter Layer 2;
+- animations and hooks react to semantic mutations, not raw wlroots opcodes.
 
 ```mermaid
 classDiagram
-    class NativeGateway {
-        identity
-        state
-        catalog
-    }
+    class WlrXdgToplevel
+    class XdgRequestResize
+    class XdgShellPolicyService
+    class View
+    class InteractiveOperation
+    class MutationTransaction
 
-    class NativeModuleDescriptor {
-        stableName
-        schemaVersion
-        capabilities
-        dependencies
-    }
-
-    class BridgeEvent {
-        sequence
-        timestamp
-        module
-        opcode
-        subject
-        payload
-        leases
-    }
-
-    class BridgeCommand {
-        commandId
-        correlationId
-        module
-        opcode
-        target
-        payload
-    }
-
-    class BridgeCompletion {
-        commandId
-        status
-        payload
-    }
-
-    class NativeHandle {
-        gatewayIdentity
-        id
-        type
-        revision
-    }
-
-    class NativeLease {
-        handle
-        kind
-        localState
-    }
-
-    NativeGateway o-- NativeModuleDescriptor
-    NativeGateway --> BridgeEvent
-    NativeGateway --> BridgeCompletion
-    BridgeEvent o-- NativeHandle
-    BridgeEvent o-- NativeLease
-    BridgeCommand o-- NativeHandle
+    XdgRequestResize --> WlrXdgToplevel
+    XdgShellPolicyService --> XdgRequestResize : handles
+    XdgShellPolicyService --> MutationTransaction : stages
+    MutationTransaction --> InteractiveOperation : creates
+    InteractiveOperation --> View : transforms
 ```
 
-### 18.2 Gateway generics
+The Layer 2 kernel remains independent of XDG shell because the XDG generic
+functions live in the XDG package. Loading a new protocol adds methods and
+services, not kernel cases.
 
-The portable protocol defines conceptual generic functions:
+## 18. Representative End-to-End Flows
 
-| Generic | Responsibility |
-|---|---|
-| gateway identity/state/catalog | immutable inspection |
-| configure gateway | select native modules before start |
-| start gateway | create socket/start backend |
-| dispatch gateway | bounded native event-loop dispatch |
-| drain native events | return a bounded vector of copied immutable events |
-| next gateway event | convenience operation for one copied event or no event |
-| execute bridge command | return immediate bridge completion |
-| execute bridge batch | return ordered completion vector |
-| retain/release native lease | explicit native lifetime |
-| gateway statistics | copied bounded counters |
-| stop gateway | owner-thread quiesce and stop |
-| destroy gateway | final idempotent cleanup |
+### 18.1 XDG move request
 
-The CFFI gateway implements these generics. A replay gateway can implement them
-from a recorded event/command trace.
+1. `wlr_xdg_toplevel.events.request_move` fires.
+2. The listener trampoline calls the exact Layer 1 Lisp subscription.
+3. Layer 1 copies the toplevel, seat, and serial into `xdg-request-move`.
+4. It calls `xdg-toplevel-request-move` on the current XDG policy service.
+5. Layer 2 validates focus, grab ownership, and policy.
+6. Layer 2 creates an `interactive-operation` mutation.
+7. Subsequent concrete pointer-motion callbacks update that operation.
+8. The world and presentation services compute view geometry and animation.
+9. XDG configure functions are called directly when client size must change.
 
-### 18.3 Module decoders
+### 18.2 Firefox pointer interaction
 
-Each Layer 1 Lisp module registers:
+1. A concrete pointer-motion or button signal enters Lisp.
+2. The input service maps device coordinates through the active world and
+   presentation snapshot.
+3. Hit testing returns a surface and exact surface-local coordinates.
+4. Layer 2 calls `seat-pointer-notify-enter`, motion, button, axis, and frame
+   functions directly and in protocol order.
+5. Pointer focus is changed only when the hit target changes.
+6. Resize cursors and resize operations exist only while a concrete decorated
+   edge or authorized XDG resize request is active.
 
-- stable native module name and supported schema range;
-- payload decoder per event opcode;
-- command encoder per command class;
-- completion decoder per command opcode;
-- stable object/lease kind names;
-- payload validators and bounds;
-- lease-transfer field declarations.
+No generic event translation can lose the seat, serial, coordinate, or frame
+semantics in this path.
 
-Decoders copy strings, arrays, boxes, regions, and metadata into detached Lisp
-values. No foreign pointer survives `next-gateway-event`.
+### 18.3 Output frame
 
-### 18.4 Protocol adapters
+1. `wlr_output.events.frame` calls `output-frame` on the output service.
+2. The frame coordinator samples the Layer 2 clock and animation state.
+3. Presentation builds one immutable scene/hit-test snapshot.
+4. The chosen renderer uses typed wlroots render and buffer wrappers.
+5. Layer 2 builds and tests a concrete output state.
+6. It commits that output state directly.
+7. `output-present` later supplies the actual presentation facts.
 
-Layer 2 protocol adapters dispatch on the active adapter service and decoded
-payload class:
-
-```text
-(adapt-bridge-event adapter bridge-event payload transaction)
-(reconcile-bridge-completion adapter pending-operation completion transaction)
-```
-
-Domain services never call module encoders directly. Adapters construct typed
-bridge-command objects through the public bridge protocol.
-
-### 18.5 Proposed portable generic-function surface
-
-The boundary package exposes a deliberately small CLOS protocol equivalent to:
-
-```lisp
-(defgeneric configure-native-gateway (gateway configuration))
-(defgeneric start-native-gateway (gateway))
-(defgeneric dispatch-native-gateway (gateway timeout))
-(defgeneric drain-native-events (gateway maximum-events maximum-bytes))
-(defgeneric next-native-event (gateway))
-(defgeneric execute-native-command (gateway command))
-(defgeneric execute-native-command-batch (gateway commands mode))
-(defgeneric native-gateway-statistics (gateway))
-(defgeneric retain-native-lease (gateway lease))
-(defgeneric release-native-lease (gateway lease))
-(defgeneric stage-native-event-lease-adoption
-    (transaction event lease owner))
-(defgeneric dispose-native-event (event))
-(defgeneric stop-native-gateway (gateway))
-(defgeneric destroy-native-gateway (gateway))
-```
-
-`next-native-event` returns an owned `bridge-event`. The runtime always processes
-it through a cleanup abstraction equivalent to:
-
-```lisp
-(call-with-native-event gateway
-  (lambda (event)
-    (process-native-event runtime event)))
-```
-
-`call-with-native-event` guarantees `dispose-native-event` in an unwind cleanup.
-Successfully committed staged leases are removed from the event cleanup set and
-attached to the declared committed owner. Aborted adoptions remain in the event
-cleanup set.
-
-The graphics extension adds a portable protocol equivalent to:
-
-```lisp
-(defgeneric acquire-frame-target (gateway output request))
-(defgeneric call-with-frame-context (gateway frame-target function))
-(defgeneric submit-frame-target (gateway frame-target submission))
-(defgeneric cancel-frame-target (gateway frame-target))
-```
-
-`call-with-frame-context` enters the native EGL context, invokes the supplied
-Layer 2 renderer function on the owner thread, and guarantees leave/cancel
-cleanup. It is not a native-to-Lisp callback: Lisp initiates the call after
-native event dispatch has returned.
-
-Conditions corresponding to common statuses are portable subclasses of a
-`native-gateway-error` condition. Ordinary protocol rejection and `AGAIN` may be
-returned as completion values when expected by the command contract; programmer
-errors such as wrong gateway identity or locally released leases signal before
-CFFI.
-
-## 19. Threading and Reentrancy
-
-### 19.1 Owner-thread operations
-
-The following are owner-thread-only:
-
-- create/start/dispatch/stop server;
-- module enablement after creation;
-- event drain;
-- command execution;
-- lease retain/release;
-- EGL context enter/leave;
-- frame acquisition/submission/cancellation;
-- native object queries.
-
-The gateway records its owner thread at server creation or start and rejects
-wrong-thread operations before touching native state.
-
-### 19.2 Cross-thread wakeup
-
-Layer 2 worker/control threads write only to the Layer 2 mailbox and wake the
-runtime through a small thread-safe wakeup primitive. They do not submit Layer 1
-commands directly.
-
-### 19.3 No callback reentrancy
-
-`dispatch-gateway` may invoke native callbacks internally, but those callbacks
-only append native records. It returns before Layer 2 decodes events or submits
-commands. A command executor never calls back into Lisp.
-
-The only recursive activity permitted is native library implementation detail
-that does not cross the CFFI boundary.
-
-## 20. Backpressure and Fault Semantics
-
-### 20.1 Queue partitioning
-
-Layer 1 maintains capacity classes:
-
-- reserved critical lifecycle/transaction queue;
-- discrete input queue;
-- coalescible continuous-input slots keyed by device/protocol frame;
-- frame-deadline slots keyed by output;
-- bounded diagnostic queue;
-- per-module payload byte quotas.
-
-### 20.2 Exhaustion behavior
-
-- diagnostic overflow drops diagnostics and increments counters;
-- continuous input coalesces only within legal boundaries;
-- a client causing protocol-resource/event exhaustion is disconnected or its
-  request is failed without poisoning unrelated clients;
-- backend-critical state that cannot be recorded transitions the affected module
-  or server to `FAULTED` rather than silently continuing with divergent state;
-- Layer 2 stops normal policy processing after a fatal bridge fault and performs
-  ordered shutdown or an explicitly designed recovery path.
-
-### 20.3 Dispatch budgets
-
-Layer 2 selects a bounded native dispatch timeout and drains critical events
-before mailbox/animation/frame work. The runtime turn enforces fairness so a
-flooding client or input device cannot permanently starve output deadlines.
-
-## 21. Schema Generation
-
-Event/command payload definitions must have one authoritative machine-readable
-source that generates:
-
-- C constants and flat record declarations;
-- Common Lisp CFFI layout metadata;
-- Lisp payload classes/constructors where appropriate;
-- bounds/field tables;
-- module catalog tables;
-- interface documentation;
-- ABI layout probes.
-
-Wayland XML remains authoritative for the client protocol, but it does not
-describe Ataxia’s bridge payload ownership or policy boundary. The bridge schema
-is separate and maps generated Wayland callbacks into Ataxia records.
-
-The schema-source format remains a decision point. Hand-maintaining duplicate C
-and Lisp offsets is rejected.
-
-## 22. Example Protocol Records
-
-### 22.1 XDG move request
-
-Conceptual payload:
-
-```c
-struct atx_xdg_request_move {
-    struct atx_record_prefix record;
-    uint64_t toplevel;
-    uint64_t surface;
-    uint64_t seat;
-    uint64_t client;
-    uint32_t serial;
-    uint32_t reserved;
-    uint64_t native_revision;
-};
-```
-
-Layer 1 validates and copies the request. Layer 2 decides whether to create an
-interactive move operation. No native move behavior exists.
-
-### 22.2 XDG configure command
-
-Conceptual payload:
-
-```c
-struct atx_xdg_configure_toplevel {
-    struct atx_record_prefix record;
-    uint64_t configure_fields;
-    int32_t width;
-    int32_t height;
-    uint32_t state_count;
-    uint32_t state_offset;
-    uint64_t policy_transaction_id;
-};
-```
-
-Completion returns the configure serial. Later ack and surface commit events
-carry that serial/revision relationship.
-
-### 22.3 Pointer motion event
-
-Conceptual payload preserves raw device-space data:
-
-```c
-struct atx_pointer_motion {
-    struct atx_record_prefix record;
-    uint64_t device;
-    uint64_t seat_hint;
-    uint64_t time_usec;
-    double delta_x;
-    double delta_y;
-    double unaccelerated_x;
-    double unaccelerated_y;
-    uint32_t sample_count;
-    uint32_t frame_flags;
-};
-```
-
-There is no output position, focused surface, cursor position, or window location
-in this Layer 1 event.
-
-## 23. End-to-End Interface Example
+## 19. Package Dependency Rule
 
 ```mermaid
-sequenceDiagram
-    participant APP as Firefox client
-    participant XDG1 as Layer 1 XDG module
-    participant GW as CFFI native gateway
-    participant PA as Layer 2 XDG adapter
-    participant SH as Shell service
-    participant WO as World service
-    participant PR as Presentation builder
-    participant RE as Render executor
-    participant OUT1 as Layer 1 output module
+flowchart TD
+    RAW[ataxia.wlr.raw.*]
+    GLUE[ataxia.wlr.glue]
+    CORE[ataxia.wlr.core]
+    PROTO[ataxia.wlr protocol packages]
+    L2PROTO[Layer 2 protocol policy packages]
+    KERNEL[Layer 2 kernel]
+    SERVICES[Layer 2 domain services]
 
-    APP->>XDG1: create toplevel and initial commit
-    XDG1-->>GW: created plus commit events
-    GW-->>PA: copied bridge events
-    PA->>SH: request initial view policy
-    SH->>WO: construct opaque placement
-    SH-->>PA: mutations plus configure command
-    PA->>GW: execute XDG configure
-    GW->>XDG1: validate and emit configure
-    XDG1-->>PA: completion with serial
-    APP->>XDG1: ack and commit buffer
-    XDG1-->>PA: ack plus commit with buffer lease
-    PA->>PR: adopt content and invalidate output
-    PR->>RE: presentation snapshot and render graph
-    RE->>GW: acquire and enter frame target
-    RE->>RE: execute Layer 2 rendering algorithm
-    RE->>GW: submit damage, fence, and sampled commits
-    GW->>OUT1: test and commit output state
-    OUT1-->>PA: presentation completion event
-    PA->>GW: frame-done and presentation-feedback commands
+    RAW --> CORE
+    GLUE --> CORE
+    CORE --> PROTO
+    KERNEL --> L2PROTO
+    PROTO --> L2PROTO
+    KERNEL --> SERVICES
+    L2PROTO --> SERVICES
 ```
 
-This sequence exercises both directions without exposing native pointers or
-putting shell/render policy in Layer 1.
+Rules:
 
-## 24. Package Boundary
+- raw CFFI packages are private to Layer 1;
+- Layer 2 protocol packages may depend on public typed Layer 1 protocol APIs;
+- the Layer 2 kernel does not depend on XDG, layer shell, or optional protocols;
+- renderer implementations may depend on `ataxia.wlr.render`;
+- world, animation, hook, and agent packages never depend on raw bindings;
+- no package uses a generic bridge envelope.
 
-Proposed systems:
+## 20. Explicitly Removed Design Elements
 
-| System | Layer | May depend on |
-|---|---|---|
-| `ataxia.bridge` | boundary protocol | portable CL utilities only |
-| `ataxia.native.abi` | Layer 1 Lisp | CFFI and generated ABI layouts |
-| `ataxia.native.gateway` | Layer 1 Lisp | bridge protocol, native ABI |
-| `ataxia.native.modules.*` | Layer 1 Lisp | gateway, generated module schemas |
-| `ataxia.kernel.runtime` | Layer 2 kernel | bridge protocol, kernel systems |
-| `ataxia.protocol-adapters.*` | Layer 2 domain | bridge values, domain protocols |
-| `ataxia.render.*` | Layer 2 domain | render/presentation/bridge frame protocols |
+The following parts of the previous contract are removed rather than renamed:
 
-`ataxia.kernel.runtime` must not depend on `ataxia.native.abi`. The executable
-composition root supplies a concrete `cffi-native-gateway` to the runtime.
+1. public server C ABI;
+2. runtime native module catalog;
+3. host/module/schema negotiation;
+4. runtime-assigned module IDs;
+5. event envelopes and event opcodes;
+6. command envelopes and command opcodes;
+7. completion envelopes and correlation IDs;
+8. native event/command batching;
+9. numeric object handles;
+10. generic native object queries;
+11. common lease tables and lease dispositions;
+12. generic graphics-image and frame-target leases;
+13. `ataxia.native.gateway`;
+14. generic protocol adapters selected by namespace/opcode;
+15. Layer 2 restart while retaining an independent native server.
 
-## 25. Explicitly Rejected Boundary Designs
+The last removal is an accepted tradeoff. A Lisp image failure restarts the
+compositor. Supporting independent Layer 2 process restart would require the
+kind of serialization boundary the user has rejected.
 
-- one public C function per Wayland request/event;
-- one ever-growing event union containing every protocol payload;
-- string event names and property lists in the native hot path;
-- raw wlroots pointers or C struct slot access from Lisp;
-- Lisp callbacks invoked by `wl_signal`;
-- raw file-descriptor integers with undocumented close ownership;
-- raw EGL/GBM/wlr buffer pointers stored in Layer 2 objects;
-- native surface textures as the renderer abstraction;
-- Layer 2 polling native structs to discover changes omitted from events;
-- assuming a submitted native command succeeded before reading completion;
-- pretending arbitrary command batches are atomic;
-- relying on finalizers to release buffers, frames, or FDs;
-- unbounded event payloads or module-private queues;
-- calling Layer 1 from control/worker threads;
-- advertising privileged protocol globals without a synchronous native access
-  snapshot;
-- making renderer-specific frame-target fields part of the host core ABI.
+## 21. Interface Invariants
 
-## 26. Interface Invariants
+1. Every inbound call names one exact wlroots/libwayland signal in its defining
+   package.
+2. Every outbound call names one exact compositor action and ultimately calls a
+   concrete public native API.
+3. No raw callback-data pointer survives callback extent.
+4. No Lisp condition unwinds across a C callback frame.
+5. No wlroots call occurs from a non-owner thread.
+6. No Ataxia-authored C object duplicates the wlroots object graph.
+7. No central router changes when an optional protocol is added.
+8. No C component knows about views, worlds, focus, animations, hooks, or agents.
+9. Surface buffers, FDs, output states, and render resources use their own exact
+   lifetime types.
+10. Protocol versions and wlroots library versions are not conflated.
+11. Render and hit testing consume the same Layer 2 presentation snapshot.
+12. Layer 2 policy is replaceable without rebuilding or relinking native code.
+13. Active Wayland resources remain serviced until native destruction even if a
+    protocol is quiesced.
+14. Session lock is acknowledged only after ordinary content is no longer
+    presentable.
+15. Agent actions enter through the Lisp owner-thread mailbox, never through C.
 
-1. The host ABI remains small when a protocol module is added.
-2. Every protocol event/command is attributable to one module/schema/opcode.
-3. Every event is copied before Layer 2 can inspect it.
-4. Every retained native resource uses a lease.
-5. Every lease has exactly one explicit ownership path at a time.
-6. Every command is revalidated against current native state.
-7. Every immediate command has a completion.
-8. Every later native outcome carries a correlation identity when applicable.
-9. No unknown critical event is silently skipped.
-10. No graphics context is used outside an owner-thread frame extent.
-11. No surface buffer is accessed after its snapshot lease is released.
-12. No output frame is committed after renderer failure or incomplete target
-    initialization.
-13. Layer 2 controls policy event emission; Layer 1 controls protocol-valid
-    serialization and mandatory housekeeping.
-14. Native queue pressure is observable and class-aware.
-15. Layer 2 can run against a replay gateway without loading wlroots.
+## 22. Remaining Decisions Before Implementation
 
-## 27. Decisions Required Before Interface Freeze
+Only implementation-specific choices remain:
 
-1. Approve the generic envelope API instead of per-protocol public C functions.
-2. Approve runtime-assigned module IDs with stable module names.
-3. Choose the machine-readable bridge-schema source format.
-4. Set initial host ABI compatibility policy before the first usable milestone.
-5. Approve explicit event-lease adoption and cleanup-extent semantics.
-6. Approve the `graphics.egl` extension rather than baking EGL fields into the
-   core host envelope.
-7. Decide whether Layer 2 restart while preserving one Layer 1 server is a
-   requirement; the initial design assumes they restart together.
-8. Choose initial critical/discrete/coalescible queue and payload capacities.
-9. Define the first per-client native access-policy label set.
-10. Confirm whether a replay gateway must reproduce command completions exactly
-    or may operate as a validation-only simulation in the first milestone.
+1. Choose the exact pinned wlroots release.
+2. Choose whether the first Lisp runtime is SBCL-only or whether raw bindings
+   must support another implementation immediately.
+3. Decide whether direct CFFI `wl_listener` allocation is reliable enough or the
+   four-function native listener helper is required.
+4. Select the first concrete renderer: wlroots render pass or direct GLES.
+5. Select the event-loop wake primitive for agent/control mailboxes.
+6. Define the callback-safe versus safe-point function table for the pinned
+   wlroots API.
+7. Define the first protocol coverage set and advertised versions.
 
-No interface implementation should begin until these decisions are approved.
+These decisions do not reopen the boundary. They fill in concrete choices under
+the direct wlroots/Common Lisp design.

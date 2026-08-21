@@ -41,9 +41,6 @@
                     :accessor output-refresh-seconds)
    (available-p :initform t :accessor output-available-p)))
 
-(defun output-viewport (output)
-  (output-behavior-state output))
-
 (defclass output-system (compositor-component)
   ((outputs :initform (make-hash-table :test #'eq)
             :reader output-table)
@@ -52,10 +49,6 @@
 (defclass presentation-system (compositor-component)
   ((animation-engine :initarg :animation-engine
                      :reader presentation-animation-engine)
-   (panel-height :initarg :panel-height :initform 32d0
-                 :reader presentation-panel-height)
-   (titlebar-height :initarg :titlebar-height :initform 28d0
-                    :reader presentation-titlebar-height)
    (queued-outputs :initform nil :accessor presentation-queued-outputs)
    (render-source :initform nil :accessor presentation-render-source)
    (damage-debug-p :initarg :damage-debug-p :initform nil
@@ -208,9 +201,7 @@
 (defclass frame-plan ()
   ((snapshot :initarg :snapshot :reader frame-plan-snapshot)
    (passes :initarg :passes :reader frame-plan-passes)
-   (damage :initarg :damage :initform nil :accessor frame-plan-damage)
-   (continuous-p :initarg :continuous-p :initform nil
-                 :reader frame-plan-continuous-p)))
+   (damage :initarg :damage :initform nil :accessor frame-plan-damage)))
 
 (defclass frame-context ()
   ((output :initarg :output :reader frame-context-output)
@@ -1125,11 +1116,9 @@
                   (mapcar #'animation-instance-subject
                           (animation-engine-active animation-engine))
                   :test #'eq)))
-          (when (frame-plan-continuous-p plan)
-            (accumulate-output-damage output :full))
           (dolist (subject animation-subjects)
             (queue-output-damage-subject output subject))
-          (when (or (frame-plan-continuous-p plan) animation-subjects)
+          (when animation-subjects
             (setf (output-redraw-pending-p output) t)))
         snapshot)
     (serious-condition (condition)
@@ -1215,13 +1204,3 @@
       (queue-output-damage-subject output subject)
       (mark-output-presentation-pending presentation output)))
   presentation)
-
-(defmethod behavior-schedule-presentation
-    ((policy behavior-policy) &key output damage subject)
-  (let ((presentation
-          (compositor-presentation (component-compositor policy))))
-    (if subject
-        (schedule-presentation-subject presentation subject)
-        (schedule-presentation
-         presentation output (or damage :full))))
-  policy)

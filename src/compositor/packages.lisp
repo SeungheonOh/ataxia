@@ -155,7 +155,6 @@
    #:behavior-policy
    #:behavior-policy-active-p
    #:behavior-policy-revision
-   #:standard-behavior-policy
    #:planar-behavior-policy
    #:planar-behavior-state
    #:spherical-behavior-policy
@@ -173,10 +172,26 @@
    #:spherical-mesh-columns
    #:spherical-mesh-rows
    #:behavior-portable-state
-   #:portable-state-source-policy
    #:portable-state-view-states
    #:portable-state-output-states
    #:portable-state-seat-states
+   #:portable-view-state
+   #:portable-view-x
+   #:portable-view-y
+   #:portable-view-width
+   #:portable-view-height
+   #:portable-view-depth
+   #:portable-view-animation-policy
+   #:portable-view-shader-program-name
+   #:portable-view-presentation-state
+   #:portable-output-state
+   #:portable-output-horizontal
+   #:portable-output-vertical
+   #:portable-output-zoom
+   #:portable-seat-state
+   #:portable-seat-cursor-x
+   #:portable-seat-cursor-y
+   #:portable-seat-cursor-output
    #:behavior-installation
    #:installation-view-states
    #:installation-output-states
@@ -197,7 +212,6 @@
    #:behavior-seat-state
    #:behavior-install-seat-state
    #:copy-behavior-seat-state
-   #:migrate-behavior-seat-state
    #:behavior-cursor-layout-position
    #:behavior-cursor-output
    #:behavior-cursor-local-position
@@ -218,20 +232,14 @@
    #:copy-behavior-placement
    #:copy-behavior-view-state
    #:copy-behavior-output-state
-   #:migrate-behavior-view-state
-   #:migrate-behavior-output-state
    #:behavior-export-state
    #:behavior-import-state
    #:behavior-build-scene
    #:behavior-compose-frame
    #:behavior-build-view-items
    #:behavior-build-popup-items
-   #:behavior-begin-operation
-   #:behavior-update-operation
    #:behavior-configure-view-for-output
    #:behavior-restore-view
-   #:behavior-pan-output
-   #:behavior-zoom-output
    #:behavior-move-view
    #:behavior-focus-changed
    #:behavior-handle-pointer-button
@@ -246,6 +254,8 @@
    #:behavior-finalize-animation-binding
    #:behavior-prepare-animation-binding
    #:behavior-set-view-animation-definition
+   #:behavior-decode-control-action
+   #:behavior-execute-control-action
    #:behavior-validate-resources
    #:behavior-placement
    #:planar-placement
@@ -259,12 +269,10 @@
    #:requested-placement-y
    #:requested-placement-width
    #:requested-placement-height
-   #:viewport
-   #:viewport-camera-x
-   #:viewport-camera-y
-   #:viewport-scale
-   #:pan-viewport
-   #:zoom-viewport
+   #:planar-viewport
+   #:planar-viewport-camera-x
+   #:planar-viewport-camera-y
+   #:planar-viewport-scale
    #:replace-behavior-policy
    #:presentation-state
    #:presentation-opacity
@@ -330,8 +338,6 @@
    #:set-view-shader-uniform
    #:presentation-system
    #:presentation-animation-engine
-   #:presentation-panel-height
-   #:presentation-titlebar-height
    #:presentation-damage-debug-p
    #:set-damage-debug-mode
    #:presentation-snapshot
@@ -350,7 +356,6 @@
    #:frame-plan
    #:frame-plan-snapshot
    #:frame-plan-passes
-   #:frame-plan-continuous-p
    #:frame-plan-damage
    #:frame-damage
    #:frame-damage-full-p
@@ -427,7 +432,6 @@
    #:effect-parameter-binding
    #:effect-parameter-binding-name
    #:view-effect-parameter
-   #:behavior-default-animation-definition
    #:presentation-hit
    #:presentation-hit-item
    #:presentation-hit-owner
@@ -442,7 +446,6 @@
    #:render-presentation-frame
    #:present-output
    #:schedule-presentation
-   #:behavior-schedule-presentation
    #:schedule-surface-damage
    #:schedule-presentation-subject
    #:frame-context
@@ -476,7 +479,6 @@
    #:output-local-position
    #:default-compositor-output
    #:output-behavior-state
-   #:output-viewport
    #:output-last-snapshot
    #:output-commit-pending-p
    #:output-redraw-pending-p
@@ -500,7 +502,6 @@
    #:assign-input-device
    #:unassign-input-device
    #:focus-view
-   #:interactive-operation
    #:interactive-operation-kind
    #:interactive-operation-seat
    #:interactive-operation-view
@@ -531,10 +532,10 @@
    #:destroy-seat-action
    #:assign-input-device-action
    #:replace-behavior-policy-action
-   #:pan-viewport-action
-   #:zoom-viewport-action
+   #:behavior-control-action
+   #:behavior-control-action-command
+   #:behavior-control-action-payload
    #:launch-application-action
-   #:set-view-animation-action
    #:install-shader-program-action
    #:configure-view-shader-action
    #:set-damage-debug-action

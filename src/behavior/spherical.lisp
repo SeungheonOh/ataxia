@@ -5,6 +5,29 @@
 
 (in-package #:ataxia.compositor)
 
+(defclass spherical-seat-state ()
+  ((cursor-x :initarg :cursor-x :accessor behavior-cursor-x)
+   (cursor-y :initarg :cursor-y :accessor behavior-cursor-y)
+   (cursor-output :initarg :cursor-output :initform nil
+                  :accessor behavior-state-cursor-output)
+   (operation :initform nil :accessor behavior-state-operation)))
+
+(defclass spherical-interactive-operation ()
+  ((kind :initarg :kind :reader interactive-operation-kind)
+   (seat :initarg :seat :reader interactive-operation-seat)
+   (view :initarg :view :reader interactive-operation-view)
+   (output :initarg :output :initform nil :reader interactive-operation-output)
+   (edges :initarg :edges :initform 0 :reader interactive-operation-edges)
+   (button :initarg :button :reader interactive-operation-button)
+   (start-x :initarg :start-x :reader interactive-operation-start-x)
+   (start-y :initarg :start-y :reader interactive-operation-start-y)
+   (original-width :initarg :original-width
+                   :reader interactive-operation-original-width)
+   (original-height :initarg :original-height
+                    :reader interactive-operation-original-height)
+   (original-placement :initarg :original-placement
+                       :reader interactive-operation-original-placement)))
+
 (defconstant +two-pi+ (* 2d0 pi))
 (defconstant +half-pi+ (/ pi 2d0))
 
@@ -32,8 +55,21 @@
    (width :initarg :width :reader spherical-restore-width)
    (height :initarg :height :reader spherical-restore-height)))
 
-(defclass spherical-behavior-policy (standard-behavior-policy)
-  ((next-longitude :initform -0.25d0
+(defclass spherical-behavior-policy (behavior-policy)
+  ((application-reveal-style
+    :initarg :application-reveal-style
+    :initform (make-instance 'codec-reveal-style)
+    :accessor behavior-application-reveal-style)
+   (background-color :initarg :background-color
+                     :initform '(0.035 0.045 0.065 1.0)
+                     :accessor behavior-background-color)
+   (seat-states :initform (make-hash-table :test #'eq)
+                :reader behavior-seat-states)
+   (panel-height :initarg :panel-height :initform 32d0
+                 :reader behavior-panel-height)
+   (titlebar-height :initarg :titlebar-height :initform 28d0
+                    :reader behavior-titlebar-height)
+   (next-longitude :initform -0.25d0
                    :accessor spherical-next-longitude)
    (next-latitude :initform 0.12d0
                   :accessor spherical-next-latitude)
@@ -49,6 +85,8 @@
    (shadow-style :initarg :shadow-style
                  :initform (make-instance 'soft-shadow-style)
                  :accessor behavior-shadow-style)))
+
+(define-policy-lifecycle-methods spherical-behavior-policy)
 
 (defun normalize-longitude (longitude)
   (- (mod (+ (coerce longitude 'double-float) pi) +two-pi+) pi))
@@ -255,19 +293,16 @@
                     (- center-y (/ height 2d0)) width height))))))
 
 (defmethod behavior-project-view
-    ((policy spherical-behavior-policy) output
-     (camera spherical-camera) view timestamp)
+    ((policy spherical-behavior-policy) output view timestamp)
   (declare (ignore policy timestamp))
-  (project-spherical-placement camera output (view-placement view)))
+  (project-spherical-placement
+   (output-behavior-state output) output (view-placement view)))
 
 (defun normalize-vector (vector)
   (let ((length (sqrt (vector-dot vector vector))))
     (mapcar (lambda (component) (/ component length)) vector)))
 
-(defmethod behavior-unproject-point
-    ((policy spherical-behavior-policy) output
-     (camera spherical-camera) output-x output-y)
-  (declare (ignore policy))
+(defun unproject-spherical-point (camera output output-x output-y)
   (multiple-value-bind (forward right up) (spherical-camera-basis camera)
     (let* ((width (coerce (ataxia.runtime:output-width (output-native output))
                           'double-float))
@@ -286,6 +321,12 @@
                       forward right up))))
       (values (atan (second ray) (first ray))
               (asin (third ray))))))
+
+(defmethod behavior-unproject-point
+    ((policy spherical-behavior-policy) output output-x output-y)
+  (declare (ignore policy))
+  (unproject-spherical-point
+   (output-behavior-state output) output output-x output-y))
 
 (defmethod copy-behavior-view-state
     ((policy spherical-behavior-policy) (state spherical-behavior-state))
@@ -314,113 +355,152 @@
   (declare (ignore policy))
   (copy-spherical-camera state))
 
-(defmethod migrate-behavior-view-state
-    ((old-policy spherical-behavior-policy)
-     (new-policy spherical-behavior-policy) view
-     (state spherical-behavior-state))
-  (declare (ignore old-policy view))
-  (copy-behavior-view-state new-policy state))
+(defmethod behavior-export-state
+    ((policy spherical-behavior-policy) compositor context)
+  (declare (ignore context))
+  (let ((projection-output (policy-first-output policy)))
+    (make-instance
+     'behavior-portable-state
+     :view-states
+     (mapcar
+      (lambda (view)
+        (let ((state (view-behavior-state view))
+              (placement (view-placement view)))
+          (multiple-value-bind (x y width height)
+              (if projection-output
+                  (behavior-project-view
+                   policy projection-output view (monotonic-seconds))
+                  (values 0d0 0d0
+                          (coerce (view-width view) 'double-float)
+                          (coerce (view-height view) 'double-float)))
+            (cons view
+                  (make-portable-view-copy
+                   state x y width height (spherical-depth placement))))))
+      (desktop-views (compositor-desktop compositor)))
+     :output-states
+     (mapcar
+      (lambda (output)
+        (let ((camera (output-behavior-state output)))
+          (cons
+           output
+           (make-instance
+            'portable-output-state
+            :horizontal (camera-longitude camera)
+            :vertical (camera-latitude camera)
+            :zoom (/ 1d0 (camera-field-of-view camera))))))
+      (compositor-outputs-list (compositor-outputs compositor)))
+     :seat-states
+     (mapcar
+      (lambda (seat)
+        (cons seat (make-portable-seat-copy policy seat)))
+      (interaction-seats (compositor-interaction compositor))))))
 
-(defmethod migrate-behavior-output-state
-    ((old-policy spherical-behavior-policy)
-     (new-policy spherical-behavior-policy) output
-     (state spherical-camera))
-  (declare (ignore old-policy output))
-  (copy-behavior-output-state new-policy state))
-
-(defun first-policy-output (policy)
-  (first
-   (compositor-outputs-list
-    (compositor-outputs (component-compositor policy)))))
-
-(defmethod migrate-behavior-output-state
-    ((old-policy planar-behavior-policy)
-     (new-policy spherical-behavior-policy) output (state viewport))
-  (declare (ignore old-policy output state))
-  (make-instance 'spherical-camera))
-
-(defmethod migrate-behavior-view-state
-    ((old-policy planar-behavior-policy)
-     (new-policy spherical-behavior-policy) view
-     (state planar-behavior-state))
-  (let* ((output (first-policy-output new-policy))
-         (viewport (and output (output-behavior-state output)))
-         (placement (behavior-state-placement state))
-         (camera (make-instance 'spherical-camera))
-         (center-x
-           (if output
-               (* (- (+ (placement-x placement)
-                        (/ (placement-width placement) 2d0))
-                     (viewport-camera-x viewport))
-                  (viewport-scale viewport))
-               0d0))
-         (center-y
-           (if output
-               (* (- (+ (placement-y placement)
-                        (/ (placement-height placement) 2d0))
-                     (viewport-camera-y viewport))
-                  (viewport-scale viewport))
-               0d0)))
-    (multiple-value-bind (longitude latitude)
-        (if output
-            (behavior-unproject-point
-             new-policy output camera center-x center-y)
-            (values 0d0 0d0))
-      (let ((angular-width
-              (if output
-                  (* (/ (* (placement-width placement)
-                           (viewport-scale viewport))
-                        (max 1d0
-                             (coerce (ataxia.runtime:output-width
-                                      (output-native output))
-                                     'double-float)))
-                     (camera-field-of-view camera))
-                  0.78d0)))
-        (make-spherical-view-state
-         state
-         (make-instance
-          'spherical-placement
-          :longitude longitude :latitude latitude
-          :angular-width (max 0.12d0 (min 1.25d0 angular-width))
-          :angular-height
-          (max 0.12d0
-               (min 1.2d0
-                    (* angular-width
-                       (/ (coerce (view-height view) 'double-float)
-                          (max 1d0 (coerce (view-width view)
-                                          'double-float))))))))))))
-
-(defmethod migrate-behavior-output-state
-    ((old-policy spherical-behavior-policy)
-     (new-policy planar-behavior-policy) output (state spherical-camera))
-  (declare (ignore old-policy new-policy output state))
-  (make-instance 'viewport))
-
-(defmethod migrate-behavior-view-state
-    ((old-policy spherical-behavior-policy)
-     (new-policy planar-behavior-policy) view
-     (state spherical-behavior-state))
-  (let* ((output (first-policy-output old-policy))
-         (camera (and output (output-behavior-state output)))
-         (placement (behavior-state-placement state)))
-    (multiple-value-bind (x y width height)
-        (if output
-            (project-spherical-placement camera output placement)
-            (values 48d0 68d0
-                    (coerce (view-width view) 'double-float)
-                    (coerce (view-height view) 'double-float)))
-      (make-instance
-       'planar-behavior-state
-       :placement
-       (make-instance 'planar-placement
-                      :x x :y y :width (max 120d0 width)
-                      :height (max 80d0 height)
-                      :z (spherical-depth placement))
-       :animation-policy (behavior-state-animation-policy state)
-       :shader-program-name (behavior-state-shader-program-name state)
-       :presentation-state
-       (copy-presentation-state
-        (behavior-state-presentation-state state))))))
+(defmethod behavior-import-state
+    ((policy spherical-behavior-policy)
+     (portable behavior-portable-state) context)
+  (declare (ignore context))
+  (let* ((output-states
+           (mapcar
+            (lambda (entry)
+              (let ((state (cdr entry)))
+                (cons
+                 (car entry)
+                 (make-instance
+                  'spherical-camera
+                  :longitude
+                  (normalize-longitude (portable-output-horizontal state))
+                  :latitude (clamp-latitude (portable-output-vertical state))
+                  :field-of-view
+                  (max 0.35d0
+                       (min 2.7d0
+                            (/ 1d0
+                               (max 0.05d0
+                                    (portable-output-zoom state)))))))))
+            (portable-state-output-states portable)))
+         (projection-output (caar output-states))
+         (camera (and projection-output
+                      (cdr (assoc projection-output output-states
+                                  :test #'eq)))))
+    (make-instance
+     'behavior-installation
+     :view-states
+     (mapcar
+      (lambda (entry)
+        (let* ((portable-view (cdr entry))
+               (center-x (+ (portable-view-x portable-view)
+                            (/ (portable-view-width portable-view) 2d0)))
+               (center-y (+ (portable-view-y portable-view)
+                            (/ (portable-view-height portable-view) 2d0))))
+          (multiple-value-bind (longitude latitude)
+              (if projection-output
+                  (unproject-spherical-point
+                   camera projection-output center-x center-y)
+                  (values 0d0 0d0))
+            (let* ((output-width
+                     (if projection-output
+                         (max 1d0
+                              (coerce
+                               (ataxia.runtime:output-width
+                                (output-native projection-output))
+                               'double-float))
+                         1280d0))
+                   (output-height
+                     (if projection-output
+                         (max 1d0
+                              (coerce
+                               (ataxia.runtime:output-height
+                                (output-native projection-output))
+                               'double-float))
+                         720d0))
+                   (horizontal-fov
+                     (if camera (camera-field-of-view camera) 1.45d0))
+                   (vertical-fov
+                     (if projection-output
+                         (spherical-vertical-field-of-view
+                          camera projection-output)
+                         0.9d0)))
+              (cons
+               (car entry)
+               (make-instance
+                'spherical-behavior-state
+                :placement
+                (make-instance
+                 'spherical-placement
+                 :longitude longitude :latitude latitude
+                 :angular-width
+                 (max 0.12d0
+                      (min 1.25d0
+                           (* (/ (portable-view-width portable-view)
+                                 output-width)
+                              horizontal-fov)))
+                 :angular-height
+                 (max 0.12d0
+                      (min 1.2d0
+                           (* (/ (portable-view-height portable-view)
+                                 output-height)
+                              vertical-fov)))
+                 :depth (portable-view-depth portable-view))
+                :animation-policy
+                (portable-view-animation-policy portable-view)
+                :shader-program-name
+                (portable-view-shader-program-name portable-view)
+                :presentation-state
+                (copy-presentation-state
+                 (portable-view-presentation-state portable-view))))))))
+      (portable-state-view-states portable))
+     :output-states output-states
+     :seat-states
+     (mapcar
+      (lambda (entry)
+        (let ((state (cdr entry)))
+          (cons
+           (car entry)
+           (make-instance
+            'spherical-seat-state
+            :cursor-x (portable-seat-cursor-x state)
+            :cursor-y (portable-seat-cursor-y state)
+            :cursor-output (portable-seat-cursor-output state)))))
+      (portable-state-seat-states portable)))))
 
 (defun make-spherical-projector (camera output)
   (multiple-value-bind (forward right up) (spherical-camera-basis camera)
@@ -841,7 +921,8 @@
                      (append
                       (unless (view-fullscreen-p view)
                         (make-soft-shadow-items
-                         policy view frame-x frame-y
+                         policy (behavior-shadow-style policy)
+                         view frame-x frame-y
                          frame-width frame-height))
                       (when title-geometry
                         (multiple-value-bind
@@ -913,14 +994,14 @@
     (setf items
           (append-spherical-popup-tree-items policy items desktop view))))
 
-(defmethod behavior-begin-operation
-    ((policy spherical-behavior-policy) interaction seat view kind edges button)
+(defun make-spherical-interactive-operation
+    (policy interaction seat view kind edges button)
   (declare (ignore interaction))
   (let ((output (behavior-cursor-output policy seat)))
     (multiple-value-bind (start-x start-y)
         (behavior-cursor-local-position policy seat output)
       (make-instance
-       'interactive-operation :kind kind :seat seat :view view
+       'spherical-interactive-operation :kind kind :seat seat :view view
        :output output :edges edges :button button
        :start-x start-x :start-y start-y
        :original-width (view-width view)
@@ -938,15 +1019,15 @@
          (placement (view-placement (interactive-operation-view operation))))
     (when output
       (multiple-value-bind (start-longitude start-latitude)
-          (behavior-unproject-point
-           policy output camera
+          (unproject-spherical-point
+           camera output
            (interactive-operation-start-x operation)
            (interactive-operation-start-y operation))
         (multiple-value-bind (current-x current-y)
             (behavior-cursor-local-position policy seat output)
           (multiple-value-bind (current-longitude current-latitude)
-              (behavior-unproject-point
-               policy output camera current-x current-y)
+              (unproject-spherical-point
+               camera output current-x current-y)
             (setf (spherical-longitude placement)
                   (normalize-longitude
                    (+ (spherical-longitude original)
@@ -1003,13 +1084,27 @@
         (make-instance 'view-configuration-decision
                        :width new-width :height new-height)))))
 
-(defmethod behavior-update-operation
-    ((policy spherical-behavior-policy) interaction
-     (operation interactive-operation))
+(defun update-spherical-operation (policy interaction operation)
   (declare (ignore interaction))
   (ecase (interactive-operation-kind operation)
     (:move (update-spherical-move policy operation))
     (:resize (update-spherical-resize policy operation))))
+
+(define-behavior-interaction-methods
+    spherical-behavior-policy spherical-seat-state behavior-seat-states
+    make-spherical-interactive-operation update-spherical-operation)
+
+(defmethod behavior-build-scene
+    ((policy spherical-behavior-policy) (presentation presentation-system)
+     (output compositor-output) timestamp)
+  (build-default-behavior-scene
+   policy presentation output timestamp
+   (behavior-titlebar-height policy) (behavior-panel-height policy)))
+
+(defmethod behavior-compose-frame
+    ((policy spherical-behavior-policy) presentation output snapshot timestamp)
+  (declare (ignore policy))
+  (compose-default-behavior-frame presentation output snapshot timestamp))
 
 (defmethod behavior-move-view
     ((policy spherical-behavior-policy) view longitude latitude context)
@@ -1039,20 +1134,18 @@
 
 (defmethod behavior-configure-view-for-output
     ((policy spherical-behavior-policy) compositor view output fullscreen-p)
-  (let ((output (or output (first-policy-output policy))))
+  (let ((output (or output (policy-first-output policy))))
     (if (null output)
         (make-instance 'view-configuration-decision
                        :width (view-width view) :height (view-height view))
         (let* ((camera (output-behavior-state output))
                (placement (view-placement view))
                (panel (if fullscreen-p 0d0
-                          (presentation-panel-height
-                           (compositor-presentation compositor))))
+                          (behavior-panel-height policy)))
                (titlebar (if (or fullscreen-p
                                  (not (view-server-decorated-p view)))
                              0d0
-                             (presentation-titlebar-height
-                              (compositor-presentation compositor))))
+                             (behavior-titlebar-height policy)))
                (width (ataxia.runtime:output-width (output-native output)))
                (height (- (ataxia.runtime:output-height (output-native output))
                           panel titlebar)))
@@ -1072,8 +1165,7 @@
           (make-instance 'view-configuration-decision
                          :width width :height height)))))
 
-(defmethod behavior-pan-output
-    ((policy spherical-behavior-policy) output delta-x delta-y)
+(defun pan-spherical-camera (policy output delta-x delta-y)
   (let ((camera (output-behavior-state output)))
     (setf (camera-longitude camera)
           (normalize-longitude (+ (camera-longitude camera) delta-x))
@@ -1082,18 +1174,18 @@
     (incf (behavior-policy-revision policy))
     camera))
 
-(defmethod behavior-zoom-output
-    ((policy spherical-behavior-policy) output factor anchor-x anchor-y)
+(defun zoom-spherical-camera
+    (policy output factor anchor-x anchor-y)
   (let ((camera (output-behavior-state output)))
     (multiple-value-bind (anchor-longitude anchor-latitude)
-        (behavior-unproject-point
-         policy output camera anchor-x anchor-y)
+        (unproject-spherical-point
+         camera output anchor-x anchor-y)
       (setf (camera-field-of-view camera)
             (max 0.35d0
                  (min 2.7d0 (/ (camera-field-of-view camera) factor))))
       (multiple-value-bind (new-longitude new-latitude)
-          (behavior-unproject-point
-           policy output camera anchor-x anchor-y)
+          (unproject-spherical-point
+           camera output anchor-x anchor-y)
         (setf (camera-longitude camera)
               (normalize-longitude
                (+ (camera-longitude camera)

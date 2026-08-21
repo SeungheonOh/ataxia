@@ -71,7 +71,6 @@
    (closed-p :initform nil :accessor connection-closed-p)))
 
 (defgeneric decode-control-action (control principal specification))
-(defgeneric decode-control-placement (policy specification))
 
 (defun default-control-socket-path ()
   (or (uiop:getenv "ATAXIA_CONTROL_SOCKET")
@@ -168,82 +167,6 @@
                  :action :decode :reason (list :missing key))
           value))))
 
-(defun decode-animation-property (specification)
-  (typecase specification
-    (keyword
-     (ecase specification
-       (:opacity 'opacity) (:scale 'scale)
-       (:offset-x 'offset-x) (:offset-y 'offset-y)))
-    (cons
-     (ecase (first specification)
-       (:uniform
-        (make-instance 'shader-uniform-binding
-                       :name (second specification)))
-       (:effect
-        (make-instance 'effect-parameter-binding
-                       :name (second specification)))))
-    (t
-     (error 'control-request-rejected
-            :action :decode :reason :invalid-animation-property))))
-
-(defun decode-animation-definition (specification)
-  (let ((duration (required-command-value specification :duration))
-        (tracks (required-command-value specification :tracks)))
-    (unless (and (realp duration) (not (minusp duration)) (listp tracks))
-      (error 'control-request-rejected
-             :action :decode :reason :invalid-animation-definition))
-    (make-instance
-     'animation-definition
-     :name (getf specification :name)
-     :duration (coerce duration 'double-float)
-     :tracks
-     (mapcar
-      (lambda (track)
-        (let ((easing (getf track :easing :ease-out-cubic)))
-          (make-instance
-           'animation-track
-           :property
-           (decode-animation-property
-            (required-command-value track :property))
-           :from (required-command-value track :from)
-           :to (required-command-value track :to)
-           :interpolator
-           (ecase easing
-             (:linear #'linear-interpolation)
-             (:ease-out-cubic #'ease-out-cubic)))))
-      tracks))))
-
-(defun control-transition-class (name)
-  (ecase name
-    (:visibility 'visibility-transition)
-    (:placement 'placement-transition)
-    (:interaction 'interaction-transition)
-    (:content 'content-transition)))
-
-(defmethod decode-control-placement
-    ((policy planar-behavior-policy) specification)
-  (make-instance
-   'planar-placement
-   :x (coerce (required-command-value specification :x) 'double-float)
-   :y (coerce (required-command-value specification :y) 'double-float)
-   :width (coerce (required-command-value specification :width) 'double-float)
-   :height (coerce (required-command-value specification :height) 'double-float)
-   :z (coerce (getf specification :z 0d0) 'double-float)))
-
-(defmethod decode-control-placement
-    ((policy spherical-behavior-policy) specification)
-  (make-instance
-   'spherical-placement
-   :longitude
-   (coerce (required-command-value specification :longitude) 'double-float)
-   :latitude
-   (coerce (required-command-value specification :latitude) 'double-float)
-   :angular-width
-   (coerce (required-command-value specification :angular-width) 'double-float)
-   :angular-height
-   (coerce (required-command-value specification :angular-height) 'double-float)
-   :depth (coerce (getf specification :depth 0d0) 'double-float)))
-
 (defmethod decode-control-action
     ((control control-system) (principal control-principal) specification)
   (unless (and (consp specification) (keywordp (first specification)))
@@ -261,7 +184,7 @@
            (output ()
              (control-output-by-name
               control (required-command-value properties :output))))
-      (ecase kind
+      (case kind
         (:observe
          (make-instance 'observe-compositor-action :principal principal))
         (:focus
@@ -274,13 +197,6 @@
           'move-view-action :principal principal :view (view)
           :x (required-command-value properties :x)
           :y (required-command-value properties :y)))
-        (:place
-         (make-instance
-          'place-view-action :principal principal :view (view)
-          :placement
-          (decode-control-placement
-           (compositor-behavior-policy compositor)
-           (required-command-value properties :placement))))
         (:create-seat
          (make-instance
           'create-seat-action :principal principal
@@ -304,30 +220,10 @@
              (:planar 'planar-behavior-policy)
              (:spherical 'spherical-behavior-policy))
            :compositor compositor)))
-        (:pan
-         (make-instance
-          'pan-viewport-action :principal principal :output (output)
-          :delta-x (required-command-value properties :delta-x)
-          :delta-y (required-command-value properties :delta-y)))
-        (:zoom
-         (make-instance
-          'zoom-viewport-action :principal principal :output (output)
-          :factor (required-command-value properties :factor)
-          :anchor-x (required-command-value properties :anchor-x)
-          :anchor-y (required-command-value properties :anchor-y)))
         (:launch
          (make-instance
           'launch-application-action :principal principal
           :command (required-command-value properties :command)))
-        (:set-animation
-         (make-instance
-          'set-view-animation-action :principal principal :view (view)
-          :descriptor-class
-          (control-transition-class
-           (required-command-value properties :transition))
-          :definition
-          (decode-animation-definition
-           (required-command-value properties :definition))))
         (:install-shader
          (make-instance
           'install-shader-program-action :principal principal
@@ -359,7 +255,11 @@
                     :action :decode :reason :invalid-debug-state))
            (make-instance
             'set-damage-debug-action :principal principal
-            :enabled-p enabled)))))))
+            :enabled-p enabled)))
+        (otherwise
+         (behavior-decode-control-action
+          (compositor-behavior-policy compositor)
+          control principal specification))))))
 
 (defun serializable-control-value (value)
   (typecase value

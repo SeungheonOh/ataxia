@@ -1,7 +1,7 @@
-;;;; Behavior-owned cursor and interactive operation policy.
+;;;; Stateless helpers for behavior-owned pointer interaction.
 ;;;;
-;;;; Standard policies keep spatial cursor state and move/resize grabs here.
-;;;; The compositor interaction component only enforces Wayland protocol rules.
+;;;; Concrete policies own cursor and grab objects. This module only provides
+;;;; fully contained algorithms that concrete policy methods may invoke.
 
 (in-package #:ataxia.compositor)
 
@@ -11,101 +11,12 @@
 (defconstant +resize-edge-right+ 8)
 (defconstant +button-left+ 272)
 
-(defclass standard-seat-state ()
-  ((cursor-x :initarg :cursor-x :accessor behavior-cursor-x)
-   (cursor-y :initarg :cursor-y :accessor behavior-cursor-y)
-   (cursor-output :initarg :cursor-output :initform nil
-                  :accessor standard-cursor-output)
-   (operation :initform nil :accessor standard-seat-operation)))
-
-(defclass interactive-operation ()
-  ((kind :initarg :kind :reader interactive-operation-kind)
-   (seat :initarg :seat :reader interactive-operation-seat)
-   (view :initarg :view :reader interactive-operation-view)
-   (output :initarg :output :initform nil :reader interactive-operation-output)
-   (edges :initarg :edges :initform 0 :reader interactive-operation-edges)
-   (button :initarg :button :reader interactive-operation-button)
-   (start-x :initarg :start-x :reader interactive-operation-start-x)
-   (start-y :initarg :start-y :reader interactive-operation-start-y)
-   (original-width :initarg :original-width
-                   :reader interactive-operation-original-width)
-   (original-height :initarg :original-height
-                    :reader interactive-operation-original-height)
-   (original-placement :initarg :original-placement
-                       :reader interactive-operation-original-placement)))
-
-(defgeneric behavior-begin-operation
-    (policy interaction seat view kind edges button))
-(defgeneric behavior-update-operation (policy interaction operation))
-
-(defun require-standard-seat-state (policy seat)
+(defun require-behavior-seat-state (policy seat)
   (or (behavior-seat-state policy seat)
       (error 'invalid-compositor-state
              :operation :behavior-seat-state :state :missing-seat)))
 
-(defmethod behavior-seat-created
-    ((policy standard-behavior-policy) interaction seat pointer-x pointer-y)
-  (declare (ignore interaction))
-  (behavior-install-seat-state
-   policy seat
-   (make-instance 'standard-seat-state
-                  :cursor-x pointer-x :cursor-y pointer-y))
-  (behavior-outputs-changed policy (seat-interaction seat))
-  seat)
-
-(defmethod behavior-seat-destroying
-    ((policy standard-behavior-policy) interaction seat)
-  (let* ((state (require-standard-seat-state policy seat))
-         (output (standard-cursor-output state))
-         (box
-           (behavior-cursor-damage-box
-            policy seat output
-            (behavior-cursor-x state) (behavior-cursor-y state))))
-    (behavior-cancel-operation policy interaction seat)
-    (remhash seat (standard-behavior-seat-states policy))
-    (when (and output box)
-      (behavior-schedule-presentation
-       policy :output output :damage (list box))))
-  seat)
-
-(defmethod copy-behavior-seat-state
-    ((policy standard-behavior-policy) (state standard-seat-state))
-  (declare (ignore policy))
-  (make-instance 'standard-seat-state
-                 :cursor-x (behavior-cursor-x state)
-                 :cursor-y (behavior-cursor-y state)
-                 :cursor-output (standard-cursor-output state)))
-
-(defmethod migrate-behavior-seat-state
-    ((old-policy standard-behavior-policy)
-     (new-policy standard-behavior-policy) seat
-     (state standard-seat-state))
-  (declare (ignore old-policy seat))
-  (copy-behavior-seat-state new-policy state))
-
-(defmethod behavior-cursor-layout-position
-    ((policy standard-behavior-policy) seat)
-  (let ((state (require-standard-seat-state policy seat)))
-    (values (behavior-cursor-x state) (behavior-cursor-y state))))
-
-(defmethod behavior-cursor-output
-    ((policy standard-behavior-policy) seat)
-  (standard-cursor-output (require-standard-seat-state policy seat)))
-
-(defmethod behavior-cursor-local-position
-    ((policy standard-behavior-policy) seat &optional output)
-  (let* ((state (require-standard-seat-state policy seat))
-         (output (or output (standard-cursor-output state))))
-    (when output
-      (output-local-position
-       output (behavior-cursor-x state) (behavior-cursor-y state)))))
-
-(defmethod behavior-operation ((policy standard-behavior-policy) seat)
-  (standard-seat-operation (require-standard-seat-state policy seat)))
-
-(defmethod behavior-cursor-damage-box
-    ((policy standard-behavior-policy) seat output pointer-x pointer-y)
-  (declare (ignore policy))
+(defun behavior-cursor-damage-region (seat output pointer-x pointer-y)
   (when output
     (multiple-value-bind (local-x local-y)
         (output-local-position output pointer-x pointer-y)
@@ -127,10 +38,12 @@
            (floor (- local-y hotspot-y 2d0))
            (+ (ceiling width) 4) (+ (ceiling height) 4)))))))
 
-(defun schedule-standard-cursor-damage
-    (policy seat old-output old-box)
-  (let* ((state (require-standard-seat-state policy seat))
-         (new-output (standard-cursor-output state))
+(defun policy-presentation (policy)
+  (compositor-presentation (component-compositor policy)))
+
+(defun schedule-behavior-cursor-damage (policy seat old-output old-box)
+  (let* ((state (require-behavior-seat-state policy seat))
+         (new-output (behavior-state-cursor-output state))
          (new-box
            (behavior-cursor-damage-box
             policy seat new-output
@@ -143,36 +56,31 @@
                       (list (and (eq output old-output) old-box)
                             (and (eq output new-output) new-box)))))
         (when boxes
-          (behavior-schedule-presentation
-           policy :output output :damage boxes)))))
+          (schedule-presentation (policy-presentation policy) output boxes)))))
   seat)
 
-(defmethod behavior-cursor-content-changed
-    ((policy standard-behavior-policy) interaction seat old-output old-box)
-  (declare (ignore interaction))
-  (schedule-standard-cursor-damage policy seat old-output old-box))
-
-(defun update-standard-operation (policy interaction seat)
+(defun update-behavior-operation
+    (policy interaction seat operation-updater)
   (let ((operation (behavior-operation policy seat)))
     (when operation
       (let ((decision
-              (behavior-update-operation policy interaction operation)))
+              (funcall operation-updater policy interaction operation)))
         (when (typep decision 'view-configuration-decision)
           (configure-view-size
            (interactive-operation-view operation)
            (configuration-width decision)
            (configuration-height decision))))
-      (behavior-schedule-presentation
-       policy :subject (interactive-operation-view operation)))
+      (schedule-presentation-subject
+       (policy-presentation policy)
+       (interactive-operation-view operation)))
     operation))
 
-(defmethod behavior-warp-cursor
-    ((policy standard-behavior-policy) interaction seat
-     pointer-x pointer-y time-msec)
-  (let* ((state (require-standard-seat-state policy seat))
+(defun warp-behavior-cursor
+    (policy interaction seat pointer-x pointer-y time-msec operation-updater)
+  (let* ((state (require-behavior-seat-state policy seat))
          (old-x (behavior-cursor-x state))
          (old-y (behavior-cursor-y state))
-         (old-output (standard-cursor-output state))
+         (old-output (behavior-state-cursor-output state))
          (old-box
            (behavior-cursor-damage-box
             policy seat old-output old-x old-y)))
@@ -183,35 +91,37 @@
           (confine-layout-position
            (compositor-outputs (component-compositor policy))
            constrained-x constrained-y)
-        (setf (standard-cursor-output state) output)
+        (setf (behavior-state-cursor-output state) output)
         (when output
           (setf (behavior-cursor-x state) confined-x
                 (behavior-cursor-y state) confined-y))))
     (if (behavior-operation policy seat)
-        (update-standard-operation policy interaction seat)
+        (update-behavior-operation
+         policy interaction seat operation-updater)
         (update-pointer-focus-at
          interaction seat
          (behavior-cursor-x state) (behavior-cursor-y state) time-msec))
-    (schedule-standard-cursor-damage policy seat old-output old-box))
+    (schedule-behavior-cursor-damage policy seat old-output old-box))
   seat)
 
-(defmethod behavior-handle-pointer-motion
-    ((policy standard-behavior-policy) interaction seat event)
+(defun handle-behavior-pointer-motion
+    (policy interaction seat event operation-updater)
   (multiple-value-bind (pointer-x pointer-y)
       (behavior-cursor-layout-position policy seat)
-    (behavior-warp-cursor
+    (warp-behavior-cursor
      policy interaction seat
      (+ pointer-x (ataxia.runtime:pointer-motion-delta-x event))
      (+ pointer-y (ataxia.runtime:pointer-motion-delta-y event))
-     (ataxia.runtime:pointer-motion-time-msec event))))
+     (ataxia.runtime:pointer-motion-time-msec event)
+     operation-updater)))
 
-(defmethod behavior-handle-pointer-motion-absolute
-    ((policy standard-behavior-policy) interaction seat event)
+(defun handle-behavior-pointer-motion-absolute
+    (policy interaction seat event operation-updater)
   (multiple-value-bind (minimum-x minimum-y maximum-x maximum-y)
       (output-layout-bounds
        (compositor-outputs (component-compositor policy)))
     (when minimum-x
-      (behavior-warp-cursor
+      (warp-behavior-cursor
        policy interaction seat
        (+ minimum-x
           (* (ataxia.runtime:pointer-motion-absolute-x event)
@@ -219,17 +129,19 @@
        (+ minimum-y
           (* (ataxia.runtime:pointer-motion-absolute-y event)
              (- maximum-y minimum-y)))
-       (ataxia.runtime:pointer-motion-absolute-time-msec event)))))
+       (ataxia.runtime:pointer-motion-absolute-time-msec event)
+       operation-updater))))
 
-(defmethod behavior-outputs-changed
-    ((policy standard-behavior-policy) interaction)
+(defun reconcile-behavior-cursors
+    (policy interaction operation-updater)
   (let ((time-msec
           (mod (floor (* 1000d0 (monotonic-seconds))) #x100000000)))
     (dolist (seat (interaction-seats interaction))
       (multiple-value-bind (pointer-x pointer-y)
           (behavior-cursor-layout-position policy seat)
-        (behavior-warp-cursor
-         policy interaction seat pointer-x pointer-y time-msec))))
+        (warp-behavior-cursor
+         policy interaction seat pointer-x pointer-y time-msec
+         operation-updater))))
   policy)
 
 (defun behavior-interaction-context (view descriptor phase)
@@ -247,9 +159,9 @@
                           :old-state old-state :new-state new-state))
          (context (behavior-interaction-context view descriptor :after)))
     (start-transition
-     (presentation-animation-engine
-      (compositor-presentation (component-compositor policy)))
-     view descriptor context)))
+     (presentation-animation-engine (policy-presentation policy))
+     view descriptor context)
+    (schedule-presentation-subject (policy-presentation policy) view)))
 
 (defun pressed-operation-button (seat)
   (if (gethash +button-left+ (seat-pressed-buttons seat))
@@ -258,7 +170,7 @@
             return button)))
 
 (defun begin-behavior-operation
-    (policy interaction seat view kind edges button)
+    (policy interaction seat view kind edges button operation-maker)
   (unless (and (interaction-owns-seat-p interaction seat)
                (interaction-owns-view-p interaction view))
     (error 'invalid-compositor-state
@@ -272,11 +184,11 @@
     (run-hook hooks 'before-interactive-operation
               (behavior-interaction-context view descriptor :before))
     (behavior-cancel-operation policy interaction seat)
-    (setf (standard-seat-operation
-           (require-standard-seat-state policy seat))
-          (behavior-begin-operation
-           policy interaction seat view kind edges
-           (or button (pressed-operation-button seat))))
+    (setf (behavior-state-operation
+           (require-behavior-seat-state policy seat))
+          (funcall operation-maker
+                   policy interaction seat view kind edges
+                   (or button (pressed-operation-button seat))))
     (when (eq kind :resize)
       (set-view-resizing view t))
     (focus-view interaction seat view)
@@ -286,42 +198,37 @@
               (behavior-interaction-context view descriptor :after))
     (behavior-operation policy seat)))
 
-(defmethod behavior-request-move
-    ((policy standard-behavior-policy) interaction seat view
-     &key serial button)
+(defun request-behavior-move
+    (policy interaction seat view serial button operation-maker)
   (when (and serial
              (not (interaction-pointer-grab-serial-valid-p seat serial)))
-    (return-from behavior-request-move nil))
+    (return-from request-behavior-move nil))
   (begin-behavior-operation
-   policy interaction seat view :move 0 button))
+   policy interaction seat view :move 0 button operation-maker))
 
-(defmethod behavior-request-resize
-    ((policy standard-behavior-policy) interaction seat view edges
-     &key serial button)
+(defun request-behavior-resize
+    (policy interaction seat view edges serial button operation-maker)
   (when (or (zerop edges)
             (and serial
                  (not (interaction-pointer-grab-serial-valid-p seat serial))))
-    (return-from behavior-request-resize nil))
+    (return-from request-behavior-resize nil))
   (begin-behavior-operation
-   policy interaction seat view :resize edges button))
+   policy interaction seat view :resize edges button operation-maker))
 
-(defmethod behavior-cancel-operation
-    ((policy standard-behavior-policy) interaction seat)
-  (let* ((state (require-standard-seat-state policy seat))
-         (operation (standard-seat-operation state)))
+(defun cancel-behavior-operation (policy interaction seat)
+  (let* ((state (require-behavior-seat-state policy seat))
+         (operation (behavior-state-operation state)))
     (when operation
       (let ((view (interactive-operation-view operation))
             (kind (interactive-operation-kind operation)))
         (when (eq kind :resize)
           (set-view-resizing view nil))
-        (setf (standard-seat-operation state) nil)
+        (setf (behavior-state-operation state) nil)
         (synchronize-seat-pointer-constraint interaction seat)
-        (start-behavior-interaction-animation policy view kind nil)
-        (behavior-schedule-presentation policy :subject view)))
+        (start-behavior-interaction-animation policy view kind nil)))
     operation))
 
-(defmethod behavior-cancel-view-operations
-    ((policy standard-behavior-policy) interaction view)
+(defun cancel-behavior-view-operations (policy interaction view)
   (dolist (seat (interaction-seats interaction))
     (let ((operation (behavior-operation policy seat)))
       (when (and operation
@@ -346,8 +253,8 @@
       (setf edges (logior edges +resize-edge-bottom+)))
     edges))
 
-(defmethod behavior-handle-pointer-button
-    ((policy standard-behavior-policy) interaction seat hit button state time)
+(defun handle-behavior-pointer-button
+    (policy interaction seat hit button state time)
   (declare (ignore time))
   (let* ((view (and hit (seat-hit-view hit)))
          (deliver-p t))
@@ -377,3 +284,136 @@
     (make-instance 'pointer-button-decision
                    :focus-target (and (eq state :pressed) view)
                    :deliver-p deliver-p)))
+
+(defmacro define-behavior-interaction-methods
+    (policy-class seat-state-class seat-table-reader
+     operation-maker operation-updater)
+  `(progn
+     (defmethod behavior-seat-state ((policy ,policy-class) seat)
+       (gethash seat (,seat-table-reader policy)))
+
+     (defmethod behavior-install-seat-state
+         ((policy ,policy-class) seat state)
+       (setf (gethash seat (,seat-table-reader policy)) state))
+
+     (defmethod behavior-seat-created
+         ((policy ,policy-class) interaction seat pointer-x pointer-y)
+       (behavior-install-seat-state
+        policy seat
+        (make-instance ',seat-state-class
+                       :cursor-x pointer-x :cursor-y pointer-y))
+       (behavior-outputs-changed policy interaction)
+       seat)
+
+     (defmethod behavior-seat-destroying
+         ((policy ,policy-class) interaction seat)
+       (let* ((state (require-behavior-seat-state policy seat))
+              (output (behavior-state-cursor-output state))
+              (box
+                (behavior-cursor-damage-box
+                 policy seat output
+                 (behavior-cursor-x state) (behavior-cursor-y state))))
+         (behavior-cancel-operation policy interaction seat)
+         (remhash seat (,seat-table-reader policy))
+         (when (and output box)
+           (schedule-presentation (policy-presentation policy)
+                                  output (list box))))
+       seat)
+
+     (defmethod copy-behavior-seat-state
+         ((policy ,policy-class) (state ,seat-state-class))
+       (declare (ignore policy))
+       (make-instance ',seat-state-class
+                      :cursor-x (behavior-cursor-x state)
+                      :cursor-y (behavior-cursor-y state)
+                      :cursor-output (behavior-state-cursor-output state)))
+
+     (defmethod behavior-cursor-layout-position
+         ((policy ,policy-class) seat)
+       (let ((state (require-behavior-seat-state policy seat)))
+         (values (behavior-cursor-x state) (behavior-cursor-y state))))
+
+     (defmethod behavior-cursor-output ((policy ,policy-class) seat)
+       (behavior-state-cursor-output
+        (require-behavior-seat-state policy seat)))
+
+     (defmethod behavior-cursor-local-position
+         ((policy ,policy-class) seat &optional output)
+       (let* ((state (require-behavior-seat-state policy seat))
+              (output (or output (behavior-state-cursor-output state))))
+         (when output
+           (output-local-position
+            output (behavior-cursor-x state) (behavior-cursor-y state)))))
+
+     (defmethod behavior-operation ((policy ,policy-class) seat)
+       (behavior-state-operation
+        (require-behavior-seat-state policy seat)))
+
+     (defmethod behavior-cursor-damage-box
+         ((policy ,policy-class) seat output pointer-x pointer-y)
+       (declare (ignore policy))
+       (behavior-cursor-damage-region
+        seat output pointer-x pointer-y))
+
+     (defmethod behavior-cursor-content-changed
+         ((policy ,policy-class) interaction seat old-output old-box)
+       (declare (ignore interaction))
+       (schedule-behavior-cursor-damage policy seat old-output old-box))
+
+     (defmethod behavior-warp-cursor
+         ((policy ,policy-class) interaction seat
+          pointer-x pointer-y time-msec)
+       (warp-behavior-cursor
+        policy interaction seat pointer-x pointer-y time-msec
+        (function ,operation-updater)))
+
+     (defmethod behavior-handle-pointer-motion
+         ((policy ,policy-class) interaction seat event)
+       (handle-behavior-pointer-motion
+        policy interaction seat event (function ,operation-updater)))
+
+     (defmethod behavior-handle-pointer-motion-absolute
+         ((policy ,policy-class) interaction seat event)
+       (handle-behavior-pointer-motion-absolute
+        policy interaction seat event (function ,operation-updater)))
+
+     (defmethod behavior-outputs-changed
+         ((policy ,policy-class) interaction)
+       (reconcile-behavior-cursors
+        policy interaction (function ,operation-updater)))
+
+     (defmethod behavior-request-move
+         ((policy ,policy-class) interaction seat view &key serial button)
+       (request-behavior-move
+        policy interaction seat view serial button
+        (function ,operation-maker)))
+
+     (defmethod behavior-request-resize
+         ((policy ,policy-class) interaction seat view edges
+          &key serial button)
+       (request-behavior-resize
+        policy interaction seat view edges serial button
+        (function ,operation-maker)))
+
+     (defmethod behavior-cancel-operation
+         ((policy ,policy-class) interaction seat)
+       (cancel-behavior-operation policy interaction seat))
+
+     (defmethod behavior-cancel-view-operations
+         ((policy ,policy-class) interaction view)
+       (cancel-behavior-view-operations policy interaction view))
+
+     (defmethod behavior-handle-pointer-button
+         ((policy ,policy-class) interaction seat hit button state time)
+       (handle-behavior-pointer-button
+        policy interaction seat hit button state time))
+
+     (defmethod behavior-handle-pointer-axis
+         ((policy ,policy-class) interaction seat input)
+       (declare (ignore policy interaction seat input))
+       (make-instance 'pointer-axis-decision))
+
+     (defmethod behavior-handle-keyboard-key
+         ((policy ,policy-class) interaction seat input)
+       (declare (ignore policy interaction seat input))
+       (make-instance 'keyboard-key-decision))))

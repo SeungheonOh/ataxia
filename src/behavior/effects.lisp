@@ -110,10 +110,9 @@ void main() {
        (blur-radius . ,blur-radius))
      :owner owner)))
 
-(defun make-soft-shadow-items (policy owner x y width height)
+(defun make-soft-shadow-items (policy style owner x y width height)
   "Return ambient and cast shadows derived from per-view elevation."
-  (let ((style (behavior-shadow-style policy)))
-    (when (and style (soft-shadow-enabled-p style))
+  (when (and style (soft-shadow-enabled-p style))
       (ensure-soft-shadow-program policy)
       (let* ((elevation
                (max 0d0 (min 1d0
@@ -137,4 +136,4 @@ void main() {
           (soft-shadow-ambient-blur-radius style) 0d0 0d0)
          (make-shadow-material-item
           style owner x y width height (soft-shadow-color style)
-          cast-blur offset-x offset-y))))))
+          cast-blur offset-x offset-y)))))

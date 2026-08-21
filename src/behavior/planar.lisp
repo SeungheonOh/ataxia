@@ -5,6 +5,46 @@
 
 (in-package #:ataxia.compositor)
 
+(defclass planar-seat-state ()
+  ((cursor-x :initarg :cursor-x :accessor behavior-cursor-x)
+   (cursor-y :initarg :cursor-y :accessor behavior-cursor-y)
+   (cursor-output :initarg :cursor-output :initform nil
+                  :accessor behavior-state-cursor-output)
+   (operation :initform nil :accessor behavior-state-operation)))
+
+(defclass planar-interactive-operation ()
+  ((kind :initarg :kind :reader interactive-operation-kind)
+   (seat :initarg :seat :reader interactive-operation-seat)
+   (view :initarg :view :reader interactive-operation-view)
+   (output :initarg :output :initform nil :reader interactive-operation-output)
+   (edges :initarg :edges :initform 0 :reader interactive-operation-edges)
+   (button :initarg :button :reader interactive-operation-button)
+   (start-x :initarg :start-x :reader interactive-operation-start-x)
+   (start-y :initarg :start-y :reader interactive-operation-start-y)
+   (original-width :initarg :original-width
+                   :reader interactive-operation-original-width)
+   (original-height :initarg :original-height
+                    :reader interactive-operation-original-height)
+   (original-placement :initarg :original-placement
+                       :reader interactive-operation-original-placement)))
+
+(defmethod behavior-build-popup-items
+    ((policy planar-behavior-policy) items desktop output timestamp)
+  (declare (ignore policy output timestamp))
+  (append-planar-popup-items items desktop))
+
+(defmethod behavior-build-scene
+    ((policy planar-behavior-policy) (presentation presentation-system)
+     (output compositor-output) timestamp)
+  (build-default-behavior-scene
+   policy presentation output timestamp
+   (behavior-titlebar-height policy) (behavior-panel-height policy)))
+
+(defmethod behavior-compose-frame
+    ((policy planar-behavior-policy) presentation output snapshot timestamp)
+  (declare (ignore policy))
+  (compose-default-behavior-frame presentation output snapshot timestamp))
+
 (defmethod behavior-build-view-items
     ((policy planar-behavior-policy) items output view timestamp titlebar-height)
   (let ((record (view-surface view)))
@@ -14,7 +54,7 @@
                (surface-record-texture record))
       (multiple-value-bind (world-x world-y world-width world-height)
           (behavior-project-view
-           policy output (output-viewport output) view timestamp)
+           policy output view timestamp)
         (let ((effective-titlebar-height
                 (if (or (view-fullscreen-p view)
                         (not (view-server-decorated-p view)))
@@ -39,7 +79,8 @@
                        (append
                         (unless (view-fullscreen-p view)
                           (make-soft-shadow-items
-                           policy view x y width height))
+                           policy (behavior-shadow-style policy)
+                           view x y width height))
                         (when (and (not (view-fullscreen-p view))
                                    (view-server-decorated-p view))
                           (list
@@ -83,13 +124,13 @@
                  :height (placement-height placement)
                  :z (placement-z placement)))
 
-(defmethod behavior-begin-operation
-    ((policy planar-behavior-policy) interaction seat view kind edges button)
+(defun make-planar-interactive-operation
+    (policy interaction seat view kind edges button)
   (declare (ignore interaction))
   (multiple-value-bind (pointer-x pointer-y)
       (behavior-cursor-layout-position policy seat)
     (make-instance
-     'interactive-operation :kind kind :seat seat :view view
+     'planar-interactive-operation :kind kind :seat seat :view view
      :output (behavior-cursor-output policy seat) :edges edges :button button
      :start-x pointer-x :start-y pointer-y
      :original-width (view-width view)
@@ -103,7 +144,9 @@
                      policy (interactive-operation-seat operation))
                     (default-compositor-output
                      (component-compositor policy)))))
-    (if output (viewport-scale (output-viewport output)) 1d0)))
+    (if output
+        (planar-viewport-scale (output-behavior-state output))
+        1d0)))
 
 (defun update-planar-move (policy operation)
   (let* ((seat (interactive-operation-seat operation))
@@ -162,13 +205,15 @@
        'view-configuration-decision
        :width (- right left) :height (- bottom top)))))
 
-(defmethod behavior-update-operation
-    ((policy planar-behavior-policy) interaction
-     (operation interactive-operation))
+(defun update-planar-operation (policy interaction operation)
   (declare (ignore interaction))
   (ecase (interactive-operation-kind operation)
     (:move (update-planar-move policy operation))
     (:resize (update-planar-resize policy operation))))
+
+(define-behavior-interaction-methods
+    planar-behavior-policy planar-seat-state behavior-seat-states
+    make-planar-interactive-operation update-planar-operation)
 
 (defmethod behavior-restore-view
     ((policy planar-behavior-policy) compositor view)
@@ -194,17 +239,16 @@
             (setf (view-restore-placement view)
                   (copy-planar-placement (view-placement view))))
           (let* ((native (output-native output))
-                 (panel (if fullscreen-p
-                            0d0
-                            (presentation-panel-height
-                             (compositor-presentation compositor))))
+                 (panel (if fullscreen-p 0d0
+                            (behavior-panel-height policy)))
                  (titlebar
                    (if (or fullscreen-p
                            (not (view-server-decorated-p view)))
                        0d0
-                       (presentation-titlebar-height
-                        (compositor-presentation compositor))))
-                 (scale (viewport-scale (output-viewport output)))
+                       (behavior-titlebar-height policy)))
+                 (scale
+                   (planar-viewport-scale
+                    (output-behavior-state output)))
                  (placement (view-placement view))
                  (width (/ (ataxia.runtime:output-width native) scale))
                  (height (/ (- (ataxia.runtime:output-height native)
@@ -212,7 +256,7 @@
                             scale)))
             (multiple-value-bind (world-x world-y)
                 (behavior-unproject-point
-                 policy output (output-viewport output) 0d0 panel)
+                 policy output 0d0 panel)
               (setf (placement-x placement) world-x
                     (placement-y placement) world-y
                     (placement-width placement) width
@@ -232,22 +276,13 @@
     (incf (behavior-policy-revision policy))
     (values placement old-placement)))
 
-(defmethod behavior-focus-changed
-    ((policy behavior-policy) seat previous view)
-  (declare (ignore seat previous))
-  (when view
-    (desktop-raise-view
-     (compositor-desktop (component-compositor policy)) view))
-  (incf (behavior-policy-revision policy))
-  view)
-
 (defmethod behavior-observe-output
     ((policy planar-behavior-policy) output)
   (declare (ignore policy))
-  (let ((viewport (output-viewport output)))
-    (list :camera-x (viewport-camera-x viewport)
-          :camera-y (viewport-camera-y viewport)
-          :scale (viewport-scale viewport))))
+  (let ((viewport (output-behavior-state output)))
+    (list :camera-x (planar-viewport-camera-x viewport)
+          :camera-y (planar-viewport-camera-y viewport)
+          :scale (planar-viewport-scale viewport))))
 
 (defmethod behavior-observe-view
     ((policy planar-behavior-policy) view)

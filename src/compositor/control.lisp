@@ -69,25 +69,14 @@
 (defclass replace-behavior-policy-action (control-action)
   ((policy :initarg :policy :reader replace-policy-action-policy)))
 
-(defclass pan-viewport-action (control-action)
-  ((output :initarg :output :reader pan-viewport-action-output)
-   (delta-x :initarg :delta-x :reader pan-viewport-action-delta-x)
-   (delta-y :initarg :delta-y :reader pan-viewport-action-delta-y)))
-
-(defclass zoom-viewport-action (control-action)
-  ((output :initarg :output :reader zoom-viewport-action-output)
-   (factor :initarg :factor :reader zoom-viewport-action-factor)
-   (anchor-x :initarg :anchor-x :reader zoom-viewport-action-anchor-x)
-   (anchor-y :initarg :anchor-y :reader zoom-viewport-action-anchor-y)))
+(defclass behavior-control-action (control-action)
+  ((capability :initarg :capability
+               :reader behavior-control-action-capability)
+   (command :initarg :command :reader behavior-control-action-command)
+   (payload :initarg :payload :reader behavior-control-action-payload)))
 
 (defclass launch-application-action (control-action)
   ((command :initarg :command :reader launch-action-command)))
-
-(defclass set-view-animation-action (control-action)
-  ((view :initarg :view :reader animation-action-view)
-   (descriptor-class :initarg :descriptor-class
-                     :reader animation-action-descriptor-class)
-   (definition :initarg :definition :reader animation-action-definition)))
 
 (defclass install-shader-program-action (control-action)
   ((name :initarg :name :reader install-shader-action-name)
@@ -157,16 +146,11 @@
 (defmethod required-control-capability
     ((action replace-behavior-policy-action))
   :behavior-policy)
-(defmethod required-control-capability ((action pan-viewport-action))
-  :viewport)
-(defmethod required-control-capability ((action zoom-viewport-action))
-  :viewport)
+(defmethod required-control-capability ((action behavior-control-action))
+  (behavior-control-action-capability action))
 (defmethod required-control-capability
     ((action launch-application-action))
   :launch)
-(defmethod required-control-capability
-    ((action set-view-animation-action))
-  :animation)
 (defmethod required-control-capability
     ((action install-shader-program-action))
   :shader)
@@ -413,51 +397,15 @@
    (component-compositor control) (replace-policy-action-policy action)))
 
 (defmethod execute-control-action
-    ((control control-system) (action pan-viewport-action))
-  (let* ((compositor (component-compositor control))
-         (output (pan-viewport-action-output action)))
-    (unless (eq output
-                (find-compositor-output
-                 (compositor-outputs compositor) (output-native output)))
-      (error 'control-request-rejected
-             :action action :reason :foreign-output))
-    (behavior-pan-output
-     (compositor-behavior-policy compositor) output
-     (pan-viewport-action-delta-x action)
-     (pan-viewport-action-delta-y action))
-    (schedule-presentation (compositor-presentation compositor) output)
-    (output-viewport output)))
-
-(defmethod execute-control-action
-    ((control control-system) (action zoom-viewport-action))
-  (let* ((compositor (component-compositor control))
-         (output (zoom-viewport-action-output action)))
-    (unless (eq output
-                (find-compositor-output
-                 (compositor-outputs compositor) (output-native output)))
-      (error 'control-request-rejected
-             :action action :reason :foreign-output))
-    (behavior-zoom-output
-     (compositor-behavior-policy compositor) output
-     (zoom-viewport-action-factor action)
-     (zoom-viewport-action-anchor-x action)
-     (zoom-viewport-action-anchor-y action))
-    (schedule-presentation (compositor-presentation compositor) output)
-    (output-viewport output)))
+    ((control control-system) (action behavior-control-action))
+  (behavior-execute-control-action
+   (compositor-behavior-policy (component-compositor control))
+   control action))
 
 (defmethod execute-control-action
     ((control control-system) (action launch-application-action))
   (launch-application
    (component-compositor control) (launch-action-command action)))
-
-(defmethod execute-control-action
-    ((control control-system) (action set-view-animation-action))
-  (let* ((view (animation-action-view action))
-         (compositor (component-compositor control)))
-    (behavior-set-view-animation-definition
-     (compositor-behavior-policy compositor)
-     view (animation-action-descriptor-class action)
-     (animation-action-definition action))))
 
 (defmethod execute-control-action
     ((control control-system) (action install-shader-program-action))

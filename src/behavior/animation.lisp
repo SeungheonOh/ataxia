@@ -5,11 +5,8 @@
 
 (in-package #:ataxia.compositor)
 
-(defgeneric behavior-default-animation-definition
-    (policy subject descriptor context))
-
-(defmethod behavior-default-animation-definition
-    ((policy standard-behavior-policy) (subject view) descriptor context)
+(defun make-default-policy-animation-definition
+    (policy subject descriptor context)
   (declare (ignore context))
   (cond
     ((typep descriptor 'visibility-transition)
@@ -56,21 +53,18 @@
           :to target-elevation)))))
     (t nil)))
 
-(defmethod behavior-resolve-animation
-    ((policy behavior-policy) (engine animation-engine)
-     (subject view) descriptor context)
-  (declare (ignore engine))
+(defun resolve-policy-animation (policy subject descriptor context)
   (or (operation-animation-override descriptor)
       (let ((view-policy (view-animation-policy subject)))
         (when view-policy
           (or (gethash (class-name (class-of descriptor))
                        (animation-policy-definitions view-policy))
               (animation-policy-fallback view-policy))))
-      (behavior-default-animation-definition
+      (make-default-policy-animation-definition
        policy subject descriptor context)))
 
-(defmethod behavior-apply-animation-value
-    ((policy behavior-policy) (subject view) binding value instance)
+(defun apply-policy-animation-value
+    (policy subject binding value instance)
   (declare (ignore policy instance))
   (typecase binding
     (reveal-progress-binding
@@ -97,21 +91,21 @@
     (t (error 'compositor-error)))
   subject)
 
-(defmethod behavior-finalize-animation-binding
-    ((policy behavior-policy) (subject view) binding instance reason)
+(defun finalize-policy-animation-binding
+    (policy subject binding instance reason)
   (declare (ignore policy))
   (when (typep binding 'reveal-progress-binding)
     (finalize-reveal-progress-animation subject binding instance reason)))
 
-(defmethod behavior-prepare-animation-binding
-    ((policy behavior-policy) (subject view) binding instance)
+(defun prepare-policy-animation-binding
+    (policy subject binding instance)
   (declare (ignore subject))
   (if (typep binding 'reveal-progress-binding)
       (prepare-reveal-progress-animation policy binding instance)
       t))
 
-(defmethod behavior-set-view-animation-definition
-    ((policy behavior-policy) (view view) descriptor-class definition)
+(defun set-policy-view-animation-definition
+    (policy view descriptor-class definition)
   (let ((view-policy
           (or (view-animation-policy view)
               (setf (view-animation-policy view)
@@ -120,3 +114,39 @@
      view-policy descriptor-class definition)
     (incf (behavior-policy-revision policy))
     definition))
+
+(defmacro define-policy-animation-methods (policy-class)
+  `(progn
+     (defmethod behavior-resolve-animation
+         ((policy ,policy-class) (engine animation-engine)
+          (subject view) descriptor context)
+       (declare (ignore engine))
+       (resolve-policy-animation policy subject descriptor context))
+
+     (defmethod behavior-apply-animation-value
+         ((policy ,policy-class) (subject view) binding value instance)
+       (apply-policy-animation-value
+        policy subject binding value instance))
+
+     (defmethod behavior-finalize-animation-binding
+         ((policy ,policy-class) (subject view) binding instance reason)
+       (finalize-policy-animation-binding
+        policy subject binding instance reason))
+
+     (defmethod behavior-prepare-animation-binding
+         ((policy ,policy-class) (subject view) binding instance)
+       (prepare-policy-animation-binding
+        policy subject binding instance))
+
+     (defmethod behavior-set-view-animation-definition
+         ((policy ,policy-class) (view view) descriptor-class definition)
+       (set-policy-view-animation-definition
+        policy view descriptor-class definition))
+
+     (defmethod behavior-view-unmapped :after
+         ((policy ,policy-class) view)
+       (declare (ignore policy))
+       (clear-view-codec-reveal-if-active view))))
+
+(define-policy-animation-methods planar-behavior-policy)
+(define-policy-animation-methods spherical-behavior-policy)

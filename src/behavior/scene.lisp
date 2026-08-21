@@ -114,9 +114,7 @@
   (dolist (view (desktop-stacking-order desktop) items)
     (setf items (append-popup-tree-items items desktop view))))
 
-(defmethod behavior-build-popup-items
-    ((policy behavior-policy) items desktop output timestamp)
-  (declare (ignore policy output timestamp))
+(defun append-planar-popup-items (items desktop)
   (append-popup-items items desktop))
 
 (defun append-cursor-items (policy items compositor output)
@@ -153,14 +151,13 @@
                        (make-solid-item (+ x 1d0) (+ y 1d0) 1d0 16d0
                                         '(0.95 0.97 1.0 1.0))))))))))))
 
-(defun append-panel-items (items presentation output desktop)
+(defun append-panel-items (items panel-height output desktop)
   (unless
       (find-if
        (lambda (view)
          (and (view-mapped-p view) (view-fullscreen-p view)))
        (desktop-stacking-order desktop))
-    (let ((panel-height (presentation-panel-height presentation))
-          (output-width
+    (let ((output-width
             (coerce
              (ataxia.runtime:output-width (output-native output))
              'double-float)))
@@ -176,10 +173,8 @@
                '(0.18 0.55 0.95 1.0)))))))
   items)
 
-(defmethod behavior-build-scene
-    ((policy standard-behavior-policy) (presentation presentation-system)
-     (output compositor-output) timestamp)
-  "Build the ordered scene while core retains snapshot and frame ownership."
+(defun build-default-behavior-scene
+    (policy presentation output timestamp titlebar-height panel-height)
   (let* ((compositor (component-compositor presentation))
          (desktop (compositor-desktop compositor))
          (native-output (output-native output))
@@ -189,8 +184,7 @@
              0d0 0d0
              (coerce (ataxia.runtime:output-width native-output) 'double-float)
              (coerce (ataxia.runtime:output-height native-output) 'double-float)
-             (behavior-background-color policy))))
-         (titlebar-height (presentation-titlebar-height presentation)))
+             (behavior-background-color policy)))))
     (dolist (view (desktop-stacking-order desktop))
       (setf items
             (behavior-build-view-items
@@ -198,13 +192,13 @@
     (setf items
           (behavior-build-popup-items
            policy items desktop output timestamp)
-          items (append-panel-items items presentation output desktop)
+          items (append-panel-items items panel-height output desktop)
           items (append-cursor-items policy items compositor output))
     items))
 
-(defmethod behavior-compose-frame
-    ((policy behavior-policy) presentation output snapshot timestamp)
-  (declare (ignore policy presentation output timestamp))
+(defun compose-default-behavior-frame
+    (presentation output snapshot timestamp)
+  (declare (ignore presentation output timestamp))
   (make-instance
    'frame-plan :snapshot snapshot
    :passes

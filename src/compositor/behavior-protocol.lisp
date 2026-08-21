@@ -69,14 +69,36 @@
    (height :initarg :height :initform nil :reader requested-placement-height)))
 
 (defclass behavior-portable-state ()
-  ((source-policy :initarg :source-policy
-                  :reader portable-state-source-policy)
-   (view-states :initarg :view-states
+  ((view-states :initarg :view-states
                 :reader portable-state-view-states)
    (output-states :initarg :output-states
                   :reader portable-state-output-states)
    (seat-states :initarg :seat-states
                 :reader portable-state-seat-states)))
+
+(defclass portable-view-state ()
+  ((x :initarg :x :reader portable-view-x)
+   (y :initarg :y :reader portable-view-y)
+   (width :initarg :width :reader portable-view-width)
+   (height :initarg :height :reader portable-view-height)
+   (depth :initarg :depth :initform 0d0 :reader portable-view-depth)
+   (animation-policy :initarg :animation-policy :initform nil
+                     :reader portable-view-animation-policy)
+   (shader-program-name :initarg :shader-program-name :initform nil
+                        :reader portable-view-shader-program-name)
+   (presentation-state :initarg :presentation-state
+                       :reader portable-view-presentation-state)))
+
+(defclass portable-output-state ()
+  ((horizontal :initarg :horizontal :reader portable-output-horizontal)
+   (vertical :initarg :vertical :reader portable-output-vertical)
+   (zoom :initarg :zoom :reader portable-output-zoom)))
+
+(defclass portable-seat-state ()
+  ((cursor-x :initarg :cursor-x :reader portable-seat-cursor-x)
+   (cursor-y :initarg :cursor-y :reader portable-seat-cursor-y)
+   (cursor-output :initarg :cursor-output :initform nil
+                  :reader portable-seat-cursor-output)))
 
 (defclass behavior-installation ()
   ((view-states :initarg :view-states
@@ -87,8 +109,6 @@
                 :reader installation-seat-states)))
 
 (defgeneric schedule-presentation (presentation &optional output damage))
-(defgeneric behavior-schedule-presentation
-    (policy &key output damage subject))
 
 (defgeneric activate-behavior-policy (policy))
 (defgeneric quiesce-behavior-policy (policy reason))
@@ -107,8 +127,6 @@
 (defgeneric behavior-seat-state (policy seat))
 (defgeneric behavior-install-seat-state (policy seat state))
 (defgeneric copy-behavior-seat-state (policy state))
-(defgeneric migrate-behavior-seat-state
-    (old-policy new-policy seat state))
 (defgeneric behavior-cursor-layout-position (policy seat))
 (defgeneric behavior-cursor-output (policy seat))
 (defgeneric behavior-cursor-local-position
@@ -131,16 +149,11 @@
 (defgeneric behavior-set-view-size (policy view width height context))
 (defgeneric behavior-place-view (policy view placement-request))
 (defgeneric behavior-update-placement (policy view placement context))
-(defgeneric behavior-project-view (policy output viewport view timestamp))
-(defgeneric behavior-unproject-point
-    (policy output viewport output-x output-y))
+(defgeneric behavior-project-view (policy output view timestamp))
+(defgeneric behavior-unproject-point (policy output output-x output-y))
 (defgeneric copy-behavior-placement (policy placement))
 (defgeneric copy-behavior-view-state (policy state))
 (defgeneric copy-behavior-output-state (policy state))
-(defgeneric migrate-behavior-view-state
-    (old-policy new-policy view state))
-(defgeneric migrate-behavior-output-state
-    (old-policy new-policy output state))
 (defgeneric behavior-export-state (policy compositor context))
 (defgeneric behavior-import-state (policy portable-state context))
 (defgeneric behavior-build-scene
@@ -154,9 +167,6 @@
 (defgeneric behavior-configure-view-for-output
     (policy compositor view output fullscreen-p))
 (defgeneric behavior-restore-view (policy compositor view))
-(defgeneric behavior-pan-output (policy output delta-x delta-y))
-(defgeneric behavior-zoom-output
-    (policy output factor anchor-x anchor-y))
 (defgeneric behavior-move-view (policy view x y context))
 (defgeneric behavior-focus-changed (policy seat previous view))
 (defgeneric behavior-handle-pointer-button
@@ -181,5 +191,8 @@
     (policy subject binding instance))
 (defgeneric behavior-set-view-animation-definition
     (policy view descriptor-class definition))
+(defgeneric behavior-decode-control-action
+    (policy control principal specification))
+(defgeneric behavior-execute-control-action (policy control action))
 (defgeneric behavior-validate-resources
     (policy compositor snapshots context))

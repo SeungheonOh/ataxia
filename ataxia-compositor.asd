@@ -20,10 +20,6 @@
      (:file "hooks")
      (:file "model")
      (:file "behavior-protocol")))
-   (:module "behavior-base-implementation"
-    :pathname "src/behavior"
-    :components
-    ((:file "standard-policy")))
    (:module "compositor-presentation"
    :pathname "src/compositor"
    :components
@@ -35,20 +31,28 @@
     :components
     ((:file "interaction")))
    (:module "behavior-implementations"
-   :pathname "src/behavior"
-   :components
+    :pathname "src/behavior"
+    :components
     ((:file "animation-bindings")
      (:file "effects")
      (:file "reveal")
-     (:file "animation")
+     (:file "standard-policy")
      (:file "interaction")
      (:file "scene")
      (:file "planar")
-     (:file "spherical")))
+     (:file "spherical")
+     (:file "animation")))
+   (:module "compositor-control"
+   :pathname "src/compositor"
+   :components
+    ((:file "control")))
+   (:module "behavior-control"
+    :pathname "src/behavior"
+    :components
+    ((:file "control")))
    (:module "compositor-services"
    :pathname "src/compositor"
    :components
-    ((:file "control")
-     (:file "control-transport")
+    ((:file "control-transport")
      (:file "compositor")
      (:file "main")))))

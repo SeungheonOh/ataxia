@@ -105,6 +105,7 @@
    #:surface-record-width
    #:surface-record-height
    #:surface-record-mapped-p
+   #:surface-record-entered-outputs
    #:application
    #:application-id
    #:application-app-id

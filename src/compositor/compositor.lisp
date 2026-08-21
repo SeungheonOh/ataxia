@@ -237,12 +237,6 @@
   (unless (eq (compositor-state compositor) :stopped)
     (setf (compositor-state compositor) :stopping)))
 
-(defun send-surface-enter-all-outputs (compositor surface)
-  (dolist (output
-            (compositor-outputs-list (compositor-outputs compositor)))
-    (ataxia.runtime:surface-send-enter surface (output-native output)))
-  surface)
-
 (defmethod ataxia.runtime:backend-new-output
     ((compositor compositor) runtime native-output)
   (let ((output
@@ -251,13 +245,6 @@
     (when output
       (behavior-output-added
        (compositor-behavior-policy compositor) output)
-      (dolist (record
-                (loop for record being the hash-values
-                        of (surface-records (compositor-surfaces compositor))
-                      when (surface-record-mapped-p record)
-                        collect record))
-        (ataxia.runtime:surface-send-enter
-         (surface-record-native record) native-output))
       ;; The initial modeset already queues the first frame event. Scheduling
       ;; here can race a pending DRM page flip on physical backends.
       )
@@ -343,15 +330,16 @@
     (when output
       (behavior-output-removing
        (compositor-behavior-policy compositor) output)))
-  (dolist (record
-            (loop for record being the hash-values
-                    of (surface-records (compositor-surfaces compositor))
-                  when (surface-record-mapped-p record)
-                    collect record))
-    (ataxia.runtime:surface-send-leave
-     (surface-record-native record) native-output))
-  (unregister-compositor-output
-   (compositor-outputs compositor) native-output))
+  (let ((output (find-compositor-output
+                 (compositor-outputs compositor) native-output)))
+    (when output
+      (maphash
+       (lambda (surface record)
+         (declare (ignore surface))
+         (surface-leave-output record output))
+       (surface-records (compositor-surfaces compositor))))
+    (unregister-compositor-output
+     (compositor-outputs compositor) native-output)))
 
 (defmethod ataxia.runtime:backend-new-input
     ((compositor compositor) runtime device)
@@ -429,7 +417,6 @@
   (let ((record
           (ensure-surface-record (compositor-surfaces compositor) surface)))
     (setf (surface-record-mapped-p record) t)
-    (send-surface-enter-all-outputs compositor surface)
     (schedule-presentation (compositor-presentation compositor))))
 
 (defmethod ataxia.runtime:surface-unmapped
@@ -437,6 +424,7 @@
   (let ((record
           (ensure-surface-record (compositor-surfaces compositor) surface)))
     (setf (surface-record-mapped-p record) nil)
+    (surface-leave-all-outputs record)
     (release-surface-content record)
     (schedule-presentation (compositor-presentation compositor))))
 
@@ -557,8 +545,6 @@
             (view-minimized-p view) nil
             (view-presentable-p view)
             (not (null (surface-record-texture (view-surface view)))))
-      (send-surface-enter-all-outputs
-       compositor (surface-record-native (view-surface view)))
       (behavior-view-mapped (compositor-behavior-policy compositor) view)
       (start-view-visibility-transition compositor view t)
       (let ((seat
@@ -726,8 +712,6 @@
   (let ((view (desktop-find-popup (compositor-desktop compositor) popup)))
     (when view
       (setf (popup-mapped-p view) t)
-      (send-surface-enter-all-outputs
-       compositor (surface-record-native (popup-surface view)))
       (schedule-presentation (compositor-presentation compositor)))
     view))
 

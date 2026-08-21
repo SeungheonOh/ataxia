@@ -576,6 +576,24 @@
    (material-program-name material) (material-uniforms material)
    (presentation-item-geometry item)))
 
+(defun synchronize-output-surface-membership (compositor output snapshot)
+  "Synchronize wl_surface output membership with one committed snapshot."
+  (let ((visible (make-hash-table :test #'eq))
+        (records (surface-records (compositor-surfaces compositor))))
+    (dolist (item (snapshot-items snapshot))
+      (let* ((surface (presentation-item-surface item))
+             (record (and surface (gethash surface records))))
+        (when (and record (surface-record-mapped-p record))
+          (setf (gethash record visible) t))))
+    (maphash
+     (lambda (surface record)
+       (declare (ignore surface))
+       (if (gethash record visible)
+           (surface-enter-output record output)
+           (surface-leave-output record output)))
+     records))
+  snapshot)
+
 (defmethod renderer-draw-material
     ((renderer direct-gles-renderer) frame-context
      (item presentation-item) (material shader-material))
@@ -630,7 +648,9 @@
            (unless (ataxia.runtime:output-test-state native state)
              (error 'graphics-failure :operation :output-test))
            (unless (ataxia.runtime:output-commit-state native state)
-             (error 'graphics-failure :operation :output-commit)))
+             (error 'graphics-failure :operation :output-commit))
+           (synchronize-output-surface-membership
+            compositor output snapshot))
       (when (and buffer (ataxia.runtime:native-object-live-p buffer))
         (ataxia.runtime:release-buffer buffer))
       (ataxia.runtime:destroy-output-state state)))

@@ -15,6 +15,8 @@
    (width :initform 0 :accessor surface-record-width)
    (height :initform 0 :accessor surface-record-height)
    (mapped-p :initform nil :accessor surface-record-mapped-p)
+   (entered-outputs :initform (make-hash-table :test #'eq)
+                    :reader surface-record-entered-outputs)
    (commit-sequence :initform 0 :accessor surface-record-commit-sequence)))
 
 (defclass surface-system (compositor-component)
@@ -97,6 +99,33 @@
         (surface-record-height record) 0)
   record)
 
+(defun surface-enter-output (record output)
+  (unless (gethash output (surface-record-entered-outputs record))
+    (ataxia.runtime:surface-send-enter
+     (surface-record-native record) (output-native output))
+    (setf (gethash output (surface-record-entered-outputs record)) t))
+  record)
+
+(defun surface-leave-output (record output)
+  (when (gethash output (surface-record-entered-outputs record))
+    (when (and (ataxia.runtime:native-object-live-p
+                (surface-record-native record))
+               (ataxia.runtime:native-object-live-p (output-native output)))
+      (ataxia.runtime:surface-send-leave
+       (surface-record-native record) (output-native output)))
+    (remhash output (surface-record-entered-outputs record)))
+  record)
+
+(defun surface-leave-all-outputs (record)
+  (let ((outputs nil))
+    (maphash (lambda (output present-p)
+               (declare (ignore present-p))
+               (push output outputs))
+             (surface-record-entered-outputs record))
+    (dolist (output outputs)
+      (surface-leave-output record output)))
+  record)
+
 (defun refresh-surface-record (record commit)
   ;; Acquire the new buffer before releasing the old one so a failed import
   ;; cannot erase the last complete frame unexpectedly.
@@ -139,6 +168,7 @@
 (defun retire-surface-record (surfaces native)
   (let ((record (gethash native (surface-records surfaces))))
     (when record
+      (surface-leave-all-outputs record)
       (release-surface-content record)
       (remhash native (surface-records surfaces)))
     record))

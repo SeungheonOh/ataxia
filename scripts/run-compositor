@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Ataxia Compositor build and launch wrapper.
+#
+# The wrapper selects the pinned wlroots installation and direct GLES renderer,
+# builds the ABI glue, and executes the Layer 2 SBCL entrypoint.
+
+set -euo pipefail
+
+repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export ATAXIA_PREFIX="${ATAXIA_PREFIX:-$HOME/.local/ataxia}"
+export ATAXIA_DEPS="${ATAXIA_DEPS:-$HOME/fun/ataxia-deps}"
+export ATAXIA_LISP_DEPS="${ATAXIA_LISP_DEPS:-$ATAXIA_DEPS/common-lisp}"
+export LD_LIBRARY_PATH="$ATAXIA_PREFIX/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+export PKG_CONFIG_PATH="$ATAXIA_PREFIX/lib/pkgconfig:$ATAXIA_PREFIX/share/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+export WLR_RENDERER="${WLR_RENDERER:-gles2}"
+
+make -C "$repository_root"
+exec sbcl --noinform --disable-debugger \
+  --script "$repository_root/scripts/launch-compositor.lisp" "$@"

@@ -1,0 +1,233 @@
+;;;; Live compositor object model.
+;;;;
+;;;; Surface records own retained client buffers. Desktop objects interpret XDG
+;;;; roles as applications, views, popups, and stacking relationships.
+
+(in-package #:ataxia.compositor)
+
+(defclass presentation-state ()
+  ((opacity :initform 1d0 :accessor presentation-opacity)
+   (scale :initform 1d0 :accessor presentation-scale)
+   (offset-x :initform 0d0 :accessor presentation-offset-x)
+   (offset-y :initform 0d0 :accessor presentation-offset-y)))
+
+(defclass surface-record ()
+  ((native :initarg :native :reader surface-record-native)
+   (buffer :initform nil :accessor surface-record-buffer)
+   (texture :initform nil :accessor surface-record-texture)
+   (width :initform 0 :accessor surface-record-width)
+   (height :initform 0 :accessor surface-record-height)
+   (mapped-p :initform nil :accessor surface-record-mapped-p)
+   (commit-sequence :initform 0 :accessor surface-record-commit-sequence)))
+
+(defclass surface-system (compositor-component)
+  ((records :initform (make-hash-table :test #'eq)
+            :reader surface-records)))
+
+(defclass application ()
+  ((id :initarg :id :reader application-id)
+   (app-id :initarg :app-id :accessor application-app-id)
+   (views :initform nil :accessor application-views)))
+
+(defclass view ()
+  ((id :initarg :id :reader view-id)
+   (native :initarg :native :reader view-native)
+   (surface :initarg :surface :reader view-surface)
+   (application :initarg :application :accessor view-application)
+   (placement :initform nil :accessor view-placement)
+   (width :initform 900 :accessor view-width)
+   (height :initform 650 :accessor view-height)
+   (title :initarg :title :initform nil :accessor view-title)
+   (mapped-p :initform nil :accessor view-mapped-p)
+   (presentable-p :initform nil :accessor view-presentable-p)
+   (maximized-p :initform nil :accessor view-maximized-p)
+   (fullscreen-p :initform nil :accessor view-fullscreen-p)
+   (minimized-p :initform nil :accessor view-minimized-p)
+   (restore-placement :initform nil :accessor view-restore-placement)
+   (animation-policy :initform nil :accessor view-animation-policy)
+   (presentation-state :initform (make-instance 'presentation-state)
+                       :reader view-presentation-state)
+   (revision :initform 0 :accessor view-revision)))
+
+(defclass popup-view ()
+  ((native :initarg :native :reader popup-native)
+   (surface :initarg :surface :reader popup-surface)
+   (parent-view :initarg :parent-view :reader popup-parent-view)
+   (x :initform 0d0 :accessor popup-x)
+   (y :initform 0d0 :accessor popup-y)
+   (mapped-p :initform nil :accessor popup-mapped-p)))
+
+(defclass desktop-system (compositor-component)
+  ((applications :initform (make-hash-table :test #'equal)
+                 :reader desktop-application-table)
+   (views :initform (make-hash-table :test #'eq)
+          :reader desktop-view-table)
+   (popups :initform (make-hash-table :test #'eq)
+           :reader desktop-popup-table)
+   (stacking :initform nil :accessor desktop-stacking)
+   (next-application-id :initform 0 :accessor desktop-next-application-id)
+   (next-view-id :initform 0 :accessor desktop-next-view-id)))
+
+(defun desktop-views (desktop)
+  (loop for view being the hash-values of (desktop-view-table desktop)
+        collect view))
+
+(defun desktop-applications (desktop)
+  (loop for application being the hash-values
+          of (desktop-application-table desktop)
+        collect application))
+
+(defun desktop-stacking-order (desktop)
+  (copy-list (desktop-stacking desktop)))
+
+(defun ensure-surface-record (surfaces native)
+  (or (gethash native (surface-records surfaces))
+      (setf (gethash native (surface-records surfaces))
+            (make-instance 'surface-record :native native))))
+
+(defun release-surface-content (record)
+  (let ((buffer (surface-record-buffer record)))
+    (when buffer
+      (ataxia.runtime:release-buffer buffer)))
+  (setf (surface-record-buffer record) nil
+        (surface-record-texture record) nil
+        (surface-record-width record) 0
+        (surface-record-height record) 0)
+  record)
+
+(defun refresh-surface-record (record commit)
+  ;; Acquire the new buffer before releasing the old one so a failed import
+  ;; cannot erase the last complete frame unexpectedly.
+  (let* ((surface (surface-record-native record))
+         (mapped-p (ataxia.runtime:surface-commit-mapped-p commit))
+         (new-buffer
+           (when mapped-p
+             (ataxia.runtime:retain-surface-buffer surface)))
+         (new-texture
+           (when new-buffer
+             (ataxia.runtime:buffer-texture new-buffer))))
+    (when (and new-buffer (null new-texture))
+      (ataxia.runtime:release-buffer new-buffer)
+      (setf new-buffer nil))
+    (release-surface-content record)
+    (setf (surface-record-buffer record) new-buffer
+          (surface-record-texture record) new-texture
+          (surface-record-width record)
+          (if new-buffer (ataxia.runtime:buffer-width new-buffer) 0)
+          (surface-record-height record)
+          (if new-buffer (ataxia.runtime:buffer-height new-buffer) 0)
+          (surface-record-mapped-p record) mapped-p
+          (surface-record-commit-sequence record)
+          (ataxia.runtime:surface-commit-sequence commit)))
+  record)
+
+(defun retire-surface-record (surfaces native)
+  (let ((record (gethash native (surface-records surfaces))))
+    (when record
+      (release-surface-content record)
+      (remhash native (surface-records surfaces)))
+    record))
+
+(defun application-key (desktop app-id)
+  (if (and app-id (plusp (length app-id)))
+      app-id
+      (gensym "ANONYMOUS-")))
+
+(defun ensure-application (desktop app-id)
+  (let ((key (application-key desktop app-id)))
+    (or (gethash key (desktop-application-table desktop))
+        (setf (gethash key (desktop-application-table desktop))
+              (make-instance 'application
+                             :id (incf (desktop-next-application-id desktop))
+                             :app-id app-id)))))
+
+(defun desktop-register-view (desktop native surface-record app-id title)
+  (let* ((application (ensure-application desktop app-id))
+         (view
+           (make-instance 'view
+                          :id (incf (desktop-next-view-id desktop))
+                          :native native :surface surface-record
+                          :application application :title title)))
+    (setf (gethash native (desktop-view-table desktop)) view
+          (application-views application)
+          (append (application-views application) (list view))
+          (desktop-stacking desktop)
+          (append (desktop-stacking desktop) (list view)))
+    view))
+
+(defun desktop-find-view (desktop native)
+  (gethash native (desktop-view-table desktop)))
+
+(defun desktop-find-view-by-surface (desktop native-surface)
+  (find native-surface (desktop-views desktop)
+        :key (lambda (view)
+               (surface-record-native (view-surface view)))
+        :test #'eq))
+
+(defun desktop-raise-view (desktop view)
+  (setf (desktop-stacking desktop)
+        (append (delete view (desktop-stacking desktop) :test #'eq)
+                (list view)))
+  view)
+
+(defun desktop-remove-view (desktop native)
+  (let ((view (gethash native (desktop-view-table desktop))))
+    (when view
+      (remhash native (desktop-view-table desktop))
+      (setf (desktop-stacking desktop)
+            (delete view (desktop-stacking desktop) :test #'eq))
+      (let ((application (view-application view)))
+        (setf (application-views application)
+              (delete view (application-views application) :test #'eq))
+        (when (null (application-views application))
+          (let ((application-key nil))
+            (maphash
+             (lambda (key candidate)
+               (when (eq application candidate)
+                 (setf application-key key)))
+             (desktop-application-table desktop))
+            (when application-key
+              (remhash application-key
+                       (desktop-application-table desktop)))))))
+    view))
+
+(defmethod detach-component :before ((surfaces surface-system) reason)
+  (declare (ignore reason))
+  (maphash (lambda (native record)
+             (declare (ignore native))
+             (release-surface-content record))
+           (surface-records surfaces))
+  (clrhash (surface-records surfaces)))
+
+(defun desktop-update-view-identity (desktop view app-id title)
+  (when title
+    (setf (view-title view) title))
+  (when (and app-id
+             (not (equal app-id
+                         (application-app-id (view-application view)))))
+    (let ((old (view-application view))
+          (new (ensure-application desktop app-id)))
+      (setf (application-views old)
+            (delete view (application-views old) :test #'eq)
+            (view-application view) new)
+      (pushnew view (application-views new) :test #'eq)))
+  (incf (view-revision view))
+  view)
+
+(defun desktop-register-popup (desktop native surface-record parent-view)
+  (let ((popup
+          (make-instance 'popup-view :native native
+                         :surface surface-record :parent-view parent-view)))
+    (setf (gethash native (desktop-popup-table desktop)) popup)
+    popup))
+
+(defun desktop-find-popup (desktop native)
+  (gethash native (desktop-popup-table desktop)))
+
+(defun desktop-remove-popup (desktop native)
+  (prog1 (gethash native (desktop-popup-table desktop))
+    (remhash native (desktop-popup-table desktop))))
+
+(defun desktop-popups (desktop)
+  (loop for popup being the hash-values of (desktop-popup-table desktop)
+        collect popup))

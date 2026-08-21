@@ -79,6 +79,47 @@
   (when output
     (output-local-position output (seat-pointer-x seat) (seat-pointer-y seat))))
 
+(defun seat-cursor-damage-box
+    (seat output pointer-x pointer-y)
+  (when output
+    (multiple-value-bind (local-x local-y)
+        (output-local-position output pointer-x pointer-y)
+      (multiple-value-bind (width height hotspot-x hotspot-y)
+          (case (seat-cursor-mode seat)
+            (:hidden (values 0 0 0 0))
+            (:surface
+             (let ((record (seat-cursor-record seat)))
+               (if record
+                   (values (surface-record-width record)
+                           (surface-record-height record)
+                           (seat-cursor-hotspot-x seat)
+                           (seat-cursor-hotspot-y seat))
+                   (values 14 22 0 0))))
+            (:default (values 14 22 0 0)))
+        (when (and (plusp width) (plusp height))
+          (make-damage-box
+           (floor (- local-x hotspot-x 2d0))
+           (floor (- local-y hotspot-y 2d0))
+           (+ (ceiling width) 4) (+ (ceiling height) 4)))))))
+
+(defun schedule-seat-cursor-damage
+    (interaction seat old-output old-box)
+  (let* ((presentation
+           (compositor-presentation (component-compositor interaction)))
+         (new-output (seat-pointer-output seat))
+         (new-box
+           (seat-cursor-damage-box
+            seat new-output (seat-pointer-x seat) (seat-pointer-y seat))))
+    (dolist (output (remove-duplicates
+                     (remove nil (list old-output new-output)) :test #'eq))
+      (let ((boxes
+              (remove nil
+                      (list (and (eq output old-output) old-box)
+                            (and (eq output new-output) new-box)))))
+        (when boxes
+          (schedule-presentation presentation output boxes)))))
+  seat)
+
 (defun interaction-owns-seat-p (interaction seat)
   (member seat (interaction-seats interaction) :test #'eq))
 
@@ -482,20 +523,25 @@
           (interaction-seat-for-device
            interaction (ataxia.runtime:pointer-motion-pointer event))))
     (when seat
-      (trace-input "[input] relative ~,2F ~,2F~%"
-                   (ataxia.runtime:pointer-motion-delta-x event)
-                   (ataxia.runtime:pointer-motion-delta-y event))
-      (incf (seat-pointer-x seat)
-            (ataxia.runtime:pointer-motion-delta-x event))
-      (incf (seat-pointer-y seat)
-            (ataxia.runtime:pointer-motion-delta-y event))
-      (clamp-seat-pointer interaction seat)
-      (if (seat-operation seat)
-          (update-interactive-operation interaction seat)
-          (update-pointer-focus
-           interaction seat (ataxia.runtime:pointer-motion-time-msec event)))
-      (schedule-presentation
-       (compositor-presentation (component-compositor interaction))))
+      (let* ((old-output (seat-pointer-output seat))
+             (old-box
+               (seat-cursor-damage-box
+                seat old-output (seat-pointer-x seat) (seat-pointer-y seat))))
+        (trace-input "[input] relative ~,2F ~,2F~%"
+                     (ataxia.runtime:pointer-motion-delta-x event)
+                     (ataxia.runtime:pointer-motion-delta-y event))
+        (incf (seat-pointer-x seat)
+              (ataxia.runtime:pointer-motion-delta-x event))
+        (incf (seat-pointer-y seat)
+              (ataxia.runtime:pointer-motion-delta-y event))
+        (clamp-seat-pointer interaction seat)
+        (if (seat-operation seat)
+            (update-interactive-operation interaction seat)
+            (progn
+              (update-pointer-focus
+               interaction seat (ataxia.runtime:pointer-motion-time-msec event))
+              (schedule-seat-cursor-damage
+               interaction seat old-output old-box)))))
     seat))
 
 (defmethod interaction-handle-pointer-motion-absolute
@@ -506,28 +552,33 @@
             (ataxia.runtime:pointer-motion-absolute-pointer event)))
          (outputs (compositor-outputs (component-compositor interaction))))
     (when seat
-      (trace-input "[input] absolute ~,3F ~,3F~%"
-                   (ataxia.runtime:pointer-motion-absolute-x event)
-                   (ataxia.runtime:pointer-motion-absolute-y event))
-      (multiple-value-bind (minimum-x minimum-y maximum-x maximum-y)
-          (output-layout-bounds outputs)
-        (when minimum-x
-          (setf (seat-pointer-x seat)
-                (+ minimum-x
-                   (* (ataxia.runtime:pointer-motion-absolute-x event)
-                      (- maximum-x minimum-x)))
-                (seat-pointer-y seat)
-                (+ minimum-y
-                   (* (ataxia.runtime:pointer-motion-absolute-y event)
-                      (- maximum-y minimum-y))))))
-      (clamp-seat-pointer interaction seat)
-      (if (seat-operation seat)
-          (update-interactive-operation interaction seat)
-          (update-pointer-focus
-           interaction seat
-           (ataxia.runtime:pointer-motion-absolute-time-msec event)))
-      (schedule-presentation
-       (compositor-presentation (component-compositor interaction))))
+      (let* ((old-output (seat-pointer-output seat))
+             (old-box
+               (seat-cursor-damage-box
+                seat old-output (seat-pointer-x seat) (seat-pointer-y seat))))
+        (trace-input "[input] absolute ~,3F ~,3F~%"
+                     (ataxia.runtime:pointer-motion-absolute-x event)
+                     (ataxia.runtime:pointer-motion-absolute-y event))
+        (multiple-value-bind (minimum-x minimum-y maximum-x maximum-y)
+            (output-layout-bounds outputs)
+          (when minimum-x
+            (setf (seat-pointer-x seat)
+                  (+ minimum-x
+                     (* (ataxia.runtime:pointer-motion-absolute-x event)
+                        (- maximum-x minimum-x)))
+                  (seat-pointer-y seat)
+                  (+ minimum-y
+                     (* (ataxia.runtime:pointer-motion-absolute-y event)
+                        (- maximum-y minimum-y))))))
+        (clamp-seat-pointer interaction seat)
+        (if (seat-operation seat)
+            (update-interactive-operation interaction seat)
+            (progn
+              (update-pointer-focus
+               interaction seat
+               (ataxia.runtime:pointer-motion-absolute-time-msec event))
+              (schedule-seat-cursor-damage
+               interaction seat old-output old-box)))))
     seat))
 
 (defmethod interaction-handle-pointer-button
@@ -683,18 +734,21 @@
                          (seat-native seat)
                          (seat-pointer-focus-surface seat)
                          (ataxia.runtime:seat-cursor-request-serial request)))))
-      (setf (seat-cursor-record seat)
-            (and surface
-                 (ensure-surface-record
-                  (compositor-surfaces (component-compositor interaction))
-                  surface))
-            (seat-cursor-mode seat) (if surface :surface :hidden)
-            (seat-cursor-hotspot-x seat)
-            (coerce (ataxia.runtime:seat-cursor-request-hotspot-x request)
-                    'double-float)
-            (seat-cursor-hotspot-y seat)
-            (coerce (ataxia.runtime:seat-cursor-request-hotspot-y request)
-                    'double-float))
-      (schedule-presentation
-       (compositor-presentation (component-compositor interaction))))
+      (let* ((old-output (seat-pointer-output seat))
+             (old-box
+               (seat-cursor-damage-box
+                seat old-output (seat-pointer-x seat) (seat-pointer-y seat))))
+        (setf (seat-cursor-record seat)
+              (and surface
+                   (ensure-surface-record
+                    (compositor-surfaces (component-compositor interaction))
+                    surface))
+              (seat-cursor-mode seat) (if surface :surface :hidden)
+              (seat-cursor-hotspot-x seat)
+              (coerce (ataxia.runtime:seat-cursor-request-hotspot-x request)
+                      'double-float)
+              (seat-cursor-hotspot-y seat)
+              (coerce (ataxia.runtime:seat-cursor-request-hotspot-y request)
+                      'double-float))
+        (schedule-seat-cursor-damage interaction seat old-output old-box)))
     seat))

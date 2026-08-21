@@ -381,11 +381,14 @@ The physical boundary is:
 6. Direct GLES supports both affine quads and arbitrary triangle meshes.
 7. Core rendering dispatches generic CLOS materials; visible background,
    shadows, decorations, and effect shaders are selected under `src/behavior`.
-8. Transactional policy replacement migrates live views and outputs and rolls
+8. Behavior animation tracks can target per-view effect parameters. The planar
+   and spherical policies use an `elevation` parameter to animate ambient and
+   cast shadows across move pickup and settle transitions.
+9. Transactional policy replacement migrates live views and outputs and rolls
    back failed trial snapshots.
-9. The spherical policy renders curved root surfaces, subsurfaces, and popups
+10. The spherical policy renders curved root surfaces, subsurfaces, and popups
    and supports bidirectional live migration with the planar policy.
-10. Projected partial damage remains a performance refinement; correctness uses
+11. Projected partial damage remains a performance refinement; correctness uses
    the full-output redraw fallback.
 
 ## Completion Criteria

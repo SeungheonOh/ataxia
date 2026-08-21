@@ -105,10 +105,14 @@ Resolution order is:
 2. the subject view's policy;
 3. the engine's default resolver.
 
-Tracks can animate `opacity`, `scale`, `offset-x`, `offset-y`, or a
-`shader-uniform-binding`. Shader programs are compiled in the live EGL context,
-registered by name, and selected per view. Agents with local shader capability
-can replace source and update uniforms through typed control actions.
+Tracks can animate `opacity`, `scale`, `offset-x`, `offset-y`, a
+`shader-uniform-binding`, or a behavior-owned `effect-parameter-binding`.
+Effect parameters are stored per view and may drive any behavior material.
+The default move interaction animates `elevation`; the shadow behavior maps it
+to cast offset and blur while retaining a close ambient shadow on every edge.
+Shader programs are compiled in the live EGL context, registered by name, and
+selected per view. Agents with local shader capability can replace source and
+update uniforms through typed control actions.
 
 Animation lifecycle hooks are `animation-resolving`,
 `before-animation-start`, `after-animation-start`, `animation-cancelled`, and

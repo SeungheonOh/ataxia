@@ -5,12 +5,30 @@
 
 (in-package #:ataxia.compositor)
 
+(defparameter *trace-output-p*
+  (not (null (uiop:getenv "ATAXIA_TRACE_OUTPUT"))))
+
+(defun trace-output (control &rest arguments)
+  (when *trace-output-p*
+    (apply #'format *error-output* control arguments)
+    (finish-output *error-output*)))
+
 (defclass compositor-output ()
   ((native :initarg :native :reader output-native)
    (viewport :initform (make-instance 'viewport) :reader output-viewport)
    (swapchain :initarg :swapchain :accessor output-swapchain)
    (last-snapshot :initform nil :accessor output-last-snapshot)
    (frame-revision :initform 0 :accessor output-frame-revision)
+   (commit-pending-p :initform nil :accessor output-commit-pending-p)
+   (redraw-pending-p :initform t :accessor output-redraw-pending-p)
+   (render-source :initform nil :accessor output-render-source)
+   (frame-timer :initform nil :accessor output-frame-timer)
+   (frame-timer-armed-p :initform nil
+                        :accessor output-frame-timer-armed-p)
+   (frame-requested-p :initform nil :accessor output-frame-requested-p)
+   (last-present-time :initform 0d0 :accessor output-last-present-time)
+   (refresh-seconds :initform (/ 1d0 60d0)
+                    :accessor output-refresh-seconds)
    (available-p :initform t :accessor output-available-p)))
 
 (defclass output-system (compositor-component)
@@ -95,6 +113,63 @@
 (defun find-compositor-output (outputs native)
   (gethash native (output-table outputs)))
 
+(defun output-scanout-pending-p (output)
+  (or (output-commit-pending-p output)
+      (ataxia.runtime:output-frame-pending-p (output-native output))))
+
+(defun output-frame-delay-milliseconds (output)
+  (let* ((elapsed (- (monotonic-seconds)
+                     (output-last-present-time output)))
+         (remaining (max 0d0 (- (output-refresh-seconds output) elapsed))))
+    (max 1 (ceiling (* remaining 1000d0)))))
+
+(defun arm-output-frame (output)
+  "Coalesce redraws and ask wlroots for one frame at the next refresh deadline."
+  (when (and (output-available-p output)
+             (output-frame-timer output)
+             (not (output-frame-timer-armed-p output))
+             (not (output-scanout-pending-p output)))
+    (ataxia.runtime:update-event-loop-timer
+     (output-frame-timer output)
+     (output-frame-delay-milliseconds output))
+    (setf (output-frame-timer-armed-p output) t))
+  output)
+
+(defun request-output-frame-now (output)
+  (when (and (output-available-p output)
+             (not (output-frame-requested-p output))
+             (not (output-scanout-pending-p output)))
+    (setf (output-frame-requested-p output) t)
+    (ataxia.runtime:output-schedule-frame (output-native output)))
+  output)
+
+(defun install-output-frame-timer (runtime output)
+  (setf
+   (output-frame-timer output)
+   (ataxia.runtime:add-event-loop-timer
+    runtime
+    (lambda (source)
+      (declare (ignore source))
+      (setf (output-frame-timer-armed-p output) nil)
+      (when (and (output-available-p output)
+                 (output-redraw-pending-p output)
+                 (not (output-scanout-pending-p output)))
+        (request-output-frame-now output))
+      0)))
+  output)
+
+(defun record-output-presentation (output event)
+  (setf (output-last-present-time output) (monotonic-seconds))
+  (let ((refresh-nanoseconds
+          (ataxia.runtime:output-present-refresh-nanoseconds event)))
+    (when (plusp refresh-nanoseconds)
+      (setf (output-refresh-seconds output)
+            (/ (coerce refresh-nanoseconds 'double-float) 1d9))))
+  (setf (output-commit-pending-p output) nil)
+  (when (output-redraw-pending-p output)
+    (arm-output-frame output))
+  output)
+
 (defun configure-native-output (runtime native)
   (ataxia.runtime:initialize-output-render
    native (ataxia.runtime:runtime-allocator runtime)
@@ -123,11 +198,26 @@
       (let* ((swapchain (configure-native-output runtime native))
              (output
                (make-instance 'compositor-output
-                              :native native :swapchain swapchain)))
-        (setf (gethash native (output-table outputs)) output)
-        (setf (output-order outputs)
-              (append (output-order outputs) (list output)))
-        output)
+                              :native native :swapchain swapchain))
+             (published-p nil))
+        (unwind-protect
+             (progn
+               ;; Install callback-owned resources before publishing the
+               ;; output to the rest of the compositor as fully usable.
+               (install-output-frame-timer runtime output)
+               (setf (gethash native (output-table outputs)) output
+                     (output-order outputs)
+                     (append (output-order outputs) (list output))
+                     published-p t)
+               output)
+          (unless published-p
+            (when (and (output-frame-timer output)
+                       (ataxia.runtime:native-object-live-p
+                        (output-frame-timer output)))
+              (ataxia.runtime:remove-event-loop-source
+               (output-frame-timer output)))
+            (when (ataxia.runtime:native-object-live-p swapchain)
+              (ataxia.runtime:destroy-output-swapchain swapchain)))))
     (ataxia.runtime:native-call-failed (condition)
       (format *error-output* "[compositor] output unavailable ~A: ~A~%"
               (or (ataxia.runtime:output-name native) "unknown") condition)
@@ -138,6 +228,20 @@
   (let ((output (gethash native (output-table outputs))))
     (when output
       (setf (output-available-p output) nil)
+      (when (and (output-render-source output)
+                 (ataxia.runtime:native-object-live-p
+                  (output-render-source output)))
+        (ataxia.runtime:remove-event-loop-source
+         (output-render-source output)))
+      (setf (output-render-source output) nil)
+      (when (and (output-frame-timer output)
+                 (ataxia.runtime:native-object-live-p
+                  (output-frame-timer output)))
+        (ataxia.runtime:remove-event-loop-source
+         (output-frame-timer output)))
+      (setf (output-frame-timer output) nil
+            (output-frame-timer-armed-p output) nil
+            (output-frame-requested-p output) nil)
       (when (and (output-swapchain output)
                  (ataxia.runtime:native-object-live-p
                   (output-swapchain output)))
@@ -551,22 +655,51 @@
       (let ((snapshot
               (build-presentation-snapshot
                presentation output (monotonic-seconds))))
+        (setf (output-redraw-pending-p output) nil)
         (render-presentation-frame presentation output snapshot)
+        (setf (output-commit-pending-p output) t)
+        (trace-output
+         "[output] commit ~A revision=~D native-pending=~A~%"
+         (ataxia.runtime:output-name (output-native output))
+         (output-frame-revision output)
+         (ataxia.runtime:output-frame-pending-p (output-native output)))
         (when (active-animations-p
                (presentation-animation-engine presentation))
-          (ataxia.runtime:output-schedule-frame (output-native output)))
+          (setf (output-redraw-pending-p output) t))
         snapshot)
     (serious-condition (condition)
       (format *error-output* "[compositor] frame failed on ~A: ~A~%"
               (ataxia.runtime:output-name (output-native output)) condition)
       (finish-output *error-output*)
       ;; Transient DRM busy failures must not strand the output without a
-      ;; future frame. wlroots coalesces this request until scanout is ready.
-      (when (and (output-available-p output)
-                 (ataxia.runtime:native-object-live-p
-                  (output-native output)))
-        (ataxia.runtime:output-schedule-frame (output-native output)))
+      ;; future frame. If scanout is pending, its presentation callback owns
+      ;; the retry; otherwise wlroots may schedule immediately.
+      (setf (output-redraw-pending-p output) t)
+      (trace-output
+       "[output] failure ~A lisp-pending=~A native-pending=~A~%"
+       (ataxia.runtime:output-name (output-native output))
+       (output-commit-pending-p output)
+       (ataxia.runtime:output-frame-pending-p (output-native output)))
+      (arm-output-frame output)
       nil)))
+
+(defun queue-output-presentation (presentation output)
+  ;; The DRM backend may emit FRAME from inside presentation cleanup. Deferring
+  ;; until the Wayland loop unwinds avoids an atomic commit in that same turn.
+  (unless (output-render-source output)
+    (setf
+     (output-render-source output)
+     (ataxia.runtime:add-event-loop-idle
+      (compositor-runtime (component-compositor presentation))
+      (lambda (source)
+        (declare (ignore source))
+        (setf (output-render-source output) nil)
+        (when (and (output-available-p output)
+                   (output-redraw-pending-p output)
+                   (not (output-scanout-pending-p output)))
+          (present-output presentation output))
+        0))))
+  output)
 
 (defmethod schedule-presentation
     ((presentation presentation-system) &optional output)
@@ -576,5 +709,17 @@
                   (list output)
                   (compositor-outputs-list outputs)))
       (when (output-available-p candidate)
-        (ataxia.runtime:output-schedule-frame (output-native candidate)))))
+        (setf (output-redraw-pending-p candidate) t)
+        (trace-output
+         "[output] request ~A lisp-pending=~A native-pending=~A~%"
+         (ataxia.runtime:output-name (output-native candidate))
+         (output-commit-pending-p candidate)
+         (ataxia.runtime:output-frame-pending-p (output-native candidate)))
+        ;; Once the backend frame cycle has produced a snapshot, it owns
+        ;; pacing. Manual scheduling here would create idle frames faster than
+        ;; DRM refresh and can race a just-presented page flip.
+        (if (null (output-last-snapshot candidate))
+            (unless (output-scanout-pending-p candidate)
+              (request-output-frame-now candidate))
+            (arm-output-frame candidate)))))
   presentation)

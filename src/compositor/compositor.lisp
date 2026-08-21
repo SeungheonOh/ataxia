@@ -267,13 +267,55 @@
           (find-compositor-output
            (compositor-outputs compositor) native-output)))
     (when output
-      (present-output (compositor-presentation compositor) output))))
+      (trace-output
+       "[output] frame ~A lisp-pending=~A native-pending=~A redraw=~A requested=~A~%"
+       (ataxia.runtime:output-name native-output)
+       (output-commit-pending-p output)
+       (ataxia.runtime:output-frame-pending-p native-output)
+       (output-redraw-pending-p output)
+       (output-frame-requested-p output))
+      (if (output-scanout-pending-p output)
+          (setf (output-redraw-pending-p output) t)
+          (cond
+            ((or (output-frame-requested-p output)
+                 (null (output-last-snapshot output)))
+             (setf (output-frame-requested-p output) nil)
+             (when (output-redraw-pending-p output)
+               (queue-output-presentation
+                (compositor-presentation compositor) output)))
+            ((output-redraw-pending-p output)
+             (arm-output-frame output)))))))
+
+(defmethod ataxia.runtime:output-present
+    ((compositor compositor) event)
+  (let ((output
+          (find-compositor-output
+           (compositor-outputs compositor)
+           (ataxia.runtime:output-present-output event))))
+    (when output
+      (trace-output
+       "[output] present ~A commit=~D presented=~A lisp-pending=~A native-pending=~A redraw=~A~%"
+       (ataxia.runtime:output-name (output-native output))
+       (ataxia.runtime:output-present-commit-sequence event)
+       (ataxia.runtime:output-present-presented-p event)
+       (output-commit-pending-p output)
+       (ataxia.runtime:output-frame-pending-p (output-native output))
+       (output-redraw-pending-p output))
+      (record-output-presentation output event)
+      output)))
 
 (defmethod ataxia.runtime:output-needs-frame
     ((compositor compositor) native-output)
-  ;; NEEDS-FRAME reports scheduling intent; only the FRAME signal is a safe
-  ;; point to acquire and commit the next scanout buffer.
-  (declare (ignore compositor native-output)))
+  ;; NEEDS-FRAME marks work; only FRAME acquires and commits a scanout buffer.
+  (let ((output
+          (find-compositor-output
+           (compositor-outputs compositor) native-output)))
+    (when output
+      (trace-output "[output] needs-frame ~A~%"
+                    (ataxia.runtime:output-name native-output))
+      (setf (output-redraw-pending-p output) t)
+      (unless (output-scanout-pending-p output)
+        (request-output-frame-now output)))))
 
 (defmethod ataxia.runtime:output-damaged
     ((compositor compositor) event)
@@ -281,7 +323,10 @@
          (output (find-compositor-output (compositor-outputs compositor)
                                          native)))
     (when output
-      (ataxia.runtime:output-schedule-frame native))))
+      (trace-output "[output] damage ~A rectangles=~D~%"
+                    (ataxia.runtime:output-name native)
+                    (length (ataxia.runtime:output-damage-rectangles event)))
+      (schedule-presentation (compositor-presentation compositor) output))))
 
 (defmethod ataxia.runtime:output-request-state
     ((compositor compositor) output state)

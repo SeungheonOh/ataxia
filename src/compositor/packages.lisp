@@ -244,6 +244,12 @@
    #:output-native
    #:output-viewport
    #:output-last-snapshot
+   #:output-commit-pending-p
+   #:output-redraw-pending-p
+   #:output-refresh-seconds
+   #:arm-output-frame
+   #:request-output-frame-now
+   #:queue-output-presentation
    #:interaction-system
    #:interaction-seats
    #:logical-seat

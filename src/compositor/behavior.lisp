@@ -124,7 +124,7 @@
    :original-width (view-width view)
    :original-height (view-height view)
    :original-placement
-   (copy-world-placement policy (view-placement view))))
+   (copy-behavior-placement policy (view-placement view))))
 
 (defun planar-pointer-scale (policy)
   (let ((output

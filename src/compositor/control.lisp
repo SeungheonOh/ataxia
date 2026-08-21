@@ -64,9 +64,6 @@
   ((device :initarg :device :reader assign-device-action-device)
    (seat :initarg :seat :reader assign-device-action-seat)))
 
-(defclass replace-world-action (control-action)
-  ((world :initarg :world :reader replace-world-action-world)))
-
 (defclass replace-behavior-policy-action (control-action)
   ((policy :initarg :policy :reader replace-policy-action-policy)))
 
@@ -116,7 +113,7 @@
     (make-instance
      'control-principal :identity :local-shell
      :capabilities
-     '(:observe :focus :move :seat :world :viewport :launch
+     '(:observe :focus :move :seat :behavior-policy :viewport :launch
        :animation :shader))
     :reader control-local-principal)))
 
@@ -131,10 +128,9 @@
 (defmethod required-control-capability
     ((action assign-input-device-action))
   :seat)
-(defmethod required-control-capability ((action replace-world-action)) :world)
 (defmethod required-control-capability
     ((action replace-behavior-policy-action))
-  :world)
+  :behavior-policy)
 (defmethod required-control-capability ((action pan-viewport-action)) :viewport)
 (defmethod required-control-capability ((action zoom-viewport-action)) :viewport)
 (defmethod required-control-capability
@@ -371,11 +367,6 @@
    (compositor-interaction (component-compositor control))
    (assign-device-action-device action)
    (assign-device-action-seat action)))
-
-(defmethod execute-control-action
-    ((control control-system) (action replace-world-action))
-  (replace-world
-   (component-compositor control) (replace-world-action-world action)))
 
 (defmethod execute-control-action
     ((control control-system) (action replace-behavior-policy-action))

@@ -8,7 +8,7 @@
 (defconstant +two-pi+ (* 2d0 pi))
 (defconstant +half-pi+ (/ pi 2d0))
 
-(defclass spherical-placement (world-placement)
+(defclass spherical-placement (behavior-placement)
   ((longitude :initarg :longitude :accessor spherical-longitude)
    (latitude :initarg :latitude :accessor spherical-latitude)
    (angular-width :initarg :angular-width

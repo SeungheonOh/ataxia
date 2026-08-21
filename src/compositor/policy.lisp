@@ -1,7 +1,7 @@
-;;;; Replaceable world and coordinate protocol.
+;;;; Replaceable Layer 2 behavior policy protocol.
 ;;;;
-;;;; The default planar world supports finite output viewports over unbounded
-;;;; world coordinates. Projection and inverse mapping share the same camera.
+;;;; Policies own placement, projection, scene construction, interaction math,
+;;;; and presentation choices without changing protocol-correct core objects.
 
 (in-package #:ataxia.compositor)
 
@@ -9,11 +9,9 @@
   ((active-p :initform nil :accessor behavior-policy-active-p)
    (revision :initform 0 :accessor behavior-policy-revision)))
 
-(defclass world (behavior-policy) ())
+(defclass behavior-placement () ())
 
-(defclass world-placement () ())
-
-(defclass planar-placement (world-placement)
+(defclass planar-placement (behavior-placement)
   ((x :initarg :x :accessor placement-x)
    (y :initarg :y :accessor placement-y)
    (width :initarg :width :accessor placement-width)
@@ -33,13 +31,11 @@
    (camera-y :initarg :camera-y :initform 0d0 :accessor viewport-camera-y)
    (scale :initarg :scale :initform 1d0 :accessor viewport-scale)))
 
-(defclass planar-world (world)
-  ((cascade-x :initform 48d0 :accessor world-cascade-x)
-   (cascade-y :initform 68d0 :accessor world-cascade-y)
-   (cascade-step :initform 36d0 :reader world-cascade-step)
-   (next-z :initform 0d0 :accessor world-next-z)))
-
-(defclass planar-behavior-policy (planar-world) ())
+(defclass planar-behavior-policy (behavior-policy)
+  ((cascade-x :initform 48d0 :accessor planar-cascade-x)
+   (cascade-y :initform 68d0 :accessor planar-cascade-y)
+   (cascade-step :initform 36d0 :reader planar-cascade-step)
+   (next-z :initform 0d0 :accessor planar-next-z)))
 
 (defclass behavior-portable-state ()
   ((source-policy :initarg :source-policy
@@ -72,6 +68,7 @@
 (defgeneric behavior-project-view (policy output viewport view timestamp))
 (defgeneric behavior-unproject-point
     (policy output viewport output-x output-y))
+(defgeneric copy-behavior-placement (policy placement))
 (defgeneric copy-behavior-view-state (policy state))
 (defgeneric copy-behavior-output-state (policy state))
 (defgeneric migrate-behavior-view-state
@@ -138,16 +135,6 @@
              (behavior-state-presentation-state state))
             (view-behavior-state view) state))
     state))
-
-(defgeneric world-place-view (world view placement-request))
-(defgeneric world-update-placement (world view placement context))
-(defgeneric world-project (world output viewport view timestamp))
-(defgeneric world-unproject (world output viewport output-x output-y))
-(defgeneric world-hit-test
-    (world output viewport output-x output-y timestamp))
-(defgeneric copy-world-placement (world placement))
-(defgeneric world-update-interactive-operation
-    (world interaction operation))
 
 (defmethod behavior-view-created
     ((policy planar-behavior-policy) view)
@@ -225,25 +212,9 @@
   (incf (behavior-policy-revision policy))
   (make-instance 'view-configuration-decision :width width :height height))
 
-(defmethod behavior-place-view
-    ((policy planar-behavior-policy) view placement-request)
-  (world-place-view policy view placement-request))
-
-(defmethod behavior-update-placement
-    ((policy planar-behavior-policy) view placement context)
-  (world-update-placement policy view placement context))
-
-(defmethod behavior-project-view
-    ((policy planar-behavior-policy) output viewport view timestamp)
-  (world-project policy output viewport view timestamp))
-
-(defmethod behavior-unproject-point
-    ((policy planar-behavior-policy) output viewport output-x output-y)
-  (world-unproject policy output viewport output-x output-y))
-
-(defmethod copy-world-placement
-    ((world planar-world) (placement planar-placement))
-  (declare (ignore world))
+(defmethod copy-behavior-placement
+    ((policy planar-behavior-policy) (placement planar-placement))
+  (declare (ignore policy))
   (make-instance 'planar-placement
                  :x (placement-x placement) :y (placement-y placement)
                  :width (placement-width placement)
@@ -268,10 +239,11 @@
    'planar-behavior-state
    :placement
    (and (behavior-state-placement state)
-        (copy-world-placement policy (behavior-state-placement state)))
+        (copy-behavior-placement policy (behavior-state-placement state)))
    :restore-state
    (and (behavior-state-restore-state state)
-        (copy-world-placement policy (behavior-state-restore-state state)))
+        (copy-behavior-placement
+         policy (behavior-state-restore-state state)))
    :animation-policy (behavior-state-animation-policy state)
    :shader-program-name (behavior-state-shader-program-name state)
    :presentation-state
@@ -340,10 +312,12 @@
                old-policy policy (car entry) (cdr entry))))
       (portable-state-output-states portable)))))
 
-(defmethod world-place-view
-    ((world planar-world) view (request placement-request))
-  (let* ((x (or (requested-placement-x request) (world-cascade-x world)))
-         (y (or (requested-placement-y request) (world-cascade-y world)))
+(defmethod behavior-place-view
+    ((policy planar-behavior-policy) view (request placement-request))
+  (let* ((x (or (requested-placement-x request)
+                (planar-cascade-x policy)))
+         (y (or (requested-placement-y request)
+                (planar-cascade-y policy)))
          (width (or (requested-placement-width request) (view-width view)))
          (height (or (requested-placement-height request) (view-height view)))
          (placement
@@ -352,27 +326,30 @@
                           :y (coerce y 'double-float)
                           :width (coerce width 'double-float)
                           :height (coerce height 'double-float)
-                          :z (incf (world-next-z world)))))
-    (incf (world-cascade-x world) (world-cascade-step world))
-    (incf (world-cascade-y world) (world-cascade-step world))
-    (when (> (world-cascade-x world) 360d0)
-      (setf (world-cascade-x world) 48d0
-            (world-cascade-y world) 68d0))
+                          :z (incf (planar-next-z policy)))))
+    (incf (planar-cascade-x policy) (planar-cascade-step policy))
+    (incf (planar-cascade-y policy) (planar-cascade-step policy))
+    (when (> (planar-cascade-x policy) 360d0)
+      (setf (planar-cascade-x policy) 48d0
+            (planar-cascade-y policy) 68d0))
     (setf (view-placement view) placement)
     placement))
 
-(defmethod world-place-view ((world planar-world) view (request null))
-  (world-place-view world view (make-instance 'placement-request)))
+(defmethod behavior-place-view
+    ((policy planar-behavior-policy) view (request null))
+  (behavior-place-view policy view (make-instance 'placement-request)))
 
-(defmethod world-update-placement
-    ((world planar-world) view (placement planar-placement) context)
-  (declare (ignore world context))
+(defmethod behavior-update-placement
+    ((policy planar-behavior-policy) view
+     (placement planar-placement) context)
+  (declare (ignore policy context))
   (setf (view-placement view) placement)
   placement)
 
-(defmethod world-project
-    ((world planar-world) output (viewport viewport) view timestamp)
-  (declare (ignore world output timestamp))
+(defmethod behavior-project-view
+    ((policy planar-behavior-policy) output
+     (viewport viewport) view timestamp)
+  (declare (ignore policy output timestamp))
   (let ((placement (view-placement view))
         (scale (viewport-scale viewport)))
     (check-type placement planar-placement)
@@ -381,30 +358,14 @@
             (* (placement-width placement) scale)
             (* (placement-height placement) scale))))
 
-(defmethod world-unproject
-    ((world planar-world) output (viewport viewport) output-x output-y)
-  (declare (ignore world output))
+(defmethod behavior-unproject-point
+    ((policy planar-behavior-policy) output
+     (viewport viewport) output-x output-y)
+  (declare (ignore policy output))
   (values (+ (viewport-camera-x viewport)
              (/ output-x (viewport-scale viewport)))
           (+ (viewport-camera-y viewport)
              (/ output-y (viewport-scale viewport)))))
-
-(defmethod world-hit-test
-    ((world planar-world) output (viewport viewport)
-     output-x output-y timestamp)
-  (declare (ignore timestamp))
-  (let* ((desktop (compositor-desktop (component-compositor world)))
-         (views (reverse (desktop-stacking-order desktop))))
-    (dolist (view views (values nil 0d0 0d0))
-      (when (and (view-mapped-p view) (view-presentable-p view))
-        (multiple-value-bind (x y width height)
-            (world-project world output viewport view 0d0)
-          (when (and (<= x output-x (+ x width))
-                     (<= y output-y (+ y height)))
-            (return
-              (values view
-                      (/ (- output-x x) (viewport-scale viewport))
-                      (/ (- output-y y) (viewport-scale viewport))))))))))
 
 (defgeneric pan-viewport (viewport delta-x delta-y))
 (defgeneric zoom-viewport (viewport factor anchor-x anchor-y))

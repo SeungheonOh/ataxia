@@ -19,12 +19,6 @@
    (owner-thread :reader compositor-owner-thread)
    (state :initform :constructing :accessor compositor-state)))
 
-(defmethod compositor-world ((compositor compositor))
-  (compositor-behavior-policy compositor))
-
-(defmethod (setf compositor-world) (policy (compositor compositor))
-  (setf (compositor-behavior-policy compositor) policy))
-
 (defun compositor-components (compositor)
   (remove nil
           (list (and (slot-boundp compositor 'behavior-policy)
@@ -66,12 +60,6 @@
      &rest initialization-arguments)
   (apply #'make-instance 'planar-behavior-policy
          :compositor compositor initialization-arguments))
-
-(defmethod make-compositor-component
-    ((compositor compositor) (role (eql :world))
-     &rest initialization-arguments)
-  (apply #'make-compositor-component
-         compositor :behavior-policy initialization-arguments))
 
 (defmethod make-compositor-component
     ((compositor compositor) (role (eql :graphics))
@@ -766,15 +754,7 @@
       (desktop-remove-popup (compositor-desktop compositor) popup)
     (schedule-presentation (compositor-presentation compositor))))
 
-(defgeneric migrate-world-placement (old-world new-world view placement))
-(defgeneric replace-world (compositor new-world))
 (defgeneric replace-behavior-policy (compositor new-policy))
-
-(defmethod migrate-world-placement
-    ((old-world planar-world) (new-world planar-world)
-     view (placement planar-placement))
-  (declare (ignore old-world new-world view))
-  (copy-planar-placement placement))
 
 (defun component-replacement-context
     (compositor descriptor phase &optional metadata)
@@ -920,9 +900,6 @@
              (component-replacement-context
               compositor descriptor :failed condition)))
           (error condition))))))
-
-(defmethod replace-world ((compositor compositor) (new-world world))
-  (replace-behavior-policy compositor new-world))
 
 (defun launch-application (compositor command)
   (let ((socket

@@ -18,7 +18,7 @@
      (:file "core")
      (:file "hooks")
      (:file "model")
-     (:file "world")
+     (:file "policy")
      (:file "animation")
      (:file "graphics")
      (:file "presentation")

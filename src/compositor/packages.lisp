@@ -24,7 +24,6 @@
    #:compositor-desktop
    #:compositor-interaction
    #:compositor-behavior-policy
-   #:compositor-world
    #:compositor-presentation
    #:compositor-graphics
    #:compositor-extensions
@@ -174,6 +173,7 @@
    #:behavior-update-placement
    #:behavior-project-view
    #:behavior-unproject-point
+   #:copy-behavior-placement
    #:copy-behavior-view-state
    #:copy-behavior-output-state
    #:migrate-behavior-view-state
@@ -196,9 +196,7 @@
    #:behavior-observe-view
    #:behavior-resolve-animation
    #:behavior-set-view-animation-definition
-   #:world
-   #:planar-world
-   #:world-placement
+   #:behavior-placement
    #:planar-placement
    #:placement-x
    #:placement-y
@@ -214,18 +212,9 @@
    #:viewport-camera-x
    #:viewport-camera-y
    #:viewport-scale
-   #:world-place-view
-   #:world-update-placement
-   #:world-project
-   #:world-unproject
-   #:world-hit-test
-   #:copy-world-placement
-   #:world-update-interactive-operation
    #:pan-viewport
    #:zoom-viewport
-   #:replace-world
    #:replace-behavior-policy
-   #:migrate-world-placement
    #:presentation-state
    #:presentation-opacity
    #:presentation-scale
@@ -393,7 +382,6 @@
    #:create-seat-action
    #:destroy-seat-action
    #:assign-input-device-action
-   #:replace-world-action
    #:replace-behavior-policy-action
    #:pan-viewport-action
    #:zoom-viewport-action

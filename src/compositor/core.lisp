@@ -11,7 +11,6 @@
 (defgeneric compositor-desktop (compositor))
 (defgeneric compositor-interaction (compositor))
 (defgeneric compositor-behavior-policy (compositor))
-(defgeneric compositor-world (compositor))
 (defgeneric compositor-presentation (compositor))
 (defgeneric compositor-graphics (compositor))
 (defgeneric compositor-extensions (compositor))

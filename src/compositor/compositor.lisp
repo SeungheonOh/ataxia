@@ -155,6 +155,8 @@
             (dolist (component (compositor-components compositor))
               (attach-component component)))
           (ataxia.runtime:create-xdg-shell (compositor-runtime compositor))
+          (ataxia.runtime:create-desktop-shell-protocols
+           (compositor-runtime compositor))
           (ataxia.runtime:create-data-device-manager
            (compositor-runtime compositor))
           (ataxia.runtime:create-presentation-protocols
@@ -238,6 +240,63 @@
   (declare (ignore runtime reason))
   (unless (eq (compositor-state compositor) :stopped)
     (setf (compositor-state compositor) :stopping)))
+
+(defun apply-xdg-decoration-policy (compositor decoration)
+  (let ((view
+          (desktop-find-view
+           (compositor-desktop compositor)
+           (ataxia.runtime:xdg-decoration-toplevel decoration))))
+    (when view
+      (let ((mode
+              (case (ataxia.runtime:xdg-decoration-requested-mode decoration)
+                (:server-side :server-side)
+                (otherwise :client-side))))
+        (setf (view-decoration-mode view) mode)
+        (when (view-initialized-p view)
+          (ataxia.runtime:xdg-toplevel-decoration-set-mode decoration mode))
+        (schedule-presentation (compositor-presentation compositor))
+        mode))))
+
+(defun apply-pending-xdg-decoration (compositor view)
+  (let ((decoration
+          (ataxia.runtime:find-xdg-toplevel-decoration
+           (compositor-runtime compositor) (view-native view))))
+    (when decoration
+      (apply-xdg-decoration-policy compositor decoration))))
+
+(defmethod ataxia.runtime:xdg-new-toplevel-decoration
+    ((compositor compositor) runtime decoration)
+  (declare (ignore runtime))
+  (apply-xdg-decoration-policy compositor decoration))
+
+(defmethod ataxia.runtime:xdg-toplevel-decoration-request-mode
+    ((compositor compositor) decoration)
+  (apply-xdg-decoration-policy compositor decoration))
+
+(defmethod ataxia.runtime:xdg-toplevel-decoration-destroying
+    ((compositor compositor) decoration)
+  (declare (ignore compositor decoration))
+  nil)
+
+(defmethod ataxia.runtime:xdg-activation-requested
+    ((compositor compositor) runtime request)
+  (declare (ignore runtime))
+  (let* ((interaction (compositor-interaction compositor))
+         (native-seat (ataxia.runtime:xdg-activation-request-seat request))
+         (seat
+           (or (and native-seat
+                    (find native-seat (interaction-seats interaction)
+                          :key #'seat-native :test #'eq))
+               (interaction-default-seat interaction)))
+         (view
+           (and (ataxia.runtime:xdg-activation-request-target-surface request)
+                (desktop-find-view-by-surface
+                 (compositor-desktop compositor)
+                 (ataxia.runtime:xdg-activation-request-target-surface
+                  request)))))
+    (when (and seat view (view-mapped-p view))
+      (desktop-raise-view (compositor-desktop compositor) view)
+      (focus-view interaction seat view))))
 
 (defmethod ataxia.runtime:backend-new-output
     ((compositor compositor) runtime native-output)
@@ -540,6 +599,7 @@
        view commit initial-commit-p)
       (when (and initial-commit-p (not configured-p))
         (setf (view-initialized-p view) t)
+        (apply-pending-xdg-decoration compositor view)
         (multiple-value-bind (width height)
             (behavior-recommend-initial-size
              (compositor-behavior-policy compositor) compositor view)

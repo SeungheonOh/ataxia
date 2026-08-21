@@ -51,6 +51,11 @@
    (fractional-scale-manager
     :initform nil :accessor %runtime-fractional-scale-manager)
    (presentation :initform nil :accessor %runtime-presentation)
+   (xdg-decoration-manager
+    :initform nil :accessor %runtime-xdg-decoration-manager)
+   (xdg-activation :initform nil :accessor %runtime-xdg-activation)
+   (xdg-decorations :initform (make-hash-table :test #'eql)
+                    :reader %runtime-xdg-decoration-table)
    (xdg-toplevels :initform (make-hash-table :test #'eql)
                   :reader %runtime-xdg-toplevel-table)
    (xdg-popups :initform (make-hash-table :test #'eql)
@@ -810,6 +815,12 @@
       (%teardown-step
        runtime :event-sources
        (lambda () (%remove-runtime-event-sources runtime)))
+      ;; All wlroots destroy functions require their public signals to have no
+      ;; foreign listeners left. Runtime no longer needs callbacks after the
+      ;; clients are gone, so detach once before native teardown begins.
+      (%teardown-step
+       runtime :listeners
+       (lambda () (%retire-runtime-listeners runtime)))
       (dolist (seat (%hash-values (%runtime-seat-table runtime)))
         (%teardown-step runtime :seat (lambda () (destroy-seat seat))))
       (%teardown-step
@@ -842,8 +853,6 @@
             (%native-pointer (%runtime-display runtime)))
            (%invalidate-native-object (%runtime-display runtime)))))
       (%run-safe-point-actions runtime)
-      (when (%runtime-subscriptions runtime)
-        (%retire-runtime-listeners runtime))
       (dolist (object (list (%runtime-event-loop runtime)
                             (%runtime-egl runtime)
                             (%runtime-compositor-global runtime)
@@ -851,7 +860,9 @@
                             (%runtime-data-device-manager runtime)
                             (%runtime-viewporter runtime)
                             (%runtime-fractional-scale-manager runtime)
-                            (%runtime-presentation runtime)))
+                            (%runtime-presentation runtime)
+                            (%runtime-xdg-decoration-manager runtime)
+                            (%runtime-xdg-activation runtime)))
         (when object (%invalidate-native-object object)))
       (clrhash (%runtime-output-table runtime))
       (clrhash (%runtime-input-table runtime))
@@ -860,6 +871,7 @@
       (clrhash (%runtime-seat-table runtime))
       (clrhash (%runtime-xdg-toplevel-table runtime))
       (clrhash (%runtime-xdg-popup-table runtime))
+      (clrhash (%runtime-xdg-decoration-table runtime))
       (setf (%runtime-display runtime) nil
             (%runtime-event-loop runtime) nil
             (%runtime-backend runtime) nil
@@ -873,6 +885,8 @@
             (%runtime-viewporter runtime) nil
             (%runtime-fractional-scale-manager runtime) nil
             (%runtime-presentation runtime) nil
+            (%runtime-xdg-decoration-manager runtime) nil
+            (%runtime-xdg-activation runtime) nil
             (%runtime-socket-name runtime) nil
             (%runtime-state runtime) :stopped))))
   nil)

@@ -71,6 +71,9 @@
    #:%wlr-surface-set-preferred-buffer-scale
    #:%wlr-presentation-create
    #:%wlr-presentation-surface-textured-on-output
+   #:%wlr-xdg-decoration-manager-v1-create
+   #:%wlr-xdg-toplevel-decoration-v1-set-mode
+   #:%wlr-xdg-activation-v1-create
    #:%wlr-seat-create
    #:%wlr-seat-destroy
    #:%wlr-seat-set-capabilities
@@ -202,6 +205,20 @@
    #:%surface-current-buffer-height
    #:%surface-current-transform
    #:%surface-buffer-source-box
+   #:%xdg-decoration-manager-event-new-toplevel
+   #:%xdg-decoration-manager-event-destroy
+   #:%xdg-toplevel-decoration-event-request-mode
+   #:%xdg-toplevel-decoration-event-destroy
+   #:%xdg-toplevel-decoration-toplevel
+   #:%xdg-toplevel-decoration-requested-mode
+   #:%xdg-activation-event-request-activate
+   #:%xdg-activation-event-destroy
+   #:%xdg-activation-request-surface
+   #:%xdg-activation-request-token
+   #:%xdg-activation-token-surface
+   #:%xdg-activation-token-seat
+   #:%xdg-activation-token-serial
+   #:%xdg-activation-token-app-id
    #:%surface-mapped
    #:%wlr-surface-surface-at
    #:%subsurface-event-destroy
@@ -431,6 +448,17 @@
    #:wlr-viewporter
    #:wlr-fractional-scale-manager-v1
    #:wlr-presentation
+   #:wlr-xdg-decoration-manager-v1
+   #:wlr-xdg-toplevel-decoration-v1
+   #:xdg-decoration-toplevel
+   #:xdg-decoration-requested-mode
+   #:wlr-xdg-activation-v1
+   #:xdg-activation-request
+   #:xdg-activation-request-target-surface
+   #:xdg-activation-request-source-surface
+   #:xdg-activation-request-seat
+   #:xdg-activation-request-serial
+   #:xdg-activation-request-app-id
    #:seat-cursor-request
    #:seat-cursor-request-seat
    #:seat-cursor-request-surface
@@ -564,6 +592,10 @@
    #:xdg-popup-committed
    #:xdg-popup-repositioned
    #:xdg-popup-destroying
+   #:xdg-new-toplevel-decoration
+   #:xdg-toplevel-decoration-request-mode
+   #:xdg-toplevel-decoration-destroying
+   #:xdg-activation-requested
    #:create-runtime
    #:start-runtime
    #:run-runtime
@@ -580,6 +612,12 @@
    #:notify-surface-preferred-scale
    #:mark-surface-textured-on-output
    #:surface-content-layout
+   #:create-desktop-shell-protocols
+   #:runtime-xdg-decoration-manager
+   #:runtime-xdg-decorations
+   #:find-xdg-toplevel-decoration
+   #:runtime-xdg-activation
+   #:xdg-toplevel-decoration-set-mode
    #:set-seat-capabilities
    #:set-seat-name
    #:set-seat-keyboard

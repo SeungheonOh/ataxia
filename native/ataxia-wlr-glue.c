@@ -24,6 +24,8 @@
 #include <wlr/types/wlr_seat.h>
 #include <wlr/types/wlr_subcompositor.h>
 #include <wlr/types/wlr_xdg_shell.h>
+#include <wlr/types/wlr_xdg_activation_v1.h>
+#include <wlr/types/wlr_xdg_decoration_v1.h>
 #include <wlr/version.h>
 
 struct ataxia_listener {
@@ -129,6 +131,18 @@ SIGNAL_ACCESSOR(ataxia_surface_event_unmap, wlr_surface, events.unmap)
 SIGNAL_ACCESSOR(ataxia_surface_event_new_subsurface, wlr_surface,
 	events.new_subsurface)
 SIGNAL_ACCESSOR(ataxia_surface_event_destroy, wlr_surface, events.destroy)
+SIGNAL_ACCESSOR(ataxia_xdg_decoration_manager_event_new_toplevel,
+	wlr_xdg_decoration_manager_v1, events.new_toplevel_decoration)
+SIGNAL_ACCESSOR(ataxia_xdg_decoration_manager_event_destroy,
+	wlr_xdg_decoration_manager_v1, events.destroy)
+SIGNAL_ACCESSOR(ataxia_xdg_toplevel_decoration_event_request_mode,
+	wlr_xdg_toplevel_decoration_v1, events.request_mode)
+SIGNAL_ACCESSOR(ataxia_xdg_toplevel_decoration_event_destroy,
+	wlr_xdg_toplevel_decoration_v1, events.destroy)
+SIGNAL_ACCESSOR(ataxia_xdg_activation_event_request_activate,
+	wlr_xdg_activation_v1, events.request_activate)
+SIGNAL_ACCESSOR(ataxia_xdg_activation_event_destroy,
+	wlr_xdg_activation_v1, events.destroy)
 
 const char *ataxia_output_name(const struct wlr_output *output) {
 	return output == NULL ? NULL : output->name;
@@ -509,6 +523,47 @@ bool ataxia_surface_buffer_source_box(struct wlr_surface *surface,
 	*width = box.width;
 	*height = box.height;
 	return box.width > 0.0 && box.height > 0.0;
+}
+
+struct wlr_xdg_toplevel *ataxia_xdg_toplevel_decoration_toplevel(
+		struct wlr_xdg_toplevel_decoration_v1 *decoration) {
+	return decoration == NULL ? NULL : decoration->toplevel;
+}
+
+uint32_t ataxia_xdg_toplevel_decoration_requested_mode(
+		const struct wlr_xdg_toplevel_decoration_v1 *decoration) {
+	return decoration == NULL ? WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_NONE :
+		(uint32_t)decoration->requested_mode;
+}
+
+struct wlr_surface *ataxia_xdg_activation_request_surface(
+		const struct wlr_xdg_activation_v1_request_activate_event *event) {
+	return event == NULL ? NULL : event->surface;
+}
+
+struct wlr_xdg_activation_token_v1 *ataxia_xdg_activation_request_token(
+		const struct wlr_xdg_activation_v1_request_activate_event *event) {
+	return event == NULL ? NULL : event->token;
+}
+
+struct wlr_surface *ataxia_xdg_activation_token_surface(
+		const struct wlr_xdg_activation_token_v1 *token) {
+	return token == NULL ? NULL : token->surface;
+}
+
+struct wlr_seat *ataxia_xdg_activation_token_seat(
+		const struct wlr_xdg_activation_token_v1 *token) {
+	return token == NULL ? NULL : token->seat;
+}
+
+uint32_t ataxia_xdg_activation_token_serial(
+		const struct wlr_xdg_activation_token_v1 *token) {
+	return token == NULL ? 0 : token->serial;
+}
+
+const char *ataxia_xdg_activation_token_app_id(
+		const struct wlr_xdg_activation_token_v1 *token) {
+	return token == NULL ? NULL : token->app_id;
 }
 
 bool ataxia_surface_mapped(const struct wlr_surface *surface) {

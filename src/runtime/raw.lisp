@@ -5,7 +5,7 @@
 
 (in-package #:ataxia.runtime.raw)
 
-(defconstant +expected-glue-abi+ 4)
+(defconstant +expected-glue-abi+ 5)
 (defparameter +expected-wlroots-version+ "0.20.2")
 
 (define-foreign-library libwayland-server

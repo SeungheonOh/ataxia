@@ -12,7 +12,7 @@
 #include <stdint.h>
 
 #define ATAXIA_WLR_GLUE_API __attribute__((visibility("default")))
-#define ATAXIA_WLR_GLUE_ABI_VERSION 4u
+#define ATAXIA_WLR_GLUE_ABI_VERSION 5u
 
 struct wl_signal;
 struct wlr_allocator;
@@ -45,6 +45,11 @@ struct wlr_xdg_toplevel;
 struct wlr_xdg_toplevel_move_event;
 struct wlr_xdg_toplevel_resize_event;
 struct wlr_xdg_toplevel_show_window_menu_event;
+struct wlr_xdg_activation_v1;
+struct wlr_xdg_activation_token_v1;
+struct wlr_xdg_activation_v1_request_activate_event;
+struct wlr_xdg_decoration_manager_v1;
+struct wlr_xdg_toplevel_decoration_v1;
 struct ataxia_listener;
 
 typedef void (*ataxia_listener_callback)(uintptr_t cookie, void *data);
@@ -380,5 +385,43 @@ ATAXIA_WLR_GLUE_API struct wl_signal *ataxia_xdg_popup_event_destroy(
 	struct wlr_xdg_popup *popup);
 ATAXIA_WLR_GLUE_API struct wl_signal *ataxia_xdg_popup_event_reposition(
 	struct wlr_xdg_popup *popup);
+
+ATAXIA_WLR_GLUE_API struct wl_signal *
+ataxia_xdg_decoration_manager_event_new_toplevel(
+	struct wlr_xdg_decoration_manager_v1 *manager);
+ATAXIA_WLR_GLUE_API struct wl_signal *
+ataxia_xdg_decoration_manager_event_destroy(
+	struct wlr_xdg_decoration_manager_v1 *manager);
+ATAXIA_WLR_GLUE_API struct wl_signal *
+ataxia_xdg_toplevel_decoration_event_request_mode(
+	struct wlr_xdg_toplevel_decoration_v1 *decoration);
+ATAXIA_WLR_GLUE_API struct wl_signal *
+ataxia_xdg_toplevel_decoration_event_destroy(
+	struct wlr_xdg_toplevel_decoration_v1 *decoration);
+ATAXIA_WLR_GLUE_API struct wlr_xdg_toplevel *
+ataxia_xdg_toplevel_decoration_toplevel(
+	struct wlr_xdg_toplevel_decoration_v1 *decoration);
+ATAXIA_WLR_GLUE_API uint32_t ataxia_xdg_toplevel_decoration_requested_mode(
+	const struct wlr_xdg_toplevel_decoration_v1 *decoration);
+
+ATAXIA_WLR_GLUE_API struct wl_signal *
+ataxia_xdg_activation_event_request_activate(
+	struct wlr_xdg_activation_v1 *activation);
+ATAXIA_WLR_GLUE_API struct wl_signal *ataxia_xdg_activation_event_destroy(
+	struct wlr_xdg_activation_v1 *activation);
+ATAXIA_WLR_GLUE_API struct wlr_surface *
+ataxia_xdg_activation_request_surface(
+	const struct wlr_xdg_activation_v1_request_activate_event *event);
+ATAXIA_WLR_GLUE_API struct wlr_xdg_activation_token_v1 *
+ataxia_xdg_activation_request_token(
+	const struct wlr_xdg_activation_v1_request_activate_event *event);
+ATAXIA_WLR_GLUE_API struct wlr_surface *ataxia_xdg_activation_token_surface(
+	const struct wlr_xdg_activation_token_v1 *token);
+ATAXIA_WLR_GLUE_API struct wlr_seat *ataxia_xdg_activation_token_seat(
+	const struct wlr_xdg_activation_token_v1 *token);
+ATAXIA_WLR_GLUE_API uint32_t ataxia_xdg_activation_token_serial(
+	const struct wlr_xdg_activation_token_v1 *token);
+ATAXIA_WLR_GLUE_API const char *ataxia_xdg_activation_token_app_id(
+	const struct wlr_xdg_activation_token_v1 *token);
 
 #endif

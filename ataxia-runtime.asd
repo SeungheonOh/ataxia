@@ -26,4 +26,5 @@
      (:file "output")
      (:file "presentation-protocols")
      (:file "xdg-shell")
+     (:file "desktop-shell-protocols")
      (:file "main")))))

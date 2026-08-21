@@ -57,6 +57,10 @@ The practical split is:
     hooks, and agent control;
   - uses Layer 1 only through a versioned command/event contract.
 
+The concrete event, command, handle, lease, graphics-target, C ABI, and portable
+CLOS gateway contract is specified in
+[Layer 1–Layer 2 Interface Contract](LAYER-1-2-INTERFACE.md).
+
 ## 3. Critical Corrections to the Initial Boundary
 
 ### 3.1 Wayland traffic is not a symmetric event stream

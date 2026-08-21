@@ -10,6 +10,9 @@ events produced by Layer 1, constructs semantic compositor state, invokes
 replaceable policies, builds presentation snapshots, routes input, schedules
 animations, submits native commands, and exposes controlled agent operations.
 
+Its native-facing dependency is the portable gateway defined in
+[Layer 1–Layer 2 Interface Contract](LAYER-1-2-INTERFACE.md).
+
 The design has four goals:
 
 1. no wlroots pointer or layout appears in Layer 2;
@@ -1408,4 +1411,3 @@ Rules:
 
 No Layer 2 implementation should begin until these choices and the class/service
 boundaries in this document are approved.
-

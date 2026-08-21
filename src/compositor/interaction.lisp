@@ -58,6 +58,32 @@
    (original-placement :initarg :original-placement
                        :reader interactive-operation-original-placement)))
 
+(defgeneric create-logical-seat
+    (interaction name &key pointer-x pointer-y))
+(defgeneric destroy-logical-seat (interaction seat))
+(defgeneric interaction-add-input-device
+    (interaction device &optional seat))
+(defgeneric interaction-remove-input-device (interaction device))
+(defgeneric assign-input-device (interaction device seat))
+(defgeneric unassign-input-device (interaction device))
+(defgeneric focus-view (interaction seat view))
+(defgeneric begin-interactive-operation
+    (interaction seat view kind edges &key button))
+(defgeneric begin-interactive-move
+    (interaction seat view &key serial button))
+(defgeneric begin-interactive-resize
+    (interaction seat view edges &key serial button))
+(defgeneric cancel-interactive-operation (interaction seat))
+(defgeneric update-interactive-operation (interaction seat))
+(defgeneric interaction-handle-pointer-motion (interaction event))
+(defgeneric interaction-handle-pointer-motion-absolute (interaction event))
+(defgeneric interaction-handle-pointer-button (interaction event))
+(defgeneric interaction-handle-pointer-axis (interaction event))
+(defgeneric interaction-handle-pointer-frame (interaction pointer))
+(defgeneric interaction-handle-keyboard-key (interaction event))
+(defgeneric interaction-handle-keyboard-modifiers (interaction event))
+(defgeneric interaction-handle-cursor-request (interaction request))
+
 (defun primary-output (interaction)
   (first
    (compositor-outputs-list
@@ -75,8 +101,9 @@
     (ataxia.runtime:set-seat-capabilities (seat-native seat) capabilities))
   seat)
 
-(defun create-logical-seat (interaction name &key (pointer-x 160d0)
-                                                   (pointer-y 100d0))
+(defmethod create-logical-seat
+    ((interaction interaction-system) name
+     &key (pointer-x 160d0) (pointer-y 100d0))
   (check-type interaction interaction-system)
   (let* ((compositor (component-compositor interaction))
          (seat
@@ -92,7 +119,8 @@
     (update-seat-capabilities seat)
     seat))
 
-(defun destroy-logical-seat (interaction seat)
+(defmethod destroy-logical-seat
+    ((interaction interaction-system) (seat logical-seat))
   (check-type interaction interaction-system)
   (check-type seat logical-seat)
   (cancel-interactive-operation interaction seat)
@@ -149,7 +177,8 @@
           (ataxia.runtime:clear-seat-keyboard (seat-native seat)))))
   seat)
 
-(defun interaction-add-input-device (interaction device &optional seat)
+(defmethod interaction-add-input-device
+    ((interaction interaction-system) device &optional seat)
   (let ((current (interaction-seat-for-device interaction device))
         (target (or seat (interaction-default-seat interaction))))
     (unless target
@@ -173,7 +202,8 @@
     (update-seat-capabilities target)
     target))
 
-(defun interaction-remove-input-device (interaction device)
+(defmethod interaction-remove-input-device
+    ((interaction interaction-system) device)
   (let ((seat (interaction-seat-for-device interaction device)))
     (when seat
       (let ((active-keyboard-p (eq device (seat-active-keyboard seat))))
@@ -188,14 +218,16 @@
         (update-seat-capabilities seat)))
     seat))
 
-(defun assign-input-device (interaction device seat)
+(defmethod assign-input-device
+    ((interaction interaction-system) device (seat logical-seat))
   "Move a live wlroots device between logical seats without native recreation."
   (check-type interaction interaction-system)
   (check-type device ataxia.runtime:wlr-input-device)
   (check-type seat logical-seat)
   (interaction-add-input-device interaction device seat))
 
-(defun unassign-input-device (interaction device)
+(defmethod unassign-input-device
+    ((interaction interaction-system) device)
   (check-type interaction interaction-system)
   (check-type device ataxia.runtime:wlr-input-device)
   (interaction-remove-input-device interaction device))
@@ -278,7 +310,8 @@
                (seat-cursor-mode seat) :default)))
       hit)))
 
-(defun focus-view (interaction seat view)
+(defmethod focus-view
+    ((interaction interaction-system) (seat logical-seat) view)
   (check-type interaction interaction-system)
   (check-type seat logical-seat)
   (when (and view (not (view-mapped-p view)))
@@ -345,10 +378,11 @@
       (loop for button being the hash-keys of (seat-pressed-buttons seat)
             return button)))
 
-(defun begin-interactive-operation
-    (interaction seat view kind edges &key button)
+(defmethod begin-interactive-operation
+    ((interaction interaction-system) (seat logical-seat) (view view)
+     kind edges &key button)
   (let ((placement (view-placement view)))
-    (unless (typep placement 'planar-placement)
+    (unless (typep placement 'world-placement)
       (error 'compositor-error))
     (let* ((descriptor
              (make-instance 'interaction-transition :subject view
@@ -366,7 +400,10 @@
              :edges edges :button (or button (pressed-operation-button seat))
              :start-x (seat-pointer-x seat)
              :start-y (seat-pointer-y seat)
-             :original-placement (copy-planar-placement placement)))
+             :original-placement
+             (copy-world-placement
+              (compositor-world (component-compositor interaction))
+              placement)))
       (when (eq kind :resize)
         (ataxia.runtime:xdg-toplevel-set-resizing (view-native view) t))
       (focus-view interaction seat view)
@@ -375,7 +412,9 @@
                 (interaction-hook-context interaction view descriptor :after))
       (seat-operation seat))))
 
-(defun begin-interactive-move (interaction seat view &key serial button)
+(defmethod begin-interactive-move
+    ((interaction interaction-system) (seat logical-seat) (view view)
+     &key serial button)
   (when (and serial
              (not (and (seat-pointer-focus-surface seat)
                        (ataxia.runtime:seat-validate-pointer-grab-serial
@@ -385,8 +424,9 @@
   (begin-interactive-operation
    interaction seat view :move 0 :button button))
 
-(defun begin-interactive-resize
-    (interaction seat view edges &key serial button)
+(defmethod begin-interactive-resize
+    ((interaction interaction-system) (seat logical-seat) (view view) edges
+     &key serial button)
   (when (zerop edges)
     (return-from begin-interactive-resize nil))
   (when (and serial
@@ -398,7 +438,8 @@
   (begin-interactive-operation
    interaction seat view :resize edges :button button))
 
-(defun cancel-interactive-operation (interaction seat)
+(defmethod cancel-interactive-operation
+    ((interaction interaction-system) (seat logical-seat))
   (let ((operation (seat-operation seat)))
     (when operation
       (let ((view (interactive-operation-view operation)))
@@ -468,17 +509,27 @@
        (view-native view) (view-width view) (view-height view))
       placement)))
 
-(defun update-interactive-operation (interaction seat)
+(defmethod world-update-interactive-operation
+    ((world planar-world) (interaction interaction-system)
+     (operation interactive-operation))
+  (declare (ignore world))
+  (ecase (interactive-operation-kind operation)
+    (:move (update-interactive-move interaction operation))
+    (:resize (update-interactive-resize interaction operation))))
+
+(defmethod update-interactive-operation
+    ((interaction interaction-system) (seat logical-seat))
   (let ((operation (seat-operation seat)))
     (when operation
-      (ecase (interactive-operation-kind operation)
-        (:move (update-interactive-move interaction operation))
-        (:resize (update-interactive-resize interaction operation)))
+      (world-update-interactive-operation
+       (compositor-world (component-compositor interaction))
+       interaction operation)
       (schedule-presentation
        (compositor-presentation (component-compositor interaction))))
     operation))
 
-(defun interaction-handle-pointer-motion (interaction event)
+(defmethod interaction-handle-pointer-motion
+    ((interaction interaction-system) event)
   (let ((seat
           (interaction-seat-for-device
            interaction (ataxia.runtime:pointer-motion-pointer event))))
@@ -499,7 +550,8 @@
        (compositor-presentation (component-compositor interaction))))
     seat))
 
-(defun interaction-handle-pointer-motion-absolute (interaction event)
+(defmethod interaction-handle-pointer-motion-absolute
+    ((interaction interaction-system) event)
   (let* ((seat
            (interaction-seat-for-device
             interaction
@@ -542,7 +594,8 @@
       (setf edges (logior edges +resize-edge-bottom+)))
     edges))
 
-(defun interaction-handle-pointer-button (interaction event)
+(defmethod interaction-handle-pointer-button
+    ((interaction interaction-system) event)
   (let ((seat
           (interaction-seat-for-device
            interaction (ataxia.runtime:pointer-button-pointer event))))
@@ -585,7 +638,8 @@
          (compositor-presentation (component-compositor interaction))))
       seat)))
 
-(defun interaction-handle-pointer-axis (interaction event)
+(defmethod interaction-handle-pointer-axis
+    ((interaction interaction-system) event)
   (let ((seat
           (interaction-seat-for-device
            interaction (ataxia.runtime:pointer-axis-pointer event))))
@@ -600,13 +654,15 @@
        (ataxia.runtime:pointer-axis-relative-direction event)))
     seat))
 
-(defun interaction-handle-pointer-frame (interaction pointer)
+(defmethod interaction-handle-pointer-frame
+    ((interaction interaction-system) pointer)
   (let ((seat (interaction-seat-for-device interaction pointer)))
     (when seat
       (ataxia.runtime:seat-pointer-notify-frame (seat-native seat)))
     seat))
 
-(defun interaction-handle-keyboard-key (interaction event)
+(defmethod interaction-handle-keyboard-key
+    ((interaction interaction-system) event)
   (let* ((keyboard (ataxia.runtime:keyboard-key-keyboard event))
          (seat (interaction-seat-for-device interaction keyboard)))
     (when seat
@@ -622,7 +678,8 @@
        (ataxia.runtime:keyboard-key-state event)))
     seat))
 
-(defun interaction-handle-keyboard-modifiers (interaction event)
+(defmethod interaction-handle-keyboard-modifiers
+    ((interaction interaction-system) event)
   (let* ((keyboard (ataxia.runtime:keyboard-modifiers-keyboard event))
          (seat (interaction-seat-for-device interaction keyboard)))
     (when seat
@@ -632,7 +689,8 @@
        (seat-native seat) keyboard))
     seat))
 
-(defun interaction-handle-cursor-request (interaction request)
+(defmethod interaction-handle-cursor-request
+    ((interaction interaction-system) request)
   (let* ((seat
            (interaction-seat-for-native
             interaction (ataxia.runtime:seat-cursor-request-seat request)))

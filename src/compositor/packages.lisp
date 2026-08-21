@@ -124,6 +124,8 @@
    #:world-project
    #:world-unproject
    #:world-hit-test
+   #:copy-world-placement
+   #:world-update-interactive-operation
    #:pan-viewport
    #:zoom-viewport
    #:replace-world
@@ -230,6 +232,7 @@
    #:output-viewport
    #:output-last-snapshot
    #:interaction-system
+   #:interaction-seats
    #:logical-seat
    #:seat-name
    #:seat-native
@@ -237,13 +240,25 @@
    #:seat-pointer-y
    #:seat-focused-view
    #:seat-cursor-mode
+   #:seat-devices
+   #:seat-keyboards
+   #:seat-active-keyboard
+   #:seat-operation
    #:create-logical-seat
    #:destroy-logical-seat
    #:assign-input-device
    #:unassign-input-device
    #:focus-view
    #:interactive-operation
+   #:interactive-operation-kind
+   #:interactive-operation-seat
+   #:interactive-operation-view
+   #:interactive-operation-edges
    #:interactive-operation-button
+   #:interactive-operation-start-x
+   #:interactive-operation-start-y
+   #:interactive-operation-original-placement
+   #:begin-interactive-operation
    #:begin-interactive-move
    #:begin-interactive-resize
    #:cancel-interactive-operation

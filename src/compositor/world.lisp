@@ -39,6 +39,18 @@
 (defgeneric world-unproject (world output viewport output-x output-y))
 (defgeneric world-hit-test
     (world output viewport output-x output-y timestamp))
+(defgeneric copy-world-placement (world placement))
+(defgeneric world-update-interactive-operation
+    (world interaction operation))
+
+(defmethod copy-world-placement
+    ((world planar-world) (placement planar-placement))
+  (declare (ignore world))
+  (make-instance 'planar-placement
+                 :x (placement-x placement) :y (placement-y placement)
+                 :width (placement-width placement)
+                 :height (placement-height placement)
+                 :z (placement-z placement)))
 
 (defmethod world-place-view
     ((world planar-world) view (request placement-request))

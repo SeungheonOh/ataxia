@@ -349,28 +349,35 @@
 
 (defmethod backend-new-output
     ((sink diagnostic-sink) runtime (output wlr-output))
-  (initialize-output-render output
-                            (runtime-allocator runtime)
-                            (runtime-renderer runtime))
-  (let ((state (create-output-state output)))
-    (unwind-protect
-         (progn
-           (output-state-set-enabled state t)
-           (let ((mode (output-preferred-mode output)))
-             (when mode
-               (output-state-set-mode state mode)))
-           (unless (output-test-state output state)
-             (error 'native-call-failed
-                    :name :wlr-output-test-state
-                    :detail (output-name output)))
-           (unless (output-commit-state output state)
-             (error 'native-call-failed
-                    :name :wlr-output-commit-state
-                    :detail (output-name output))))
-      (destroy-output-state state)))
-  (create-output-global output)
-  (%diagnostic-line
-   sink "[layer1] new-output name=~A description=~A size=~Dx~D enabled=~A"
-   (or (output-name output) "unknown")
-   (or (output-description output) "none")
-   (output-width output) (output-height output) (output-enabled-p output)))
+  (handler-case
+      (progn
+        (initialize-output-render output
+                                  (runtime-allocator runtime)
+                                  (runtime-renderer runtime))
+        (let ((state (create-output-state output)))
+          (unwind-protect
+               (progn
+                 (output-state-set-enabled state t)
+                 (let ((mode (output-preferred-mode output)))
+                   (when mode
+                     (output-state-set-mode state mode)))
+                 (unless (output-test-state output state)
+                   (error 'native-call-failed
+                          :name :wlr-output-test-state
+                          :detail (output-name output)))
+                 (unless (output-commit-state output state)
+                   (error 'native-call-failed
+                          :name :wlr-output-commit-state
+                          :detail (output-name output))))
+            (destroy-output-state state)))
+        (create-output-global output)
+        (%diagnostic-line
+         sink "[layer1] new-output name=~A description=~A size=~Dx~D enabled=~A"
+         (or (output-name output) "unknown")
+         (or (output-description output) "none")
+         (output-width output) (output-height output)
+         (output-enabled-p output)))
+    (native-call-failed (condition)
+      (%diagnostic-line
+       sink "[layer1] output-unavailable name=~A reason=~A"
+       (or (output-name output) "unknown") condition))))

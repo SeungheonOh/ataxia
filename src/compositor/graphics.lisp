@@ -20,6 +20,9 @@
 (defconstant +gl-framebuffer-complete+ #x8CD5)
 (defconstant +gl-texture0+ #x84C0)
 (defconstant +gl-texture-2d+ #x0DE1)
+(defconstant +gl-texture-min-filter+ #x2801)
+(defconstant +gl-texture-mag-filter+ #x2800)
+(defconstant +gl-linear+ #x2601)
 (defconstant +gl-vertex-shader+ #x8B31)
 (defconstant +gl-fragment-shader+ #x8B30)
 (defconstant +gl-compile-status+ #x8B81)
@@ -73,6 +76,8 @@
   (texture :uint32))
 (cffi:defcfun ("glBindTexture" %gl-bind-texture) :void
   (target :uint32) (texture :uint32))
+(cffi:defcfun ("glTexParameteri" %gl-tex-parameter-i) :void
+  (target :uint32) (parameter :uint32) (value :int))
 (cffi:defcfun ("glEnable" %gl-enable) :void (capability :uint32))
 (cffi:defcfun ("glDisable" %gl-disable) :void (capability :uint32))
 (cffi:defcfun ("glBlendFunc" %gl-blend-func) :void
@@ -110,8 +115,11 @@ void main() { gl_FragColor = color; }")
 varying vec2 texture_coordinate;
 uniform sampler2D texture_sampler;
 uniform float opacity;
+uniform float texture_has_alpha;
 void main() {
-  gl_FragColor = texture2D(texture_sampler, texture_coordinate) * opacity;
+  vec4 sampled = texture2D(texture_sampler, texture_coordinate);
+  float alpha = texture_has_alpha > 0.5 ? sampled.a : 1.0;
+  gl_FragColor = vec4(sampled.rgb, alpha) * opacity;
 }")
 
 (defparameter +builtin-external-fragment-shader+
@@ -120,8 +128,11 @@ precision mediump float;
 varying vec2 texture_coordinate;
 uniform samplerExternalOES texture_sampler;
 uniform float opacity;
+uniform float texture_has_alpha;
 void main() {
-  gl_FragColor = texture2D(texture_sampler, texture_coordinate) * opacity;
+  vec4 sampled = texture2D(texture_sampler, texture_coordinate);
+  float alpha = texture_has_alpha > 0.5 ? sampled.a : 1.0;
+  gl_FragColor = vec4(sampled.rgb, alpha) * opacity;
 }")
 
 (defclass shader-program-descriptor ()
@@ -261,12 +272,13 @@ void main() {
             (renderer-texture-program renderer)
             (compile-shader-program
              (builtin-program-descriptor
-              +builtin-texture-fragment-shader+ '(texture-sampler opacity)))
+              +builtin-texture-fragment-shader+
+              '(texture-sampler opacity texture-has-alpha)))
             (renderer-external-program renderer)
             (compile-shader-program
              (builtin-program-descriptor
               +builtin-external-fragment-shader+
-              '(texture-sampler opacity))))))
+              '(texture-sampler opacity texture-has-alpha))))))
   renderer)
 
 (defmethod detach-component :before
@@ -362,9 +374,16 @@ void main() {
     (bind-rectangle-vertices renderer)
     (%gl-active-texture +gl-texture0+)
     (%gl-bind-texture target (ataxia.runtime:gles-texture-name attributes))
+    ;; wlroots defers filter selection until its own render pass. Direct GLES
+    ;; sampling must provide it or the imported non-mipmapped texture is black.
+    (%gl-tex-parameter-i target +gl-texture-min-filter+ +gl-linear+)
+    (%gl-tex-parameter-i target +gl-texture-mag-filter+ +gl-linear+)
     (%gl-uniform-1i (uniform-location program 'texture-sampler) 0)
     (%gl-uniform-1f
      (uniform-location program 'opacity) (coerce opacity 'single-float))
+    (%gl-uniform-1f
+     (uniform-location program 'texture-has-alpha)
+     (if (ataxia.runtime:gles-texture-has-alpha-p attributes) 1.0 0.0))
     (%gl-draw-arrays +gl-triangles+ 0 6)
     (%gl-bind-texture target 0)))
 

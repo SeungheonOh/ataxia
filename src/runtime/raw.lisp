@@ -5,7 +5,7 @@
 
 (in-package #:ataxia.runtime.raw)
 
-(defconstant +expected-glue-abi+ 6)
+(defconstant +expected-glue-abi+ 7)
 (defparameter +expected-wlroots-version+ "0.20.2")
 
 (define-foreign-library libwayland-server
@@ -386,6 +386,12 @@
           %surface-current-buffer-height)
     :int32
   (surface :pointer))
+(defcfun ("ataxia_surface_effective_damage_rectangles"
+          %surface-effective-damage-rectangles)
+    :uint32
+  (surface :pointer)
+  (rectangles :pointer)
+  (rectangle-capacity :uint32))
 (defcfun ("ataxia_surface_current_transform" %surface-current-transform)
     :uint32
   (surface :pointer))

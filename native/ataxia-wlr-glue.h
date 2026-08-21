@@ -12,7 +12,7 @@
 #include <stdint.h>
 
 #define ATAXIA_WLR_GLUE_API __attribute__((visibility("default")))
-#define ATAXIA_WLR_GLUE_ABI_VERSION 6u
+#define ATAXIA_WLR_GLUE_ABI_VERSION 7u
 
 struct wl_signal;
 struct wlr_allocator;
@@ -269,6 +269,9 @@ ATAXIA_WLR_GLUE_API int32_t ataxia_surface_current_buffer_width(
 	const struct wlr_surface *surface);
 ATAXIA_WLR_GLUE_API int32_t ataxia_surface_current_buffer_height(
 	const struct wlr_surface *surface);
+ATAXIA_WLR_GLUE_API uint32_t ataxia_surface_effective_damage_rectangles(
+	struct wlr_surface *surface, int32_t *rectangles,
+	uint32_t rectangle_capacity);
 ATAXIA_WLR_GLUE_API uint32_t ataxia_surface_current_transform(
 	const struct wlr_surface *surface);
 ATAXIA_WLR_GLUE_API bool ataxia_surface_buffer_source_box(

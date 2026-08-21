@@ -78,10 +78,21 @@
   (:documentation
    "Wraps the native wlr data device manager object. Runtime owns its listener registration and must invalidate the wrapper before the corresponding native object is destroyed."))
 
+(defstruct (damage-rectangle
+             (:constructor %make-damage-rectangle (&key x y width height))
+             (:conc-name damage-rectangle-))
+  (x 0 :type (signed-byte 32) :read-only t)
+  (y 0 :type (signed-byte 32) :read-only t)
+  (width 0 :type (signed-byte 32) :read-only t)
+  (height 0 :type (signed-byte 32) :read-only t))
+
+(defun make-damage-rectangle (x y width height)
+  (%make-damage-rectangle :x x :y y :width width :height height))
+
 (defstruct (surface-commit-event
              (:constructor %make-surface-commit-event
                  (&key sequence fields width height buffer-width buffer-height
-                       mapped-p))
+                       mapped-p damage-rectangles))
              (:conc-name surface-commit-))
   (sequence 0 :type (unsigned-byte 32) :read-only t)
   (fields 0 :type (unsigned-byte 32) :read-only t)
@@ -89,7 +100,8 @@
   (height 0 :type integer :read-only t)
   (buffer-width 0 :type integer :read-only t)
   (buffer-height 0 :type integer :read-only t)
-  (mapped-p nil :type boolean :read-only t))
+  (mapped-p nil :type boolean :read-only t)
+  (damage-rectangles nil :type list :read-only t))
 
 (defstruct (pointer-motion-event
              (:constructor %make-pointer-motion-event
@@ -504,6 +516,24 @@
      :rate (ataxia.runtime.raw:%keyboard-repeat-rate pointer)
      :delay (ataxia.runtime.raw:%keyboard-repeat-delay pointer))))
 
+(defun %surface-effective-damage-snapshot (pointer)
+  (let ((count
+          (ataxia.runtime.raw:%surface-effective-damage-rectangles
+           pointer (cffi:null-pointer) 0)))
+    (when (plusp count)
+      (cffi:with-foreign-object (rectangles :int32 (* count 4))
+        (let ((reported
+                (ataxia.runtime.raw:%surface-effective-damage-rectangles
+                 pointer rectangles count)))
+          (loop for index below (min count reported)
+                for offset = (* index 4)
+                collect
+                (%make-damage-rectangle
+                 :x (cffi:mem-aref rectangles :int32 offset)
+                 :y (cffi:mem-aref rectangles :int32 (+ offset 1))
+                 :width (cffi:mem-aref rectangles :int32 (+ offset 2))
+                 :height (cffi:mem-aref rectangles :int32 (+ offset 3)))))))))
+
 (defun %surface-commit-snapshot (surface)
   (%ensure-live surface)
   (let ((pointer (%native-pointer surface)))
@@ -514,4 +544,5 @@
      :height (ataxia.runtime.raw:%surface-current-height pointer)
      :buffer-width (ataxia.runtime.raw:%surface-current-buffer-width pointer)
      :buffer-height (ataxia.runtime.raw:%surface-current-buffer-height pointer)
-     :mapped-p (ataxia.runtime.raw:%surface-mapped pointer))))
+     :mapped-p (ataxia.runtime.raw:%surface-mapped pointer)
+     :damage-rectangles (%surface-effective-damage-snapshot pointer))))

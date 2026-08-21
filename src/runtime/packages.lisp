@@ -208,6 +208,7 @@
    #:%surface-current-height
    #:%surface-current-buffer-width
    #:%surface-current-buffer-height
+   #:%surface-effective-damage-rectangles
    #:%surface-current-transform
    #:%surface-buffer-source-box
    #:%xdg-decoration-manager-event-new-toplevel
@@ -458,6 +459,7 @@
    #:surface-commit-buffer-width
    #:surface-commit-buffer-height
    #:surface-commit-mapped-p
+   #:surface-commit-damage-rectangles
    #:wlr-seat
    #:wlr-data-device-manager
    #:wlr-viewporter

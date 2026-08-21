@@ -126,17 +126,6 @@
   (:documentation
    "Wraps the native wlr output swapchain object. Runtime owns its listener registration and must invalidate the wrapper before the corresponding native object is destroyed."))
 
-(defstruct (damage-rectangle
-             (:constructor %make-damage-rectangle (&key x y width height))
-             (:conc-name damage-rectangle-))
-  (x 0 :type (signed-byte 32) :read-only t)
-  (y 0 :type (signed-byte 32) :read-only t)
-  (width 0 :type (signed-byte 32) :read-only t)
-  (height 0 :type (signed-byte 32) :read-only t))
-
-(defun make-damage-rectangle (x y width height)
-  (%make-damage-rectangle :x x :y y :width width :height height))
-
 (defstruct (output-damage-event
              (:constructor %make-output-damage-event
                  (&key output rectangles))

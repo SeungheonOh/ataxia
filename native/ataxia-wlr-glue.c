@@ -515,6 +515,33 @@ int32_t ataxia_surface_current_buffer_height(const struct wlr_surface *surface) 
 	return surface == NULL ? 0 : surface->current.buffer_height;
 }
 
+uint32_t ataxia_surface_effective_damage_rectangles(
+		struct wlr_surface *surface, int32_t *rectangles,
+		uint32_t rectangle_capacity) {
+	if (surface == NULL) {
+		return 0;
+	}
+
+	pixman_region32_t damage;
+	pixman_region32_init(&damage);
+	wlr_surface_get_effective_damage(surface, &damage);
+	int count = 0;
+	pixman_box32_t *boxes = pixman_region32_rectangles(&damage, &count);
+	uint32_t rectangle_count = count > 0 ? (uint32_t)count : 0;
+	uint32_t copy_count = rectangle_count < rectangle_capacity ?
+		rectangle_count : rectangle_capacity;
+	for (uint32_t index = 0; rectangles != NULL && index < copy_count;
+			index++) {
+		int32_t *rectangle = &rectangles[index * 4];
+		rectangle[0] = boxes[index].x1;
+		rectangle[1] = boxes[index].y1;
+		rectangle[2] = boxes[index].x2 - boxes[index].x1;
+		rectangle[3] = boxes[index].y2 - boxes[index].y1;
+	}
+	pixman_region32_fini(&damage);
+	return rectangle_count;
+}
+
 uint32_t ataxia_surface_current_transform(const struct wlr_surface *surface) {
 	return surface == NULL ? WL_OUTPUT_TRANSFORM_NORMAL :
 		(uint32_t)surface->current.transform;

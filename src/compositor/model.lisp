@@ -62,7 +62,7 @@
 (defclass popup-view ()
   ((native :initarg :native :reader popup-native)
    (surface :initarg :surface :reader popup-surface)
-   (parent-view :initarg :parent-view :reader popup-parent-view)
+   (parent :initarg :parent :reader popup-parent)
    (x :initform 0d0 :accessor popup-x)
    (y :initform 0d0 :accessor popup-y)
    (mapped-p :initform nil :accessor popup-mapped-p)))
@@ -209,6 +209,19 @@
                (surface-record-native (view-surface view)))
         :test #'eq))
 
+(defun desktop-find-popup-by-surface (desktop native-surface)
+  (find native-surface (desktop-popups desktop)
+        :key (lambda (popup)
+               (surface-record-native (popup-surface popup)))
+        :test #'eq))
+
+(defun popup-parent-view (popup)
+  (let ((parent (popup-parent popup)))
+    (typecase parent
+      (view parent)
+      (popup-view (popup-parent-view parent))
+      (t nil))))
+
 (defun desktop-raise-view (desktop view)
   (setf (desktop-stacking desktop)
         (append (delete view (desktop-stacking desktop) :test #'eq)
@@ -261,10 +274,10 @@
   (incf (view-revision view))
   view)
 
-(defun desktop-register-popup (desktop native surface-record parent-view)
+(defun desktop-register-popup (desktop native surface-record parent)
   (let ((popup
           (make-instance 'popup-view :native native
-                         :surface surface-record :parent-view parent-view)))
+                         :surface surface-record :parent parent)))
     (setf (gethash native (desktop-popup-table desktop)) popup)
     popup))
 

@@ -643,8 +643,10 @@
   (let* ((surface (ataxia.runtime:xdg-popup-surface popup))
          (parent-surface (ataxia.runtime:xdg-popup-parent-surface popup))
          (parent-view
-           (desktop-find-view-by-surface
-            (compositor-desktop compositor) parent-surface))
+           (or (desktop-find-view-by-surface
+                (compositor-desktop compositor) parent-surface)
+               (desktop-find-popup-by-surface
+                (compositor-desktop compositor) parent-surface)))
          (record
            (ensure-surface-record (compositor-surfaces compositor) surface)))
     (desktop-register-popup

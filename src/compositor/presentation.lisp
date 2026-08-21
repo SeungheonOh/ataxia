@@ -288,19 +288,34 @@
                                      'double-float))))))))))
   items))
 
-(defun append-popup-items (items desktop output titlebar-height)
+(defun find-surface-presentation-item (items surface)
+  (find surface items :key #'presentation-item-surface :test #'eq
+        :from-end t))
+
+(defun append-popup-tree-items (items desktop parent)
+  ;; Parent-item geometry is the authoritative transform for both root and
+  ;; nested popups, including viewport and per-view animation scaling.
   (dolist (popup (desktop-popups desktop) items)
-    (let* ((record (popup-surface popup))
-           (parent (popup-parent-view popup))
-           (placement (and parent (view-placement parent))))
-      (when (and (popup-mapped-p popup) placement
-                 (surface-record-texture record))
-        (multiple-value-bind (parent-x parent-y parent-width parent-height)
-            (world-project
-             (compositor-world (component-compositor desktop))
-             output (output-viewport output) parent 0d0)
-          (declare (ignore parent-width parent-height))
-          (let ((scale (viewport-scale (output-viewport output))))
+    (when (and (eq parent (popup-parent popup)) (popup-mapped-p popup))
+      (let* ((record (popup-surface popup))
+             (parent-surface
+               (typecase parent
+                 (view (surface-record-native (view-surface parent)))
+                 (popup-view
+                  (surface-record-native (popup-surface parent)))))
+             (parent-item
+               (find-surface-presentation-item items parent-surface)))
+        (when (and parent-item (surface-record-texture record))
+          (let* ((scale-x
+                   (/ (presentation-item-width parent-item)
+                      (presentation-item-source-width parent-item)))
+                 (scale-y
+                   (/ (presentation-item-height parent-item)
+                      (presentation-item-source-height parent-item)))
+                 (x (+ (presentation-item-x parent-item)
+                       (* (popup-x popup) scale-x)))
+                 (y (+ (presentation-item-y parent-item)
+                       (* (popup-y popup) scale-y))))
             (multiple-value-bind (shader-name shader-uniforms)
                 (presentation-shader-values popup)
               (setf items
@@ -310,10 +325,9 @@
                       (make-instance
                        'presentation-item :kind :surface :owner popup
                        :surface (surface-record-native record)
-                       :x (+ parent-x (* (popup-x popup) scale))
-                       :y (+ parent-y titlebar-height (* (popup-y popup) scale))
-                       :width (* (surface-record-width record) scale)
-                       :height (* (surface-record-height record) scale)
+                       :x x :y y
+                       :width (* (surface-record-width record) scale-x)
+                       :height (* (surface-record-height record) scale-y)
                        :texture
                        (ataxia.runtime:texture-gles-attributes
                         (surface-record-texture record))
@@ -326,10 +340,12 @@
             (setf items
                   (append-subsurface-tree-items
                    items (component-compositor desktop)
-                   (surface-record-native record) popup
-                   (+ parent-x (* (popup-x popup) scale))
-                   (+ parent-y titlebar-height (* (popup-y popup) scale))
-                   scale scale))))))))
+                   (surface-record-native record) popup x y scale-x scale-y))
+            (setf items (append-popup-tree-items items desktop popup))))))))
+
+(defun append-popup-items (items desktop)
+  (dolist (view (desktop-stacking-order desktop) items)
+    (setf items (append-popup-tree-items items desktop view))))
 
 (defun append-cursor-items (items compositor output)
   (declare (ignore output))
@@ -378,7 +394,7 @@
       (setf items
             (append-view-items
              items world output view timestamp titlebar-height)))
-    (setf items (append-popup-items items desktop output titlebar-height))
+    (setf items (append-popup-items items desktop))
     (let ((panel-height (presentation-panel-height presentation)))
       (setf items
             (nconc items

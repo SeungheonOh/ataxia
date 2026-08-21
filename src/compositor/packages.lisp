@@ -99,6 +99,13 @@
    #:view-shader-program-name
    #:view-presentation-state
    #:popup-view
+   #:popup-native
+   #:popup-surface
+   #:popup-parent
+   #:popup-parent-view
+   #:popup-x
+   #:popup-y
+   #:popup-mapped-p
    #:desktop-system
    #:desktop-views
    #:desktop-applications

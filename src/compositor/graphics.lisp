@@ -12,6 +12,7 @@
 
 (defconstant +gl-false+ 0)
 (defconstant +gl-float+ #x1406)
+(defconstant +gl-unsigned-byte+ #x1401)
 (defconstant +gl-triangles+ #x0004)
 (defconstant +gl-color-buffer-bit+ #x00004000)
 (defconstant +gl-blend+ #x0BE2)
@@ -19,11 +20,17 @@
 (defconstant +gl-one-minus-src-alpha+ #x0303)
 (defconstant +gl-framebuffer+ #x8D40)
 (defconstant +gl-framebuffer-complete+ #x8CD5)
+(defconstant +gl-color-attachment0+ #x8CE0)
+(defconstant +gl-rgba+ #x1908)
+(defconstant +gl-scissor-test+ #x0C11)
 (defconstant +gl-texture0+ #x84C0)
 (defconstant +gl-texture-2d+ #x0DE1)
 (defconstant +gl-texture-min-filter+ #x2801)
 (defconstant +gl-texture-mag-filter+ #x2800)
+(defconstant +gl-texture-wrap-s+ #x2802)
+(defconstant +gl-texture-wrap-t+ #x2803)
 (defconstant +gl-linear+ #x2601)
+(defconstant +gl-clamp-to-edge+ #x812F)
 (defconstant +gl-vertex-shader+ #x8B31)
 (defconstant +gl-fragment-shader+ #x8B30)
 (defconstant +gl-compile-status+ #x8B81)
@@ -85,17 +92,34 @@
   (target :uint32) (texture :uint32))
 (cffi:defcfun ("glTexParameteri" %gl-tex-parameter-i) :void
   (target :uint32) (parameter :uint32) (value :int))
+(cffi:defcfun ("glTexImage2D" %gl-tex-image-2d) :void
+  (target :uint32) (level :int) (internal-format :int)
+  (width :int) (height :int) (border :int) (format :uint32)
+  (type :uint32) (pixels :pointer))
+(cffi:defcfun ("glGenTextures" %gl-gen-textures) :void
+  (count :int) (textures :pointer))
+(cffi:defcfun ("glDeleteTextures" %gl-delete-textures) :void
+  (count :int) (textures :pointer))
 (cffi:defcfun ("glEnable" %gl-enable) :void (capability :uint32))
 (cffi:defcfun ("glDisable" %gl-disable) :void (capability :uint32))
 (cffi:defcfun ("glBlendFunc" %gl-blend-func) :void
   (source :uint32) (destination :uint32))
 (cffi:defcfun ("glViewport" %gl-viewport) :void
   (x :int) (y :int) (width :int) (height :int))
+(cffi:defcfun ("glScissor" %gl-scissor) :void
+  (x :int) (y :int) (width :int) (height :int))
 (cffi:defcfun ("glClearColor" %gl-clear-color) :void
   (red :float) (green :float) (blue :float) (alpha :float))
 (cffi:defcfun ("glClear" %gl-clear) :void (mask :uint32))
 (cffi:defcfun ("glBindFramebuffer" %gl-bind-framebuffer) :void
   (target :uint32) (framebuffer :uint32))
+(cffi:defcfun ("glGenFramebuffers" %gl-gen-framebuffers) :void
+  (count :int) (framebuffers :pointer))
+(cffi:defcfun ("glDeleteFramebuffers" %gl-delete-framebuffers) :void
+  (count :int) (framebuffers :pointer))
+(cffi:defcfun ("glFramebufferTexture2D" %gl-framebuffer-texture-2d) :void
+  (target :uint32) (attachment :uint32) (texture-target :uint32)
+  (texture :uint32) (level :int))
 (cffi:defcfun ("glCheckFramebufferStatus" %gl-check-framebuffer-status)
     :uint32 (target :uint32))
 (cffi:defcfun ("glDrawArrays" %gl-draw-arrays) :void
@@ -155,12 +179,22 @@ void main() {
    (uniforms :initarg :uniforms :reader shader-uniforms)
    (state :initform :live :accessor shader-program-state)))
 
+(defclass retained-output-target ()
+  ((output :initarg :output :reader retained-target-output)
+   (framebuffer :initarg :framebuffer :reader retained-target-framebuffer)
+   (texture :initarg :texture :reader retained-target-texture)
+   (width :initarg :width :reader retained-target-width)
+   (height :initarg :height :reader retained-target-height)
+   (valid-p :initform nil :accessor retained-target-valid-p)))
+
 (defclass direct-gles-renderer (compositor-component)
   ((solid-program :initform nil :accessor renderer-solid-program)
    (texture-program :initform nil :accessor renderer-texture-program)
    (external-program :initform nil :accessor renderer-external-program)
    (programs :initform (make-hash-table :test #'equal)
              :reader renderer-programs)
+   (output-targets :initform (make-hash-table :test #'eq)
+                   :reader renderer-output-targets)
    (vertex-scratch :initform nil :accessor renderer-vertex-scratch)
    (vertex-scratch-capacity :initform 0
                             :accessor renderer-vertex-scratch-capacity)))
@@ -169,6 +203,8 @@ void main() {
 (defgeneric renderer-draw-item (renderer frame-context item))
 (defgeneric renderer-draw-material (renderer frame-context item material))
 (defgeneric renderer-execute-pass (renderer frame-context pass))
+(defgeneric renderer-bind-target (renderer frame-context target))
+(defgeneric renderer-release-output-target (renderer output))
 (defgeneric renderer-end-frame (renderer frame-context))
 (defgeneric renderer-abort-frame (renderer frame-context reason))
 
@@ -269,6 +305,80 @@ void main() {
                  :vertex-source +builtin-vertex-shader+
                  :fragment-source fragment :uniforms uniforms :kind kind))
 
+(defun generate-gl-name (generator)
+  (cffi:with-foreign-object (name :uint32)
+    (funcall generator 1 name)
+    (cffi:mem-ref name :uint32)))
+
+(defun delete-gl-name (deleter name)
+  (when (plusp name)
+    (cffi:with-foreign-object (cell :uint32)
+      (setf (cffi:mem-ref cell :uint32) name)
+      (funcall deleter 1 cell))))
+
+(defun create-retained-output-target (output width height)
+  (let ((texture 0)
+        (framebuffer 0))
+    (handler-case
+        (progn
+          (setf texture (generate-gl-name #'%gl-gen-textures))
+          (%gl-bind-texture +gl-texture-2d+ texture)
+          (%gl-tex-parameter-i
+           +gl-texture-2d+ +gl-texture-min-filter+ +gl-linear+)
+          (%gl-tex-parameter-i
+           +gl-texture-2d+ +gl-texture-mag-filter+ +gl-linear+)
+          (%gl-tex-parameter-i
+           +gl-texture-2d+ +gl-texture-wrap-s+ +gl-clamp-to-edge+)
+          (%gl-tex-parameter-i
+           +gl-texture-2d+ +gl-texture-wrap-t+ +gl-clamp-to-edge+)
+          (%gl-tex-image-2d
+           +gl-texture-2d+ 0 +gl-rgba+ width height 0 +gl-rgba+
+           +gl-unsigned-byte+ (cffi:null-pointer))
+          (setf framebuffer (generate-gl-name #'%gl-gen-framebuffers))
+          (%gl-bind-framebuffer +gl-framebuffer+ framebuffer)
+          (%gl-framebuffer-texture-2d
+           +gl-framebuffer+ +gl-color-attachment0+
+           +gl-texture-2d+ texture 0)
+          (unless (= +gl-framebuffer-complete+
+                     (%gl-check-framebuffer-status +gl-framebuffer+))
+            (error 'graphics-failure :operation :create-retained-target))
+          (%gl-bind-texture +gl-texture-2d+ 0)
+          (make-instance
+           'retained-output-target :output output :framebuffer framebuffer
+           :texture texture :width width :height height))
+      (serious-condition (condition)
+        (delete-gl-name #'%gl-delete-framebuffers framebuffer)
+        (delete-gl-name #'%gl-delete-textures texture)
+        (error condition)))))
+
+(defun delete-retained-output-target (target)
+  (when target
+    (delete-gl-name #'%gl-delete-framebuffers
+                    (retained-target-framebuffer target))
+    (delete-gl-name #'%gl-delete-textures (retained-target-texture target)))
+  nil)
+
+(defun ensure-retained-output-target (renderer output width height)
+  (let ((target (gethash output (renderer-output-targets renderer))))
+    (when (and target
+               (or (/= width (retained-target-width target))
+                   (/= height (retained-target-height target))))
+      (delete-retained-output-target target)
+      (remhash output (renderer-output-targets renderer))
+      (setf target nil))
+    (unless target
+      (setf target (create-retained-output-target output width height)
+            (gethash output (renderer-output-targets renderer)) target))
+    target))
+
+(defmethod renderer-release-output-target
+    ((renderer direct-gles-renderer) output)
+  (let ((target (gethash output (renderer-output-targets renderer))))
+    (when target
+      (delete-retained-output-target target)
+      (remhash output (renderer-output-targets renderer))))
+  nil)
+
 (defun make-material-program-descriptor
     (fragment-source uniforms &key (vertex-source +builtin-vertex-shader+))
   "Describe an untextured GLES material without assigning it visual meaning."
@@ -330,7 +440,12 @@ void main() {
         (maphash (lambda (key program)
                    (declare (ignore key))
                    (delete-shader-program program))
-                 (renderer-programs renderer)))))
+                 (renderer-programs renderer))
+        (maphash (lambda (output target)
+                   (declare (ignore output))
+                   (delete-retained-output-target target))
+                 (renderer-output-targets renderer))
+        (clrhash (renderer-output-targets renderer)))))
   (when (renderer-vertex-scratch renderer)
     (cffi:foreign-free (renderer-vertex-scratch renderer))
     (setf (renderer-vertex-scratch renderer) nil
@@ -612,21 +727,81 @@ void main() {
     (%gl-draw-arrays +gl-triangles+ 0 vertex-count)
     (%gl-bind-texture target 0)))
 
-(defmethod renderer-begin-frame
-    ((renderer direct-gles-renderer) output frame-context)
-  (declare (ignore output))
-  (%gl-bind-framebuffer +gl-framebuffer+ (frame-context-framebuffer frame-context))
-  (unless (= +gl-framebuffer-complete+
-             (%gl-check-framebuffer-status +gl-framebuffer+))
-    (error 'graphics-failure :operation :framebuffer-incomplete))
+(defmethod renderer-bind-target
+    ((renderer direct-gles-renderer) frame-context (target (eql :scene)))
+  (declare (ignore renderer))
+  (%gl-bind-framebuffer
+   +gl-framebuffer+ (frame-context-scene-framebuffer frame-context))
   (%gl-viewport 0 0
                 (frame-context-width frame-context)
                 (frame-context-height frame-context))
+  target)
+
+(defmethod renderer-bind-target
+    ((renderer direct-gles-renderer) frame-context (target (eql :output)))
+  (declare (ignore renderer))
+  (%gl-bind-framebuffer
+   +gl-framebuffer+ (frame-context-framebuffer frame-context))
+  (%gl-viewport 0 0
+                (frame-context-width frame-context)
+                (frame-context-height frame-context))
+  target)
+
+(defun renderer-disable-damage-clip ()
+  (%gl-disable +gl-scissor-test+))
+
+(defun renderer-clip-damage-box (box)
+  (%gl-enable +gl-scissor-test+)
+  (%gl-scissor (damage-box-x box) (damage-box-y box)
+               (damage-box-width box) (damage-box-height box))
+  box)
+
+(defun renderer-clear-current-target ()
+  (%gl-clear +gl-color-buffer-bit+))
+
+(defun renderer-present-retained-scene (renderer frame-context)
+  (let ((program (renderer-texture-program renderer))
+        (texture (frame-context-scene-texture frame-context)))
+    (renderer-disable-damage-clip)
+    (%gl-disable +gl-blend+)
+    (fill-rectangle-vertices
+     renderer (frame-context-width frame-context)
+     (frame-context-height frame-context)
+     0d0 0d0 (coerce (frame-context-width frame-context) 'double-float)
+     (coerce (frame-context-height frame-context) 'double-float))
+    (%gl-use-program (shader-native-program program))
+    (bind-rectangle-vertices renderer)
+    (%gl-active-texture +gl-texture0+)
+    (%gl-bind-texture +gl-texture-2d+ texture)
+    (%gl-uniform-1i (uniform-location program 'texture-sampler) 0)
+    (%gl-uniform-1f (uniform-location program 'opacity) 1.0)
+    (%gl-uniform-1f (uniform-location program 'texture-has-alpha) 1.0)
+    (%gl-draw-arrays +gl-triangles+ 0 6)
+    (%gl-bind-texture +gl-texture-2d+ 0)
+    (%gl-enable +gl-blend+)
+    (%gl-blend-func +gl-one+ +gl-one-minus-src-alpha+))
+  frame-context)
+
+(defmethod renderer-begin-frame
+    ((renderer direct-gles-renderer) output frame-context)
+  (let ((target
+          (ensure-retained-output-target
+           renderer output (frame-context-width frame-context)
+           (frame-context-height frame-context))))
+    (setf (frame-context-scene-target frame-context) target
+          (frame-context-scene-framebuffer frame-context)
+          (retained-target-framebuffer target)
+          (frame-context-scene-texture frame-context)
+          (retained-target-texture target)
+          (frame-context-scene-initialized-p frame-context)
+          (retained-target-valid-p target)))
+  (unless (frame-context-scene-initialized-p frame-context)
+    (setf (frame-plan-damage (frame-context-plan frame-context))
+          (full-output-damage output)))
   (destructuring-bind (red green blue alpha) +renderer-clear-color+
     (%gl-clear-color
      (coerce red 'single-float) (coerce green 'single-float)
      (coerce blue 'single-float) (coerce alpha 'single-float)))
-  (%gl-clear +gl-color-buffer-bit+)
   (%gl-enable +gl-blend+)
   (%gl-blend-func +gl-one+ +gl-one-minus-src-alpha+)
   frame-context)
@@ -634,6 +809,10 @@ void main() {
 (defmethod renderer-end-frame
     ((renderer direct-gles-renderer) frame-context)
   (declare (ignore renderer))
+  (when (frame-context-scene-updated-p frame-context)
+    (setf (retained-target-valid-p (frame-context-scene-target frame-context))
+          t))
+  (renderer-disable-damage-clip)
   (%gl-disable-vertex-attrib-array 0)
   (%gl-disable-vertex-attrib-array 1)
   (%gl-bind-framebuffer +gl-framebuffer+ 0)
@@ -646,6 +825,11 @@ void main() {
 
 (defmethod renderer-abort-frame
     ((renderer direct-gles-renderer) frame-context reason)
-  (declare (ignore renderer frame-context reason))
+  (declare (ignore renderer reason))
+  (when (and (frame-context-scene-target frame-context)
+             (frame-context-scene-updated-p frame-context))
+    (setf (retained-target-valid-p (frame-context-scene-target frame-context))
+          nil))
+  (renderer-disable-damage-clip)
   (%gl-bind-framebuffer +gl-framebuffer+ 0)
   nil)

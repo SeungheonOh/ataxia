@@ -208,5 +208,8 @@
    'frame-plan :snapshot snapshot
    :passes
    (list (make-instance 'item-render-pass
-                        :name :scene :target :output
-                        :items (snapshot-items snapshot)))))
+                        :name :scene :target :scene
+                        :items (snapshot-items snapshot))
+         (make-instance 'present-render-pass
+                        :name :present :target :output
+                        :damage-mode :full))))

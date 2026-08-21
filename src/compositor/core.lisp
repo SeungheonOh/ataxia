@@ -5,6 +5,13 @@
 
 (in-package #:ataxia.compositor)
 
+(defstruct (damage-box
+             (:constructor make-damage-box (x y width height)))
+  (x 0 :type integer)
+  (y 0 :type integer)
+  (width 0 :type integer)
+  (height 0 :type integer))
+
 (defgeneric compositor-runtime (compositor))
 (defgeneric compositor-outputs (compositor))
 (defgeneric compositor-surfaces (compositor))

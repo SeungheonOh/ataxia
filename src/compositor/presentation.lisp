@@ -13,6 +13,10 @@
     (apply #'format *error-output* control arguments)
     (finish-output *error-output*)))
 
+(defclass frame-damage ()
+  ((full-p :initarg :full-p :initform nil :accessor frame-damage-full-p)
+   (boxes :initarg :boxes :initform nil :accessor frame-damage-boxes)))
+
 (defclass compositor-output ()
   ((native :initarg :native :reader output-native)
    (layout-x :initarg :layout-x :initform 0d0 :accessor output-layout-x)
@@ -23,6 +27,8 @@
    (frame-revision :initform 0 :accessor output-frame-revision)
    (commit-pending-p :initform nil :accessor output-commit-pending-p)
    (redraw-pending-p :initform t :accessor output-redraw-pending-p)
+   (full-damage-p :initform t :accessor output-full-damage-p)
+   (damage-boxes :initform nil :accessor output-damage-boxes)
    (render-source :initform nil :accessor output-render-source)
    (frame-timer :initform nil :accessor output-frame-timer)
    (frame-timer-armed-p :initform nil
@@ -55,7 +61,7 @@
 (defgeneric presentation-hit-test (snapshot output-x output-y))
 (defgeneric render-presentation-frame (presentation output snapshot))
 (defgeneric present-output (presentation output))
-(defgeneric schedule-presentation (presentation &optional output))
+(defgeneric schedule-presentation (presentation &optional output damage))
 
 (defmethod attach-component :before ((presentation presentation-system))
   (let ((animation (presentation-animation-engine presentation)))
@@ -160,18 +166,28 @@
 (defclass item-render-pass (render-pass)
   ((items :initarg :items :reader render-pass-items)))
 
+(defclass present-render-pass (render-pass) ())
+
 (defclass frame-plan ()
   ((snapshot :initarg :snapshot :reader frame-plan-snapshot)
    (passes :initarg :passes :reader frame-plan-passes)
+   (damage :initarg :damage :initform nil :accessor frame-plan-damage)
    (continuous-p :initarg :continuous-p :initform nil
                  :reader frame-plan-continuous-p)))
 
 (defclass frame-context ()
   ((output :initarg :output :reader frame-context-output)
+   (plan :initarg :plan :reader frame-context-plan)
    (snapshot :initarg :snapshot :reader frame-context-snapshot)
    (state :initarg :state :reader frame-context-state)
    (buffer :initarg :buffer :reader frame-context-buffer)
    (framebuffer :initarg :framebuffer :reader frame-context-framebuffer)
+   (scene-framebuffer :initform 0 :accessor frame-context-scene-framebuffer)
+   (scene-texture :initform 0 :accessor frame-context-scene-texture)
+   (scene-target :initform nil :accessor frame-context-scene-target)
+   (scene-initialized-p :initform nil
+                        :accessor frame-context-scene-initialized-p)
+   (scene-updated-p :initform nil :accessor frame-context-scene-updated-p)
    (width :initarg :width :reader frame-context-width)
    (height :initarg :height :reader frame-context-height)))
 
@@ -197,6 +213,68 @@
 
 (defun output-layout-height (output)
   (coerce (ataxia.runtime:output-height (output-native output)) 'double-float))
+
+(defun full-output-damage (output)
+  (make-instance
+   'frame-damage :full-p t
+   :boxes (list (make-damage-box
+                 0 0 (ataxia.runtime:output-width (output-native output))
+                 (ataxia.runtime:output-height (output-native output))))))
+
+(defun current-output-damage (output)
+  (if (or (output-full-damage-p output)
+          (null (output-last-snapshot output)))
+      (full-output-damage output)
+      (let ((boxes (output-damage-boxes output)))
+        (make-instance
+         'frame-damage
+         :boxes
+         (when boxes
+           (list
+            (reduce
+             (lambda (left right)
+               (let ((x (min (damage-box-x left) (damage-box-x right)))
+                     (y (min (damage-box-y left) (damage-box-y right)))
+                     (right-edge
+                       (max (+ (damage-box-x left) (damage-box-width left))
+                            (+ (damage-box-x right) (damage-box-width right))))
+                     (bottom-edge
+                       (max (+ (damage-box-y left) (damage-box-height left))
+                            (+ (damage-box-y right) (damage-box-height right)))))
+                 (make-damage-box x y (- right-edge x) (- bottom-edge y))))
+             boxes)))))))
+
+(defun reset-output-damage (output)
+  (setf (output-full-damage-p output) nil
+        (output-damage-boxes output) nil)
+  output)
+
+(defun clamp-damage-box (output box)
+  (let* ((width (ataxia.runtime:output-width (output-native output)))
+         (height (ataxia.runtime:output-height (output-native output)))
+         (left (max 0 (damage-box-x box)))
+         (top (max 0 (damage-box-y box)))
+         (right (min width (+ (damage-box-x box) (damage-box-width box))))
+         (bottom (min height (+ (damage-box-y box) (damage-box-height box)))))
+    (when (and (< left right) (< top bottom))
+      (make-damage-box left top (- right left) (- bottom top)))))
+
+(defun accumulate-output-damage (output damage)
+  (cond
+    ((or (null damage) (eq damage :full))
+     (setf (output-full-damage-p output) t
+           (output-damage-boxes output) nil))
+    ((not (output-full-damage-p output))
+     (let ((boxes
+             (remove nil
+                     (mapcar (lambda (box) (clamp-damage-box output box))
+                             damage))))
+       (setf (output-damage-boxes output)
+             (nconc boxes (output-damage-boxes output)))
+       (when (> (length (output-damage-boxes output)) 64)
+         (setf (output-full-damage-p output) t
+               (output-damage-boxes output) nil)))))
+  output)
 
 (defun output-contains-layout-point-p (output x y)
   (and (<= (output-layout-x output) x)
@@ -457,9 +535,14 @@
 (defmethod build-frame-plan
     ((presentation presentation-system) (output compositor-output)
      (snapshot presentation-snapshot) timestamp)
-  (behavior-compose-frame
-   (compositor-behavior-policy (component-compositor presentation))
-   presentation output snapshot timestamp))
+  (let ((plan
+          (behavior-compose-frame
+           (compositor-behavior-policy (component-compositor presentation))
+           presentation output snapshot timestamp)))
+    (check-type plan frame-plan)
+    (unless (frame-plan-damage plan)
+      (setf (frame-plan-damage plan) (current-output-damage output)))
+    plan))
 
 (defun point-in-item-p (item x y)
   (and (<= (presentation-item-x item) x
@@ -596,9 +679,44 @@
 
 (defmethod renderer-execute-pass
     ((renderer direct-gles-renderer) frame-context (pass item-render-pass))
-  (dolist (item (render-pass-items pass))
-    (renderer-draw-item renderer frame-context item))
+  (if (eq :scene (render-pass-target pass))
+      (let* ((damage (frame-plan-damage (frame-context-plan frame-context)))
+             (boxes
+               (if (or (frame-damage-full-p damage)
+                       (not (frame-context-scene-initialized-p frame-context)))
+                   (frame-damage-boxes
+                    (full-output-damage (frame-context-output frame-context)))
+                   (frame-damage-boxes damage))))
+        (dolist (box boxes)
+          (renderer-clip-damage-box box)
+          (renderer-clear-current-target)
+          (dolist (item (render-pass-items pass))
+            (when (and (< (presentation-item-x item)
+                          (+ (damage-box-x box) (damage-box-width box)))
+                       (< (damage-box-x box)
+                          (+ (presentation-item-x item)
+                             (presentation-item-width item)))
+                       (< (presentation-item-y item)
+                          (+ (damage-box-y box) (damage-box-height box)))
+                       (< (damage-box-y box)
+                          (+ (presentation-item-y item)
+                             (presentation-item-height item))))
+              (renderer-draw-item renderer frame-context item))))
+        (setf (frame-context-scene-updated-p frame-context) t)
+        (renderer-disable-damage-clip))
+      (dolist (item (render-pass-items pass))
+        (renderer-draw-item renderer frame-context item)))
   pass)
+
+(defmethod renderer-execute-pass
+    ((renderer direct-gles-renderer) frame-context (pass present-render-pass))
+  (declare (ignore pass))
+  (renderer-present-retained-scene renderer frame-context))
+
+(defmethod renderer-execute-pass :around
+    ((renderer direct-gles-renderer) frame-context (pass render-pass))
+  (renderer-bind-target renderer frame-context (render-pass-target pass))
+  (call-next-method))
 
 (defmethod renderer-execute-pass
     ((renderer direct-gles-renderer) frame-context (pass render-pass))
@@ -678,7 +796,7 @@
                   (output-swapchain output)))
            (let ((frame
                    (make-instance
-                    'frame-context :output output :snapshot snapshot
+                    'frame-context :output output :plan plan :snapshot snapshot
                     :state state :buffer buffer
                     :framebuffer
                     (ataxia.runtime:output-buffer-framebuffer
@@ -697,6 +815,14 @@
                    (renderer-abort-frame renderer frame condition)
                    (error condition)))))
            (ataxia.runtime:output-state-set-buffer state buffer)
+           (ataxia.runtime:output-state-set-damage
+            state
+            (mapcar
+             (lambda (box)
+               (ataxia.runtime:make-damage-rectangle
+                (damage-box-x box) (damage-box-y box)
+                (damage-box-width box) (damage-box-height box)))
+             (frame-damage-boxes (frame-plan-damage plan))))
            (ataxia.runtime:release-buffer buffer)
            (setf buffer nil)
            (unless (ataxia.runtime:output-test-state native state)
@@ -704,7 +830,8 @@
            (unless (ataxia.runtime:output-commit-state native state)
              (error 'graphics-failure :operation :output-commit))
            (synchronize-output-surface-membership
-            compositor output snapshot))
+            compositor output snapshot)
+           (reset-output-damage output))
       (when (and buffer (ataxia.runtime:native-object-live-p buffer))
         (ataxia.runtime:release-buffer buffer))
       (ataxia.runtime:destroy-output-state state)))
@@ -739,6 +866,7 @@
         (when (or (frame-plan-continuous-p plan)
                   (active-animations-p
                    (presentation-animation-engine presentation)))
+          (accumulate-output-damage output :full)
           (setf (output-redraw-pending-p output) t))
         snapshot)
     (serious-condition (condition)
@@ -776,13 +904,14 @@
   output)
 
 (defmethod schedule-presentation
-    ((presentation presentation-system) &optional output)
+    ((presentation presentation-system) &optional output (damage :full))
   (let ((outputs (compositor-outputs (component-compositor presentation))))
     (dolist (candidate
               (if output
                   (list output)
                   (compositor-outputs-list outputs)))
       (when (output-available-p candidate)
+        (accumulate-output-damage candidate damage)
         (setf (output-redraw-pending-p candidate) t)
         (trace-output
          "[output] request ~A lisp-pending=~A native-pending=~A~%"

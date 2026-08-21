@@ -302,6 +302,7 @@
    #:output-enabled-p
    #:output-global-p
    #:damage-rectangle
+   #:make-damage-rectangle
    #:damage-rectangle-x
    #:damage-rectangle-y
    #:damage-rectangle-width

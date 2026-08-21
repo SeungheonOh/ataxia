@@ -304,6 +304,9 @@
     (when output
       (trace-output "[output] needs-frame ~A~%"
                     (ataxia.runtime:output-name native-output))
+      (unless (or (output-full-damage-p output)
+                  (output-damage-boxes output))
+        (accumulate-output-damage output :full))
       (setf (output-redraw-pending-p output) t)
       (unless (output-scanout-pending-p output)
         (request-output-frame-now output)))))
@@ -317,7 +320,16 @@
       (trace-output "[output] damage ~A rectangles=~D~%"
                     (ataxia.runtime:output-name native)
                     (length (ataxia.runtime:output-damage-rectangles event)))
-      (schedule-presentation (compositor-presentation compositor) output))))
+      (schedule-presentation
+       (compositor-presentation compositor) output
+       (mapcar
+        (lambda (rectangle)
+          (make-damage-box
+           (ataxia.runtime:damage-rectangle-x rectangle)
+           (ataxia.runtime:damage-rectangle-y rectangle)
+           (ataxia.runtime:damage-rectangle-width rectangle)
+           (ataxia.runtime:damage-rectangle-height rectangle)))
+        (ataxia.runtime:output-damage-rectangles event))))))
 
 (defmethod ataxia.runtime:output-request-state
     ((compositor compositor) output state)
@@ -340,6 +352,11 @@
          (declare (ignore surface))
          (surface-leave-output record output))
        (surface-records (compositor-surfaces compositor))))
+    (when output
+      (ataxia.runtime:with-egl-context
+          ((ataxia.runtime:runtime-egl (compositor-runtime compositor)))
+        (renderer-release-output-target
+         (compositor-graphics compositor) output)))
     (unregister-compositor-output
      (compositor-outputs compositor) native-output)
     (when output

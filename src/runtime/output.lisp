@@ -128,6 +128,9 @@
   (width 0 :type (signed-byte 32) :read-only t)
   (height 0 :type (signed-byte 32) :read-only t))
 
+(defun make-damage-rectangle (x y width height)
+  (%make-damage-rectangle :x x :y y :width width :height height))
+
 (defstruct (output-damage-event
              (:constructor %make-output-damage-event
                  (&key output rectangles))

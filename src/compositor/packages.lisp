@@ -311,11 +311,22 @@
    #:render-pass-target
    #:render-pass-damage-mode
    #:item-render-pass
+   #:present-render-pass
    #:render-pass-items
    #:frame-plan
    #:frame-plan-snapshot
    #:frame-plan-passes
    #:frame-plan-continuous-p
+   #:frame-plan-damage
+   #:frame-damage
+   #:frame-damage-full-p
+   #:frame-damage-boxes
+   #:damage-box
+   #:make-damage-box
+   #:damage-box-x
+   #:damage-box-y
+   #:damage-box-width
+   #:damage-box-height
    #:presentation-material
    #:solid-color-material
    #:surface-texture-material
@@ -395,10 +406,22 @@
    #:schedule-presentation
    #:frame-context
    #:frame-context-output
+   #:frame-context-plan
    #:frame-context-snapshot
    #:frame-context-state
    #:frame-context-buffer
    #:frame-context-framebuffer
+   #:frame-context-scene-framebuffer
+   #:frame-context-scene-texture
+   #:frame-context-scene-target
+   #:frame-context-scene-initialized-p
+   #:frame-context-scene-updated-p
+   #:renderer-bind-target
+   #:renderer-release-output-target
+   #:renderer-disable-damage-clip
+   #:renderer-clip-damage-box
+   #:renderer-clear-current-target
+   #:renderer-present-retained-scene
    #:frame-context-width
    #:frame-context-height
    #:output-system

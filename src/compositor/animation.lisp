@@ -30,6 +30,7 @@
   ((subject :initarg :subject :reader animation-instance-subject)
    (descriptor :initarg :descriptor :reader animation-instance-descriptor)
    (definition :initarg :definition :reader animation-instance-definition)
+   (context :initarg :context :reader animation-instance-context)
    (started-at :initarg :started-at :reader animation-instance-started-at)
    (state :initform :running :accessor animation-instance-state)))
 
@@ -93,6 +94,23 @@
       (funcall (animation-engine-default-resolver engine)
                subject descriptor context)))
 
+(defun animation-hook-context (context phase &key metadata timestamp)
+  (make-instance
+   'hook-context
+   :subject (context-subject context)
+   :operation (context-operation context)
+   :old-state (context-old-state context)
+   :new-state (context-new-state context)
+   :cause (context-cause context)
+   :provenance (context-provenance context)
+   :timestamp (or timestamp (context-timestamp context))
+   :phase phase
+   :metadata metadata))
+
+(defun animation-hooks (engine)
+  (extension-hooks
+   (compositor-extensions (component-compositor engine))))
+
 (defmethod apply-animation-sample
     ((subject view) property value context)
   (declare (ignore context))
@@ -122,26 +140,63 @@
             (animation-property-key (animation-track-property track)))
           (animation-definition-tracks definition)))
 
+(defun cancel-animation-instance (engine instance timestamp)
+  (setf (animation-instance-state instance) :cancelled)
+  (run-hook
+   (animation-hooks engine) 'animation-cancelled
+   (animation-hook-context
+    (animation-instance-context instance) :cancelled
+    :timestamp timestamp :metadata instance))
+  nil)
+
 (defun start-transition (engine subject descriptor context)
-  (let ((definition (resolve-animation engine subject descriptor context)))
+  (let* ((hooks (animation-hooks engine))
+         (resolution-context
+           (run-hook hooks 'animation-resolving
+                     (animation-hook-context context :resolve)))
+         (effective-subject (context-subject resolution-context))
+         (effective-descriptor (context-operation resolution-context))
+         (definition
+           (resolve-animation
+            engine effective-subject effective-descriptor resolution-context)))
+    (unless (and (typep effective-descriptor 'operation-descriptor)
+                 (eq effective-subject
+                     (operation-subject effective-descriptor)))
+      (error 'compositor-error))
     (when definition
+      (run-hook
+       hooks 'before-animation-start
+       (animation-hook-context resolution-context :before
+                               :metadata definition))
       (let ((properties (conflicting-animation-properties definition)))
         (setf (animation-engine-active engine)
               (delete-if
                (lambda (instance)
-                 (and (eq subject (animation-instance-subject instance))
-                      (intersection
-                       properties
-                       (conflicting-animation-properties
-                        (animation-instance-definition instance))
-                       :test #'equal)))
+                 (when (and
+                        (eq effective-subject
+                            (animation-instance-subject instance))
+                        (intersection
+                         properties
+                         (conflicting-animation-properties
+                          (animation-instance-definition instance))
+                         :test #'equal))
+                   (cancel-animation-instance
+                    engine instance (context-timestamp resolution-context))
+                   t))
                (animation-engine-active engine))))
       (let ((instance
               (make-instance 'animation-instance
-                             :subject subject :descriptor descriptor
+                             :subject effective-subject
+                             :descriptor effective-descriptor
                              :definition definition
-                             :started-at (context-timestamp context))))
+                             :context resolution-context
+                             :started-at
+                             (context-timestamp resolution-context))))
         (push instance (animation-engine-active engine))
+        (run-hook
+         hooks 'after-animation-start
+         (animation-hook-context resolution-context :after
+                                 :metadata instance))
         instance))))
 
 (defun sample-track (track progress)
@@ -150,7 +205,7 @@
          (to (animation-track-to track)))
     (+ from (* (- to from) eased))))
 
-(defun sample-animation-instance (instance timestamp)
+(defun sample-animation-instance (engine instance timestamp)
   (let* ((definition (animation-instance-definition instance))
          (duration (animation-definition-duration definition))
          (progress
@@ -168,16 +223,28 @@
        (sample-track track progress)
        instance))
     (when (= progress 1d0)
-      (setf (animation-instance-state instance) :complete))
+      (setf (animation-instance-state instance) :complete)
+      (run-hook
+       (animation-hooks engine) 'animation-completed
+       (animation-hook-context
+        (animation-instance-context instance) :complete
+        :timestamp timestamp :metadata instance)))
     (< progress 1d0)))
 
 (defun sample-animations (engine timestamp)
   (setf (animation-engine-active engine)
         (delete-if-not
          (lambda (instance)
-           (sample-animation-instance instance timestamp))
+           (sample-animation-instance engine instance timestamp))
          (animation-engine-active engine)))
   (not (null (animation-engine-active engine))))
 
 (defun active-animations-p (engine)
   (not (null (animation-engine-active engine))))
+
+(defmethod detach-component :before ((engine animation-engine) reason)
+  (declare (ignore reason))
+  (let ((timestamp (monotonic-seconds)))
+    (dolist (instance (animation-engine-active engine))
+      (cancel-animation-instance engine instance timestamp)))
+  (setf (animation-engine-active engine) nil))

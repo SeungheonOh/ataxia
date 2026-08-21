@@ -28,11 +28,27 @@
 
 (defclass hook-context (operation-context) ())
 
+(defparameter *standard-hook-points*
+  '((before-interactive-operation :veto 64)
+    (after-interactive-operation :observe 64)
+    (animation-resolving :transform 64)
+    (before-animation-start :veto 64)
+    (after-animation-start :observe 64)
+    (animation-cancelled :observe 64)
+    (animation-completed :observe 64)))
+
 (defun ensure-hook-point (registry name mode &key (limit 64))
   (or (gethash name (hook-registry-points registry))
       (setf (gethash name (hook-registry-points registry))
             (make-instance 'hook-point
                            :name name :mode mode :limit limit))))
+
+(defmethod attach-component :after ((extensions extension-system))
+  ;; Predeclaring framework hooks prevents the first plugin from accidentally
+  ;; selecting incompatible dispatch semantics for a public hook point.
+  (dolist (specification *standard-hook-points*)
+    (destructuring-bind (name mode limit) specification
+      (ensure-hook-point (extension-hooks extensions) name mode :limit limit))))
 
 (defun register-hook
     (registry name function &key (mode :observe) (priority 0) handler-name)

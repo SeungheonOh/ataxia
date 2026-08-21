@@ -51,11 +51,13 @@
    #:context-provenance
    #:context-timestamp
    #:context-phase
+   #:context-metadata
    #:provenance
    #:provenance-kind
    #:provenance-identity
    #:make-local-provenance
    #:extension-system
+   #:extension-hooks
    #:hook-registry
    #:hook-context
    #:register-hook
@@ -126,13 +128,27 @@
    #:presentation-offset-y
    #:presentation-shader-uniforms
    #:animation-policy
+   #:animation-policy-fallback
    #:animation-track
+   #:animation-track-property
+   #:animation-track-from
+   #:animation-track-to
+   #:animation-track-interpolator
    #:shader-uniform-binding
    #:shader-uniform-binding-name
    #:animation-definition
    #:animation-definition-duration
+   #:animation-definition-tracks
+   #:animation-definition-name
    #:animation-instance
+   #:animation-instance-subject
+   #:animation-instance-descriptor
+   #:animation-instance-definition
+   #:animation-instance-context
+   #:animation-instance-started-at
+   #:animation-instance-state
    #:animation-engine
+   #:animation-engine-active
    #:set-animation-policy-definition
    #:resolve-animation
    #:start-transition

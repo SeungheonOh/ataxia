@@ -465,8 +465,15 @@ The active renderer is a compositor component/strategy with explicit methods:
 (renderer-abort-frame renderer frame-context reason)
 ```
 
-The renderer may use wlroots render passes, direct EGL/GLES, Vulkan, Pixman, or a
-provider-defined backend. The compositor core does not depend on `wlr_scene`.
+The target renderer uses direct EGL/GLES from Common Lisp with wlroots
+allocator, buffer, output, and presentation interoperability. A wlroots
+render-pass or software renderer may exist only as a diagnostic/fallback
+profile and does not define the common graphics contract. The compositor core
+does not depend on `wlr_scene`.
+
+Shader programs, effect graphs, hot replacement, damage, hit mapping, and
+trusted local agent control are specified in
+[Direct GLES and Shader Animation Design](GLES-SHADER-ANIMATION-DESIGN.md).
 
 Frame execution is direct:
 
@@ -527,6 +534,11 @@ Resolution order is:
 Two windows can therefore use different definitions for the same transition.
 Definitions may use different timelines, curves, springs, properties, blending,
 interruption rules, and completion behavior.
+
+Definitions may also attach different GLES programs, effect stacks, multipass
+graphs, meshes, texture inputs, and typed uniform bindings per view. Trusted
+local agents and the Lisp shell may prepare and replace those definitions using
+candidate-before-activation semantics without restarting the compositor.
 
 Animation sampling is called directly by presentation. It does not publish
 animation messages. Starting, retargeting, cancelling, and completing an
@@ -643,9 +655,12 @@ client/backend behavior—not component communication.
 10. Render projection and input inverse mapping use the same world object.
 11. Cursor state derives from current seat/focus/operation state.
 12. Animation policy can vary per object and per transition descriptor.
-13. Hooks are typed, ordered, bounded, and never the core communication path.
-14. Component replacement happens only at a safe point and may be rejected.
-15. No general transaction, entity-component, or service-generation framework is
+13. Direct Common Lisp EGL/GLES is the target renderer.
+14. Trusted local agents may replace shader and effect definitions only through
+    candidate-before-activation and owner-thread safe-point adoption.
+15. Hooks are typed, ordered, bounded, and never the core communication path.
+16. Component replacement happens only at a safe point and may be rejected.
+17. No general transaction, entity-component, or service-generation framework is
     reintroduced under another name.
 
 ## 19. Decisions Before Implementation
@@ -653,7 +668,8 @@ client/backend behavior—not component communication.
 1. Choose the initial concrete component classes and constructor wiring order.
 2. Choose the exact pinned wlroots release and SBCL support baseline.
 3. Define the callback-safe/safe-point/startup-only native function table.
-4. Select the first world, renderer, and presentation implementations.
+4. Select the first world and presentation implementations and the exact
+   GLES/EGL capability baseline for the direct renderer.
 5. Choose the external inbox wake primitive.
 6. Define which component replacements the first implementation supports live.
 7. Define the first typed hook contexts and budgets.

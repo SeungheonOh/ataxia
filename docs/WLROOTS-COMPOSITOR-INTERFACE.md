@@ -812,15 +812,20 @@ Common Lisp directly calls the public wlroots APIs for:
 
 - backend and renderer creation;
 - allocator and swapchain setup;
-- buffer lock/unlock and texture import;
+- output-buffer acquisition and buffer lock/unlock;
+- EGL display/context and DMA-BUF/SHM interoperability exposed by the pinned
+  wlroots renderer;
 - output-state initialization and mutation;
-- render-pass creation and submission;
 - output-state test and commit;
 - presentation and buffer-release signals.
 
+The diagnostic/fallback profile may additionally call wlroots texture and
+render-pass creation/submission APIs. Those APIs do not define the direct GLES
+renderer contract.
+
 There is no Ataxia C frame-target abstraction. The concrete compositor renderer
-receives typed Lisp wrappers for the actual wlroots renderer, output, buffers,
-textures, and render passes.
+receives typed Lisp wrappers for the actual wlroots renderer, allocator, output,
+and buffers, and operates its EGL/GLES resources through direct Lisp bindings.
 
 ### 10.2 Replaceable renderer component
 
@@ -832,8 +837,8 @@ flowchart LR
     COORD[Compositor presentation engine]
     SNAP[Immutable presentation snapshot]
     RENDER[Selected renderer component]
-    WLRAPI[Typed Common Lisp wlr.render API]
-    WLR[wlroots renderer, allocator, output]
+    WLRAPI[Direct Lisp EGL/GLES and typed wlroots interop]
+    WLR[wlroots backend, allocator, buffers, output]
 
     FRAME --> COORD
     COORD --> SNAP
@@ -842,26 +847,31 @@ flowchart LR
     WLRAPI --> WLR
 ```
 
-Possible renderer components include:
+The selected target is:
 
-- a default wlroots render-pass renderer;
-- a GLES renderer using Lisp EGL/GLES bindings and wlroots interop;
-- a software/headless renderer;
-- a capture renderer;
-- a future Vulkan renderer if the selected wlroots version exposes the needed
-  interop.
+- a direct GLES renderer using Common Lisp EGL/GLES bindings and wlroots
+  allocator, buffer, output, DRM/KMS, and presentation interoperability.
+
+Optional diagnostic profiles may provide a wlroots render-pass renderer or a
+software/headless renderer. A capture renderer may consume the same retained
+presentation inputs. Vulkan is outside the initial target. None of these
+alternatives defines the common graphics contract.
 
 World coordinates, projections, hit testing, scene construction, effects, and
 animation sampling remain entirely compositor concerns. A spherical world changes
 the presentation snapshot and renderer math, not the wlroots bindings.
 
+The direct rendering, shader-effect, hot-replacement, and trusted local agent
+contracts are specified in
+[Direct GLES and Shader Animation Design](GLES-SHADER-ANIMATION-DESIGN.md).
+
 ### 10.3 Performance implication
 
-CFFI calls per output-state operation or render-pass item are practical at
-ordinary compositor scale. The hot geometry, animation, culling, damage, and
-draw-list construction remain Lisp computations. A renderer should amortize FFI
-crossings by using wlroots render passes or GPU buffer uploads rather than
-placing policy in C.
+CFFI calls per output-state or GLES submission operation are practical at
+ordinary compositor scale. Hot geometry, animation, culling, damage, and
+draw-list construction remain Lisp computations. The renderer amortizes FFI
+crossings through persistent vertex/uniform buffers, texture caches, batched
+draws, and compiled render graphs rather than placing policy in C.
 
 If profiling later proves that one exact wlroots call pattern needs a native
 helper, that helper may batch only that concrete wlroots operation. It must not
@@ -1262,7 +1272,8 @@ Only implementation-specific choices remain:
    must support another implementation immediately.
 3. Decide whether direct CFFI `wl_listener` allocation is reliable enough or the
    four-function native listener helper is required.
-4. Select the first concrete renderer: wlroots render pass or direct GLES.
+4. Select the exact GLES/EGL capability, import, synchronization, and output
+   target baseline for the direct renderer.
 5. Select the event-loop wake primitive for the external control inbox.
 6. Define the callback-safe versus safe-point function table for the pinned
    wlroots API.

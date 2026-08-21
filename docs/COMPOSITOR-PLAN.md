@@ -61,6 +61,9 @@ The exact boundary is specified in
 [wlroots–Compositor Common Lisp Interface](WLROOTS-COMPOSITOR-INTERFACE.md).
 The compositor object graph is specified in
 [Compositor Object Graph Design](COMPOSITOR-OBJECT-DESIGN.md).
+The selected direct GLES renderer and agent-editable shader animation system are
+specified in
+[Direct GLES and Shader Animation Design](GLES-SHADER-ANIMATION-DESIGN.md).
 
 ## 3. Critical Corrections to the Initial Boundary
 
@@ -526,14 +529,15 @@ Three approaches are technically possible:
 | Approach | Boundary quality | Practicality | Decision |
 |---|---|---|---|
 | Use `wlr_scene` as the framework model | Couples world, scene, and hit testing to wlroots 2D policy | Easiest conventional desktop | Reject as the common model |
-| Compositor renderer uses typed Lisp wrappers around wlroots render passes | Keeps policy/math in Lisp while wlroots owns GPU/backend mechanics | Practical first implementation | Recommended default |
-| Compositor renderer uses direct Lisp EGL/GLES bindings plus wlroots interop | Maximum shader/control flexibility with stricter lifetime work | Practical specialized backend | Supported plugin |
+| Compositor renderer uses typed Lisp wrappers around wlroots render passes | Keeps policy/math in Lisp while wlroots owns GPU/backend mechanics | Useful for bring-up and diagnostics | Diagnostic/fallback only |
+| Compositor renderer uses direct Lisp EGL/GLES bindings plus wlroots interop | Maximum shader/control flexibility with explicit context, import, synchronization, and lifetime work | Practical with a pinned capability baseline | Selected target |
 
-The renderer is always a component stored directly on the compositor. Its
-concrete implementation may call wlroots renderer, allocator, buffer,
-render-pass, and output APIs through the binding packages
-or may use direct Lisp EGL/GLES bindings where wlroots exposes the required
-interop. No Ataxia-authored C renderer protocol is introduced.
+The target renderer is a direct Common Lisp EGL/GLES component stored on the
+compositor. wlroots supplies backend, allocator, buffer, output, DRM/KMS, and
+presentation mechanisms; Ataxia owns shaders, render graphs, geometry, effects,
+offscreen targets, damage, and draw submission. An optional wlroots render-pass
+implementation may support diagnostics or fallback, but it does not define the
+common graphics contract. No Ataxia-authored C renderer protocol is introduced.
 
 ### 5.2 No wlroots scene dependency
 
@@ -543,10 +547,11 @@ and hit-test contracts cannot use its geometry as their source of truth.
 
 ### 5.3 wlroots renderer is a mechanism, not the world model
 
-Using `wlr_renderer` does not require using `wlr_scene`. The initial compositor
-may create `wlr_renderer` and `wlr_allocator`, use their exact public buffer and
-render-pass APIs, and still keep all scene construction, projection, animation,
-damage policy, and hit testing in compositor components.
+Using wlroots renderer, allocator, buffer, and output interoperability does not
+require using `wlr_scene` or its render-pass API as the compositor renderer.
+The initial compositor uses direct Lisp EGL/GLES for drawing while keeping all
+scene construction, projection, animation, damage policy, and hit testing in
+compositor components.
 
 If a renderer needs direct client-buffer access, the binding package creates a concrete
 `surface-buffer-snapshot` during the surface commit callback using the exact
@@ -571,9 +576,16 @@ buffer, texture, render-pass, output-state, and presentation APIs. wlroots and
 its backend own DRM/KMS, GBM/EGL internals, scanout allocation, and native buffer
 release. The bindings do not wrap those mechanisms in a second C graphics runtime.
 
-All native graphics calls remain owner-thread-bound. A direct GLES plugin uses
+All native graphics calls remain owner-thread-bound. The direct GLES renderer uses
 an explicit Lisp dynamic extent for the current context and never exposes it to
 agent/control threads.
+
+Trusted local agents and the Lisp shell may submit shader source, program,
+effect, effect-pass, binding, and animation-definition changes through the
+control component. Candidate programs compile and link with a compatible GLES
+context, failures leave the previous program active, and successful candidates
+become live only at an owner-thread safe point. The complete contract is in
+[Direct GLES and Shader Animation Design](GLES-SHADER-ANIMATION-DESIGN.md).
 
 ### 5.5 Frame operation
 
@@ -584,8 +596,7 @@ A frame is a specialized output/presentation operation over concrete wlroots wra
    index.
 3. The selected renderer acquires or configures a concrete wlroots render buffer
    through typed binding calls.
-4. It compiles and executes the render plan using wlroots render passes or the
-   selected direct graphics binding.
+4. It executes the render plan through the direct Common Lisp EGL/GLES renderer.
 5. The output manager builds a concrete `wlr_output_state`, including damage and buffer.
 6. It calls the direct output test function and selects fallback on failure.
 7. It calls the direct output commit function.
@@ -616,7 +627,7 @@ No renderer plugin may guess whether a buffer is inverted.
 
 - CLOS dispatch is allowed at component, callback, plan, and pass boundaries,
   not per pixel or per vertex.
-- Render-pass descriptors and GPU data cross FFI at coarse operations.
+- GLES commands and GPU data cross FFI at coarse operations.
 - A renderer may own one Lisp-managed foreign arena per frame where its concrete
   API benefits from it.
 - Shader/program state is cached by immutable descriptor.
@@ -1145,8 +1156,8 @@ The aggregate systems contain no domain component or protocol-specific policy.
 - conventional finite desktop;
 - infinite planar world;
 - spherical/non-Euclidean reference world;
-- wlroots render-pass executor;
-- direct Lisp EGL/GLES executor;
+- required direct Lisp EGL/GLES executor;
+- optional wlroots render-pass diagnostic/fallback executor;
 - optional wlroots-scene planar executor;
 - default shell/focus/input/cursor/animation policy;
 - headless deterministic profile.
@@ -1190,10 +1201,12 @@ Every cleanup operation is idempotent.
 
 ### 11.3 Owner-thread rule
 
-All native calls, compositor mutations, component replacement, and REPL evaluation
-occur on the compositor owner thread. Worker threads may compile shaders, encode
-captures, or perform agent computation only against detached immutable data and
-must return results through the external inbox.
+All native calls, compositor mutations, component replacement, and REPL
+evaluation occur on the compositor owner thread. Worker threads may prepare
+shader source and descriptors, encode captures, or perform agent computation
+only against detached immutable data and must return results through the
+external inbox. GLES compilation/linking occurs on the owner thread unless a
+worker explicitly owns a compatible shared EGL context.
 
 ## 12. Performance Feasibility
 
@@ -1206,7 +1219,7 @@ The architecture is performant if it avoids fine-grained boundary crossings.
 - active animation sampling;
 - projection and hit testing;
 - render-plan construction;
-- render-pass construction and GPU submission;
+- GLES render-graph lowering and GPU submission;
 - observation diffs for active agents.
 
 ### 12.2 Required techniques
@@ -1285,15 +1298,16 @@ Deliverables:
 
 - core surface/subsurface and XDG toplevel callbacks;
 - surface-buffer snapshots;
-- wlroots render-pass or direct-GLES output path;
+- direct Lisp EGL/GLES output path with wlroots allocator/output interop;
 - one compositor-owned planar renderer and frame-local presentation snapshot;
 - exact frame-done and presentation calls/callbacks.
 
 Evidence:
 
 - a real SHM XDG client maps and presents correctly;
+- an Ataxia-owned GLES shader program draws the client content;
 - orientation, channels, scale, and transform are verified;
-- no `wlr_scene` dependency in the world/presentation model.
+- no `wlr_scene` or wlroots render-pass dependency exists in the primary path.
 
 ### Milestone 3: Usable desktop interaction
 
@@ -1336,12 +1350,17 @@ Deliverables:
 - transition matcher, definition resolver, clocks, timelines, bindings, and
   presentation integration;
 - per-object and per-context animation policy;
+- shader effect/pass graphs and typed uniform, mesh, mask, and texture bindings;
+- trusted agent and Lisp-shell candidate compilation and hot replacement;
 - bounded active-set scheduler.
 
 Evidence:
 
 - two windows use different animation definitions for the same transition;
-- animations can be replaced from the Lisp shell;
+- two windows use different shader/effect definitions for the same transition;
+- animations and shaders can be replaced by a trusted local agent or the Lisp
+  shell without restarting the compositor;
+- an invalid shader leaves the previous live program active and reports its log;
 - render and hit geometry remain identical throughout animation;
 - frame pacing and allocation measurements remain within agreed limits.
 
@@ -1411,16 +1430,19 @@ Evidence:
 
 The following choices remain explicit approval points:
 
-1. **Graphics execution**: choose the initial compositor renderer implementation:
-   typed wlroots render passes or direct Lisp EGL/GLES.
+1. **GLES capability baseline**: select the GLES version, EGL extensions,
+   DMA-BUF import path, synchronization primitives, and output-target interop
+   required by the direct renderer.
 2. **Lisp implementation**: choose SBCL-only initial bindings or immediate
    portability across multiple Common Lisp implementations.
 3. **Xwayland scope**: include it in the first usable desktop milestone or defer
    it until native Wayland Firefox/terminal workflows are stable.
-4. **Plugin trust**: decide whether plugins are trusted in-process Lisp only, or
-   whether untrusted/out-of-process extensions are a first-class requirement.
-5. **Agent trust model**: define which local principals may use the trusted REPL,
-   inject input, capture content, read clipboard data, and replace components.
+4. **Plugin trust**: shader/effect/plugin control initially permits trusted local
+   in-process Lisp; decide only whether untrusted/out-of-process extensions are
+   ever a first-class requirement.
+5. **Agent trust model**: define which trusted local principals may use the REPL,
+   edit shaders and animation definitions, inject input, capture content, read
+   clipboard data, and replace components.
 6. **Default desktop**: approve the conventional planar profile as the initial
    usability target while retaining world independence in every contract.
 7. **Protocol target**: select the pinned wlroots and wayland-protocols versions

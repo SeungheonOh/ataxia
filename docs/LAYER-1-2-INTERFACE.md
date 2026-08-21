@@ -138,15 +138,28 @@ safe wrapper around wlroots.
 
 ### 4.1 Server and event loop
 
-Common Lisp directly creates and controls:
+Layer 1 Common Lisp directly owns the root runtime:
 
 - `wl_display` and its `wl_event_loop`;
-- the selected `wlr_backend`;
-- `wlr_renderer` and `wlr_allocator` when used;
-- `wlr_compositor`, `wlr_subcompositor`, `wlr_data_device_manager`, and other
-  selected globals;
-- outputs, seats, input devices, protocol managers, and their listeners;
 - the Wayland socket and backend startup/shutdown sequence.
+
+It also exposes exact typed constructors and destructors for server-owned
+wlroots objects selected by the composition root or Layer 2 policy, including:
+
+- backends, renderers, and allocators during bootstrap;
+- compositor/protocol globals selected by the active profile;
+- logical seats created and configured by seat policy;
+- headless or nested outputs requested by output/agent policy;
+- server-published handles, output cursors/layers, Xwayland instances, and
+  scoped render/response objects;
+- event-loop timer, FD, signal, and idle sources requested by Layer 2 services;
+- explicitly provisioned Wayland clients, activation tokens, synthetic input
+  devices, and policy-granted native response objects.
+
+Physical outputs and input devices are created by their backend and enter via
+exact discovery callbacks. Client surfaces, roles, offers, constraints, and
+similar resources are created by clients/protocol implementations. Layer 2 does
+not construct those objects.
 
 The Lisp runtime calls `wl_event_loop_dispatch` itself instead of hiding the
 loop in a C `server_run` function. This makes native events, Lisp timers, agent
@@ -197,9 +210,9 @@ being confused with the old object.
 Layer 1 is horizontally split into packages that mirror real wlroots areas:
 
 - `ataxia.wlr.core` — display, event loop, clients, surfaces, subsurfaces;
-- `ataxia.wlr.backend` — backend, outputs, input-device discovery;
-- `ataxia.wlr.render` — renderer, allocator, buffers, textures, render passes;
-- `ataxia.wlr.seat` — seats and input delivery;
+- `ataxia.wlr.backend` — backend factories, physical discovery, virtual outputs;
+- `ataxia.wlr.render` — renderer/allocator factories, buffers, textures, passes;
+- `ataxia.wlr.seat` — seat creation/lifecycle, request callbacks, input delivery;
 - `ataxia.wlr.xdg-shell` — XDG surfaces, toplevels, popups, positioners;
 - `ataxia.wlr.layer-shell` — layer surfaces;
 - `ataxia.wlr.data-device` — selections and drag-and-drop;
@@ -310,6 +323,11 @@ point:
 (install-output-sink backend output-service)
 ```
 
+The exact constructor for a new server-owned manager/resource receives its
+initial sink when callbacks may begin immediately. The `install-*` operations
+above replace an already-installed sink at a safe point; they are not a window
+in which a newly advertised global exists without handlers.
+
 Replacing a Layer 2 service swaps the corresponding Lisp sink. Native listeners
 remain attached and do not need to be recreated. Existing callback dispatch
 pins the current sink for the callback extent; the replacement is visible to
@@ -350,6 +368,275 @@ There is no encoded command and no generic completion. A configure function
 returns its serial. An output test/commit returns its native success value.
 Later acknowledgements, presentation reports, and buffer releases arrive through
 their real protocol-specific signals.
+
+### 5.5 Exact native-object factories
+
+Layer 2 must be able to request creation of server-owned wlroots objects when
+their existence is compositor policy. This uses exact per-package constructors,
+not a generic `create-native-object` operation.
+
+Every public constructor declares:
+
+- the exact wlroots type and native constructor it calls;
+- the runtime phase in which it is legal;
+- the concrete typed wrapper it returns;
+- whether creation immediately advertises a Wayland global;
+- the sink/listeners that must be installed before the next event-loop dispatch;
+- the exact destroy, finish, release, or quiesce operation;
+- whether failure leaves all native and Layer 2 state unchanged;
+- whether the object is persistent, callback-owned, or dynamically scoped.
+
+Examples are intentionally concrete:
+
+```lisp
+(seat-create runtime name seat-sink)
+(seat-destroy seat)
+
+(headless-output-create headless-backend width height output-sink)
+(output-cursor-create output)
+(output-layer-create output)
+
+(renderer-autocreate backend)
+(allocator-autocreate backend renderer)
+(output-state-create)
+(output-begin-render-pass output output-state options)
+
+(xdg-shell-create runtime advertised-version xdg-policy-sink)
+(xdg-activation-token-create activation-manager launch-context)
+(session-lock-manager-create runtime session-lock-sink)
+(xwayland-create runtime compositor xwayland-sink :lazy-p t)
+
+(event-timer-create runtime timer-sink)
+(preconnected-client-create runtime owned-socket-fd client-sink)
+(drm-lease-request-grant lease-request)
+```
+
+The exact names may track the pinned binding style, but each function remains in
+the package for the native type it creates. There is no central factory switch
+or type keyword registry.
+
+### 5.6 Seat lifecycle reference interface
+
+A logical seat is policy-owned. Layer 1 supplies the mechanism; Layer 2 decides
+how many seats exist, their names/capabilities, device assignment, focus, and
+delivery behavior.
+
+The minimum public seat lifecycle is:
+
+```lisp
+(seat-create runtime name seat-sink) ; returns wlr-seat
+(seat-destroy seat)
+(seat-set-name seat name)
+(seat-set-capabilities seat capabilities)
+(seat-set-keyboard seat keyboard-or-nil)
+```
+
+`seat-create` directly calls `wlr_seat_create`. That native call registers the
+`wl_seat` global, so the Layer 1 wrapper must install all seat listeners and the
+provided sink before returning. Creation occurs on the owner thread while the
+Wayland loop is not being re-entered; no client can bind between native creation
+and listener installation.
+
+The seat package delivers exact callbacks including:
+
+```lisp
+(seat-request-set-cursor sink request)
+(seat-request-set-selection sink request)
+(seat-request-set-primary-selection sink request)
+(seat-request-start-drag sink request)
+(seat-pointer-grab-begin sink seat)
+(seat-pointer-grab-end sink seat)
+(seat-keyboard-grab-begin sink seat)
+(seat-keyboard-grab-end sink seat)
+(seat-touch-grab-begin sink seat)
+(seat-touch-grab-end sink seat)
+(seat-destroying sink seat)
+```
+
+Physical device assignment remains a Layer 2 relationship. A discovered
+keyboard, pointer, touch device, or tablet can be assigned to a logical seat
+without pretending Layer 2 created the backend device. Delivery then uses the
+typed seat notification functions already defined above.
+
+### 5.7 Native-object creation inventory
+
+The wlroots 0.20 and libwayland server header scan yields six lifecycle classes.
+The class is part of each typed API; it is not inferred from a pointer type.
+
+#### 5.7.1 Composition-root and bootstrap factories
+
+These objects are policy-selected, but normally created by the composition root
+before ordinary Layer 2 transactions begin:
+
+| Object family | Selection owner | Required Layer 1 interface |
+|---|---|---|
+| backend/session and multi-backend composition | launch profile | exact backend-specific create/start/destroy functions |
+| renderer, EGL context, allocator, and output render initialization | selected render service | exact autocreate/create/init/destroy functions |
+| core and initially enabled protocol globals | active protocol profile and security policy | protocol-package constructor with version, initial sink, and quiesce/destroy contract |
+| Xwayland server/instance | Xwayland policy | exact lazy/eager create, ready/failure/new-surface callbacks, and destroy |
+
+A profile may activate an optional global or backend later only when its exact
+native API permits runtime creation. That becomes a normal required-before-
+publish effect, but does not make bootstrap itself a generic Layer 2 factory.
+
+#### 5.7.2 Persistent server-owned objects Layer 2 may request at runtime
+
+| Object family | Layer 2 owner/decision | Required Layer 1 interface |
+|---|---|---|
+| logical seats, including transient seats | seat policy | exact create/name/capabilities/keyboard/destroy functions and request callbacks |
+| headless, Wayland, or X11 virtual outputs | output, capture, test-profile, or agent policy | backend-specific output constructor and normal output callbacks |
+| output hardware cursors and output layers | cursor/render/direct-scanout policy | exact output-cursor/layer create, update, and destroy functions |
+| keyboard groups and tablet-v2 seat objects | input/seat assignment policy | exact group/tablet/pad/tool constructors and lifecycle callbacks |
+| compositor-owned synthetic input devices | agent/input-source provider | provider-specific pointer/keyboard/touch/tablet constructor built on the exact public `wlr_*_init`/`finish` interface |
+| foreign-toplevel and workspace handles | semantic publication services | exact manager/handle/group create, update, close, and destroy functions |
+| compositor-owned data or primary-selection sources | clipboard/agent transfer broker | typed source initialization with Lisp callbacks and explicit source destruction |
+| capture sources and synchronization timelines | capture/render services | exact source/timeline init/ref/unref/finish functions |
+| event-loop FD, timer, signal, and idle sources | agent mailbox, timeout, repeat, and service policy | distinct `wl_event_loop_add_*`, update, callback-sink, and remove functions |
+| explicitly provisioned `wl_client` from an owned FD | sandbox/application launch policy | exact `wl_client_create`, credential/label registration, destroy callback, and FD ownership transfer |
+
+Synthetic input construction is not the default agent injection path. Agents
+normally submit typed Layer 2 input intents so mapping, grabs, focus, and hooks
+still run. A provider creates a native synthetic device only when it needs to
+participate as a first-class wlroots input source and wholly owns the concrete
+implementation vtable and lifetime.
+
+Ordinary clients accepted from the display socket are connection-created and
+enter through the client-connected callback. The explicit-FD constructor is a
+separate capability for a supervised or sandboxed process; it must never accept
+an unowned FD or silently bypass per-client security policy.
+
+#### 5.7.3 Policy-created results of launches or client requests
+
+Some native objects are created only after Layer 2 authorizes or initiates a
+concrete operation:
+
+| Object family | Cause | Required Layer 1 interface |
+|---|---|---|
+| server-originated XDG activation token | trusted application/agent launch | exact create/add, metadata, exported-name, expiry, and destroy functions |
+| DRM lease | accepted client lease request or privileged direct lease policy | exact request-grant/direct-create, rejection, revoke, and destroy callbacks |
+| compositor-initiated drag | authorized transfer using an owned data source | exact drag creation/start/cancel/destruction contract |
+| presentation feedback/sample | a surface sampled into a submitted frame | exact sampled, output-commit association, presented/discarded lifecycle |
+| custom DRM connector mode | explicit output policy after backend capability validation | DRM-specific add-mode function; never mutation of a backend-reported mode |
+| output-management response state | current-state publication or accepted client configuration | exact configuration/head creation, send/build, and destroy/finish functions |
+
+These are not generic replies. Each is an exact protocol operation, and its
+origin remains distinguishable from the corresponding client-created request.
+
+#### 5.7.4 Scoped objects Layer 2 creates during one operation
+
+These are not persistent semantic resources:
+
+- `wlr_output_state` values initialized and finished around output operations;
+- render passes begun and submitted for one frame;
+- output configuration and configuration-head objects built for one response;
+- allocator buffers, swapchains, textures, color transforms, render timers,
+  synchronization waiters, and capture-operation objects scoped by the concrete
+  renderer/capture provider;
+- foreign arrays and protocol-specific configure values whose lifetime is one
+  typed call.
+
+Their wrapper APIs use `unwind-protect`-style dynamic ownership and the exact
+native finish/submit/destroy operation. They are never placed in the semantic
+object registry merely because they have a native pointer.
+
+#### 5.7.5 Provider-private native helpers
+
+Optional helpers such as `wlr_cursor`, `wlr_output_layout`,
+`wlr_xcursor_manager`, `wlr_scene`, damage rings, swapchain managers, and native
+addon records belong only to the concrete provider that selected them. A
+conventional planar provider may use them privately. The world, presentation,
+hit-test, animation, transaction, and hook contracts must not depend on them.
+
+A specialized provider may also implement a concrete backend, renderer, output,
+buffer, or input subtype through wlroots' public interface `init`/`finish`
+functions and exact implementation vtable. That native subtype belongs to the
+provider and is exposed upward only through the same typed wrapper/callback
+contracts as a stock wlroots subtype. It never becomes a generic Layer 2 object
+construction facility.
+
+#### 5.7.6 Backend-, connection-, and client-created objects Layer 2 observes
+
+Layer 2 observes rather than synthesizes:
+
+- physical outputs, backend-reported output modes, DRM connectors, or physical
+  input devices;
+- backend-owned presentation/page-flip objects;
+- native device subtypes emitted by libinput, nested Wayland, or X11 backends.
+
+They enter through exact backend callbacks, receive typed wrappers, and retire
+through their authoritative destroy signals. Layer 2 may configure, assign, or
+present them but does not claim to have created them.
+
+Connection/client origin includes:
+
+- ordinary display-socket clients, `wlr_surface`, subsurface, or client buffer
+  objects;
+- XDG toplevels/popups, layer surfaces, lock surfaces, or Xwayland surfaces;
+- client data sources/offers, drag requests, text-input objects, or input-method
+  objects;
+- pointer constraints, relative-pointer resources, inhibitors, activation
+  token requests, or client capture requests.
+
+These objects originate from a client connection or request and are instantiated
+by libwayland or the concrete Wayland/wlroots protocol implementation. Layer 2
+handles their exact callbacks and may approve, configure, activate, reject, or
+destroy them only through the operations that their protocol actually permits.
+The explicitly server-originated client, activation-token, custom-mode, drag,
+and lease paths above are separate typed operations, not exceptions hidden
+inside an observed-object constructor.
+
+### 5.8 Creation transaction contract
+
+Persistent creation is a `required-before-publish` Layer 2 effect:
+
+```mermaid
+sequenceDiagram
+    participant P as Layer 2 policy service
+    participant T as Transaction
+    participant L1 as Exact Layer 1 package
+    participant W as wlroots/libwayland
+    participant R as Semantic registry
+
+    P->>T: propose logical seat and native creation
+    T->>T: validate name, policy, phase, dependencies
+    T->>L1: seat-create(runtime, name, sink)
+    L1->>W: wlr_seat_create(display, name)
+    W-->>L1: wlr_seat pointer/global
+    L1->>L1: wrap object and install exact listeners
+    L1-->>T: live typed wlr-seat wrapper
+    T->>L1: set capabilities/name/keyboard
+    T->>R: publish semantic seat related to wrapper
+    T-->>P: committed seat identity
+```
+
+Rules:
+
+1. validate all Layer 2 policy and dependencies before the native constructor;
+2. execute the exact constructor on the owner thread;
+3. attach destroy/request listeners and the active sink before returning;
+4. publish the semantic entity only after the constructor and required setup
+   succeed;
+5. if later local publication unexpectedly fails, call the exact destructor at
+   the outermost safe point and never expose a half-created semantic entity;
+6. record the returned typed wrapper as provenance, not as the semantic identity;
+7. do not keep a transaction open waiting for future client binds or callbacks.
+
+### 5.9 Destruction and quiescing contract
+
+Persistent destruction proceeds in the opposite direction:
+
+1. mark the semantic entity `retiring` and stop new policy uses;
+2. cancel focus, grabs, frames, transfers, and other relationships that depend on
+   the object;
+3. call the exact native destructor at the outermost callback-safe point;
+4. let the authoritative destroy callback invalidate the typed wrapper;
+5. publish semantic retirement and release provider references.
+
+Destroying a Wayland global is not equivalent to unloading its protocol package.
+If already-bound resources must remain serviced, Layer 2 quiesces new exposure
+and retains the old sink/provider generation until every resource is destroyed.
+If wlroots offers no safe destructor for an object, the interface exposes
+quiescing only and destruction is deferred to server shutdown.
 
 ## 6. Incoming Callback Flow
 
@@ -784,6 +1071,8 @@ Instead:
 
 - protocol policy services specialize the protocol-specific sink generics;
 - semantic entities may reference typed Layer 1 wrapper objects as provenance;
+- policy services request server-owned native objects through exact per-package
+  constructors and relate the returned wrappers only after successful creation;
 - a callback opens or joins the current Layer 2 transaction;
 - protocol-specific methods stage semantic mutations and exact native effects;
 - native effects are ordinary typed function calls executed at their declared
@@ -894,11 +1183,12 @@ The following parts of the previous contract are removed rather than renamed:
 8. native event/command batching;
 9. numeric object handles;
 10. generic native object queries;
-11. common lease tables and lease dispositions;
-12. generic graphics-image and frame-target leases;
-13. `ataxia.native.gateway`;
-14. generic protocol adapters selected by namespace/opcode;
-15. Layer 2 restart while retaining an independent native server.
+11. a generic native-object factory or type-keyword constructor;
+12. common lease tables and lease dispositions;
+13. generic graphics-image and frame-target leases;
+14. `ataxia.native.gateway`;
+15. generic protocol adapters selected by namespace/opcode;
+16. Layer 2 restart while retaining an independent native server.
 
 The last removal is an accepted tradeoff. A Lisp image failure restarts the
 compositor. Supporting independent Layer 2 process restart would require the
@@ -926,6 +1216,12 @@ kind of serialization boundary the user has rejected.
 14. Session lock is acknowledged only after ordinary content is no longer
     presentable.
 15. Agent actions enter through the Lisp owner-thread mailbox, never through C.
+16. Every Layer 2-requested native object uses an exact package constructor and
+    exact lifetime operation; no generic native-object factory exists.
+17. A Layer 2 semantic identity is never replaced by its Layer 1 wrapper identity.
+18. Layer 2 never misclassifies an observed backend-, connection-, or
+    client-created object as policy-created; explicitly server-originated
+    variants use separate exact typed operations.
 
 ## 22. Remaining Decisions Before Implementation
 

@@ -683,6 +683,9 @@ No renderer plugin may guess whether a buffer is inverted.
 Layer 2 is not one “compositor” class. It is a small single-writer kernel plus
 independent domain protocols.
 
+The concrete CLOS class, service, transaction, and package design is specified in
+[Layer 2 CLOS System Design](LAYER-2-CLOS-DESIGN.md).
+
 ### 6.1 Runtime kernel
 
 The runtime kernel owns only:

@@ -598,6 +598,9 @@
     (when view
       (setf (view-mapped-p view) nil
             (view-presentable-p view) nil)
+      (cancel-animations-for-subject
+       (presentation-animation-engine (compositor-presentation compositor))
+       view)
       (behavior-view-unmapped (compositor-behavior-policy compositor) view)
       (dolist (seat (interaction-seats (compositor-interaction compositor)))
         (when (eq view (seat-focused-view seat))
@@ -614,6 +617,9 @@
     ((compositor compositor) toplevel)
   (let ((view (desktop-find-view (compositor-desktop compositor) toplevel)))
     (when view
+      (cancel-animations-for-subject
+       (presentation-animation-engine (compositor-presentation compositor))
+       view)
       (behavior-view-destroying
        (compositor-behavior-policy compositor) view))
     (prog1
@@ -913,15 +919,26 @@
             (install-behavior-state new-installation)
             (setf (compositor-behavior-policy compositor) effective-policy
                   adopted-p t)
+            (prepare-active-animations-for-policy
+             (presentation-animation-engine
+              (compositor-presentation compositor))
+             effective-policy)
             ;; Build immutable snapshots before retiring the old policy. Any
             ;; migration or scene failure rolls the entire object graph back.
-            (dolist (output
-                      (compositor-outputs-list
-                       (compositor-outputs compositor)))
-              (setf (output-last-snapshot output)
-                    (build-presentation-snapshot
-                     (compositor-presentation compositor)
-                     output (monotonic-seconds))))
+            (let ((snapshots
+                    (mapcar
+                     (lambda (output)
+                       (cons
+                        output
+                        (build-presentation-snapshot
+                         (compositor-presentation compositor)
+                         output (monotonic-seconds))))
+                     (compositor-outputs-list
+                      (compositor-outputs compositor)))))
+              (behavior-validate-resources
+               effective-policy compositor snapshots resolution-context)
+              (dolist (entry snapshots)
+                (setf (output-last-snapshot (car entry)) (cdr entry))))
             (refresh-policy-pointer-focus compositor)
             (detach-component old-policy :replaced)
             (schedule-presentation (compositor-presentation compositor))

@@ -32,7 +32,9 @@
    (definition :initarg :definition :reader animation-instance-definition)
    (context :initarg :context :reader animation-instance-context)
    (started-at :initarg :started-at :reader animation-instance-started-at)
-   (state :initform :running :accessor animation-instance-state)))
+   (state :initform :running :accessor animation-instance-state)
+   (resources-finalized-p :initform nil
+                          :accessor animation-resources-finalized-p)))
 
 (defclass animation-engine (compositor-component)
   ((active :initform nil :accessor animation-engine-active)
@@ -42,6 +44,19 @@
 
 (defgeneric resolve-animation (engine subject descriptor context))
 (defgeneric apply-animation-sample (subject property value context))
+(defgeneric finalize-animation-property (property subject instance reason))
+(defgeneric prepare-animation-property-for-policy
+    (property policy instance))
+
+(defmethod finalize-animation-property
+    (property subject instance reason)
+  (declare (ignore property subject instance reason))
+  nil)
+
+(defmethod prepare-animation-property-for-policy
+    (property (policy behavior-policy) instance)
+  (declare (ignore property policy instance))
+  t)
 
 (defun linear-interpolation (progress)
   progress)
@@ -117,14 +132,50 @@
             (animation-property-key (animation-track-property track)))
           (animation-definition-tracks definition)))
 
+(defun finalize-animation-instance (instance reason)
+  (unless (animation-resources-finalized-p instance)
+    (setf (animation-resources-finalized-p instance) t)
+    (dolist (track
+              (animation-definition-tracks
+               (animation-instance-definition instance)))
+      (finalize-animation-property
+       (animation-track-property track)
+       (animation-instance-subject instance) instance reason)))
+  instance)
+
+(defun prepare-active-animations-for-policy (engine policy)
+  (dolist (instance (animation-engine-active engine))
+    (dolist (track
+              (animation-definition-tracks
+               (animation-instance-definition instance)))
+      (unless (prepare-animation-property-for-policy
+               (animation-track-property track) policy instance)
+        (error 'invalid-compositor-state
+               :operation :replace-behavior-policy
+               :state :animation-resource-rejected))))
+  policy)
+
 (defun cancel-animation-instance (engine instance timestamp)
-  (setf (animation-instance-state instance) :cancelled)
-  (run-hook
-   (animation-hooks engine) 'animation-cancelled
-   (animation-hook-context
-    (animation-instance-context instance) :cancelled
-    :timestamp timestamp :metadata instance))
+  (when (eq (animation-instance-state instance) :running)
+    (setf (animation-instance-state instance) :cancelled)
+    (finalize-animation-instance instance :cancelled)
+    (run-hook
+     (animation-hooks engine) 'animation-cancelled
+     (animation-hook-context
+      (animation-instance-context instance) :cancelled
+      :timestamp timestamp :metadata instance)))
   nil)
+
+(defun cancel-animations-for-subject
+    (engine subject &optional (timestamp (monotonic-seconds)))
+  (setf (animation-engine-active engine)
+        (delete-if
+         (lambda (instance)
+           (when (eq subject (animation-instance-subject instance))
+             (cancel-animation-instance engine instance timestamp)
+             t))
+         (animation-engine-active engine)))
+  subject)
 
 (defun start-transition (engine subject descriptor context)
   (let* ((hooks (animation-hooks engine))
@@ -201,6 +252,7 @@
        instance))
     (when (= progress 1d0)
       (setf (animation-instance-state instance) :complete)
+      (finalize-animation-instance instance :completed)
       (run-hook
        (animation-hooks engine) 'animation-completed
        (animation-hook-context

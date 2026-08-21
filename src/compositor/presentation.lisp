@@ -676,6 +676,21 @@
    renderer frame-context item (presentation-item-material item))
   item)
 
+(defun validate-presentation-snapshot-resources (renderer snapshot)
+  (dolist (item (snapshot-items snapshot))
+    (let ((material (presentation-item-material item)))
+      (typecase material
+        (surface-texture-material
+         (when (material-program-name material)
+           (shader-program-for-texture
+            renderer (material-program-name material)
+            (ataxia.runtime:gles-texture-target
+             (material-texture material)))))
+        (shader-material
+         (shader-program-for-material
+          renderer (material-program-name material))))))
+  snapshot)
+
 (defmethod renderer-execute-pass
     ((renderer direct-gles-renderer) frame-context (pass item-render-pass))
   (if (eq :scene (render-pass-target pass))

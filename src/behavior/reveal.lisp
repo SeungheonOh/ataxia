@@ -137,6 +137,17 @@ void main() {
      subject (reveal-binding-previous-program property)))
   subject)
 
+(defmethod finalize-animation-property
+    ((property reveal-progress-binding) (subject view) instance reason)
+  (declare (ignore instance reason))
+  (clear-codec-reveal-state
+   subject (reveal-binding-previous-program property)))
+
+(defmethod prepare-animation-property-for-policy
+    ((property reveal-progress-binding) (policy behavior-policy) instance)
+  (declare (ignore property instance))
+  (ensure-codec-reveal-programs policy))
+
 (defun install-codec-reveal-variant (policy renderer kind external-p)
   (unless (shader-program-installed-p
            renderer +codec-reveal-program-name+ kind policy)

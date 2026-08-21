@@ -168,6 +168,8 @@
     (policy engine subject descriptor context))
 (defgeneric behavior-set-view-animation-definition
     (policy view descriptor-class definition))
+(defgeneric behavior-validate-resources
+    (policy compositor snapshots context))
 
 (defmethod activate-behavior-policy ((policy behavior-policy))
   (setf (behavior-policy-active-p policy) t)
@@ -201,6 +203,14 @@
     ((policy behavior-policy) interaction seat input)
   (declare (ignore policy interaction seat input))
   (make-instance 'keyboard-key-decision))
+
+(defmethod behavior-validate-resources
+    ((policy behavior-policy) compositor snapshots context)
+  (declare (ignore policy context))
+  (let ((renderer (compositor-graphics compositor)))
+    (dolist (entry snapshots)
+      (validate-presentation-snapshot-resources renderer (cdr entry))))
+  t)
 
 (defun adopt-planar-behavior-state (view)
   (let ((state (view-behavior-state view)))

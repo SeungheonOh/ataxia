@@ -220,6 +220,7 @@
    #:behavior-observe-view
    #:behavior-resolve-animation
    #:behavior-set-view-animation-definition
+   #:behavior-validate-resources
    #:behavior-placement
    #:planar-placement
    #:placement-x
@@ -254,6 +255,8 @@
    #:animation-track-to
    #:animation-track-interpolator
    #:animation-property-key
+   #:finalize-animation-property
+   #:prepare-animation-property-for-policy
    #:shader-uniform-binding
    #:shader-uniform-binding-name
    #:animation-definition
@@ -274,6 +277,8 @@
    #:start-transition
    #:sample-animations
    #:active-animations-p
+   #:prepare-active-animations-for-policy
+   #:cancel-animations-for-subject
    #:direct-gles-renderer
    #:renderer-begin-frame
    #:renderer-draw-item
@@ -307,6 +312,7 @@
    #:snapshot-timestamp
    #:snapshot-revision
    #:snapshot-items
+   #:validate-presentation-snapshot-resources
    #:render-pass
    #:render-pass-name
    #:render-pass-target

@@ -798,11 +798,9 @@
                      items
                      (append
                       (unless (view-fullscreen-p view)
-                        (let ((shadow
-                                (make-soft-shadow-item
-                                 policy view frame-x frame-y
-                                 frame-width frame-height)))
-                          (and shadow (list shadow))))
+                        (make-soft-shadow-items
+                         policy view frame-x frame-y
+                         frame-width frame-height))
                       (when title-geometry
                         (multiple-value-bind
                               (title-x title-y title-width title-height)

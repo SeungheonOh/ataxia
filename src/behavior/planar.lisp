@@ -59,10 +59,8 @@
                        items
                        (append
                         (unless (view-fullscreen-p view)
-                          (let ((shadow
-                                  (make-soft-shadow-item
-                                   policy view x y width height)))
-                            (and shadow (list shadow))))
+                          (make-soft-shadow-items
+                           policy view x y width height))
                         (when (and (not (view-fullscreen-p view))
                                    (view-server-decorated-p view))
                           (list

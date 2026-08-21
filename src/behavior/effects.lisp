@@ -37,13 +37,54 @@ void main() {
 (defclass soft-shadow-style ()
   ((enabled-p :initarg :enabled-p :initform t
               :accessor soft-shadow-enabled-p)
-   (color :initarg :color :initform '(0.0 0.0 0.0 0.42)
+   (color :initarg :color :initform '(0.0 0.0 0.0 0.24)
           :accessor soft-shadow-color)
-   (inset :initarg :inset :initform 24d0 :accessor soft-shadow-inset)
+   (inset :initarg :inset :initform 20d0 :accessor soft-shadow-inset)
    (corner-radius :initarg :corner-radius :initform 12d0
                   :accessor soft-shadow-corner-radius)
-   (blur-radius :initarg :blur-radius :initform 8d0
-                :accessor soft-shadow-blur-radius)))
+   (blur-radius :initarg :blur-radius :initform 12d0
+                :accessor soft-shadow-blur-radius)
+   (lifted-blur-radius :initarg :lifted-blur-radius :initform 24d0
+                       :accessor soft-shadow-lifted-blur-radius)
+   (rest-offset-x :initarg :rest-offset-x :initform 0d0
+                  :accessor soft-shadow-rest-offset-x)
+   (rest-offset-y :initarg :rest-offset-y :initform 2d0
+                  :accessor soft-shadow-rest-offset-y)
+   (lifted-offset-x :initarg :lifted-offset-x :initform 0d0
+                    :accessor soft-shadow-lifted-offset-x)
+   (lifted-offset-y :initarg :lifted-offset-y :initform 16d0
+                    :accessor soft-shadow-lifted-offset-y)
+   (ambient-color :initarg :ambient-color
+                  :initform '(0.0 0.0 0.0 0.16)
+                  :accessor soft-shadow-ambient-color)
+   (ambient-blur-radius :initarg :ambient-blur-radius :initform 7d0
+                        :accessor soft-shadow-ambient-blur-radius)))
+
+(defclass effect-parameter-binding ()
+  ((name :initarg :name :reader effect-parameter-binding-name)))
+
+(defun view-effect-parameter (view name &optional (default 0d0))
+  (gethash name
+           (presentation-effect-parameters (view-presentation-state view))
+           default))
+
+(defun (setf view-effect-parameter) (value view name &optional default)
+  (declare (ignore default))
+  (setf (gethash name
+                 (presentation-effect-parameters
+                  (view-presentation-state view)))
+        value))
+
+(defmethod apply-animation-sample
+    ((subject view) (property effect-parameter-binding) value context)
+  (declare (ignore context))
+  (setf (view-effect-parameter
+         subject (effect-parameter-binding-name property))
+        value)
+  subject)
+
+(defmethod animation-property-key ((property effect-parameter-binding))
+  (list :effect-parameter (effect-parameter-binding-name property)))
 
 (defun ensure-soft-shadow-program (policy)
   (let ((renderer (compositor-graphics (component-compositor policy))))
@@ -55,20 +96,55 @@ void main() {
         +soft-shadow-fragment-shader+
         '(color rectangle-size shadow-inset corner-radius blur-radius))))))
 
-(defun make-soft-shadow-item (policy owner x y width height)
-  "Return a policy-configured shadow item, or NIL when the effect is disabled."
+(defun interpolate-effect-value (from to progress)
+  (+ from (* (- to from) progress)))
+
+(defun make-shadow-material-item
+    (style owner x y width height color blur-radius offset-x offset-y)
+  ;; Three standard deviations plus the configured minimum keeps every side,
+  ;; including the top edge, inside the analytic shadow quad.
+  (let* ((padding
+           (max (soft-shadow-inset style)
+                (+ (* 3d0 blur-radius)
+                   (max (abs offset-x) (abs offset-y)))))
+         (item-width (+ width (* 2d0 padding)))
+         (item-height (+ height (* 2d0 padding))))
+    (make-shader-item
+     (+ x offset-x (- padding))
+     (+ y offset-y (- padding))
+     item-width item-height +soft-shadow-program-name+
+     `((color . ,color)
+       (rectangle-size . (,item-width ,item-height))
+       (shadow-inset . ,padding)
+       (corner-radius . ,(soft-shadow-corner-radius style))
+       (blur-radius . ,blur-radius))
+     :owner owner)))
+
+(defun make-soft-shadow-items (policy owner x y width height)
+  "Return ambient and cast shadows derived from per-view elevation."
   (let ((style (behavior-shadow-style policy)))
     (when (and style (soft-shadow-enabled-p style))
       (ensure-soft-shadow-program policy)
-      (let ((inset (soft-shadow-inset style)))
-        (make-shader-item
-         (- x inset) (- y inset)
-         (+ width (* 2d0 inset)) (+ height (* 2d0 inset))
-         +soft-shadow-program-name+
-         `((color . ,(soft-shadow-color style))
-           (rectangle-size . (,(+ width (* 2d0 inset))
-                              ,(+ height (* 2d0 inset))))
-           (shadow-inset . ,inset)
-           (corner-radius . ,(soft-shadow-corner-radius style))
-           (blur-radius . ,(soft-shadow-blur-radius style)))
-         :owner owner)))))
+      (let* ((elevation
+               (max 0d0 (min 1d0
+                             (view-effect-parameter owner 'elevation 0d0))))
+             (cast-blur
+               (interpolate-effect-value
+                (soft-shadow-blur-radius style)
+                (soft-shadow-lifted-blur-radius style) elevation))
+             (offset-x
+               (interpolate-effect-value
+                (soft-shadow-rest-offset-x style)
+                (soft-shadow-lifted-offset-x style) elevation))
+             (offset-y
+               (interpolate-effect-value
+                (soft-shadow-rest-offset-y style)
+                (soft-shadow-lifted-offset-y style) elevation)))
+        (list
+         (make-shadow-material-item
+          style owner x y width height
+          (soft-shadow-ambient-color style)
+          (soft-shadow-ambient-blur-radius style) 0d0 0d0)
+         (make-shadow-material-item
+          style owner x y width height (soft-shadow-color style)
+          cast-blur offset-x offset-y))))))

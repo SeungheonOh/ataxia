@@ -10,6 +10,8 @@
    (scale :initform 1d0 :accessor presentation-scale)
    (offset-x :initform 0d0 :accessor presentation-offset-x)
    (offset-y :initform 0d0 :accessor presentation-offset-y)
+   (effect-parameters :initform (make-hash-table :test #'equal)
+                      :reader presentation-effect-parameters)
    (shader-uniforms :initform (make-hash-table :test #'equal)
                     :reader presentation-shader-uniforms)))
 
@@ -298,6 +300,10 @@
           (presentation-scale copy) (presentation-scale state)
           (presentation-offset-x copy) (presentation-offset-x state)
           (presentation-offset-y copy) (presentation-offset-y state))
+    (maphash
+     (lambda (name value)
+       (setf (gethash name (presentation-effect-parameters copy)) value))
+     (presentation-effect-parameters state))
     (maphash
      (lambda (name value)
        (setf (gethash name (presentation-shader-uniforms copy)) value))

@@ -241,6 +241,7 @@
    #:presentation-scale
    #:presentation-offset-x
    #:presentation-offset-y
+   #:presentation-effect-parameters
    #:presentation-shader-uniforms
    #:animation-policy
    #:animation-policy-fallback
@@ -249,6 +250,7 @@
    #:animation-track-from
    #:animation-track-to
    #:animation-track-interpolator
+   #:animation-property-key
    #:shader-uniform-binding
    #:shader-uniform-binding-name
    #:animation-definition
@@ -337,8 +339,19 @@
    #:soft-shadow-inset
    #:soft-shadow-corner-radius
    #:soft-shadow-blur-radius
+   #:soft-shadow-lifted-blur-radius
+   #:soft-shadow-rest-offset-x
+   #:soft-shadow-rest-offset-y
+   #:soft-shadow-lifted-offset-x
+   #:soft-shadow-lifted-offset-y
+   #:soft-shadow-ambient-color
+   #:soft-shadow-ambient-blur-radius
    #:behavior-shadow-style
    #:behavior-background-color
+   #:effect-parameter-binding
+   #:effect-parameter-binding-name
+   #:view-effect-parameter
+   #:behavior-default-animation-definition
    #:presentation-hit
    #:presentation-hit-item
    #:presentation-hit-owner

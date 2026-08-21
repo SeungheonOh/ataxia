@@ -1,9 +1,9 @@
-;;;; Typed Layer 1 native wrappers and exact sink protocol.
+;;;; Typed Runtime native wrappers and exact sink protocol.
 ;;;;
 ;;;; Wrappers retain native identity and liveness. Sink generics name concrete
 ;;;; wlroots facts so the next layer receives no invented event envelope.
 
-(in-package #:ataxia.layer1)
+(in-package #:ataxia.runtime)
 
 (defclass native-object ()
   ((pointer :initarg :pointer :accessor %native-pointer)
@@ -146,9 +146,9 @@
   (hotspot-x 0 :type (signed-byte 32) :read-only t)
   (hotspot-y 0 :type (signed-byte 32) :read-only t))
 
-(defclass layer1-sink () ())
+(defclass runtime-sink () ())
 
-(defclass diagnostic-sink (layer1-sink)
+(defclass diagnostic-sink (runtime-sink)
   ((stream :initarg :stream :initform *error-output*
            :reader diagnostic-stream)))
 
@@ -178,67 +178,67 @@
 (defgeneric surface-unmapped (sink surface))
 (defgeneric surface-destroying (sink surface))
 
-(defmethod runtime-started ((sink layer1-sink) runtime)
+(defmethod runtime-started ((sink runtime-sink) runtime)
   (declare (ignore sink runtime)))
-(defmethod runtime-stopping ((sink layer1-sink) runtime reason)
+(defmethod runtime-stopping ((sink runtime-sink) runtime reason)
   (declare (ignore sink runtime reason)))
-(defmethod backend-new-output ((sink layer1-sink) runtime output)
+(defmethod backend-new-output ((sink runtime-sink) runtime output)
   (declare (ignore sink runtime output)))
-(defmethod backend-new-input ((sink layer1-sink) runtime input-device)
+(defmethod backend-new-input ((sink runtime-sink) runtime input-device)
   (declare (ignore sink runtime input-device)))
-(defmethod backend-destroying ((sink layer1-sink) runtime backend)
+(defmethod backend-destroying ((sink runtime-sink) runtime backend)
   (declare (ignore sink runtime backend)))
-(defmethod renderer-lost ((sink layer1-sink) runtime renderer)
+(defmethod renderer-lost ((sink runtime-sink) runtime renderer)
   (declare (ignore sink runtime renderer)))
-(defmethod compositor-new-surface ((sink layer1-sink) runtime surface)
+(defmethod compositor-new-surface ((sink runtime-sink) runtime surface)
   (declare (ignore sink runtime surface)))
-(defmethod output-frame ((sink layer1-sink) output)
+(defmethod output-frame ((sink runtime-sink) output)
   (declare (ignore sink output)))
-(defmethod output-destroying ((sink layer1-sink) output)
+(defmethod output-destroying ((sink runtime-sink) output)
   (declare (ignore sink output)))
-(defmethod input-device-destroying ((sink layer1-sink) input-device)
+(defmethod input-device-destroying ((sink runtime-sink) input-device)
   (declare (ignore sink input-device)))
-(defmethod pointer-motion ((sink layer1-sink) event)
+(defmethod pointer-motion ((sink runtime-sink) event)
   (declare (ignore sink event)))
-(defmethod pointer-motion-absolute ((sink layer1-sink) event)
+(defmethod pointer-motion-absolute ((sink runtime-sink) event)
   (declare (ignore sink event)))
-(defmethod pointer-button ((sink layer1-sink) event)
+(defmethod pointer-button ((sink runtime-sink) event)
   (declare (ignore sink event)))
-(defmethod pointer-axis ((sink layer1-sink) event)
+(defmethod pointer-axis ((sink runtime-sink) event)
   (declare (ignore sink event)))
-(defmethod pointer-frame ((sink layer1-sink) pointer)
+(defmethod pointer-frame ((sink runtime-sink) pointer)
   (declare (ignore sink pointer)))
-(defmethod keyboard-key ((sink layer1-sink) event)
+(defmethod keyboard-key ((sink runtime-sink) event)
   (declare (ignore sink event)))
-(defmethod keyboard-modifiers ((sink layer1-sink) event)
+(defmethod keyboard-modifiers ((sink runtime-sink) event)
   (declare (ignore sink event)))
-(defmethod keyboard-keymap-changed ((sink layer1-sink) keyboard)
+(defmethod keyboard-keymap-changed ((sink runtime-sink) keyboard)
   (declare (ignore sink keyboard)))
-(defmethod keyboard-repeat-info ((sink layer1-sink) event)
+(defmethod keyboard-repeat-info ((sink runtime-sink) event)
   (declare (ignore sink event)))
-(defmethod seat-destroying ((sink layer1-sink) seat)
+(defmethod seat-destroying ((sink runtime-sink) seat)
   (declare (ignore sink seat)))
-(defmethod seat-request-set-cursor ((sink layer1-sink) request)
+(defmethod seat-request-set-cursor ((sink runtime-sink) request)
   (declare (ignore sink request)))
-(defmethod surface-committed ((sink layer1-sink) surface event)
+(defmethod surface-committed ((sink runtime-sink) surface event)
   (declare (ignore sink surface event)))
-(defmethod surface-mapped ((sink layer1-sink) surface)
+(defmethod surface-mapped ((sink runtime-sink) surface)
   (declare (ignore sink surface)))
-(defmethod surface-unmapped ((sink layer1-sink) surface)
+(defmethod surface-unmapped ((sink runtime-sink) surface)
   (declare (ignore sink surface)))
-(defmethod surface-destroying ((sink layer1-sink) surface)
+(defmethod surface-destroying ((sink runtime-sink) surface)
   (declare (ignore sink surface)))
 
 (defun native-object-address (object)
   (check-type object native-object)
   (if (native-object-live-p object)
-      (ataxia.layer1.raw:pointer-address (%native-pointer object))
+      (ataxia.runtime.raw:pointer-address (%native-pointer object))
       0))
 
 (defun %ensure-live (object)
   (unless (and (typep object 'native-object)
                (native-object-live-p object)
-               (not (ataxia.layer1.raw:null-pointer-p
+               (not (ataxia.runtime.raw:null-pointer-p
                      (%native-pointer object))))
     (error 'dead-native-object :object object))
   object)
@@ -246,24 +246,24 @@
 (defun %invalidate-native-object (object)
   (when (and object (native-object-live-p object))
     (setf (native-object-live-p object) nil
-          (%native-pointer object) (ataxia.layer1.raw:null-pointer)))
+          (%native-pointer object) (ataxia.runtime.raw:null-pointer)))
   object)
 
 (defun %copy-native-string (pointer)
-  (unless (ataxia.layer1.raw:null-pointer-p pointer)
-    (ataxia.layer1.raw:foreign-string-to-lisp pointer)))
+  (unless (ataxia.runtime.raw:null-pointer-p pointer)
+    (ataxia.runtime.raw:foreign-string-to-lisp pointer)))
 
 (defun %refresh-output (output)
   (%ensure-live output)
   (let ((pointer (%native-pointer output)))
     (setf (output-name output)
-          (%copy-native-string (ataxia.layer1.raw:%output-name pointer))
+          (%copy-native-string (ataxia.runtime.raw:%output-name pointer))
           (output-description output)
-          (%copy-native-string (ataxia.layer1.raw:%output-description pointer))
-          (output-width output) (ataxia.layer1.raw:%output-width pointer)
-          (output-height output) (ataxia.layer1.raw:%output-height pointer)
+          (%copy-native-string (ataxia.runtime.raw:%output-description pointer))
+          (output-width output) (ataxia.runtime.raw:%output-width pointer)
+          (output-height output) (ataxia.runtime.raw:%output-height pointer)
           (output-enabled-p output)
-          (ataxia.layer1.raw:%output-enabled pointer)))
+          (ataxia.runtime.raw:%output-enabled pointer)))
   output)
 
 (defun %input-type-keyword (type-code)
@@ -279,10 +279,10 @@
 (defun %refresh-input-device (input-device)
   (%ensure-live input-device)
   (let* ((pointer (%native-pointer input-device))
-         (type-code (ataxia.layer1.raw:%input-device-type pointer)))
+         (type-code (ataxia.runtime.raw:%input-device-type pointer)))
     (setf (input-device-name input-device)
           (%copy-native-string
-           (ataxia.layer1.raw:%input-device-name pointer))
+           (ataxia.runtime.raw:%input-device-name pointer))
           (input-device-type-code input-device) type-code
           (input-device-type input-device) (%input-type-keyword type-code)))
   input-device)
@@ -316,41 +316,41 @@
 (defun %pointer-motion-snapshot (pointer event-pointer)
   (%make-pointer-motion-event
    :pointer pointer
-   :time-msec (ataxia.layer1.raw:%pointer-motion-time-msec event-pointer)
-   :delta-x (ataxia.layer1.raw:%pointer-motion-delta-x event-pointer)
-   :delta-y (ataxia.layer1.raw:%pointer-motion-delta-y event-pointer)
+   :time-msec (ataxia.runtime.raw:%pointer-motion-time-msec event-pointer)
+   :delta-x (ataxia.runtime.raw:%pointer-motion-delta-x event-pointer)
+   :delta-y (ataxia.runtime.raw:%pointer-motion-delta-y event-pointer)
    :unaccelerated-delta-x
-   (ataxia.layer1.raw:%pointer-motion-unaccel-dx event-pointer)
+   (ataxia.runtime.raw:%pointer-motion-unaccel-dx event-pointer)
    :unaccelerated-delta-y
-   (ataxia.layer1.raw:%pointer-motion-unaccel-dy event-pointer)))
+   (ataxia.runtime.raw:%pointer-motion-unaccel-dy event-pointer)))
 
 (defun %pointer-motion-absolute-snapshot (pointer event-pointer)
   (%make-pointer-motion-absolute-event
    :pointer pointer
    :time-msec
-   (ataxia.layer1.raw:%pointer-motion-absolute-time-msec event-pointer)
-   :x (ataxia.layer1.raw:%pointer-motion-absolute-x event-pointer)
-   :y (ataxia.layer1.raw:%pointer-motion-absolute-y event-pointer)))
+   (ataxia.runtime.raw:%pointer-motion-absolute-time-msec event-pointer)
+   :x (ataxia.runtime.raw:%pointer-motion-absolute-x event-pointer)
+   :y (ataxia.runtime.raw:%pointer-motion-absolute-y event-pointer)))
 
 (defun %pointer-button-snapshot (pointer event-pointer)
   (let ((state-code
-          (ataxia.layer1.raw:%pointer-button-state event-pointer)))
+          (ataxia.runtime.raw:%pointer-button-state event-pointer)))
     (%make-pointer-button-event
      :pointer pointer
-     :time-msec (ataxia.layer1.raw:%pointer-button-time-msec event-pointer)
-     :code (ataxia.layer1.raw:%pointer-button-button event-pointer)
+     :time-msec (ataxia.runtime.raw:%pointer-button-time-msec event-pointer)
+     :code (ataxia.runtime.raw:%pointer-button-button event-pointer)
      :state (%button-state-keyword state-code)
      :state-code state-code)))
 
 (defun %pointer-axis-snapshot (pointer event-pointer)
-  (let ((source-code (ataxia.layer1.raw:%pointer-axis-source event-pointer))
+  (let ((source-code (ataxia.runtime.raw:%pointer-axis-source event-pointer))
         (orientation-code
-          (ataxia.layer1.raw:%pointer-axis-orientation event-pointer))
+          (ataxia.runtime.raw:%pointer-axis-orientation event-pointer))
         (relative-direction-code
-          (ataxia.layer1.raw:%pointer-axis-relative-direction event-pointer)))
+          (ataxia.runtime.raw:%pointer-axis-relative-direction event-pointer)))
     (%make-pointer-axis-event
      :pointer pointer
-     :time-msec (ataxia.layer1.raw:%pointer-axis-time-msec event-pointer)
+     :time-msec (ataxia.runtime.raw:%pointer-axis-time-msec event-pointer)
      :source (%axis-source-keyword source-code)
      :source-code source-code
      :orientation (%axis-orientation-keyword orientation-code)
@@ -358,18 +358,18 @@
      :relative-direction
      (%axis-relative-direction-keyword relative-direction-code)
      :relative-direction-code relative-direction-code
-     :delta (ataxia.layer1.raw:%pointer-axis-delta event-pointer)
+     :delta (ataxia.runtime.raw:%pointer-axis-delta event-pointer)
      :discrete-delta
-     (ataxia.layer1.raw:%pointer-axis-delta-discrete event-pointer))))
+     (ataxia.runtime.raw:%pointer-axis-delta-discrete event-pointer))))
 
 (defun %keyboard-key-snapshot (keyboard event-pointer)
-  (let ((state-code (ataxia.layer1.raw:%keyboard-key-state event-pointer)))
+  (let ((state-code (ataxia.runtime.raw:%keyboard-key-state event-pointer)))
     (%make-keyboard-key-event
      :keyboard keyboard
-     :time-msec (ataxia.layer1.raw:%keyboard-key-time-msec event-pointer)
-     :keycode (ataxia.layer1.raw:%keyboard-key-keycode event-pointer)
+     :time-msec (ataxia.runtime.raw:%keyboard-key-time-msec event-pointer)
+     :keycode (ataxia.runtime.raw:%keyboard-key-keycode event-pointer)
      :update-state-p
-     (ataxia.layer1.raw:%keyboard-key-update-state event-pointer)
+     (ataxia.runtime.raw:%keyboard-key-update-state event-pointer)
      :state (%button-state-keyword state-code)
      :state-code state-code)))
 
@@ -378,26 +378,26 @@
     (%make-keyboard-modifiers-event
      :keyboard keyboard
      :depressed
-     (ataxia.layer1.raw:%keyboard-modifiers-depressed pointer)
-     :latched (ataxia.layer1.raw:%keyboard-modifiers-latched pointer)
-     :locked (ataxia.layer1.raw:%keyboard-modifiers-locked pointer)
-     :group (ataxia.layer1.raw:%keyboard-modifiers-group pointer))))
+     (ataxia.runtime.raw:%keyboard-modifiers-depressed pointer)
+     :latched (ataxia.runtime.raw:%keyboard-modifiers-latched pointer)
+     :locked (ataxia.runtime.raw:%keyboard-modifiers-locked pointer)
+     :group (ataxia.runtime.raw:%keyboard-modifiers-group pointer))))
 
 (defun %keyboard-repeat-snapshot (keyboard)
   (let ((pointer (%native-pointer (%ensure-live keyboard))))
     (%make-keyboard-repeat-event
      :keyboard keyboard
-     :rate (ataxia.layer1.raw:%keyboard-repeat-rate pointer)
-     :delay (ataxia.layer1.raw:%keyboard-repeat-delay pointer))))
+     :rate (ataxia.runtime.raw:%keyboard-repeat-rate pointer)
+     :delay (ataxia.runtime.raw:%keyboard-repeat-delay pointer))))
 
 (defun %surface-commit-snapshot (surface)
   (%ensure-live surface)
   (let ((pointer (%native-pointer surface)))
     (%make-surface-commit-event
-     :sequence (ataxia.layer1.raw:%surface-current-sequence pointer)
-     :fields (ataxia.layer1.raw:%surface-current-committed pointer)
-     :width (ataxia.layer1.raw:%surface-current-width pointer)
-     :height (ataxia.layer1.raw:%surface-current-height pointer)
-     :buffer-width (ataxia.layer1.raw:%surface-current-buffer-width pointer)
-     :buffer-height (ataxia.layer1.raw:%surface-current-buffer-height pointer)
-     :mapped-p (ataxia.layer1.raw:%surface-mapped pointer))))
+     :sequence (ataxia.runtime.raw:%surface-current-sequence pointer)
+     :fields (ataxia.runtime.raw:%surface-current-committed pointer)
+     :width (ataxia.runtime.raw:%surface-current-width pointer)
+     :height (ataxia.runtime.raw:%surface-current-height pointer)
+     :buffer-width (ataxia.runtime.raw:%surface-current-buffer-width pointer)
+     :buffer-height (ataxia.runtime.raw:%surface-current-buffer-height pointer)
+     :mapped-p (ataxia.runtime.raw:%surface-mapped pointer))))

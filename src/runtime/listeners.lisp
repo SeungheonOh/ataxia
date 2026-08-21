@@ -3,14 +3,14 @@
 ;;;; One C listener cell maps to one exact Lisp dispatcher. Callback conditions
 ;;;; are contained before returning to C and adoption occurs on the owner thread.
 
-(in-package #:ataxia.layer1)
+(in-package #:ataxia.runtime)
 
 (defclass signal-subscription ()
   ((cookie :initarg :cookie :reader %subscription-cookie)
    (runtime :initarg :runtime :reader %subscription-runtime)
    (signal-name :initarg :signal-name :reader %subscription-signal-name)
    (dispatcher :initarg :dispatcher :reader %subscription-dispatcher)
-   (cell :initform (ataxia.layer1.raw:null-pointer)
+   (cell :initform (ataxia.runtime.raw:null-pointer)
          :accessor %subscription-cell)
    (active-p :initform t :accessor %subscription-active-p)))
 
@@ -44,11 +44,11 @@
     (serious-condition () nil))
   (values))
 
-(defun ataxia.layer1.raw:%listener-dispatch-pointer ()
+(defun ataxia.runtime.raw:%listener-dispatch-pointer ()
   (cffi:callback listener-dispatch))
 
 (defun %attach-signal (runtime signal-name signal-pointer dispatcher)
-  (when (ataxia.layer1.raw:null-pointer-p signal-pointer)
+  (when (ataxia.runtime.raw:null-pointer-p signal-pointer)
     (error 'native-call-failed :name signal-name :detail "null wl_signal"))
   (let* ((cookie (%next-subscription-cookie))
          (subscription
@@ -61,13 +61,13 @@
     (setf (gethash cookie *subscription-registry*) subscription)
     (unwind-protect
          (let ((cell
-                 (ataxia.layer1.raw:%glue-listener-create
-                  cookie (ataxia.layer1.raw:%listener-dispatch-pointer))))
-           (when (ataxia.layer1.raw:null-pointer-p cell)
+                 (ataxia.runtime.raw:%glue-listener-create
+                  cookie (ataxia.runtime.raw:%listener-dispatch-pointer))))
+           (when (ataxia.runtime.raw:null-pointer-p cell)
              (error 'native-call-failed
                     :name :listener-create :detail signal-name))
            (setf (%subscription-cell subscription) cell)
-           (unless (ataxia.layer1.raw:%glue-listener-attach
+           (unless (ataxia.runtime.raw:%glue-listener-attach
                     cell signal-pointer)
              (error 'native-call-failed
                     :name :listener-attach :detail signal-name))
@@ -76,12 +76,12 @@
            subscription)
       (unless completed-p
         (remhash cookie *subscription-registry*)
-        (unless (ataxia.layer1.raw:null-pointer-p
+        (unless (ataxia.runtime.raw:null-pointer-p
                  (%subscription-cell subscription))
-          (ataxia.layer1.raw:%glue-listener-destroy
+          (ataxia.runtime.raw:%glue-listener-destroy
            (%subscription-cell subscription))
           (setf (%subscription-cell subscription)
-                (ataxia.layer1.raw:null-pointer)))))))
+                (ataxia.runtime.raw:null-pointer)))))))
 
 (defun %attach-object-signal
     (object signal-name signal-pointer dispatcher)
@@ -92,11 +92,11 @@
     subscription))
 
 (defun %destroy-subscription-cell (subscription)
-  (unless (ataxia.layer1.raw:null-pointer-p (%subscription-cell subscription))
-    (ataxia.layer1.raw:%glue-listener-destroy
+  (unless (ataxia.runtime.raw:null-pointer-p (%subscription-cell subscription))
+    (ataxia.runtime.raw:%glue-listener-destroy
      (%subscription-cell subscription))
     (setf (%subscription-cell subscription)
-          (ataxia.layer1.raw:null-pointer))))
+          (ataxia.runtime.raw:null-pointer))))
 
 (defun %retire-subscription (subscription &key immediate-p)
   (when (and subscription (%subscription-active-p subscription))

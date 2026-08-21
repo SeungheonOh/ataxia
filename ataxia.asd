@@ -6,4 +6,4 @@
 (asdf:defsystem "ataxia"
   :description "Ataxia compositor"
   :version "0.1.0"
-  :depends-on ("ataxia-layer1"))
+  :depends-on ("ataxia-runtime"))

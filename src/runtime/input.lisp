@@ -2,9 +2,9 @@
 ;;;;
 ;;;; This module creates typed xkbcommon contexts and keymaps in Common Lisp,
 ;;;; installs them on concrete wlroots keyboards, and configures repeat timing.
-;;;; Layout selection and shortcut policy remain outside Layer 1.
+;;;; Layout selection and shortcut policy remain outside Runtime.
 
-(in-package #:ataxia.layer1.raw)
+(in-package #:ataxia.runtime.raw)
 
 (defcstruct xkb-rule-names
   (rules :pointer)
@@ -31,7 +31,7 @@
   (rate-hertz :int32)
   (delay-milliseconds :int32))
 
-(in-package #:ataxia.layer1)
+(in-package #:ataxia.runtime)
 
 (defclass wlr-xkb-context (native-object) ())
 
@@ -44,7 +44,7 @@
           (%wrap-pointer
            'wlr-xkb-context
            (%require-pointer
-            (ataxia.layer1.raw::%xkb-context-new 0)
+            (ataxia.runtime.raw::%xkb-context-new 0)
             :xkb-context-new)
            runtime)))
     (setf (gethash context (%runtime-xkb-context-table runtime)) t)
@@ -61,36 +61,36 @@
                      (let ((pointer (cffi:foreign-string-alloc value)))
                        (push pointer allocated-strings)
                        pointer)
-                     (ataxia.layer1.raw:null-pointer))))
+                     (ataxia.runtime.raw:null-pointer))))
         (unwind-protect
              (cffi:with-foreign-object
-                 (names '(:struct ataxia.layer1.raw::xkb-rule-names))
+                 (names '(:struct ataxia.runtime.raw::xkb-rule-names))
                (setf
                 (cffi:foreign-slot-value
-                 names '(:struct ataxia.layer1.raw::xkb-rule-names)
-                 'ataxia.layer1.raw::rules)
+                 names '(:struct ataxia.runtime.raw::xkb-rule-names)
+                 'ataxia.runtime.raw::rules)
                 (allocate rules)
                 (cffi:foreign-slot-value
-                 names '(:struct ataxia.layer1.raw::xkb-rule-names)
-                 'ataxia.layer1.raw::model)
+                 names '(:struct ataxia.runtime.raw::xkb-rule-names)
+                 'ataxia.runtime.raw::model)
                 (allocate model)
                 (cffi:foreign-slot-value
-                 names '(:struct ataxia.layer1.raw::xkb-rule-names)
-                 'ataxia.layer1.raw::layout)
+                 names '(:struct ataxia.runtime.raw::xkb-rule-names)
+                 'ataxia.runtime.raw::layout)
                 (allocate layout)
                 (cffi:foreign-slot-value
-                 names '(:struct ataxia.layer1.raw::xkb-rule-names)
-                 'ataxia.layer1.raw::variant)
+                 names '(:struct ataxia.runtime.raw::xkb-rule-names)
+                 'ataxia.runtime.raw::variant)
                 (allocate variant)
                 (cffi:foreign-slot-value
-                 names '(:struct ataxia.layer1.raw::xkb-rule-names)
-                 'ataxia.layer1.raw::options)
+                 names '(:struct ataxia.runtime.raw::xkb-rule-names)
+                 'ataxia.runtime.raw::options)
                 (allocate options))
                (let ((keymap
                        (%wrap-pointer
                         'wlr-xkb-keymap
                         (%require-pointer
-                         (ataxia.layer1.raw::%xkb-keymap-new-from-names
+                         (ataxia.runtime.raw::%xkb-keymap-new-from-names
                           (%object-pointer context) names 0)
                          :xkb-keymap-new-from-names)
                         runtime
@@ -106,7 +106,7 @@
   (let ((runtime (%native-runtime keyboard)))
     (%assert-runtime-live runtime :set-keyboard-keymap)
     (%assert-object-runtime runtime keymap :set-keyboard-keymap)
-    (unless (ataxia.layer1.raw::%wlr-keyboard-set-keymap
+    (unless (ataxia.runtime.raw::%wlr-keyboard-set-keymap
              (%object-pointer keyboard) (%object-pointer keymap))
       (error 'native-call-failed :name :wlr-keyboard-set-keymap)))
   keyboard)
@@ -134,7 +134,7 @@
   (check-type delay-milliseconds (signed-byte 32))
   (%assert-runtime-live
    (%native-runtime keyboard) :set-keyboard-repeat-info)
-  (ataxia.layer1.raw::%wlr-keyboard-set-repeat-info
+  (ataxia.runtime.raw::%wlr-keyboard-set-repeat-info
    (%object-pointer keyboard) rate-hertz delay-milliseconds)
   keyboard)
 
@@ -143,7 +143,7 @@
   (when (native-object-live-p keymap)
     (let ((runtime (%native-runtime keymap)))
       (%assert-owner-thread runtime :destroy-xkb-keymap)
-      (ataxia.layer1.raw::%xkb-keymap-unref (%object-pointer keymap))
+      (ataxia.runtime.raw::%xkb-keymap-unref (%object-pointer keymap))
       (%invalidate-native-object keymap)
       (remhash keymap (%runtime-xkb-keymap-table runtime))))
   nil)
@@ -160,7 +160,7 @@
         (error 'native-call-failed
                :name :destroy-xkb-context
                :detail "live keymaps still reference the context"))
-      (ataxia.layer1.raw::%xkb-context-unref (%object-pointer context))
+      (ataxia.runtime.raw::%xkb-context-unref (%object-pointer context))
       (%invalidate-native-object context)
       (remhash context (%runtime-xkb-context-table runtime))))
   nil)

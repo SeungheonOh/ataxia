@@ -4,7 +4,7 @@
 ;;;; for a dynamic Lisp extent and restores the prior EGL state afterward.
 ;;;; Shader compilation, draw submission, and render policy remain in Layer 2.
 
-(in-package #:ataxia.layer1.raw)
+(in-package #:ataxia.runtime.raw)
 
 (defcfun ("wlr_egl_get_display" %wlr-egl-get-display) :pointer
   (egl :pointer))
@@ -44,7 +44,7 @@
     :boolean
   (texture :pointer))
 
-(in-package #:ataxia.layer1)
+(in-package #:ataxia.runtime)
 
 (defconstant +egl-draw-surface+ #x3059)
 (defconstant +egl-read-surface+ #x305a)
@@ -73,14 +73,14 @@
          (pointer
            (progn
              (%assert-runtime-live runtime :retain-surface-buffer)
-             (ataxia.layer1.raw:%surface-lock-buffer
+             (ataxia.runtime.raw:%surface-lock-buffer
               (%object-pointer surface)))))
-    (unless (ataxia.layer1.raw:null-pointer-p pointer)
+    (unless (ataxia.runtime.raw:null-pointer-p pointer)
       (let ((buffer
               (%wrap-pointer
                'wlr-buffer pointer runtime
-               :width (ataxia.layer1.raw:%buffer-width pointer)
-               :height (ataxia.layer1.raw:%buffer-height pointer))))
+               :width (ataxia.runtime.raw:%buffer-width pointer)
+               :height (ataxia.runtime.raw:%buffer-height pointer))))
         (setf (gethash buffer (%runtime-retained-buffer-table runtime)) t)
         buffer))))
 
@@ -89,15 +89,15 @@
   (let ((runtime (%native-runtime buffer)))
     (%assert-runtime-live runtime :buffer-texture)
     (let ((pointer
-            (ataxia.layer1.raw:%client-buffer-texture
+            (ataxia.runtime.raw:%client-buffer-texture
              (%object-pointer buffer))))
-      (unless (ataxia.layer1.raw:null-pointer-p pointer)
+      (unless (ataxia.runtime.raw:null-pointer-p pointer)
         (let ((texture
                 (%wrap-pointer
                  'wlr-texture pointer runtime
                  :buffer buffer
-                 :width (ataxia.layer1.raw:%texture-width pointer)
-                 :height (ataxia.layer1.raw:%texture-height pointer))))
+                 :width (ataxia.runtime.raw:%texture-width pointer)
+                 :height (ataxia.runtime.raw:%texture-height pointer))))
           (push texture (%buffer-textures buffer))
           texture)))))
 
@@ -106,14 +106,14 @@
   (%assert-runtime-live
    (%native-runtime texture) :texture-gles-attributes)
   (let ((pointer (%object-pointer texture)))
-    (unless (ataxia.layer1.raw:%wlr-texture-is-gles2 pointer)
+    (unless (ataxia.runtime.raw:%wlr-texture-is-gles2 pointer)
       (error 'native-call-failed
              :name :texture-gles-attributes
              :detail "texture does not belong to the GLES2 renderer"))
     (%make-gles-texture-attributes
-     :target (ataxia.layer1.raw:%gles2-texture-target pointer)
-     :name (ataxia.layer1.raw:%gles2-texture-name pointer)
-     :has-alpha-p (ataxia.layer1.raw:%gles2-texture-has-alpha pointer))))
+     :target (ataxia.runtime.raw:%gles2-texture-target pointer)
+     :name (ataxia.runtime.raw:%gles2-texture-name pointer)
+     :has-alpha-p (ataxia.runtime.raw:%gles2-texture-has-alpha pointer))))
 
 (defun release-buffer (buffer)
   (check-type buffer wlr-buffer)
@@ -123,7 +123,7 @@
       (dolist (texture (%buffer-textures buffer))
         (%invalidate-native-object texture))
       (setf (%buffer-textures buffer) nil)
-      (ataxia.layer1.raw:%wlr-buffer-unlock (%object-pointer buffer))
+      (ataxia.runtime.raw:%wlr-buffer-unlock (%object-pointer buffer))
       (%invalidate-native-object buffer)
       (remhash buffer (%runtime-retained-buffer-table runtime))))
   nil)
@@ -139,12 +139,12 @@
 
 (defun %require-egl-current
     (display draw-surface read-surface context operation)
-  (unless (ataxia.layer1.raw:%egl-make-current
+  (unless (ataxia.runtime.raw:%egl-make-current
            display draw-surface read-surface context)
     (error 'native-call-failed
            :name operation
            :detail (format nil "EGL error 0x~X"
-                           (ataxia.layer1.raw:%egl-get-error)))))
+                           (ataxia.runtime.raw:%egl-get-error)))))
 
 (defun call-with-egl-context (egl function)
   (check-type egl wlr-egl)
@@ -154,36 +154,36 @@
     (let* ((egl-pointer (%object-pointer egl))
            (display
              (%require-pointer
-              (ataxia.layer1.raw:%wlr-egl-get-display egl-pointer)
+              (ataxia.runtime.raw:%wlr-egl-get-display egl-pointer)
               :wlr-egl-get-display))
            (context
              (%require-pointer
-              (ataxia.layer1.raw:%wlr-egl-get-context egl-pointer)
+              (ataxia.runtime.raw:%wlr-egl-get-context egl-pointer)
               :wlr-egl-get-context))
            (previous-display
-             (ataxia.layer1.raw:%egl-get-current-display))
+             (ataxia.runtime.raw:%egl-get-current-display))
            (previous-context
-             (ataxia.layer1.raw:%egl-get-current-context))
+             (ataxia.runtime.raw:%egl-get-current-context))
            (previous-draw
-             (ataxia.layer1.raw:%egl-get-current-surface
+             (ataxia.runtime.raw:%egl-get-current-surface
               +egl-draw-surface+))
            (previous-read
-             (ataxia.layer1.raw:%egl-get-current-surface
+             (ataxia.runtime.raw:%egl-get-current-surface
               +egl-read-surface+)))
       (%require-egl-current
        display
-       (ataxia.layer1.raw:null-pointer)
-       (ataxia.layer1.raw:null-pointer)
+       (ataxia.runtime.raw:null-pointer)
+       (ataxia.runtime.raw:null-pointer)
        context
        :egl-make-current)
       (unwind-protect
            (funcall function)
-        (if (ataxia.layer1.raw:null-pointer-p previous-context)
+        (if (ataxia.runtime.raw:null-pointer-p previous-context)
             (%require-egl-current
              display
-             (ataxia.layer1.raw:null-pointer)
-             (ataxia.layer1.raw:null-pointer)
-             (ataxia.layer1.raw:null-pointer)
+             (ataxia.runtime.raw:null-pointer)
+             (ataxia.runtime.raw:null-pointer)
+             (ataxia.runtime.raw:null-pointer)
              :egl-clear-current)
             (%require-egl-current
              previous-display previous-draw previous-read previous-context

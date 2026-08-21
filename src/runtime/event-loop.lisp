@@ -1,10 +1,10 @@
 ;;;; Extensible libwayland event-loop sources.
 ;;;;
 ;;;; This module exposes exact FD, timer, POSIX signal, and idle registrations.
-;;;; Lisp callbacks run on the Layer 1 owner thread inside the same callback
+;;;; Lisp callbacks run on the Runtime owner thread inside the same callback
 ;;;; barrier as wlroots signals, making them suitable for control safe points.
 
-(in-package #:ataxia.layer1.raw)
+(in-package #:ataxia.runtime.raw)
 
 (defcfun ("wl_event_loop_add_fd" %wl-event-loop-add-fd) :pointer
   (event-loop :pointer)
@@ -34,7 +34,7 @@
 (defcfun ("wl_event_source_remove" %wl-event-source-remove) :int
   (source :pointer))
 
-(in-package #:ataxia.layer1)
+(in-package #:ataxia.runtime)
 
 (defconstant +event-readable+ #x01)
 (defconstant +event-writable+ #x02)
@@ -58,7 +58,7 @@
       return candidate))
 
 (defun %event-source-from-data (data)
-  (gethash (ataxia.layer1.raw:pointer-address data)
+  (gethash (ataxia.runtime.raw:pointer-address data)
            *event-source-registry*))
 
 (defun %event-source-result (value)
@@ -143,7 +143,7 @@
   (let* ((cookie (%next-event-source-cookie))
          (source
            (make-instance 'wl-event-source
-                          :pointer (ataxia.layer1.raw:null-pointer)
+                          :pointer (ataxia.runtime.raw:null-pointer)
                           :runtime runtime
                           :kind kind
                           :cookie cookie
@@ -170,7 +170,7 @@
   (%register-event-source
    runtime :fd callback
    (lambda (data callback-pointer)
-     (ataxia.layer1.raw:%wl-event-loop-add-fd
+     (ataxia.runtime.raw:%wl-event-loop-add-fd
       (%object-pointer (%runtime-event-loop runtime))
       file-descriptor mask callback-pointer data))))
 
@@ -178,7 +178,7 @@
   (%register-event-source
    runtime :timer callback
    (lambda (data callback-pointer)
-     (ataxia.layer1.raw:%wl-event-loop-add-timer
+     (ataxia.runtime.raw:%wl-event-loop-add-timer
       (%object-pointer (%runtime-event-loop runtime)) callback-pointer data))))
 
 (defun add-event-loop-signal (runtime signal-number callback)
@@ -186,7 +186,7 @@
   (%register-event-source
    runtime :signal callback
    (lambda (data callback-pointer)
-     (ataxia.layer1.raw:%wl-event-loop-add-signal
+     (ataxia.runtime.raw:%wl-event-loop-add-signal
       (%object-pointer (%runtime-event-loop runtime))
       signal-number callback-pointer data))))
 
@@ -194,7 +194,7 @@
   (%register-event-source
    runtime :idle callback
    (lambda (data callback-pointer)
-     (ataxia.layer1.raw:%wl-event-loop-add-idle
+     (ataxia.runtime.raw:%wl-event-loop-add-idle
       (%object-pointer (%runtime-event-loop runtime)) callback-pointer data))))
 
 (defun update-event-loop-fd (source mask)
@@ -205,7 +205,7 @@
            :name :update-event-loop-fd :detail (event-source-kind source)))
   (%assert-runtime-live (%native-runtime source) :update-event-loop-fd)
   (when (minusp
-         (ataxia.layer1.raw:%wl-event-source-fd-update
+         (ataxia.runtime.raw:%wl-event-source-fd-update
           (%object-pointer source) mask))
     (error 'native-call-failed :name :wl-event-source-fd-update))
   source)
@@ -219,7 +219,7 @@
            :detail (event-source-kind source)))
   (%assert-runtime-live (%native-runtime source) :update-event-loop-timer)
   (when (minusp
-         (ataxia.layer1.raw:%wl-event-source-timer-update
+         (ataxia.runtime.raw:%wl-event-source-timer-update
           (%object-pointer source) milliseconds))
     (error 'native-call-failed :name :wl-event-source-timer-update))
   source)
@@ -231,7 +231,7 @@
       (remhash cookie *event-source-registry*)
       (remhash cookie (%runtime-event-source-table runtime))
       (when (minusp
-             (ataxia.layer1.raw:%wl-event-source-remove
+             (ataxia.runtime.raw:%wl-event-source-remove
               (%object-pointer source)))
         (error 'native-call-failed :name :wl-event-source-remove))
       (%invalidate-native-object source)))

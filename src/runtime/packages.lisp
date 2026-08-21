@@ -1,9 +1,9 @@
-;;;; Layer 1 package boundaries.
+;;;; Runtime package boundaries.
 ;;;;
-;;;; ATAXIA.LAYER1.RAW is private ABI surface. ATAXIA.LAYER1 exports typed
+;;;; ATAXIA.RUNTIME.RAW is private ABI surface. ATAXIA.RUNTIME exports typed
 ;;;; wrappers, exact callback generics, and runtime lifecycle operations.
 
-(defpackage #:ataxia.layer1.raw
+(defpackage #:ataxia.runtime.raw
   (:use #:cl #:cffi)
   (:export
    #:+expected-glue-abi+
@@ -244,10 +244,10 @@
    #:%xdg-popup-event-reposition
    #:%listener-dispatch-pointer))
 
-(defpackage #:ataxia.layer1
+(defpackage #:ataxia.runtime
   (:use #:cl)
   (:export
-   #:layer1-error
+   #:runtime-error
    #:native-call-failed
    #:native-call-name
    #:native-call-detail
@@ -449,9 +449,9 @@
    #:texture-gles-attributes
    #:call-with-egl-context
    #:with-egl-context
-   #:layer1-sink
+   #:runtime-sink
    #:diagnostic-sink
-   #:layer1-runtime
+   #:runtime
    #:runtime-state
    #:runtime-socket-name
    #:runtime-backend-kind
@@ -524,12 +524,12 @@
    #:xdg-popup-committed
    #:xdg-popup-repositioned
    #:xdg-popup-destroying
-   #:create-layer1-runtime
-   #:start-layer1-runtime
-   #:run-layer1-runtime
-   #:request-layer1-stop
-   #:destroy-layer1-runtime
-   #:call-with-layer1-runtime
+   #:create-runtime
+   #:start-runtime
+   #:run-runtime
+   #:request-runtime-stop
+   #:destroy-runtime
+   #:call-with-runtime
    #:create-seat
    #:create-data-device-manager
    #:runtime-data-device-manager

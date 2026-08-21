@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Ataxia Layer 1 build and launch wrapper.
+# Ataxia Runtime build and launch wrapper.
 #
 # This script selects the pinned local wlroots installation, builds the tiny
 # ABI glue, configures Lisp dependencies, and executes the SBCL entrypoint.
@@ -16,4 +16,4 @@ export WLR_RENDERER="${WLR_RENDERER:-gles2}"
 
 make -C "$repository_root"
 exec sbcl --noinform --disable-debugger \
-  --script "$repository_root/scripts/launch-layer1.lisp" "$@"
+  --script "$repository_root/scripts/launch-runtime.lisp" "$@"

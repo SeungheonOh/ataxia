@@ -4,7 +4,7 @@
 ;;;; typed parent and child surfaces, tracks applied offsets, and reports
 ;;;; lifecycle changes without assigning any world-space interpretation.
 
-(in-package #:ataxia.layer1.raw)
+(in-package #:ataxia.runtime.raw)
 
 (define-signal-binding %subsurface-event-destroy
   "ataxia_subsurface_event_destroy" subsurface)
@@ -26,7 +26,7 @@
   (subsurface-x :pointer)
   (subsurface-y :pointer))
 
-(in-package #:ataxia.layer1)
+(in-package #:ataxia.runtime)
 
 (defclass wlr-subsurface (native-object)
   ((surface :initarg :surface :reader subsurface-surface)
@@ -40,35 +40,35 @@
 (defgeneric subsurface-destroying (sink subsurface))
 
 (defmethod surface-new-subsurface
-    ((sink layer1-sink) parent subsurface)
+    ((sink runtime-sink) parent subsurface)
   (declare (ignore sink parent subsurface)))
-(defmethod subsurface-state-changed ((sink layer1-sink) subsurface)
+(defmethod subsurface-state-changed ((sink runtime-sink) subsurface)
   (declare (ignore sink subsurface)))
-(defmethod subsurface-destroying ((sink layer1-sink) subsurface)
+(defmethod subsurface-destroying ((sink runtime-sink) subsurface)
   (declare (ignore sink subsurface)))
 
 (defmethod surface-new-subsurface
     ((sink diagnostic-sink) parent subsurface)
   (declare (ignore parent))
   (%diagnostic-line
-   sink "[layer1] new-subsurface address=~X offset=~D,~D synchronized=~A"
+   sink "[runtime] new-subsurface address=~X offset=~D,~D synchronized=~A"
    (native-object-address subsurface)
    (subsurface-x subsurface) (subsurface-y subsurface)
    (subsurface-synchronized-p subsurface)))
 
 (defmethod subsurface-destroying
     ((sink diagnostic-sink) subsurface)
-  (%diagnostic-line sink "[layer1] subsurface-destroy address=~X"
+  (%diagnostic-line sink "[runtime] subsurface-destroy address=~X"
                     (native-object-address subsurface)))
 
 (defun %refresh-subsurface (subsurface)
   (let ((pointer (%object-pointer subsurface)))
     (setf (subsurface-x subsurface)
-          (ataxia.layer1.raw:%subsurface-x pointer)
+          (ataxia.runtime.raw:%subsurface-x pointer)
           (subsurface-y subsurface)
-          (ataxia.layer1.raw:%subsurface-y pointer)
+          (ataxia.runtime.raw:%subsurface-y pointer)
           (subsurface-synchronized-p subsurface)
-          (ataxia.layer1.raw:%subsurface-synchronized pointer)))
+          (ataxia.runtime.raw:%subsurface-synchronized pointer)))
   subsurface)
 
 (defun %handle-new-subsurface (runtime pointer)
@@ -76,11 +76,11 @@
     (unless (gethash key (%runtime-subsurface-table runtime))
       (let* ((surface-pointer
                (%require-pointer
-                (ataxia.layer1.raw:%subsurface-surface pointer)
+                (ataxia.runtime.raw:%subsurface-surface pointer)
                 :subsurface-surface))
              (parent-pointer
                (%require-pointer
-                (ataxia.layer1.raw:%subsurface-parent pointer)
+                (ataxia.runtime.raw:%subsurface-parent pointer)
                 :subsurface-parent))
              (surface (%adopt-core-surface runtime surface-pointer))
              (parent (%adopt-core-surface runtime parent-pointer))
@@ -92,7 +92,7 @@
         (setf (gethash key (%runtime-subsurface-table runtime)) subsurface)
         (%attach-object-signal
          subsurface :subsurface-parent-commit
-         (ataxia.layer1.raw:%surface-event-commit parent-pointer)
+         (ataxia.runtime.raw:%surface-event-commit parent-pointer)
          (lambda (data)
            (declare (ignore data))
            (let ((old-x (subsurface-x subsurface))
@@ -106,7 +106,7 @@
                (subsurface-state-changed sink subsurface)))))
         (%attach-object-signal
          subsurface :subsurface-destroy
-         (ataxia.layer1.raw:%subsurface-event-destroy pointer)
+         (ataxia.runtime.raw:%subsurface-event-destroy pointer)
          (lambda (data)
            (declare (ignore data))
            (unwind-protect
@@ -120,7 +120,7 @@
   (let ((runtime (%native-runtime surface)))
     (%attach-object-signal
      surface :surface-new-subsurface
-     (ataxia.layer1.raw:%surface-event-new-subsurface
+     (ataxia.runtime.raw:%surface-event-new-subsurface
       (%object-pointer surface))
      (lambda (subsurface-pointer)
        (%handle-new-subsurface runtime subsurface-pointer))))
@@ -133,12 +133,12 @@
     (cffi:with-foreign-objects ((subsurface-x :double)
                                 (subsurface-y :double))
       (let ((pointer
-              (ataxia.layer1.raw:%wlr-surface-surface-at
+              (ataxia.runtime.raw:%wlr-surface-surface-at
                (%object-pointer surface)
                (coerce surface-x 'double-float)
                (coerce surface-y 'double-float)
                subsurface-x subsurface-y)))
-        (unless (ataxia.layer1.raw:null-pointer-p pointer)
+        (unless (ataxia.runtime.raw:null-pointer-p pointer)
           (values (%adopt-core-surface runtime pointer)
                   (cffi:mem-ref subsurface-x :double)
                   (cffi:mem-ref subsurface-y :double)))))))

@@ -3,7 +3,7 @@
 ;;;; This module mirrors concrete public C functions. Struct-field and signal
 ;;;; access is restricted to the tiny version-pinned native glue library.
 
-(in-package #:ataxia.layer1.raw)
+(in-package #:ataxia.runtime.raw)
 
 (defconstant +expected-glue-abi+ 2)
 (defparameter +expected-wlroots-version+ "0.20.2")
@@ -26,7 +26,7 @@
   (or (uiop:getenv "ATAXIA_WLR_GLUE")
       (namestring
        (asdf:system-relative-pathname
-        "ataxia-layer1" "build/libataxia-wlr-glue.so"))))
+        "ataxia-runtime" "build/libataxia-wlr-glue.so"))))
 
 (defun load-native-libraries ()
   (unless *native-libraries-loaded-p*
@@ -45,12 +45,12 @@
   (let ((actual-abi (%glue-abi-version))
         (actual-version (%glue-wlroots-version)))
     (unless (= actual-abi +expected-glue-abi+)
-      (error 'ataxia.layer1:native-abi-mismatch
+      (error 'ataxia.runtime:native-abi-mismatch
              :subject :glue
              :expected +expected-glue-abi+
              :actual actual-abi))
     (unless (string= actual-version +expected-wlroots-version+)
-      (error 'ataxia.layer1:native-abi-mismatch
+      (error 'ataxia.runtime:native-abi-mismatch
              :subject :wlroots
              :expected +expected-wlroots-version+
              :actual actual-version)))

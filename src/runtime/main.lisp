@@ -1,13 +1,13 @@
-;;;; Layer 1 command-line entrypoint.
+;;;; Runtime command-line entrypoint.
 ;;;;
 ;;;; This module parses only runtime bootstrap options, starts the Lisp-owned
 ;;;; event loop, and reports native failures without embedding compositor policy.
 
-(in-package #:ataxia.layer1)
+(in-package #:ataxia.runtime)
 
 (defun %usage (stream)
   (format stream
-          "Usage: run-layer1 [options]~%\
+          "Usage: run-runtime [options]~%\
 ~%\
 Options:~%\
   --backend auto|headless  Select the wlroots backend (default: auto)~%\
@@ -109,7 +109,7 @@ Options:~%\
           (return-from main 0))
         (remf options :help-p)
         (remf options :run-for)
-        (let ((runtime (apply #'create-layer1-runtime options)))
+        (let ((runtime (apply #'create-runtime options)))
           (unwind-protect
                (progn
                  (call-with-egl-context
@@ -118,11 +118,11 @@ Options:~%\
                  (create-data-device-manager runtime)
                  (let ((seat (create-seat runtime "seat0")))
                    (set-seat-capabilities seat 0))
-                 (start-layer1-runtime runtime)
-                 (run-layer1-runtime runtime :run-for run-for)
+                 (start-runtime runtime)
+                 (run-runtime runtime :run-for run-for)
                  0)
-            (destroy-layer1-runtime runtime))))
+            (destroy-runtime runtime))))
     (serious-condition (cause)
-      (format *error-output* "[layer1] fatal: ~A~%" cause)
+      (format *error-output* "[runtime] fatal: ~A~%" cause)
       (finish-output *error-output*)
       1)))

@@ -1,6 +1,6 @@
-;;;; Standalone SBCL launcher for Ataxia Layer 1.
+;;;; Standalone SBCL launcher for Ataxia Runtime.
 ;;;;
-;;;; This module configures the local ASDF source trees, loads the Layer 1
+;;;; This module configures the local ASDF source trees, loads the Runtime
 ;;;; system, forwards command-line arguments, and exits with its status code.
 
 (require :asdf)
@@ -22,7 +22,7 @@
      (:tree ,repository-root)
      (:tree ,dependency-root)
      :inherit-configuration))
-  (asdf:load-system "ataxia-layer1")
+  (asdf:load-system "ataxia-runtime")
   (uiop:quit
    (uiop:symbol-call
-    :ataxia.layer1 :main (uiop:command-line-arguments))))
+    :ataxia.runtime :main (uiop:command-line-arguments))))

@@ -3,7 +3,7 @@
 ;;;; This module constructs exact native objects, installs typed signal sinks,
 ;;;; owns callback safe points, and dispatches libwayland from the Lisp thread.
 
-(in-package #:ataxia.layer1)
+(in-package #:ataxia.runtime)
 
 (defconstant +wl-compositor-version+ 6)
 (defconstant +wlr-log-info+ 2)
@@ -12,7 +12,7 @@
 (defconstant +seat-capability-keyboard+ #x2)
 (defconstant +seat-capability-touch+ #x4)
 
-(defclass layer1-runtime ()
+(defclass runtime ()
   ((owner-thread :initform #+sb-thread sb-thread:*current-thread*
                  #-sb-thread nil
                  :reader %runtime-owner-thread)
@@ -145,7 +145,7 @@
   (decf (%runtime-callback-depth runtime))
   (when (minusp (%runtime-callback-depth runtime))
     (setf (%runtime-callback-depth runtime) 0)
-    (error 'layer1-error))
+    (error 'runtime-error))
   runtime)
 
 (defun %record-runtime-callback-fault (runtime signal-name cause)
@@ -185,7 +185,7 @@
   subscription)
 
 (defun %require-pointer (pointer native-call &optional detail)
-  (when (ataxia.layer1.raw:null-pointer-p pointer)
+  (when (ataxia.runtime.raw:null-pointer-p pointer)
     (error 'native-call-failed :name native-call :detail detail))
   pointer)
 
@@ -196,7 +196,7 @@
          initargs))
 
 (defun %pointer-key (pointer)
-  (ataxia.layer1.raw:pointer-address pointer))
+  (ataxia.runtime.raw:pointer-address pointer))
 
 (defun %object-pointer (object)
   (%native-pointer (%ensure-live object)))
@@ -232,25 +232,25 @@
 
 (defmethod runtime-started ((sink diagnostic-sink) runtime)
   (%diagnostic-line sink
-                    "[layer1] running backend=~(~A~) socket=~A renderer=gles2"
+                    "[runtime] running backend=~(~A~) socket=~A renderer=gles2"
                     (runtime-backend-kind runtime)
                     (or (runtime-socket-name runtime) "disabled")))
 
 (defmethod runtime-stopping ((sink diagnostic-sink) runtime reason)
   (declare (ignore runtime))
-  (%diagnostic-line sink "[layer1] stopping reason=~(~A~)" reason))
+  (%diagnostic-line sink "[runtime] stopping reason=~(~A~)" reason))
 
 (defmethod backend-new-output
     ((sink diagnostic-sink) runtime (output wlr-output))
   (%diagnostic-line
-   sink "[layer1] new-output name=~A description=~A size=~Dx~D enabled=~A"
+   sink "[runtime] new-output name=~A description=~A size=~Dx~D enabled=~A"
    (or (output-name output) "unknown")
    (or (output-description output) "none")
    (output-width output) (output-height output) (output-enabled-p output)))
 
 (defmethod backend-new-input
     ((sink diagnostic-sink) runtime (input-device wlr-input-device))
-  (%diagnostic-line sink "[layer1] new-input type=~(~A~) name=~A"
+  (%diagnostic-line sink "[runtime] new-input type=~(~A~) name=~A"
                     (input-device-type input-device)
                     (or (input-device-name input-device) "unknown"))
   (let ((seat (first (runtime-seats runtime))))
@@ -277,45 +277,45 @@
 (defmethod backend-destroying
     ((sink diagnostic-sink) runtime (backend wlr-backend))
   (declare (ignore runtime backend))
-  (%diagnostic-line sink "[layer1] backend-destroy"))
+  (%diagnostic-line sink "[runtime] backend-destroy"))
 
 (defmethod renderer-lost
     ((sink diagnostic-sink) runtime (renderer wlr-renderer))
   (declare (ignore runtime renderer))
-  (%diagnostic-line sink "[layer1] renderer-lost"))
+  (%diagnostic-line sink "[runtime] renderer-lost"))
 
 (defmethod compositor-new-surface
     ((sink diagnostic-sink) runtime (surface wlr-surface))
   (declare (ignore runtime))
-  (%diagnostic-line sink "[layer1] new-surface address=~X"
+  (%diagnostic-line sink "[runtime] new-surface address=~X"
                     (native-object-address surface)))
 
 (defmethod output-destroying ((sink diagnostic-sink) (output wlr-output))
-  (%diagnostic-line sink "[layer1] output-destroy name=~A"
+  (%diagnostic-line sink "[runtime] output-destroy name=~A"
                     (or (output-name output) "unknown")))
 
 (defmethod input-device-destroying
     ((sink diagnostic-sink) (input-device wlr-input-device))
-  (%diagnostic-line sink "[layer1] input-destroy name=~A"
+  (%diagnostic-line sink "[runtime] input-destroy name=~A"
                     (or (input-device-name input-device) "unknown")))
 
 (defmethod pointer-button ((sink diagnostic-sink) event)
-  (%diagnostic-line sink "[layer1] pointer-button code=~D state=~(~A~)"
+  (%diagnostic-line sink "[runtime] pointer-button code=~D state=~(~A~)"
                     (pointer-button-code event)
                     (pointer-button-state event)))
 
 (defmethod keyboard-key ((sink diagnostic-sink) event)
-  (%diagnostic-line sink "[layer1] keyboard-key code=~D state=~(~A~)"
+  (%diagnostic-line sink "[runtime] keyboard-key code=~D state=~(~A~)"
                     (keyboard-key-keycode event)
                     (keyboard-key-state event)))
 
 (defmethod seat-destroying ((sink diagnostic-sink) (seat wlr-seat))
-  (%diagnostic-line sink "[layer1] seat-destroy name=~A" (%seat-name seat)))
+  (%diagnostic-line sink "[runtime] seat-destroy name=~A" (%seat-name seat)))
 
 (defmethod seat-request-set-cursor
     ((sink diagnostic-sink) request)
   (%diagnostic-line
-   sink "[layer1] seat-cursor surface=~A hotspot=~D,~D serial=~D"
+   sink "[runtime] seat-cursor surface=~A hotspot=~D,~D serial=~D"
    (if (seat-cursor-request-surface request) "set" "hidden")
    (seat-cursor-request-hotspot-x request)
    (seat-cursor-request-hotspot-y request)
@@ -324,22 +324,22 @@
 (defmethod surface-committed
     ((sink diagnostic-sink) (surface wlr-surface) event)
   (declare (ignore surface))
-  (%diagnostic-line sink "[layer1] surface-commit seq=~D size=~Dx~D mapped=~A"
+  (%diagnostic-line sink "[runtime] surface-commit seq=~D size=~Dx~D mapped=~A"
                     (surface-commit-sequence event)
                     (surface-commit-width event)
                     (surface-commit-height event)
                     (surface-commit-mapped-p event)))
 
 (defmethod surface-mapped ((sink diagnostic-sink) (surface wlr-surface))
-  (%diagnostic-line sink "[layer1] surface-map address=~X"
+  (%diagnostic-line sink "[runtime] surface-map address=~X"
                     (native-object-address surface)))
 
 (defmethod surface-unmapped ((sink diagnostic-sink) (surface wlr-surface))
-  (%diagnostic-line sink "[layer1] surface-unmap address=~X"
+  (%diagnostic-line sink "[runtime] surface-unmap address=~X"
                     (native-object-address surface)))
 
 (defmethod surface-destroying ((sink diagnostic-sink) (surface wlr-surface))
-  (%diagnostic-line sink "[layer1] surface-destroy address=~X"
+  (%diagnostic-line sink "[runtime] surface-destroy address=~X"
                     (native-object-address surface)))
 
 (defun %handle-new-output (runtime pointer)
@@ -350,7 +350,7 @@
         (setf (gethash key (%runtime-output-table runtime)) output)
         (%attach-object-signal
          output :output-frame
-         (ataxia.layer1.raw:%output-event-frame pointer)
+         (ataxia.runtime.raw:%output-event-frame pointer)
          (lambda (data)
            (declare (ignore data))
            (%refresh-output output)
@@ -358,7 +358,7 @@
         (%install-output-extended-signals output)
         (%attach-object-signal
          output :output-destroy
-         (ataxia.layer1.raw:%output-event-destroy pointer)
+         (ataxia.runtime.raw:%output-event-destroy pointer)
          (lambda (data)
            (declare (ignore data))
            (unwind-protect
@@ -374,14 +374,14 @@
 (defun %handle-new-input (runtime pointer)
   (let ((key (%pointer-key pointer)))
     (unless (gethash key (%runtime-input-table runtime))
-      (let* ((type-code (ataxia.layer1.raw:%input-device-type pointer))
+      (let* ((type-code (ataxia.runtime.raw:%input-device-type pointer))
              (native-pointer
                (case type-code
                  (0 (%require-pointer
-                     (ataxia.layer1.raw:%input-device-keyboard pointer)
+                     (ataxia.runtime.raw:%input-device-keyboard pointer)
                      :wlr-keyboard-from-input-device))
                  (1 (%require-pointer
-                     (ataxia.layer1.raw:%input-device-pointer pointer)
+                     (ataxia.runtime.raw:%input-device-pointer pointer)
                      :wlr-pointer-from-input-device))
                  (otherwise pointer)))
              (class
@@ -395,7 +395,7 @@
         (setf (gethash key (%runtime-input-table runtime)) input-device)
         (%attach-object-signal
          input-device :input-device-destroy
-         (ataxia.layer1.raw:%input-device-event-destroy pointer)
+         (ataxia.runtime.raw:%input-device-event-destroy pointer)
          (lambda (data)
            (declare (ignore data))
            (unwind-protect
@@ -415,30 +415,30 @@
         (sink (%runtime-sink (%native-runtime pointer))))
     (%attach-object-signal
      pointer :pointer-motion
-     (ataxia.layer1.raw:%pointer-event-motion native-pointer)
+     (ataxia.runtime.raw:%pointer-event-motion native-pointer)
      (lambda (event-pointer)
        (pointer-motion sink
                        (%pointer-motion-snapshot pointer event-pointer))))
     (%attach-object-signal
      pointer :pointer-motion-absolute
-     (ataxia.layer1.raw:%pointer-event-motion-absolute native-pointer)
+     (ataxia.runtime.raw:%pointer-event-motion-absolute native-pointer)
      (lambda (event-pointer)
        (pointer-motion-absolute
         sink (%pointer-motion-absolute-snapshot pointer event-pointer))))
     (%attach-object-signal
      pointer :pointer-button
-     (ataxia.layer1.raw:%pointer-event-button native-pointer)
+     (ataxia.runtime.raw:%pointer-event-button native-pointer)
      (lambda (event-pointer)
        (pointer-button sink
                        (%pointer-button-snapshot pointer event-pointer))))
     (%attach-object-signal
      pointer :pointer-axis
-     (ataxia.layer1.raw:%pointer-event-axis native-pointer)
+     (ataxia.runtime.raw:%pointer-event-axis native-pointer)
      (lambda (event-pointer)
        (pointer-axis sink (%pointer-axis-snapshot pointer event-pointer))))
     (%attach-object-signal
      pointer :pointer-frame
-     (ataxia.layer1.raw:%pointer-event-frame native-pointer)
+     (ataxia.runtime.raw:%pointer-event-frame native-pointer)
      (lambda (data)
        (declare (ignore data))
        (pointer-frame sink pointer))))
@@ -449,26 +449,26 @@
         (sink (%runtime-sink (%native-runtime keyboard))))
     (%attach-object-signal
      keyboard :keyboard-key
-     (ataxia.layer1.raw:%keyboard-event-key native-pointer)
+     (ataxia.runtime.raw:%keyboard-event-key native-pointer)
      (lambda (event-pointer)
        (keyboard-key sink
                      (%keyboard-key-snapshot keyboard event-pointer))))
     (%attach-object-signal
      keyboard :keyboard-modifiers
-     (ataxia.layer1.raw:%keyboard-event-modifiers native-pointer)
+     (ataxia.runtime.raw:%keyboard-event-modifiers native-pointer)
      (lambda (data)
        (declare (ignore data))
        (keyboard-modifiers sink
                            (%keyboard-modifiers-snapshot keyboard))))
     (%attach-object-signal
      keyboard :keyboard-keymap
-     (ataxia.layer1.raw:%keyboard-event-keymap native-pointer)
+     (ataxia.runtime.raw:%keyboard-event-keymap native-pointer)
      (lambda (data)
        (declare (ignore data))
        (keyboard-keymap-changed sink keyboard)))
     (%attach-object-signal
      keyboard :keyboard-repeat-info
-     (ataxia.layer1.raw:%keyboard-event-repeat-info native-pointer)
+     (ataxia.runtime.raw:%keyboard-event-repeat-info native-pointer)
      (lambda (data)
        (declare (ignore data))
        (keyboard-repeat-info sink (%keyboard-repeat-snapshot keyboard)))))
@@ -480,10 +480,10 @@
       (let ((surface (%wrap-pointer 'wlr-surface pointer runtime)))
         (setf (gethash key (%runtime-surface-table runtime)) surface
               (surface-mapped-p surface)
-              (ataxia.layer1.raw:%surface-mapped pointer))
+              (ataxia.runtime.raw:%surface-mapped pointer))
         (%attach-object-signal
          surface :surface-commit
-         (ataxia.layer1.raw:%surface-event-commit pointer)
+         (ataxia.runtime.raw:%surface-event-commit pointer)
          (lambda (data)
            (declare (ignore data))
            (let ((event (%surface-commit-snapshot surface)))
@@ -492,21 +492,21 @@
              (surface-committed (%runtime-sink runtime) surface event))))
         (%attach-object-signal
          surface :surface-map
-         (ataxia.layer1.raw:%surface-event-map pointer)
+         (ataxia.runtime.raw:%surface-event-map pointer)
          (lambda (data)
            (declare (ignore data))
            (setf (surface-mapped-p surface) t)
            (surface-mapped (%runtime-sink runtime) surface)))
         (%attach-object-signal
          surface :surface-unmap
-         (ataxia.layer1.raw:%surface-event-unmap pointer)
+         (ataxia.runtime.raw:%surface-event-unmap pointer)
          (lambda (data)
            (declare (ignore data))
            (setf (surface-mapped-p surface) nil)
            (surface-unmapped (%runtime-sink runtime) surface)))
         (%attach-object-signal
          surface :surface-destroy
-         (ataxia.layer1.raw:%surface-event-destroy pointer)
+         (ataxia.runtime.raw:%surface-event-destroy pointer)
          (lambda (data)
            (declare (ignore data))
            (unwind-protect
@@ -528,15 +528,15 @@
          (compositor-pointer (%object-pointer compositor)))
     (%attach-object-signal
      backend :backend-new-output
-     (ataxia.layer1.raw:%backend-event-new-output backend-pointer)
+     (ataxia.runtime.raw:%backend-event-new-output backend-pointer)
      (lambda (pointer) (%handle-new-output runtime pointer)))
     (%attach-object-signal
      backend :backend-new-input
-     (ataxia.layer1.raw:%backend-event-new-input backend-pointer)
+     (ataxia.runtime.raw:%backend-event-new-input backend-pointer)
      (lambda (pointer) (%handle-new-input runtime pointer)))
     (%attach-object-signal
      backend :backend-destroy
-     (ataxia.layer1.raw:%backend-event-destroy backend-pointer)
+     (ataxia.runtime.raw:%backend-event-destroy backend-pointer)
      (lambda (data)
        (declare (ignore data))
        (unwind-protect
@@ -547,13 +547,13 @@
                (%runtime-stop-requested-p runtime) t))))
     (%attach-object-signal
      renderer :renderer-lost
-     (ataxia.layer1.raw:%renderer-event-lost renderer-pointer)
+     (ataxia.runtime.raw:%renderer-event-lost renderer-pointer)
      (lambda (data)
        (declare (ignore data))
        (renderer-lost (%runtime-sink runtime) runtime renderer)))
     (%attach-object-signal
      renderer :renderer-destroy
-     (ataxia.layer1.raw:%renderer-event-destroy renderer-pointer)
+     (ataxia.runtime.raw:%renderer-event-destroy renderer-pointer)
      (lambda (data)
        (declare (ignore data))
        (%retire-object-listeners renderer :immediate-p t)
@@ -563,7 +563,7 @@
              (%runtime-renderer runtime) nil)))
     (%attach-object-signal
      allocator :allocator-destroy
-     (ataxia.layer1.raw:%allocator-event-destroy allocator-pointer)
+     (ataxia.runtime.raw:%allocator-event-destroy allocator-pointer)
      (lambda (data)
        (declare (ignore data))
        (%retire-object-listeners allocator :immediate-p t)
@@ -571,11 +571,11 @@
        (setf (%runtime-allocator runtime) nil)))
     (%attach-object-signal
      compositor :compositor-new-surface
-     (ataxia.layer1.raw:%compositor-event-new-surface compositor-pointer)
+     (ataxia.runtime.raw:%compositor-event-new-surface compositor-pointer)
      (lambda (pointer) (%handle-new-surface runtime pointer)))
     (%attach-object-signal
      compositor :compositor-destroy
-     (ataxia.layer1.raw:%compositor-event-destroy compositor-pointer)
+     (ataxia.runtime.raw:%compositor-event-destroy compositor-pointer)
      (lambda (data)
        (declare (ignore data))
        (%retire-object-listeners compositor :immediate-p t)
@@ -584,16 +584,16 @@
   runtime)
 
 (defun %construct-native-runtime (runtime)
-  (ataxia.layer1.raw:%wlr-log-init
+  (ataxia.runtime.raw:%wlr-log-init
    (if (%runtime-debug-p runtime) +wlr-log-debug+ +wlr-log-info+)
-   (ataxia.layer1.raw:null-pointer))
+   (ataxia.runtime.raw:null-pointer))
   (let* ((display-pointer
-           (%require-pointer (ataxia.layer1.raw:%wl-display-create)
+           (%require-pointer (ataxia.runtime.raw:%wl-display-create)
                              :wl-display-create))
          (display (%wrap-pointer 'wl-display display-pointer runtime))
          (event-loop-pointer
            (%require-pointer
-            (ataxia.layer1.raw:%wl-display-get-event-loop display-pointer)
+            (ataxia.runtime.raw:%wl-display-get-event-loop display-pointer)
             :wl-display-get-event-loop))
          (event-loop (%wrap-pointer 'wl-event-loop event-loop-pointer runtime)))
     (setf (%runtime-display runtime) display
@@ -602,46 +602,46 @@
              (%require-pointer
               (ecase (runtime-backend-kind runtime)
                 (:auto
-                 (ataxia.layer1.raw:%wlr-backend-autocreate
-                  event-loop-pointer (ataxia.layer1.raw:null-pointer)))
+                 (ataxia.runtime.raw:%wlr-backend-autocreate
+                  event-loop-pointer (ataxia.runtime.raw:null-pointer)))
                 (:headless
-                 (ataxia.layer1.raw:%wlr-headless-backend-create
+                 (ataxia.runtime.raw:%wlr-headless-backend-create
                   event-loop-pointer)))
               :wlr-backend-create (runtime-backend-kind runtime)))
            (backend (%wrap-pointer 'wlr-backend backend-pointer runtime))
            (renderer-pointer
              (%require-pointer
-              (ataxia.layer1.raw:%wlr-renderer-autocreate backend-pointer)
+              (ataxia.runtime.raw:%wlr-renderer-autocreate backend-pointer)
               :wlr-renderer-autocreate))
            (renderer (%wrap-pointer 'wlr-renderer renderer-pointer runtime)))
-      (unless (ataxia.layer1.raw:%wlr-renderer-is-gles2 renderer-pointer)
+      (unless (ataxia.runtime.raw:%wlr-renderer-is-gles2 renderer-pointer)
         (error 'native-call-failed
                :name :wlr-renderer-autocreate
                :detail "direct GLES2 renderer required"))
       (let* ((egl-pointer
                (%require-pointer
-                (ataxia.layer1.raw:%wlr-gles2-renderer-get-egl
+                (ataxia.runtime.raw:%wlr-gles2-renderer-get-egl
                  renderer-pointer)
                 :wlr-gles2-renderer-get-egl))
              (egl (%wrap-pointer 'wlr-egl egl-pointer runtime))
              (allocator-pointer
                (%require-pointer
-                (ataxia.layer1.raw:%wlr-allocator-autocreate
+                (ataxia.runtime.raw:%wlr-allocator-autocreate
                  backend-pointer renderer-pointer)
                 :wlr-allocator-autocreate))
              (allocator
                (%wrap-pointer 'wlr-allocator allocator-pointer runtime)))
-        (unless (ataxia.layer1.raw:%wlr-renderer-init-wl-display
+        (unless (ataxia.runtime.raw:%wlr-renderer-init-wl-display
                  renderer-pointer display-pointer)
           (error 'native-call-failed :name :wlr-renderer-init-wl-display))
         (let* ((compositor-pointer
                  (%require-pointer
-                  (ataxia.layer1.raw:%wlr-compositor-create
+                  (ataxia.runtime.raw:%wlr-compositor-create
                    display-pointer +wl-compositor-version+ renderer-pointer)
                   :wlr-compositor-create))
                (subcompositor-pointer
                  (%require-pointer
-                  (ataxia.layer1.raw:%wlr-subcompositor-create display-pointer)
+                  (ataxia.runtime.raw:%wlr-subcompositor-create display-pointer)
                   :wlr-subcompositor-create)))
           (setf (%runtime-backend runtime) backend
                 (%runtime-renderer runtime) renderer
@@ -655,7 +655,7 @@
           (%install-runtime-signals runtime)
           (when (eq (runtime-backend-kind runtime) :headless)
             (%require-pointer
-             (ataxia.layer1.raw:%wlr-headless-add-output
+             (ataxia.runtime.raw:%wlr-headless-add-output
               backend-pointer
               (%runtime-headless-width runtime)
               (%runtime-headless-height runtime))
@@ -666,22 +666,22 @@
   (setf (%runtime-state runtime) :ready)
   runtime)
 
-(defun create-layer1-runtime
+(defun create-runtime
     (&key (sink (make-instance 'diagnostic-sink))
           (backend :auto)
           (headless-width 1280)
           (headless-height 720)
           (socket-p t)
           debug-p)
-  (check-type sink layer1-sink)
+  (check-type sink runtime-sink)
   (check-type headless-width (integer 1))
   (check-type headless-height (integer 1))
   (unless (member backend '(:auto :headless) :test #'eq)
     (error 'native-call-failed :name :backend-kind :detail backend))
-  (ataxia.layer1.raw:load-native-libraries)
-  (ataxia.layer1.raw:verify-native-abi)
+  (ataxia.runtime.raw:load-native-libraries)
+  (ataxia.runtime.raw:verify-native-abi)
   (let ((runtime
-          (make-instance 'layer1-runtime
+          (make-instance 'runtime
                          :sink sink
                          :backend-kind backend
                          :headless-width headless-width
@@ -691,23 +691,23 @@
     (handler-case
         (%construct-native-runtime runtime)
       (serious-condition (cause)
-        (ignore-errors (destroy-layer1-runtime runtime :construction-failure))
+        (ignore-errors (destroy-runtime runtime :construction-failure))
         (error cause)))))
 
-(defun start-layer1-runtime (runtime)
-  (%assert-owner-thread runtime :start-layer1-runtime)
+(defun start-runtime (runtime)
+  (%assert-owner-thread runtime :start-runtime)
   (unless (eq (runtime-state runtime) :ready)
     (error 'native-call-failed
-           :name :start-layer1-runtime :detail (runtime-state runtime)))
+           :name :start-runtime :detail (runtime-state runtime)))
   (when (%runtime-socket-requested-p runtime)
     (let ((socket-pointer
             (%require-pointer
-             (ataxia.layer1.raw:%wl-display-add-socket-auto
+             (ataxia.runtime.raw:%wl-display-add-socket-auto
               (%object-pointer (%runtime-display runtime)))
              :wl-display-add-socket-auto)))
       (setf (%runtime-socket-name runtime)
-            (ataxia.layer1.raw:foreign-string-to-lisp socket-pointer))))
-  (unless (ataxia.layer1.raw:%wlr-backend-start
+            (ataxia.runtime.raw:foreign-string-to-lisp socket-pointer))))
+  (unless (ataxia.runtime.raw:%wlr-backend-start
            (%object-pointer (%runtime-backend runtime)))
     (%run-safe-point-actions runtime)
     (when (runtime-last-fault runtime)
@@ -720,19 +720,19 @@
   (runtime-started (%runtime-sink runtime) runtime)
   runtime)
 
-(defun request-layer1-stop (runtime &optional (reason :requested))
-  (%assert-owner-thread runtime :request-layer1-stop)
+(defun request-runtime-stop (runtime &optional (reason :requested))
+  (%assert-owner-thread runtime :request-runtime-stop)
   (setf (%runtime-stop-requested-p runtime) t
         (%runtime-stop-reason runtime) reason)
   runtime)
 
-(defun run-layer1-runtime (runtime &key run-for)
-  (%assert-owner-thread runtime :run-layer1-runtime)
+(defun run-runtime (runtime &key run-for)
+  (%assert-owner-thread runtime :run-runtime)
   (when (eq (runtime-state runtime) :ready)
-    (start-layer1-runtime runtime))
+    (start-runtime runtime))
   (unless (eq (runtime-state runtime) :running)
     (error 'native-call-failed
-           :name :run-layer1-runtime :detail (runtime-state runtime)))
+           :name :run-runtime :detail (runtime-state runtime)))
   (let ((deadline-timer
           (when run-for
             (let ((source
@@ -740,7 +740,7 @@
                      runtime
                      (lambda (timer)
                        (declare (ignore timer))
-                       (request-layer1-stop runtime :deadline)
+                       (request-runtime-stop runtime :deadline)
                        0))))
               (update-event-loop-timer
                source (max 1 (round (* run-for 1000))))
@@ -748,7 +748,7 @@
     (unwind-protect
          (loop until (%runtime-stop-requested-p runtime)
                do (let ((result
-                          (ataxia.layer1.raw:%wl-event-loop-dispatch
+                          (ataxia.runtime.raw:%wl-event-loop-dispatch
                            (%object-pointer (%runtime-event-loop runtime))
                            100)))
                     (when (minusp result)
@@ -757,7 +757,7 @@
                   (%run-safe-point-actions runtime)
                   (when (runtime-last-fault runtime)
                     (error (runtime-last-fault runtime)))
-                  (ataxia.layer1.raw:%wl-display-flush-clients
+                  (ataxia.runtime.raw:%wl-display-flush-clients
                    (%object-pointer (%runtime-display runtime))))
       (when (and deadline-timer (native-object-live-p deadline-timer))
         (remove-event-loop-source deadline-timer))))
@@ -770,7 +770,7 @@
         (%run-safe-point-actions runtime)
         t)
     (serious-condition (cause)
-      (format *error-output* "[layer1] teardown ~A failed: ~A~%" name cause)
+      (format *error-output* "[runtime] teardown ~A failed: ~A~%" name cause)
       (finish-output *error-output*)
       nil)))
 
@@ -782,9 +782,9 @@
       (%invalidate-native-object object)))
   nil)
 
-(defun destroy-layer1-runtime (runtime &optional reason)
+(defun destroy-runtime (runtime &optional reason)
   (when runtime
-    (%assert-owner-thread runtime :destroy-layer1-runtime)
+    (%assert-owner-thread runtime :destroy-runtime)
     (unless (eq (runtime-state runtime) :stopped)
       (let ((effective-reason
               (or reason (%runtime-stop-reason runtime) :shutdown)))
@@ -801,7 +801,7 @@
        (lambda ()
          (when (and (%runtime-display runtime)
                     (native-object-live-p (%runtime-display runtime)))
-           (ataxia.layer1.raw:%wl-display-destroy-clients
+           (ataxia.runtime.raw:%wl-display-destroy-clients
             (%native-pointer (%runtime-display runtime))))))
       (%teardown-step
        runtime :event-sources
@@ -818,23 +818,23 @@
        runtime :allocator
        (lambda ()
          (%destroy-owned-object runtime (%runtime-allocator runtime)
-                                #'ataxia.layer1.raw:%wlr-allocator-destroy)))
+                                #'ataxia.runtime.raw:%wlr-allocator-destroy)))
       (%teardown-step
        runtime :renderer
        (lambda ()
          (%destroy-owned-object runtime (%runtime-renderer runtime)
-                                #'ataxia.layer1.raw:%wlr-renderer-destroy)))
+                                #'ataxia.runtime.raw:%wlr-renderer-destroy)))
       (%teardown-step
        runtime :backend
        (lambda ()
          (%destroy-owned-object runtime (%runtime-backend runtime)
-                                #'ataxia.layer1.raw:%wlr-backend-destroy)))
+                                #'ataxia.runtime.raw:%wlr-backend-destroy)))
       (%teardown-step
        runtime :display
        (lambda ()
          (when (and (%runtime-display runtime)
                     (native-object-live-p (%runtime-display runtime)))
-           (ataxia.layer1.raw:%wl-display-destroy
+           (ataxia.runtime.raw:%wl-display-destroy
             (%native-pointer (%runtime-display runtime)))
            (%invalidate-native-object (%runtime-display runtime)))))
       (%run-safe-point-actions runtime)
@@ -867,20 +867,20 @@
             (%runtime-state runtime) :stopped))))
   nil)
 
-(defun call-with-layer1-runtime (function &rest options)
-  (let ((runtime (apply #'create-layer1-runtime options)))
+(defun call-with-runtime (function &rest options)
+  (let ((runtime (apply #'create-runtime options)))
     (unwind-protect
          (progn
-           (start-layer1-runtime runtime)
+           (start-runtime runtime)
            (funcall function runtime))
-      (destroy-layer1-runtime runtime))))
+      (destroy-runtime runtime))))
 
 (defun create-seat (runtime name)
   (%assert-runtime-live runtime :create-seat)
   (check-type name string)
   (let* ((pointer
            (%require-pointer
-            (ataxia.layer1.raw:%wlr-seat-create
+            (ataxia.runtime.raw:%wlr-seat-create
              (%object-pointer (%runtime-display runtime)) name)
             :wlr-seat-create name))
          (key (%pointer-key pointer))
@@ -888,25 +888,25 @@
     (setf (gethash key (%runtime-seat-table runtime)) seat)
     (%attach-object-signal
      seat :seat-request-set-cursor
-     (ataxia.layer1.raw:%seat-event-request-set-cursor pointer)
+     (ataxia.runtime.raw:%seat-event-request-set-cursor pointer)
      (lambda (event-pointer)
        (let ((surface-pointer
-               (ataxia.layer1.raw:%seat-cursor-surface event-pointer)))
+               (ataxia.runtime.raw:%seat-cursor-surface event-pointer)))
          (seat-request-set-cursor
           (%runtime-sink runtime)
           (%make-seat-cursor-request
            :seat seat
            :surface
-           (unless (ataxia.layer1.raw:null-pointer-p surface-pointer)
+           (unless (ataxia.runtime.raw:null-pointer-p surface-pointer)
              (%adopt-core-surface runtime surface-pointer))
-           :serial (ataxia.layer1.raw:%seat-cursor-serial event-pointer)
+           :serial (ataxia.runtime.raw:%seat-cursor-serial event-pointer)
            :hotspot-x
-           (ataxia.layer1.raw:%seat-cursor-hotspot-x event-pointer)
+           (ataxia.runtime.raw:%seat-cursor-hotspot-x event-pointer)
            :hotspot-y
-           (ataxia.layer1.raw:%seat-cursor-hotspot-y event-pointer))))))
+           (ataxia.runtime.raw:%seat-cursor-hotspot-y event-pointer))))))
     (%attach-object-signal
      seat :seat-destroy
-     (ataxia.layer1.raw:%seat-event-destroy pointer)
+     (ataxia.runtime.raw:%seat-event-destroy pointer)
      (lambda (data)
        (declare (ignore data))
        (unwind-protect
@@ -926,7 +926,7 @@
           (%wrap-pointer
            'wlr-data-device-manager
            (%require-pointer
-            (ataxia.layer1.raw:%wlr-data-device-manager-create
+            (ataxia.runtime.raw:%wlr-data-device-manager-create
              (%object-pointer (%runtime-display runtime)))
             :wlr-data-device-manager-create)
            runtime)))
@@ -937,7 +937,7 @@
   (check-type capabilities (unsigned-byte 32))
   (let ((runtime (%native-runtime seat)))
     (%assert-runtime-live runtime :set-seat-capabilities)
-    (ataxia.layer1.raw:%wlr-seat-set-capabilities
+    (ataxia.runtime.raw:%wlr-seat-set-capabilities
      (%object-pointer seat) capabilities))
   seat)
 
@@ -945,7 +945,7 @@
   (check-type name string)
   (let ((runtime (%native-runtime seat)))
     (%assert-runtime-live runtime :set-seat-name)
-    (ataxia.layer1.raw:%wlr-seat-set-name (%object-pointer seat) name)
+    (ataxia.runtime.raw:%wlr-seat-set-name (%object-pointer seat) name)
     (setf (%seat-name seat) name))
   seat)
 
@@ -954,7 +954,7 @@
   (let ((runtime (%native-runtime seat)))
     (%assert-runtime-live runtime :set-seat-keyboard)
     (%assert-object-runtime runtime keyboard :set-seat-keyboard)
-    (ataxia.layer1.raw:%wlr-seat-set-keyboard
+    (ataxia.runtime.raw:%wlr-seat-set-keyboard
      (%object-pointer seat) (%object-pointer keyboard)))
   seat)
 
@@ -963,7 +963,7 @@
   (let ((runtime (%native-runtime seat)))
     (%assert-runtime-live runtime :seat-pointer-notify-enter)
     (%assert-object-runtime runtime surface :seat-pointer-notify-enter)
-    (ataxia.layer1.raw:%wlr-seat-pointer-notify-enter
+    (ataxia.runtime.raw:%wlr-seat-pointer-notify-enter
      (%object-pointer seat) (%object-pointer surface)
      (coerce surface-x 'double-float) (coerce surface-y 'double-float)))
   seat)
@@ -971,7 +971,7 @@
 (defun seat-pointer-notify-clear-focus (seat)
   (let ((runtime (%native-runtime seat)))
     (%assert-runtime-live runtime :seat-pointer-notify-clear-focus)
-    (ataxia.layer1.raw:%wlr-seat-pointer-notify-clear-focus
+    (ataxia.runtime.raw:%wlr-seat-pointer-notify-clear-focus
      (%object-pointer seat)))
   seat)
 
@@ -979,7 +979,7 @@
   (check-type time-msec (unsigned-byte 32))
   (let ((runtime (%native-runtime seat)))
     (%assert-runtime-live runtime :seat-pointer-notify-motion)
-    (ataxia.layer1.raw:%wlr-seat-pointer-notify-motion
+    (ataxia.runtime.raw:%wlr-seat-pointer-notify-motion
      (%object-pointer seat) time-msec
      (coerce surface-x 'double-float) (coerce surface-y 'double-float)))
   seat)
@@ -997,7 +997,7 @@
   (check-type button (unsigned-byte 32))
   (let ((runtime (%native-runtime seat)))
     (%assert-runtime-live runtime :seat-pointer-notify-button)
-    (ataxia.layer1.raw:%wlr-seat-pointer-notify-button
+    (ataxia.runtime.raw:%wlr-seat-pointer-notify-button
      (%object-pointer seat) time-msec button (%button-state-code state))))
 
 (defun %axis-orientation-code (orientation)
@@ -1033,7 +1033,7 @@
   (check-type discrete-value (signed-byte 32))
   (let ((runtime (%native-runtime seat)))
     (%assert-runtime-live runtime :seat-pointer-notify-axis)
-    (ataxia.layer1.raw:%wlr-seat-pointer-notify-axis
+    (ataxia.runtime.raw:%wlr-seat-pointer-notify-axis
      (%object-pointer seat)
      time-msec
      (%axis-orientation-code orientation)
@@ -1046,7 +1046,7 @@
 (defun seat-pointer-notify-frame (seat)
   (let ((runtime (%native-runtime seat)))
     (%assert-runtime-live runtime :seat-pointer-notify-frame)
-    (ataxia.layer1.raw:%wlr-seat-pointer-notify-frame
+    (ataxia.runtime.raw:%wlr-seat-pointer-notify-frame
      (%object-pointer seat)))
   seat)
 
@@ -1055,7 +1055,7 @@
   (check-type keycode (unsigned-byte 32))
   (let ((runtime (%native-runtime seat)))
     (%assert-runtime-live runtime :seat-keyboard-notify-key)
-    (ataxia.layer1.raw:%wlr-seat-keyboard-notify-key
+    (ataxia.runtime.raw:%wlr-seat-keyboard-notify-key
      (%object-pointer seat) time-msec keycode (%button-state-code state)))
   seat)
 
@@ -1065,7 +1065,7 @@
     (%assert-runtime-live runtime :seat-keyboard-notify-modifiers)
     (%assert-object-runtime runtime keyboard
                             :seat-keyboard-notify-modifiers)
-    (ataxia.layer1.raw:%seat-keyboard-notify-modifiers-current
+    (ataxia.runtime.raw:%seat-keyboard-notify-modifiers-current
      (%object-pointer seat) (%object-pointer keyboard)))
   seat)
 
@@ -1076,7 +1076,7 @@
     (%assert-runtime-live runtime :seat-keyboard-notify-enter)
     (%assert-object-runtime runtime surface :seat-keyboard-notify-enter)
     (%assert-object-runtime runtime keyboard :seat-keyboard-notify-enter)
-    (ataxia.layer1.raw:%seat-keyboard-notify-enter-current
+    (ataxia.runtime.raw:%seat-keyboard-notify-enter-current
      (%object-pointer seat) (%object-pointer surface)
      (%object-pointer keyboard)))
   seat)
@@ -1084,7 +1084,7 @@
 (defun seat-keyboard-notify-clear-focus (seat)
   (let ((runtime (%native-runtime seat)))
     (%assert-runtime-live runtime :seat-keyboard-notify-clear-focus)
-    (ataxia.layer1.raw:%wlr-seat-keyboard-notify-clear-focus
+    (ataxia.runtime.raw:%wlr-seat-keyboard-notify-clear-focus
      (%object-pointer seat)))
   seat)
 
@@ -1092,7 +1092,7 @@
   (when (and seat (native-object-live-p seat))
     (let ((runtime (%native-runtime seat)))
       (%assert-owner-thread runtime :destroy-seat)
-      (ataxia.layer1.raw:%wlr-seat-destroy (%native-pointer seat))
+      (ataxia.runtime.raw:%wlr-seat-destroy (%native-pointer seat))
       (%run-safe-point-actions runtime)
       (when (native-object-live-p seat)
         (%retire-object-listeners seat :immediate-p t)

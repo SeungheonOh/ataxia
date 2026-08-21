@@ -150,6 +150,10 @@ bool ataxia_output_enabled(const struct wlr_output *output) {
 	return output != NULL && output->enabled;
 }
 
+bool ataxia_output_frame_pending(const struct wlr_output *output) {
+	return output != NULL && output->frame_pending;
+}
+
 const void *ataxia_output_damage_region(
 		const struct wlr_output_event_damage *event) {
 	return event == NULL ? NULL : event->damage;

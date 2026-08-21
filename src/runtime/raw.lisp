@@ -250,6 +250,8 @@
   (output :pointer))
 (defcfun ("ataxia_output_enabled" %output-enabled) :boolean
   (output :pointer))
+(defcfun ("ataxia_output_frame_pending" %output-frame-pending) :boolean
+  (output :pointer))
 
 (defcfun ("ataxia_input_device_name" %input-device-name) :pointer
   (device :pointer))

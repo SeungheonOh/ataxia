@@ -92,6 +92,7 @@
    #:%output-width
    #:%output-height
    #:%output-enabled
+   #:%output-frame-pending
    #:%output-damage-region
    #:%region-rectangle-count
    #:%region-rectangle-at
@@ -329,6 +330,7 @@
    #:output-test-state
    #:output-commit-state
    #:output-schedule-frame
+   #:output-frame-pending-p
    #:destroy-output-state
    #:wlr-input-device
    #:input-device-name

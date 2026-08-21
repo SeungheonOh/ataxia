@@ -102,6 +102,8 @@ ATAXIA_WLR_GLUE_API int32_t ataxia_output_height(
 	const struct wlr_output *output);
 ATAXIA_WLR_GLUE_API bool ataxia_output_enabled(
 	const struct wlr_output *output);
+ATAXIA_WLR_GLUE_API bool ataxia_output_frame_pending(
+	const struct wlr_output *output);
 ATAXIA_WLR_GLUE_API const void *ataxia_output_damage_region(
 	const struct wlr_output_event_damage *event);
 ATAXIA_WLR_GLUE_API uint32_t ataxia_region_rectangle_count(

@@ -356,6 +356,11 @@
   (ataxia.runtime.raw:%wlr-output-schedule-frame (%object-pointer output))
   output)
 
+(defun output-frame-pending-p (output)
+  (check-type output wlr-output)
+  (%assert-runtime-live (%native-runtime output) :output-frame-pending-p)
+  (ataxia.runtime.raw:%output-frame-pending (%object-pointer output)))
+
 (defun configure-output-swapchain (output &optional swapchain state)
   (check-type output wlr-output)
   (when swapchain

@@ -58,6 +58,10 @@
 (defclass behavior-policy (compositor-component)
   ((active-p :initform nil :accessor behavior-policy-active-p)
    (revision :initform 0 :accessor behavior-policy-revision)
+   (application-reveal-style
+    :initarg :application-reveal-style
+    :initform (make-instance 'codec-reveal-style)
+    :accessor behavior-application-reveal-style)
    (background-color :initarg :background-color
                      :initform '(0.035 0.045 0.065 1.0)
                      :accessor behavior-background-color)))

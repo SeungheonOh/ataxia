@@ -33,6 +33,7 @@
     :pathname "src/behavior"
     :components
     ((:file "effects")
+     (:file "reveal")
      (:file "scene")
      (:file "animation")
      (:file "planar")

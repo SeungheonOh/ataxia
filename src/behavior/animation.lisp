@@ -10,17 +10,18 @@
 
 (defmethod behavior-default-animation-definition
     ((policy behavior-policy) (subject view) descriptor context)
-  (declare (ignore policy context))
+  (declare (ignore context))
   (cond
     ((typep descriptor 'visibility-transition)
      (if (visibility-new-state descriptor)
-         (make-instance
-          'animation-definition :name :appear :duration 0.18d0
-          :tracks
-          (list (make-instance 'animation-track
-                               :property 'opacity :from 0d0 :to 1d0)
-                (make-instance 'animation-track
-                               :property 'scale :from 0.96d0 :to 1d0)))
+         (or (make-codec-reveal-animation policy subject)
+             (make-instance
+              'animation-definition :name :appear :duration 0.18d0
+              :tracks
+              (list (make-instance 'animation-track
+                                   :property 'opacity :from 0d0 :to 1d0)
+                    (make-instance 'animation-track
+                                   :property 'scale :from 0.96d0 :to 1d0))))
          (make-instance
           'animation-definition :name :disappear :duration 0.14d0
           :tracks

@@ -349,6 +349,14 @@
    #:soft-shadow-ambient-blur-radius
    #:behavior-shadow-style
    #:behavior-background-color
+   #:codec-reveal-style
+   #:codec-reveal-enabled-p
+   #:codec-reveal-duration
+   #:codec-reveal-macroblock-size
+   #:codec-reveal-displacement
+   #:codec-reveal-chroma-separation
+   #:behavior-application-reveal-style
+   #:reveal-progress-binding
    #:effect-parameter-binding
    #:effect-parameter-binding-name
    #:view-effect-parameter

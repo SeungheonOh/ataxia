@@ -90,6 +90,7 @@
    #:view-width
    #:view-height
    #:view-title
+   #:view-initialized-p
    #:view-mapped-p
    #:view-presentable-p
    #:view-maximized-p

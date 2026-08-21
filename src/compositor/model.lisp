@@ -47,6 +47,7 @@
    (width :initform 900 :accessor view-width)
    (height :initform 650 :accessor view-height)
    (title :initarg :title :initform nil :accessor view-title)
+   (initialized-p :initform nil :accessor view-initialized-p)
    (mapped-p :initform nil :accessor view-mapped-p)
    (presentable-p :initform nil :accessor view-presentable-p)
    (maximized-p :initform nil :accessor view-maximized-p)

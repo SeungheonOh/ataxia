@@ -448,6 +448,7 @@
   (let ((view (desktop-find-view (compositor-desktop compositor) toplevel)))
     (when view
       (when (and initial-commit-p (not configured-p))
+        (setf (view-initialized-p view) t)
         (let* ((output (primary-output (compositor-interaction compositor)))
                (width (if output
                           (min 900
@@ -464,12 +465,21 @@
           (ataxia.runtime:xdg-toplevel-set-wm-capabilities toplevel #x0f)
           (ataxia.runtime:xdg-toplevel-set-bounds
            toplevel width height)
-          (setf (view-width view) width (view-height view) height
-                (placement-width (view-placement view))
-                (coerce width 'double-float)
-                (placement-height (view-placement view))
-                (coerce height 'double-float))
-          (ataxia.runtime:xdg-toplevel-set-size toplevel width height)))
+          (cond
+            ((view-fullscreen-p view)
+             (configure-view-for-output compositor view :fullscreen-p t)
+             (ataxia.runtime:xdg-toplevel-set-fullscreen toplevel t))
+            ((view-maximized-p view)
+             (configure-view-for-output compositor view)
+             (ataxia.runtime:xdg-toplevel-set-maximized toplevel t))
+            (t
+             (setf (view-width view) width (view-height view) height
+                   (placement-width (view-placement view))
+                   (coerce width 'double-float)
+                   (placement-height (view-placement view))
+                   (coerce height 'double-float))
+             (ataxia.runtime:xdg-toplevel-set-size
+              toplevel width height)))))
       (when (plusp (ataxia.runtime:surface-commit-width commit))
         (setf (view-width view)
               (ataxia.runtime:surface-commit-width commit)
@@ -607,13 +617,17 @@
     ((compositor compositor) toplevel requested-p)
   (let ((view (desktop-find-view (compositor-desktop compositor) toplevel)))
     (when view
-      (if requested-p
-          (configure-view-for-output compositor view)
-          (restore-view-placement view))
       (setf (view-maximized-p view) requested-p)
-      (ataxia.runtime:xdg-toplevel-set-maximized toplevel requested-p)
-      (ataxia.runtime:xdg-toplevel-set-size
-       toplevel (view-width view) (view-height view))
+      (when (view-initialized-p view)
+        ;; Fullscreen owns placement while active. Preserve the requested
+        ;; maximized state so leaving fullscreen can select the right layout.
+        (unless (view-fullscreen-p view)
+          (if requested-p
+              (configure-view-for-output compositor view)
+              (restore-view-placement view)))
+        (ataxia.runtime:xdg-toplevel-set-maximized toplevel requested-p)
+        (ataxia.runtime:xdg-toplevel-set-size
+         toplevel (view-width view) (view-height view)))
       (schedule-presentation (compositor-presentation compositor)))))
 
 (defmethod ataxia.runtime:xdg-toplevel-request-minimize
@@ -629,13 +643,16 @@
          (requested-p (ataxia.runtime:xdg-fullscreen-requested-p request))
          (view (desktop-find-view (compositor-desktop compositor) toplevel)))
     (when view
-      (if requested-p
-          (configure-view-for-output compositor view :fullscreen-p t)
-          (restore-view-placement view))
       (setf (view-fullscreen-p view) requested-p)
-      (ataxia.runtime:xdg-toplevel-set-fullscreen toplevel requested-p)
-      (ataxia.runtime:xdg-toplevel-set-size
-       toplevel (view-width view) (view-height view))
+      (when (view-initialized-p view)
+        (if requested-p
+            (configure-view-for-output compositor view :fullscreen-p t)
+            (if (view-maximized-p view)
+                (configure-view-for-output compositor view)
+                (restore-view-placement view)))
+        (ataxia.runtime:xdg-toplevel-set-fullscreen toplevel requested-p)
+        (ataxia.runtime:xdg-toplevel-set-size
+         toplevel (view-width view) (view-height view)))
       (schedule-presentation (compositor-presentation compositor)))))
 
 (defmethod ataxia.runtime:xdg-new-popup

@@ -84,12 +84,6 @@ refresh deadline. Rendering is deferred out of backend callbacks before it
 acquires a swapchain buffer, preventing a second atomic commit in the same DRM
 turn. Active animations keep the redraw flag set until sampling completes.
 
-Damage visualization keeps the normal scene visible, then overlays only the
-rectangles submitted in the output state's damage region with alternating flat
-colors. This makes consecutive cursor, window, surface, and animation damage
-visible without manufacturing continuous redraws. Toggling the mode schedules
-one full redraw so stale diagnostic pixels cannot survive the transition.
-
 The renderer is intentionally direct GLES. It uses Runtime's wlroots-owned EGL
 context, imports the client's wlroots texture as GLES texture attributes, draws
 into a scanout-compatible buffer, and commits that buffer through an exact
@@ -189,11 +183,7 @@ Representative actions are:
 (:id 3 :action (:move :view 4 :x 120d0 :y 80d0))
 (:id 4 :action (:replace-behavior :kind :spherical))
 (:id 5 :action (:pan :output "WL-1" :delta-x 0.1d0 :delta-y 0d0))
-(:id 6 :action (:debug-damage :enabled t))
 ```
-
-The live setting is reported as `:damage-debug` by `:observe`. Pass
-`(:debug-damage :enabled nil)` to restore normal presentation.
 
 `decode-control-action` and `decode-control-placement` are generic functions,
 so additional trusted action or world representations can extend the transport
@@ -210,7 +200,6 @@ The compositor entrypoint is `scripts/run-compositor`:
 ```sh
 ./scripts/run-compositor --backend headless --launch foot
 ./scripts/run-compositor --backend auto --launch firefox
-./scripts/run-compositor --backend auto --debug-damage --launch foot
 ```
 
 On the Fedora UTM guest, direct DRM/GLES execution uses the seat backend and

@@ -190,6 +190,8 @@
    #:seat-cursor-mode
    #:create-logical-seat
    #:destroy-logical-seat
+   #:assign-input-device
+   #:unassign-input-device
    #:focus-view
    #:interactive-operation
    #:interactive-operation-button

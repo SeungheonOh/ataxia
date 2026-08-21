@@ -132,10 +132,32 @@
 (defun interaction-seat-for-device (interaction device)
   (gethash device (interaction-device-seats interaction)))
 
+(defun synchronize-seat-keyboard (seat)
+  (let ((keyboard (seat-active-keyboard seat)))
+    (if keyboard
+        (progn
+          (ataxia.runtime:set-seat-keyboard (seat-native seat) keyboard)
+          (when (seat-focused-view seat)
+            (ataxia.runtime:seat-keyboard-notify-enter
+             (seat-native seat)
+             (surface-record-native
+              (view-surface (seat-focused-view seat)))
+             keyboard)))
+        (progn
+          (ataxia.runtime:seat-keyboard-notify-clear-focus
+           (seat-native seat))
+          (ataxia.runtime:clear-seat-keyboard (seat-native seat)))))
+  seat)
+
 (defun interaction-add-input-device (interaction device &optional seat)
-  (let ((target (or seat (interaction-default-seat interaction))))
+  (let ((current (interaction-seat-for-device interaction device))
+        (target (or seat (interaction-default-seat interaction))))
     (unless target
       (setf target (create-logical-seat interaction "seat0")))
+    (when (eq current target)
+      (return-from interaction-add-input-device target))
+    (when current
+      (interaction-remove-input-device interaction device))
     (setf (gethash device (interaction-device-seats interaction)) target)
     (trace-input "[input] add ~A ~A -> ~A~%"
                  (ataxia.runtime:input-device-type device)
@@ -147,22 +169,36 @@
       (ataxia.runtime:set-keyboard-repeat-info device 25 600)
       (pushnew device (seat-keyboards target) :test #'eq)
       (setf (seat-active-keyboard target) device)
-      (ataxia.runtime:set-seat-keyboard (seat-native target) device))
+      (synchronize-seat-keyboard target))
     (update-seat-capabilities target)
     target))
 
 (defun interaction-remove-input-device (interaction device)
   (let ((seat (interaction-seat-for-device interaction device)))
     (when seat
-      (remhash device (interaction-device-seats interaction))
-      (setf (seat-devices seat)
-            (delete device (seat-devices seat) :test #'eq)
-            (seat-keyboards seat)
-            (delete device (seat-keyboards seat) :test #'eq))
-      (when (eq device (seat-active-keyboard seat))
-        (setf (seat-active-keyboard seat) (first (seat-keyboards seat))))
-      (update-seat-capabilities seat))
+      (let ((active-keyboard-p (eq device (seat-active-keyboard seat))))
+        (remhash device (interaction-device-seats interaction))
+        (setf (seat-devices seat)
+              (delete device (seat-devices seat) :test #'eq)
+              (seat-keyboards seat)
+              (delete device (seat-keyboards seat) :test #'eq))
+        (when active-keyboard-p
+          (setf (seat-active-keyboard seat) (first (seat-keyboards seat)))
+          (synchronize-seat-keyboard seat))
+        (update-seat-capabilities seat)))
     seat))
+
+(defun assign-input-device (interaction device seat)
+  "Move a live wlroots device between logical seats without native recreation."
+  (check-type interaction interaction-system)
+  (check-type device ataxia.runtime:wlr-input-device)
+  (check-type seat logical-seat)
+  (interaction-add-input-device interaction device seat))
+
+(defun unassign-input-device (interaction device)
+  (check-type interaction interaction-system)
+  (check-type device ataxia.runtime:wlr-input-device)
+  (interaction-remove-input-device interaction device))
 
 (defun seat-hit-view (hit)
   (let ((owner (and hit (presentation-hit-owner hit))))

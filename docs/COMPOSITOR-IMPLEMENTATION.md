@@ -119,12 +119,14 @@ actions.
 
 The default application reveal is behavior-owned. A newly mapped view
 temporarily selects a codec-corruption texture program while animation tracks
-drive macroblock displacement, chroma separation, posterization, and a moving
-corruption phase toward a clean sample. The program and its uniforms are stored
-per view, apply to its root surface, subsurfaces, and popups, and restore the
-view's previous shader when the reveal completes. This is a real-time
-MPEG/datamosh-inspired spatial effect; it does not retain prior decoded frames
-and therefore is not temporal video datamoshing.
+drive randomly positioned, variable-size corruption fragments, horizontal
+smearing, chroma separation, posterization, and a moving corruption phase
+toward a clean sample. The fragments overlap without using a fixed spatial
+grid. The program and its uniforms are stored per view, apply to its root
+surface, subsurfaces, and popups, and restore the view's previous shader when
+the reveal completes. This is a real-time MPEG/datamosh-inspired spatial
+effect; it does not retain prior decoded frames and therefore is not temporal
+video datamoshing.
 
 Animation lifecycle hooks are `animation-resolving`,
 `before-animation-start`, `after-animation-start`, `animation-cancelled`, and

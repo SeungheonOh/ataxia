@@ -537,7 +537,8 @@
   (dolist (item (reverse (snapshot-items snapshot)))
     (when (and (presentation-item-interactive-p item)
                (point-in-item-p item output-x output-y))
-      (let* ((local-x
+      (let* ((kind (presentation-item-hit-kind item))
+             (local-x
                (* (/ (- output-x (presentation-item-x item))
                      (max 1d0 (presentation-item-width item)))
                   (presentation-item-source-width item)))
@@ -548,25 +549,26 @@
              (surface nil)
              (surface-x local-x)
              (surface-y local-y))
-        (when (eq :content (presentation-item-hit-kind item))
-          (multiple-value-setq (surface surface-x surface-y)
-            (ataxia.runtime:xdg-surface-at
-             (view-native (presentation-item-owner item)) local-x local-y)))
-        (when (eq :popup (presentation-item-hit-kind item))
-          (multiple-value-setq (surface surface-x surface-y)
-            (ataxia.runtime:surface-at
-             (presentation-item-surface item) local-x local-y)))
-        (when (eq :subsurface (presentation-item-hit-kind item))
-          (multiple-value-setq (surface surface-x surface-y)
-            (ataxia.runtime:surface-at
-             (presentation-item-surface item) local-x local-y)))
-        (return
-          (make-presentation-hit
-           :item item :owner (presentation-item-owner item)
-           :surface surface
-           :surface-x (coerce surface-x 'double-float)
-           :surface-y (coerce surface-y 'double-float)
-           :kind (presentation-item-hit-kind item)))))))
+        (case kind
+          (:content
+           (multiple-value-setq (surface surface-x surface-y)
+             (ataxia.runtime:xdg-surface-at
+              (view-native (presentation-item-owner item)) local-x local-y)))
+          ((:popup :subsurface)
+           (multiple-value-setq (surface surface-x surface-y)
+             (ataxia.runtime:surface-at
+              (presentation-item-surface item) local-x local-y))))
+        ;; Input regions can exclude pixels inside an item's visual rectangle.
+        ;; In that case wlroots returns no surface and no coordinates, so keep
+        ;; searching lower items instead of constructing an invalid hit.
+        (when (or surface (member kind '(:frame :titlebar) :test #'eq))
+          (return
+            (make-presentation-hit
+             :item item :owner (presentation-item-owner item)
+             :surface surface
+             :surface-x (coerce surface-x 'double-float)
+             :surface-y (coerce surface-y 'double-float)
+             :kind kind)))))))
 
 (defmethod renderer-draw-item
     ((renderer direct-gles-renderer) frame-context

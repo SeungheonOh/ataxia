@@ -5,6 +5,9 @@
 
 (in-package #:ataxia.compositor)
 
+(defparameter *trace-graphics-p*
+  (not (null (uiop:getenv "ATAXIA_TRACE_GRAPHICS"))))
+
 (defclass presentation-state ()
   ((opacity :initform 1d0 :accessor presentation-opacity)
    (scale :initform 1d0 :accessor presentation-scale)
@@ -119,6 +122,19 @@
           (surface-record-mapped-p record) mapped-p
           (surface-record-commit-sequence record)
           (ataxia.runtime:surface-commit-sequence commit)))
+  (when (and *trace-graphics-p* (surface-record-texture record))
+    (let ((attributes
+            (ataxia.runtime:texture-gles-attributes
+             (surface-record-texture record))))
+      (format *error-output*
+              "[graphics] surface ~X buffer=~Dx~D texture=~D target=0x~X alpha=~A~%"
+              (ataxia.runtime:native-object-address
+               (surface-record-native record))
+              (surface-record-width record) (surface-record-height record)
+              (ataxia.runtime:gles-texture-name attributes)
+              (ataxia.runtime:gles-texture-target attributes)
+              (ataxia.runtime:gles-texture-has-alpha-p attributes))
+      (finish-output *error-output*)))
   record)
 
 (defun retire-surface-record (surfaces native)

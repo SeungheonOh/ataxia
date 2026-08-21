@@ -29,7 +29,6 @@
    (redraw-pending-p :initform t :accessor output-redraw-pending-p)
    (full-damage-p :initform t :accessor output-full-damage-p)
    (damage-boxes :initform nil :accessor output-damage-boxes)
-   (render-source :initform nil :accessor output-render-source)
    (frame-timer :initform nil :accessor output-frame-timer)
    (frame-timer-armed-p :initform nil
                         :accessor output-frame-timer-armed-p)
@@ -54,6 +53,8 @@
                  :reader presentation-panel-height)
    (titlebar-height :initarg :titlebar-height :initform 28d0
                     :reader presentation-titlebar-height)
+   (queued-outputs :initform nil :accessor presentation-queued-outputs)
+   (render-source :initform nil :accessor presentation-render-source)
    (revision :initform 0 :accessor presentation-revision)))
 
 (defgeneric build-presentation-snapshot (presentation output timestamp))
@@ -71,6 +72,11 @@
 
 (defmethod detach-component :before
     ((presentation presentation-system) reason)
+  (let ((source (presentation-render-source presentation)))
+    (when (and source (ataxia.runtime:native-object-live-p source))
+      (ataxia.runtime:remove-event-loop-source source))
+    (setf (presentation-render-source presentation) nil
+          (presentation-queued-outputs presentation) nil))
   (let ((animation (presentation-animation-engine presentation)))
     (when (eq (component-state animation) :attached)
       (detach-component animation reason))))
@@ -456,12 +462,6 @@
   (let ((output (gethash native (output-table outputs))))
     (when output
       (setf (output-available-p output) nil)
-      (when (and (output-render-source output)
-                 (ataxia.runtime:native-object-live-p
-                  (output-render-source output)))
-        (ataxia.runtime:remove-event-loop-source
-         (output-render-source output)))
-      (setf (output-render-source output) nil)
       (when (and (output-frame-timer output)
                  (ataxia.runtime:native-object-live-p
                   (output-frame-timer output)))
@@ -526,7 +526,6 @@
     ((presentation presentation-system) (output compositor-output) timestamp)
   (let* ((compositor (component-compositor presentation))
          (policy (compositor-behavior-policy compositor)))
-    (sample-animations (presentation-animation-engine presentation) timestamp)
     (make-instance
      'presentation-snapshot :output output :timestamp timestamp
      :revision (incf (presentation-revision presentation))
@@ -847,11 +846,13 @@
         (ataxia.runtime:surface-send-frame-done surface))))
   (frame-plan-snapshot plan))
 
-(defmethod present-output
-    ((presentation presentation-system) (output compositor-output))
+(defun present-output-at
+    (presentation output timestamp &key (sample-animations-p t))
+  (when sample-animations-p
+    (sample-animations
+     (presentation-animation-engine presentation) timestamp))
   (handler-case
-      (let* ((timestamp (monotonic-seconds))
-             (snapshot
+      (let* ((snapshot
                (build-presentation-snapshot presentation output timestamp))
              (plan
                (build-frame-plan presentation output snapshot timestamp)))
@@ -885,21 +886,34 @@
       (arm-output-frame output)
       nil)))
 
+(defmethod present-output
+    ((presentation presentation-system) (output compositor-output))
+  (present-output-at presentation output (monotonic-seconds)))
+
 (defun queue-output-presentation (presentation output)
-  ;; The DRM backend may emit FRAME from inside presentation cleanup. Deferring
-  ;; until the Wayland loop unwinds avoids an atomic commit in that same turn.
-  (unless (output-render-source output)
+  ;; One idle callback samples global animation state once, then every output
+  ;; ready in that event-loop batch observes the exact same values.
+  (pushnew output (presentation-queued-outputs presentation) :test #'eq)
+  (unless (presentation-render-source presentation)
     (setf
-     (output-render-source output)
+     (presentation-render-source presentation)
      (ataxia.runtime:add-event-loop-idle
       (compositor-runtime (component-compositor presentation))
       (lambda (source)
         (declare (ignore source))
-        (setf (output-render-source output) nil)
-        (when (and (output-available-p output)
-                   (output-redraw-pending-p output)
-                   (not (output-scanout-pending-p output)))
-          (present-output presentation output))
+        (setf (presentation-render-source presentation) nil)
+        (let ((outputs (prog1 (nreverse
+                               (presentation-queued-outputs presentation))
+                         (setf (presentation-queued-outputs presentation) nil)))
+              (timestamp (monotonic-seconds)))
+          (sample-animations
+           (presentation-animation-engine presentation) timestamp)
+          (dolist (candidate outputs)
+            (when (and (output-available-p candidate)
+                       (output-redraw-pending-p candidate)
+                       (not (output-scanout-pending-p candidate)))
+              (present-output-at
+               presentation candidate timestamp :sample-animations-p nil))))
         0))))
   output)
 

@@ -216,6 +216,9 @@
    #:presentation-item-shader-program-name
    #:presentation-item-shader-uniforms
    #:presentation-item-color
+   #:presentation-item-shadow-inset
+   #:presentation-item-corner-radius
+   #:presentation-item-blur-radius
    #:presentation-item-opacity
    #:presentation-item-interactive-p
    #:presentation-item-hit-kind

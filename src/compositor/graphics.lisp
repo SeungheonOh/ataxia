@@ -114,6 +114,33 @@ void main() {
 uniform vec4 color;
 void main() { gl_FragColor = color; }")
 
+(defparameter +builtin-shadow-fragment-shader+
+  "precision mediump float;
+varying vec2 texture_coordinate;
+uniform vec4 color;
+uniform vec2 rectangle_size;
+uniform float shadow_inset;
+uniform float corner_radius;
+uniform float blur_radius;
+
+float rounded_box_distance(vec2 point, vec2 half_size, float radius) {
+  vec2 corner = abs(point) - max(half_size - vec2(radius), vec2(0.0));
+  return length(max(corner, vec2(0.0)))
+       + min(max(corner.x, corner.y), 0.0) - radius;
+}
+
+void main() {
+  vec2 pixel = texture_coordinate * rectangle_size;
+  vec2 half_size = max(rectangle_size * 0.5 - vec2(shadow_inset), vec2(1.0));
+  float radius = min(corner_radius, min(half_size.x, half_size.y));
+  float distance = rounded_box_distance(
+      pixel - rectangle_size * 0.5, half_size, radius);
+  float sigma = max(blur_radius, 0.5);
+  float exterior = max(distance, 0.0);
+  float alpha = color.a * exp(-0.5 * exterior * exterior / (sigma * sigma));
+  gl_FragColor = vec4(color.rgb * alpha, alpha);
+}")
+
 (defparameter +builtin-texture-fragment-shader+
   "precision mediump float;
 varying vec2 texture_coordinate;
@@ -154,6 +181,7 @@ void main() {
 
 (defclass direct-gles-renderer (compositor-component)
   ((solid-program :initform nil :accessor renderer-solid-program)
+   (shadow-program :initform nil :accessor renderer-shadow-program)
    (texture-program :initform nil :accessor renderer-texture-program)
    (external-program :initform nil :accessor renderer-external-program)
    (programs :initform (make-hash-table :test #'equal)
@@ -277,6 +305,12 @@ void main() {
             (compile-shader-program
              (builtin-program-descriptor
               +builtin-solid-fragment-shader+ '(color) :solid))
+            (renderer-shadow-program renderer)
+            (compile-shader-program
+             (builtin-program-descriptor
+              +builtin-shadow-fragment-shader+
+              '(color rectangle-size shadow-inset corner-radius blur-radius)
+              :shadow))
             (renderer-texture-program renderer)
             (compile-shader-program
              (builtin-program-descriptor
@@ -299,6 +333,7 @@ void main() {
                        '(:ready :running :stopping)))
       (ataxia.runtime:with-egl-context ((ataxia.runtime:runtime-egl runtime))
         (delete-shader-program (renderer-solid-program renderer))
+        (delete-shader-program (renderer-shadow-program renderer))
         (delete-shader-program (renderer-texture-program renderer))
         (delete-shader-program (renderer-external-program renderer))
         (maphash (lambda (key program)
@@ -468,6 +503,33 @@ void main() {
        (uniform-location program 'color)
        (coerce red 'single-float) (coerce green 'single-float)
        (coerce blue 'single-float) (coerce alpha 'single-float)))
+    (%gl-draw-arrays +gl-triangles+ 0 6)))
+
+(defun draw-shadow-rectangle
+    (renderer output-width output-height x y width height color inset
+     corner-radius blur-radius)
+  "Draw a soft rounded shadow as one analytic quad without an intermediate texture."
+  (let ((program (renderer-shadow-program renderer)))
+    (fill-rectangle-vertices
+     renderer output-width output-height x y width height)
+    (%gl-use-program (shader-native-program program))
+    (bind-rectangle-vertices renderer)
+    (destructuring-bind (red green blue alpha) color
+      (%gl-uniform-4f
+       (uniform-location program 'color)
+       (coerce red 'single-float) (coerce green 'single-float)
+       (coerce blue 'single-float) (coerce alpha 'single-float)))
+    (%gl-uniform-2f
+     (uniform-location program 'rectangle-size)
+     (coerce width 'single-float) (coerce height 'single-float))
+    (%gl-uniform-1f
+     (uniform-location program 'shadow-inset) (coerce inset 'single-float))
+    (%gl-uniform-1f
+     (uniform-location program 'corner-radius)
+     (coerce corner-radius 'single-float))
+    (%gl-uniform-1f
+     (uniform-location program 'blur-radius)
+     (coerce blur-radius 'single-float))
     (%gl-draw-arrays +gl-triangles+ 0 6)))
 
 (defun draw-textured-rectangle

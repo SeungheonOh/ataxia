@@ -77,6 +77,12 @@
    (shader-uniforms :initarg :shader-uniforms :initform nil
                     :reader presentation-item-shader-uniforms)
    (color :initarg :color :initform nil :reader presentation-item-color)
+   (shadow-inset :initarg :shadow-inset :initform 0d0
+                  :reader presentation-item-shadow-inset)
+   (corner-radius :initarg :corner-radius :initform 0d0
+                  :reader presentation-item-corner-radius)
+   (blur-radius :initarg :blur-radius :initform 0d0
+                :reader presentation-item-blur-radius)
    (opacity :initarg :opacity :initform 1d0 :reader presentation-item-opacity)
    (interactive-p :initarg :interactive-p :initform nil
                   :reader presentation-item-interactive-p)
@@ -260,6 +266,13 @@
                  :color color :owner owner :interactive-p interactive-p
                  :hit-kind hit-kind))
 
+(defun make-shadow-item (x y width height color inset corner-radius blur-radius
+                         &key owner)
+  (make-instance
+   'presentation-item :kind :shadow :x x :y y :width width :height height
+   :color color :shadow-inset inset :corner-radius corner-radius
+   :blur-radius blur-radius :owner owner))
+
 (defun scaled-view-geometry (x y width height state)
   (let* ((scale (presentation-scale state))
          (scaled-width (* width scale))
@@ -357,10 +370,17 @@
                        items
                        (append
                         (unless (view-fullscreen-p view)
+                          (let ((shadow-inset 24d0))
+                            (list
+                             (make-shadow-item
+                              (- x shadow-inset) (- y shadow-inset)
+                              (+ width (* 2d0 shadow-inset))
+                              (+ height (* 2d0 shadow-inset))
+                              '(0.0 0.0 0.0 0.42) shadow-inset 12d0 8d0
+                              :owner view))))
+                        (when (and (not (view-fullscreen-p view))
+                                   (view-server-decorated-p view))
                           (list
-                           (make-solid-item
-                            (- x 7d0) (- y 7d0) (+ width 14d0) (+ height 14d0)
-                            '(0.0 0.0 0.0 0.28) :owner view)
                            (make-solid-item
                             (- x 2d0) (- y 2d0) (+ width 4d0) (+ height 4d0)
                             '(0.12 0.15 0.21 1.0) :owner view
@@ -601,6 +621,16 @@
     ((renderer direct-gles-renderer) frame-context
      (item presentation-item))
   (ecase (presentation-item-kind item)
+    (:shadow
+     (draw-shadow-rectangle
+      renderer (frame-context-width frame-context)
+      (frame-context-height frame-context)
+      (presentation-item-x item) (presentation-item-y item)
+      (presentation-item-width item) (presentation-item-height item)
+      (presentation-item-color item)
+      (presentation-item-shadow-inset item)
+      (presentation-item-corner-radius item)
+      (presentation-item-blur-radius item)))
     (:solid
      (draw-solid-rectangle
       renderer (frame-context-width frame-context)

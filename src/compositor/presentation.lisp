@@ -139,6 +139,9 @@
 (defgeneric unmap-presentation-point (mapping item surface-x surface-y)
   (:documentation
    "Implement UNMAP-PRESENTATION-POINT while preserving frame ordering and damage correctness. Never retain transient render data past the documented frame boundary."))
+(defgeneric project-presentation-item-damage (item rectangle)
+  (:documentation
+   "Project one surface-local damage rectangle into conservative output-local damage."))
 
 (defclass mesh-geometry (presentation-geometry)
   ((vertices :initarg :vertices :reader mesh-geometry-vertices)
@@ -315,21 +318,7 @@
       (let ((boxes (output-damage-boxes output)))
         (make-instance
          'frame-damage
-         :boxes
-         (when boxes
-           (list
-            (reduce
-             (lambda (left right)
-               (let ((x (min (damage-box-x left) (damage-box-x right)))
-                     (y (min (damage-box-y left) (damage-box-y right)))
-                     (right-edge
-                       (max (+ (damage-box-x left) (damage-box-width left))
-                            (+ (damage-box-x right) (damage-box-width right))))
-                     (bottom-edge
-                       (max (+ (damage-box-y left) (damage-box-height left))
-                            (+ (damage-box-y right) (damage-box-height right)))))
-                 (make-damage-box x y (- right-edge x) (- bottom-edge y))))
-             boxes)))))))
+         :boxes (copy-list boxes)))))
 
 (defun reset-output-damage (output)
   (setf (output-full-damage-p output) nil
@@ -787,6 +776,59 @@
 (defun presentation-item-output-point (item surface-x surface-y)
   (unmap-presentation-point
    (presentation-item-mapping item) item surface-x surface-y))
+
+(defmethod project-presentation-item-damage
+    ((item presentation-item) rectangle)
+  "Map damage corners through the item's inverse presentation mapping."
+  (let* ((left (ataxia.runtime:damage-rectangle-x rectangle))
+         (top (ataxia.runtime:damage-rectangle-y rectangle))
+         (right (+ left (ataxia.runtime:damage-rectangle-width rectangle)))
+         (bottom (+ top (ataxia.runtime:damage-rectangle-height rectangle)))
+         (points
+           (mapcar
+            (lambda (point)
+              (multiple-value-list
+               (presentation-item-output-point
+                item (coerce (first point) 'double-float)
+                (coerce (second point) 'double-float))))
+            (list (list left top) (list right top)
+                  (list right bottom) (list left bottom)))))
+    (when (every #'first points)
+      (let* ((minimum-x (reduce #'min points :key #'second))
+             (minimum-y (reduce #'min points :key #'third))
+             (maximum-x (reduce #'max points :key #'second))
+             (maximum-y (reduce #'max points :key #'third))
+             (damage-left (floor (- minimum-x 1d0)))
+             (damage-top (floor (- minimum-y 1d0)))
+             (damage-right (ceiling (+ maximum-x 1d0)))
+             (damage-bottom (ceiling (+ maximum-y 1d0))))
+        (make-damage-box
+         damage-left damage-top
+         (- damage-right damage-left) (- damage-bottom damage-top))))))
+
+(defun output-surface-damage-boxes (output surface rectangles)
+  "Project RECTANGLES through every current item displaying SURFACE."
+  (let ((snapshot (output-last-snapshot output)))
+    (when snapshot
+      (loop for item in (snapshot-items snapshot)
+            when (eq surface (presentation-item-surface item))
+              append
+              (remove nil
+                      (mapcar
+                       (lambda (rectangle)
+                         (project-presentation-item-damage item rectangle))
+                       rectangles))))))
+
+(defun schedule-surface-damage (presentation surface rectangles)
+  "Schedule only output regions reached by one surface commit's damage."
+  (when rectangles
+    (dolist (output
+              (compositor-outputs-list
+               (compositor-outputs (component-compositor presentation))))
+      (let ((boxes (output-surface-damage-boxes output surface rectangles)))
+        (when boxes
+          (schedule-presentation presentation output boxes)))))
+  presentation)
 
 (defun presentation-item-live-p (item)
   "Reject geometry that still references a surface retired after the snapshot."

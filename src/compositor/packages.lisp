@@ -354,6 +354,7 @@
    #:presentation-mapping-inverse-function
    #:map-presentation-point
    #:unmap-presentation-point
+   #:project-presentation-item-damage
    #:mesh-geometry
    #:mesh-geometry-vertices
    #:mesh-geometry-vertex-count
@@ -416,6 +417,7 @@
    #:render-presentation-frame
    #:present-output
    #:schedule-presentation
+   #:schedule-surface-damage
    #:frame-context
    #:frame-context-output
    #:frame-context-plan

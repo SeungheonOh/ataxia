@@ -570,10 +570,20 @@
 (defmethod ataxia.runtime:surface-committed
     ((compositor compositor) surface commit)
   "Implement ATAXIA.RUNTIME:SURFACE-COMMITTED for this surface specialization. Respect Wayland configure, commit, map, unmap, and destruction ordering."
-  (let ((record
-          (ensure-surface-record (compositor-surfaces compositor) surface)))
+  (let* ((record
+           (ensure-surface-record (compositor-surfaces compositor) surface))
+         (old-width (surface-record-width record))
+         (old-height (surface-record-height record))
+         (old-mapped-p (surface-record-mapped-p record))
+         (presentation (compositor-presentation compositor)))
     (refresh-surface-record record commit)
-    (schedule-presentation (compositor-presentation compositor))
+    (if (and (eq old-mapped-p (surface-record-mapped-p record))
+             (= old-width (surface-record-width record))
+             (= old-height (surface-record-height record)))
+        (schedule-surface-damage
+         presentation surface
+         (ataxia.runtime:surface-commit-damage-rectangles commit))
+        (schedule-presentation presentation))
     record))
 
 (defmethod ataxia.runtime:surface-mapped
@@ -666,50 +676,57 @@
   (let ((view (desktop-find-view (compositor-desktop compositor) toplevel)))
     (when view
       (let ((width (ataxia.runtime:surface-commit-width commit))
-            (height (ataxia.runtime:surface-commit-height commit)))
+            (height (ataxia.runtime:surface-commit-height commit))
+            (old-width (view-width view))
+            (old-height (view-height view)))
         (when (plusp width)
           (setf (view-width view) width
-                (view-height view) height)))
-      (behavior-view-committed
-       (compositor-behavior-policy compositor)
-       view commit initial-commit-p)
-      (when (and initial-commit-p (not configured-p))
-        (setf (view-initialized-p view) t)
-        (apply-pending-xdg-decoration compositor view)
-        (multiple-value-bind (width height)
-            (behavior-recommend-initial-size
-             (compositor-behavior-policy compositor) compositor view)
-          (ataxia.runtime:xdg-toplevel-set-wm-capabilities toplevel #x0f)
-          (ataxia.runtime:xdg-toplevel-set-bounds
-           toplevel width height)
-          (cond
-            ((view-fullscreen-p view)
-             (configure-view-for-output
-              compositor view :output (view-fullscreen-output view)
-              :fullscreen-p t)
-             (ataxia.runtime:xdg-toplevel-set-fullscreen toplevel t))
-            ((view-maximized-p view)
-             (configure-view-for-output compositor view)
-             (ataxia.runtime:xdg-toplevel-set-maximized toplevel t))
-            (t
-             (apply-view-configuration-decision
-              view
-              (behavior-set-view-size
-               (compositor-behavior-policy compositor)
-               view width height
-               (make-instance
-                'operation-context :subject view
-                :operation
-                (make-instance
-                 'content-transition :subject view
-                 :old-state nil :new-state (list width height))
-                :old-state nil :new-state (list width height)
-                :cause :initial-configure
-                :provenance (make-local-provenance :xdg-shell)
-                :phase :apply)))))))
-      (setf (view-presentable-p view)
-            (not (null (surface-record-texture (view-surface view)))))
-      (schedule-presentation (compositor-presentation compositor)))
+                (view-height view) height))
+        (behavior-view-committed
+         (compositor-behavior-policy compositor)
+         view commit initial-commit-p)
+        (when (and initial-commit-p (not configured-p))
+          (setf (view-initialized-p view) t)
+          (apply-pending-xdg-decoration compositor view)
+          (multiple-value-bind (recommended-width recommended-height)
+              (behavior-recommend-initial-size
+               (compositor-behavior-policy compositor) compositor view)
+            (ataxia.runtime:xdg-toplevel-set-wm-capabilities toplevel #x0f)
+            (ataxia.runtime:xdg-toplevel-set-bounds
+             toplevel recommended-width recommended-height)
+            (cond
+              ((view-fullscreen-p view)
+               (configure-view-for-output
+                compositor view :output (view-fullscreen-output view)
+                :fullscreen-p t)
+               (ataxia.runtime:xdg-toplevel-set-fullscreen toplevel t))
+              ((view-maximized-p view)
+               (configure-view-for-output compositor view)
+               (ataxia.runtime:xdg-toplevel-set-maximized toplevel t))
+              (t
+               (apply-view-configuration-decision
+                view
+                (behavior-set-view-size
+                 (compositor-behavior-policy compositor)
+                 view recommended-width recommended-height
+                 (make-instance
+                  'operation-context :subject view
+                  :operation
+                  (make-instance
+                   'content-transition :subject view
+                   :old-state nil
+                   :new-state (list recommended-width recommended-height))
+                  :old-state nil
+                  :new-state (list recommended-width recommended-height)
+                  :cause :initial-configure
+                  :provenance (make-local-provenance :xdg-shell)
+                  :phase :apply)))))))
+        (setf (view-presentable-p view)
+              (not (null (surface-record-texture (view-surface view)))))
+        (when (or initial-commit-p
+                  (/= old-width (view-width view))
+                  (/= old-height (view-height view)))
+          (schedule-presentation (compositor-presentation compositor)))))
     view))
 
 (defmethod ataxia.runtime:xdg-toplevel-mapped
@@ -919,9 +936,14 @@
     (ataxia.runtime:xdg-surface-schedule-configure popup))
   (let ((view (desktop-find-popup (compositor-desktop compositor) popup)))
     (when view
-      (multiple-value-bind (x y) (ataxia.runtime:xdg-popup-position popup)
-        (setf (popup-x view) x (popup-y view) y))
-      (schedule-presentation (compositor-presentation compositor)))
+      (let ((old-x (popup-x view))
+            (old-y (popup-y view)))
+        (multiple-value-bind (x y) (ataxia.runtime:xdg-popup-position popup)
+          (setf (popup-x view) x (popup-y view) y))
+        (when (or initial-commit-p
+                  (/= old-x (popup-x view))
+                  (/= old-y (popup-y view)))
+          (schedule-presentation (compositor-presentation compositor)))))
     view))
 
 (defmethod ataxia.runtime:xdg-popup-mapped

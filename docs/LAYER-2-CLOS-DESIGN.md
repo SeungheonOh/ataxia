@@ -5,17 +5,18 @@ contract sketches, not implementation authorization.
 
 ## 1. Purpose
 
-Layer 2 is the policy and composition framework of Ataxia. It consumes the typed
-events produced by Layer 1, constructs semantic compositor state, invokes
-replaceable policies, builds presentation snapshots, routes input, schedules
-animations, submits native commands, and exposes controlled agent operations.
+Layer 2 is the policy and composition framework of Ataxia. Protocol-specific
+Layer 1 callbacks invoke its typed sink methods. It constructs semantic
+compositor state, invokes replaceable policies, builds presentation snapshots,
+routes input, schedules animations, calls typed Layer 1 functions, and exposes
+controlled agent operations.
 
-Its native-facing dependency is the portable gateway defined in
-[Layer 1–Layer 2 Interface Contract](LAYER-1-2-INTERFACE.md).
+Its native-facing dependency is the direct Common Lisp API defined in
+[wlroots–Common Lisp Boundary and Layer 1–Layer 2 Interface](LAYER-1-2-INTERFACE.md).
 
 The design has four goals:
 
-1. no wlroots pointer or layout appears in Layer 2;
+1. no raw wlroots pointer, C struct layout, or CFFI call appears in Layer 2;
 2. no central class accumulates every compositor feature;
 3. every desktop policy is replaceable through a CLOS protocol or explicit hook;
 4. replacement remains performant because services are pinned per transaction,
@@ -30,7 +31,7 @@ The Layer 2 kernel owns:
 - owner-thread enforcement;
 - object identity and lifecycle;
 - transactions and revisions;
-- event ordering;
+- framework transaction and domain-event ordering;
 - service lookup and replacement;
 - hook registration and dispatch;
 - command mailbox processing;
@@ -85,12 +86,11 @@ on implementation-specific instance updating.
 
 ```mermaid
 flowchart LR
-    L1IN[Layer 1 event queue]
-    L1OUT[Layer 1 command gateway]
+    L1IN[Protocol-specific Layer 1 callbacks]
+    L1OUT[Typed Layer 1 wlroots functions]
 
     subgraph KERNEL[Layer 2 runtime kernel]
         RUNTIME[Compositor runtime]
-        ROUTER[Event router]
         OBJECTS[Object registry]
         SCOPE[Service scope]
         HOOKS[Hook registry]
@@ -100,7 +100,7 @@ flowchart LR
     end
 
     subgraph DOMAINS[Layer 2 domain services]
-        ADAPTERS[Protocol policy adapters]
+        SINKS[Protocol policy sinks]
         SHELL[Shell and focus]
         WORLD[World and placement]
         INPUT[Input and cursor]
@@ -111,10 +111,9 @@ flowchart LR
         AGENT[Agent actions and control]
     end
 
-    L1IN --> RUNTIME
-    RUNTIME --> ROUTER
-    ROUTER --> ADAPTERS
-    ADAPTERS --> TX
+    L1IN --> SINKS
+    SINKS --> TX
+    RUNTIME --> TX
     TX --> SCOPE
     TX --> HOOKS
     TX --> OBJECTS
@@ -168,9 +167,9 @@ classDiagram
     }
 
     class NativeResource {
-        nativeHandle
-        nativeKind
-        nativeGeneration
+        layer1Wrapper
+        wrapperClass
+        wrapperGeneration
     }
 
     class SemanticEntity {
@@ -230,7 +229,7 @@ The runtime is deliberately small. Its conceptual slots are:
 |---|---|
 | state | `created`, `starting`, `running`, `stopping`, `stopped`, `failed` |
 | owner thread | only thread allowed to mutate compositor/native state |
-| native gateway | Layer 1 event drain and command submission protocol |
+| Layer 1 runtime | typed wrapper provenance, callback depth, and public protocol APIs |
 | object registry | all live Layer 2 identities |
 | service scope | immutable active service generation |
 | hook registry | immutable hook/handler generation |
@@ -258,11 +257,12 @@ Every observable Layer 2 object shares:
 
 Two subclasses distinguish ownership:
 
-- `native-resource`: mirrors a Layer 1 object and carries an opaque native handle;
+- `native-resource`: relates semantic state to a typed, live Layer 1 wrapper;
 - `semantic-entity`: exists only in Layer 2 and may relate multiple resources.
 
 Native retirement and semantic retirement are related but not identical. A view
-can outlive one surface commit, while a native surface cannot outlive its handle.
+can outlive one surface commit, while a typed surface wrapper becomes unusable
+as soon as its wlroots destroy callback invalidates it.
 
 ### 4.4 Semantic entity kinds
 
@@ -352,7 +352,7 @@ Domain generics dispatch on the service first and typed values afterward:
 
 | Generic contract | Primary dispatch |
 |---|---|
-| adapt native event | protocol adapter, native event |
+| handle XDG resize request | XDG policy sink, concrete request |
 | validate component | component schema, entity, value |
 | project world | world service, world state, camera, entities, viewport |
 | place relative entity | world service, parent placement, relation |
@@ -365,7 +365,7 @@ Domain generics dispatch on the service first and typed values afterward:
 | sample animation | interpolator, definition, time |
 | build scene | scene source, scene context |
 | build render graph | render planner, presentation snapshot |
-| execute render graph | render executor, frame target, render graph |
+| execute render graph | render executor, concrete render context, render graph |
 | authorize action | action provider, principal, action |
 
 This convention makes the active service generation explicit and prevents
@@ -513,7 +513,7 @@ Migration is bounded and prepared before scope publication. A world-service
 replacement may require converting every affected placement; it cannot publish a
 half-migrated world.
 
-## 7. Events, Hooks, and Commands
+## 7. Protocol Callbacks, Domain Events, Hooks, and Commands
 
 ### 7.1 Event classes
 
@@ -529,18 +529,12 @@ classDiagram
         provenance
     }
 
-    class NativeNotification
-    class NativePolicyRequest
-    class NativeCompletion
     class DomainEvent
     class MutationEvent
     class InputEvent
     class FrameEvent
     class AgentCommandEvent
 
-    FrameworkEvent <|-- NativeNotification
-    FrameworkEvent <|-- NativePolicyRequest
-    FrameworkEvent <|-- NativeCompletion
     FrameworkEvent <|-- DomainEvent
     DomainEvent <|-- MutationEvent
     DomainEvent <|-- InputEvent
@@ -548,34 +542,41 @@ classDiagram
     FrameworkEvent <|-- AgentCommandEvent
 ```
 
-Events are immutable facts or requests. They are not mutable bags that handlers
-edit in place.
+Framework events are immutable domain facts or requests. Exact Layer 1 callback
+values do not inherit from this hierarchy; `xdg-request-resize`,
+`pointer-motion-event`, and `output-present-event` retain their protocol package
+types until a policy sink deliberately creates a domain event.
 
-### 7.2 Protocol adapters
+### 7.2 Protocol policy sinks
 
-An active protocol adapter translates a Layer 1 event into one of:
+An active protocol policy sink specializes the exact generic functions exported
+by one Layer 1 protocol package. Its callback may produce:
 
-- a native-resource lifecycle transition;
+- typed-wrapper/semantic-resource relationship changes;
 - a semantic entity mutation;
 - a policy request;
-- a native completion reconciliation;
 - a domain event.
 
-Adapters do not directly mutate registries. They propose work through the current
+Sinks do not directly mutate registries. They propose work through the current
 transaction.
 
-### 7.3 Event router
+### 7.3 Direct callback entry
 
-The event router selects an adapter using:
+There is no native event router. The concrete Layer 1 package already knows the
+callback and invokes its corresponding generic function, for example:
 
-- Layer 1 module namespace and schema;
-- event opcode;
-- subject kind;
-- active adapter-service generation.
+```lisp
+(xdg-toplevel-request-resize active-xdg-policy request)
+(pointer-motion active-input-service event)
+(output-frame active-output-service output)
+```
 
-Routing tables are immutable per service scope. Unknown optional modules can be
-ignored only if Layer 1 marked the event optional. Unknown lifecycle or critical
-events fail the adapter scope rather than silently desynchronize state.
+Each protocol manager holds a typed sink installed at a safe point. Callback
+entry pins that sink generation for its dynamic extent. Replacing the service
+changes the next callback without changing native listeners or kernel cases.
+
+An unhandled required callback is a configuration error for that protocol
+package. Optional protocol packages are simply not created or advertised.
 
 ### 7.4 Hooks
 
@@ -594,15 +595,18 @@ A hook point is an explicitly registered object:
 Hook handlers run against a frozen handler list. Adding/removing a handler during
 dispatch affects the next invocation.
 
-### 7.5 Events versus hooks versus commands
+### 7.5 Callbacks versus events versus hooks versus commands
 
-- **event**: a fact/request routed by the runtime;
+- **protocol callback**: exact wlroots/Wayland fact or request entering its typed
+  Layer 2 sink;
+- **domain event**: semantic fact/request intentionally created inside Layer 2;
 - **generic function**: the primary domain contract used to decide behavior;
 - **hook**: ordered extension around a named point in that contract;
 - **mutation**: proposed framework state transition;
 - **effect**: staged external or native side effect;
 - **command**: mailbox/RPC request asking the owner thread to run a transaction;
-- **native command**: typed outgoing Layer 1 operation.
+- **typed Layer 1 call**: concrete `wlr_*`/`wl_*` wrapper invoked at its declared
+  callback or safe-point mode.
 
 Conflating these concepts is how a generic framework becomes an untraceable
 collection of callbacks.
@@ -644,12 +648,12 @@ classDiagram
         execute()
     }
 
-    class NativeCommandEffect
+    class Layer1CallEffect
     class Observation
 
     Transaction o-- MutationProposal
     Transaction o-- Effect
-    Effect <|-- NativeCommandEffect
+    Effect <|-- Layer1CallEffect
     Transaction o-- Observation
 ```
 
@@ -674,12 +678,12 @@ observation services match descriptors without requiring kernel edits.
 ### 8.3 Transaction stages
 
 1. pin the active service and hook generations;
-2. validate initiating event/command;
+2. validate the initiating callback, domain event, or mailbox command;
 3. construct bounded mutation proposals;
 4. validate component schemas and expected revisions;
 5. dispatch authorization/veto hooks;
 6. resolve animation and invalidation consequences;
-7. prepare fallible native effects and all publication storage;
+7. prepare fallible typed Layer 1 call effects and all publication storage;
 8. execute required prepublication effects;
 9. atomically publish the local write set and runtime revision;
 10. execute postpublication notifications/effects;
@@ -689,63 +693,60 @@ observation services match descriptors without requiring kernel edits.
 ### 8.4 Honest native atomicity
 
 Layer 2 transactions are atomic for Layer 2 state. Wayland clients, DRM, and
-native commands are external systems and cannot always be rolled back.
+direct wlroots calls affect external systems and cannot always be rolled back.
 
 Effects declare one of:
 
 - `precondition-only`: no externally visible mutation;
 - `required-before-publish`: must succeed before local state publication;
-- `post-publish`: failure is reconciled by a completion/fault event;
+- `post-publish`: failure is reconciled by an exact later callback or fault;
 - `irreversible`: transaction records honest terminal/partial semantics.
 
 The core does not fabricate undo. If a plugin wants history, it observes
 committed mutation descriptors and stores inverse domain operations itself.
 
-### 8.5 Native-event transaction sequence
+### 8.5 Protocol-callback transaction sequence
 
 ```mermaid
 sequenceDiagram
-    participant L1 as Layer 1
-    participant RT as Runtime
-    participant ER as Event router
-    participant PA as Protocol adapter
+    participant L1 as Typed Layer 1 callback
+    participant PS as Protocol policy sink
     participant TX as Transaction
     participant DS as Domain service
     participant HK as Hooks
-    participant NG as Native gateway
+    participant API as Typed Layer 1 functions
     participant OB as Observation bus
 
-    L1->>RT: typed native event
-    RT->>ER: route under pinned scope
-    ER->>PA: adapt event
-    PA->>TX: begin and propose transition
+    L1->>PS: xdg-toplevel-request-resize(request)
+    PS->>TX: begin/join and propose transition
     TX->>DS: validate and decide policy
     DS-->>TX: mutations and effects
     TX->>HK: authorization and extension hooks
     HK-->>TX: reduced result
-    TX->>NG: required native effects
-    NG-->>TX: immediate completion
+    TX->>API: required concrete wlroots calls
+    API-->>TX: direct typed result
     TX->>TX: publish local write set
     TX->>OB: publish committed observations
-    TX-->>RT: committed revision
+    TX-->>PS: committed revision
 ```
 
-### 8.6 Native asynchronous completion
+### 8.6 Later protocol facts
 
-When a native command completes later, its correlation identity points to a
-pending-operation component or entity. The completion is a new event and a new
-transaction. The original transaction does not stay open while waiting for a
-client or page flip.
+When a client acknowledgement, surface commit, page flip, presentation report,
+or buffer release arrives later, its exact protocol callback opens a new
+transaction. Protocol-specific state—such as an XDG configure serial or output
+commit sequence—relates it to a pending entity/component. The original
+transaction never stays open while waiting for a client or page flip.
 
 ## 9. Runtime Turn and Safe Points
 
 ```mermaid
 flowchart TD
     START[Begin runtime turn]
-    DISPATCH[Dispatch Layer 1 with bounded timeout]
-    DRAIN[Drain critical then coalescible events]
-    ADAPT[Adapt and transact events in sequence]
     MAIL[Drain bounded owner mailbox]
+    TIMER[Run due Lisp timers]
+    DISPATCH[Call wl_event_loop_dispatch; typed callbacks transact synchronously]
+    SAFE[Run outermost callback-safe-point effects]
     CLOCK[Sample clocks and due animations]
     CURSOR[Freeze cursor and interaction state]
     FRAME[Build requested presentation snapshots]
@@ -754,20 +755,21 @@ flowchart TD
     RETIRE[Retire unreferenced objects and scopes]
     STOP{Stopping?}
 
-    START --> DISPATCH --> DRAIN --> ADAPT --> MAIL --> CLOCK --> CURSOR
+    START --> MAIL --> TIMER --> DISPATCH --> SAFE --> CLOCK --> CURSOR
     CURSOR --> FRAME --> RENDER --> OBS --> RETIRE --> STOP
     STOP -- no --> START
     STOP -- yes --> SHUTDOWN[Ordered shutdown]
 ```
 
-Each stage has a work budget so sustained input or agent traffic cannot starve
-frame deadlines. Critical lifecycle ordering is preserved across turns.
+Each stage has a work budget so sustained native callbacks or agent traffic
+cannot starve frame deadlines. Native callback ordering is the wlroots signal
+order; Layer 2 adds no bridge queue.
 
 ## 10. Domain Service Graph
 
 ```mermaid
 flowchart LR
-    PROTO[Protocol adapters]
+    PROTO[Protocol policy sinks]
     MODEL[Entity and component model]
     SHELL[Shell operations]
     FOCUS[Focus policy]
@@ -824,7 +826,7 @@ replaced independently when their declared compatibility requirements hold.
 | presentation snapshot | presentation builder | immutable complete output revision |
 | hit index | projection/presentation | query structure tied to presentation revision |
 | render graph | render planner | validated output-local passes and commands |
-| frame target | Layer 1 lease | native target and capability snapshot |
+| render context | render executor | concrete typed renderer/output/buffer wrappers for one frame |
 
 ### 11.2 Presentation pipeline
 
@@ -841,7 +843,7 @@ flowchart LR
     HIT[Hit index]
     GRAPH[Render graph]
     EXEC[Render executor]
-    TARGET[Layer 1 frame target]
+    TARGET[Typed wlroots render context]
 
     ENT --> SCENE
     ENT --> WORLD
@@ -881,7 +883,7 @@ declare the content non-interactive.
 
 #### Presentation builder
 
-- pin surface-buffer leases;
+- retain concrete surface-buffer snapshots;
 - combine scene, projection, animation, cursor, and overlays;
 - assign one revision;
 - build render and hit inputs from identical geometry;
@@ -896,10 +898,10 @@ declare the content non-interactive.
 
 #### Render executor
 
-- acquire/consume Layer 1 frame targets;
+- acquire concrete render buffers/passes through typed Layer 1 functions;
 - execute validated render graphs;
 - import sampled buffers;
-- report fences, damage, sampled surfaces, and readback capability;
+- build/test/commit concrete output state and report sampled surfaces;
 - cancel safely on any error.
 
 ### 11.4 Render graph classes
@@ -979,7 +981,7 @@ global focus/cursor state behind the transaction.
 
 ```mermaid
 sequenceDiagram
-    participant L1 as Layer 1 input module
+    participant L1 as Exact Layer 1 input callback
     participant IR as Input router
     participant OP as Active operation
     participant CM as Cursor motion service
@@ -1000,7 +1002,7 @@ sequenceDiagram
         HT-->>FP: surface-local hit candidates
         FP->>TX: propose focus transition
         FP->>CP: resolve cursor context
-        IR->>SS: stage protocol enter motion button axis frame
+        IR->>SS: stage typed Layer 1 seat enter/motion/button/axis/frame calls
     end
     TX->>TX: commit state and delivery effects
 ```
@@ -1196,28 +1198,26 @@ The frame coordinator tracks:
 
 ```mermaid
 sequenceDiagram
-    participant O as Layer 1 output module
+    participant O as Exact output-frame callback
     participant FC as Frame coordinator
     participant AS as Animation scheduler
     participant PB as Presentation builder
     participant RP as Render planner
     participant RE as Render executor
-    participant L1 as Layer 1 frame transaction
+    participant L1 as Typed Layer 1 render/output API
 
     O->>FC: frame deadline or damage
     FC->>AS: sample due animations
     AS-->>FC: presentation overlays and next deadline
     FC->>PB: freeze presentation snapshot
-    PB-->>FC: snapshot plus hit index and leases
+    PB-->>FC: snapshot, hit index, buffer snapshots
     FC->>RP: build validated render graph
     RP-->>FC: graph and damage
-    FC->>L1: acquire frame target
-    L1-->>FC: target and capabilities
-    FC->>RE: execute graph on target
-    RE-->>FC: fence and sampled surfaces
-    FC->>L1: submit frame transaction
-    L1-->>FC: commit completion
-    FC->>L1: frame done and presentation feedback commands
+    FC->>RE: execute graph with concrete render context
+    RE->>L1: render-pass/buffer/output-state calls
+    L1-->>RE: direct typed results
+    RE-->>FC: submitted state and sampled surfaces
+    FC->>L1: exact frame-done/presentation-feedback calls
 ```
 
 One output frame pins all participating service generations until submission or
@@ -1302,6 +1302,8 @@ normalization but before logical routing, with explicit provenance.
 
 ```mermaid
 flowchart TB
+    L1PROTO[ataxia.wlr.protocol.* public APIs]
+    L1RENDER[ataxia.wlr.render and seat public APIs]
     KID[ataxia.kernel.identity]
     KRES[ataxia.kernel.resources]
     KEVT[ataxia.kernel.events]
@@ -1311,7 +1313,7 @@ flowchart TB
     KRUN[ataxia.kernel.runtime]
 
     MODEL[ataxia.model]
-    ADAPT[ataxia.protocol-adapters]
+    ADAPT[ataxia.protocol-policy]
     WORLD[ataxia.world]
     SCENE[ataxia.scene]
     PRES[ataxia.presentation]
@@ -1331,6 +1333,9 @@ flowchart TB
     KHOOK --> KTX
     KTX --> KRUN
 
+    L1PROTO --> ADAPT
+    L1RENDER --> RENDER
+    L1RENDER --> INPUT
     KRES --> MODEL
     KEVT --> ADAPT
     MODEL --> WORLD
@@ -1350,8 +1355,12 @@ Rules:
 
 - kernel packages never depend on domain packages;
 - domain packages depend on kernel protocols, not runtime internals;
-- protocol adapters may depend on native public wrappers and domain protocols;
-- render, input, shell, and animation do not depend on wlroots/CFFI packages;
+- protocol policy packages may depend on public typed Layer 1 protocol wrappers
+  and domain protocols;
+- concrete render executors and seat sinks may depend on public typed Layer 1
+  APIs;
+- world, scene, presentation, shell, animation, and agent packages never depend
+  on raw wlroots/CFFI packages;
 - profiles/plugins depend on domain protocols and provide services;
 - the executable composition root is the only package allowed to assemble all
   domains and defaults.
@@ -1360,14 +1369,14 @@ Rules:
 
 | Object/value | Creator | Mutator | Lifetime owner |
 |---|---|---|---|
-| native resource mirror | protocol adapter transaction | resource protocol | object registry |
+| native-resource relation | protocol policy transaction | resource protocol | object registry |
 | semantic entity | domain service transaction | owning domain service | object registry |
 | component value | component-owning service | replacement transaction only | entity snapshot |
 | service provider | plugin manager | provider lifecycle protocol | service scope/plugin instance |
 | hook handler | plugin/control transaction | hook registry transaction | hook generation |
 | transaction | transaction manager | owner thread | one runtime operation |
 | presentation snapshot | presentation builder | immutable | in-flight frame/readers |
-| buffer lease | Layer 1 gateway | release only | presentation/frame transaction |
+| surface-buffer snapshot | Layer 1 surface callback | release only | presentation/frame transaction |
 | animation instance | animation scheduler | scheduler transaction | active set/entity registry |
 | interactive operation | shell service | shell/input transactions | entity registry |
 | agent proposal | action provider | transaction stages | control request |
@@ -1383,15 +1392,15 @@ Rules:
 7. Placement belongs to views/entities, not application identity.
 8. Render and hit geometry share one presentation revision.
 9. Cursor presentation content is never a hit-test candidate.
-10. Native effects report honest completion; local atomicity does not imply
-    external rollback.
+10. Typed Layer 1 calls report honest direct results or later concrete callbacks;
+    local atomicity does not imply external rollback.
 11. Service replacement publishes only a fully validated candidate scope.
 12. Old providers remain alive while pinned transactions or frames use them.
 13. Animation resolution receives a general transition descriptor and may vary
     per subject.
 14. Agent actions use the same domain protocols and hooks as local operations.
-15. Every queue, component collection, event payload, render plan, animation set,
-    and observation is bounded.
+15. Every mailbox/observation queue, component collection, callback copy, render
+    plan, animation set, and observation is bounded.
 16. The kernel can run with no desktop-profile plugin installed.
 
 ## 19. Decisions Still Required
@@ -1399,12 +1408,12 @@ Rules:
 1. Choose the concrete immutable component-map representation after benchmarks.
 2. Decide whether semantic entity kinds are shallow subclasses, explicit kind
    descriptors, or a hybrid; behavior remains service-owned either way.
-3. Define which native effects qualify as `required-before-publish` for the
+3. Define which typed Layer 1 calls qualify as `required-before-publish` for the
    initial protocols.
 4. Define whether component migration is mandatory for hot world replacement or
    whether providers may reject replacement with live placements.
 5. Approve whether presentation snapshots retain old service providers directly
-   or retain a scope-generation lease.
+   or retain one scope-generation reference.
 6. Define initial hook catalog and which hooks may veto or propose mutations.
 7. Choose observation classifications and default redaction boundaries.
 8. Confirm the conventional planar profile as the first end-to-end provider set.

@@ -56,6 +56,25 @@
    #:pointer-decision-operation-kind
    #:pointer-decision-resize-edges
    #:pointer-decision-deliver-p
+   #:pointer-axis-input
+   #:pointer-axis-input-time
+   #:pointer-axis-input-orientation
+   #:pointer-axis-input-delta
+   #:pointer-axis-input-discrete-delta
+   #:pointer-axis-input-source
+   #:pointer-axis-input-relative-direction
+   #:pointer-axis-decision
+   #:pointer-axis-decision-deliver-p
+   #:keyboard-key-input
+   #:keyboard-input-time
+   #:keyboard-input-keycode
+   #:keyboard-input-state
+   #:keyboard-input-depressed-modifiers
+   #:keyboard-input-latched-modifiers
+   #:keyboard-input-locked-modifiers
+   #:keyboard-input-layout-group
+   #:keyboard-key-decision
+   #:keyboard-decision-deliver-p
    #:apply-view-configuration-decision
    #:operation-context
    #:context-subject
@@ -192,6 +211,8 @@
    #:behavior-move-view
    #:behavior-focus-changed
    #:behavior-handle-pointer-button
+   #:behavior-handle-pointer-axis
+   #:behavior-handle-keyboard-key
    #:behavior-observe-output
    #:behavior-observe-view
    #:behavior-resolve-animation

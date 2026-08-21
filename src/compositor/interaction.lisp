@@ -26,6 +26,13 @@
    (devices :initform nil :accessor seat-devices)
    (keyboards :initform nil :accessor seat-keyboards)
    (active-keyboard :initform nil :accessor seat-active-keyboard)
+   (depressed-modifiers :initform 0
+                        :accessor seat-depressed-modifiers)
+   (latched-modifiers :initform 0
+                      :accessor seat-latched-modifiers)
+   (locked-modifiers :initform 0
+                     :accessor seat-locked-modifiers)
+   (layout-group :initform 0 :accessor seat-layout-group)
    (pointer-x :initarg :pointer-x :initform 160d0 :accessor seat-pointer-x)
    (pointer-y :initarg :pointer-y :initform 100d0 :accessor seat-pointer-y)
    (pointer-focus-surface :initform nil :accessor seat-pointer-focus-surface)
@@ -574,14 +581,32 @@
           (interaction-seat-for-device
            interaction (ataxia.runtime:pointer-axis-pointer event))))
     (when seat
-      (ataxia.runtime:seat-pointer-notify-axis
-       (seat-native seat)
-       (ataxia.runtime:pointer-axis-time-msec event)
-       (ataxia.runtime:pointer-axis-orientation event)
-       (ataxia.runtime:pointer-axis-delta event)
-       (ataxia.runtime:pointer-axis-discrete-delta event)
-       (ataxia.runtime:pointer-axis-source event)
-       (ataxia.runtime:pointer-axis-relative-direction event)))
+      (let* ((input
+               (make-instance
+                'pointer-axis-input
+                :time (ataxia.runtime:pointer-axis-time-msec event)
+                :orientation (ataxia.runtime:pointer-axis-orientation event)
+                :delta (ataxia.runtime:pointer-axis-delta event)
+                :discrete-delta
+                (ataxia.runtime:pointer-axis-discrete-delta event)
+                :source (ataxia.runtime:pointer-axis-source event)
+                :relative-direction
+                (ataxia.runtime:pointer-axis-relative-direction event)))
+             (decision
+               (behavior-handle-pointer-axis
+                (compositor-behavior-policy
+                 (component-compositor interaction))
+                interaction seat input)))
+        (check-type decision pointer-axis-decision)
+        (when (pointer-axis-decision-deliver-p decision)
+          (ataxia.runtime:seat-pointer-notify-axis
+           (seat-native seat)
+           (pointer-axis-input-time input)
+           (pointer-axis-input-orientation input)
+           (pointer-axis-input-delta input)
+           (pointer-axis-input-discrete-delta input)
+           (pointer-axis-input-source input)
+           (pointer-axis-input-relative-direction input)))))
     seat))
 
 (defmethod interaction-handle-pointer-frame
@@ -601,11 +626,28 @@
                    (ataxia.runtime:keyboard-key-state event))
       (setf (seat-active-keyboard seat) keyboard)
       (ataxia.runtime:set-seat-keyboard (seat-native seat) keyboard)
-      (ataxia.runtime:seat-keyboard-notify-key
-       (seat-native seat)
-       (ataxia.runtime:keyboard-key-time-msec event)
-       (ataxia.runtime:keyboard-key-keycode event)
-       (ataxia.runtime:keyboard-key-state event)))
+      (let* ((input
+               (make-instance
+                'keyboard-key-input
+                :time (ataxia.runtime:keyboard-key-time-msec event)
+                :keycode (ataxia.runtime:keyboard-key-keycode event)
+                :state (ataxia.runtime:keyboard-key-state event)
+                :depressed-modifiers (seat-depressed-modifiers seat)
+                :latched-modifiers (seat-latched-modifiers seat)
+                :locked-modifiers (seat-locked-modifiers seat)
+                :layout-group (seat-layout-group seat)))
+             (decision
+               (behavior-handle-keyboard-key
+                (compositor-behavior-policy
+                 (component-compositor interaction))
+                interaction seat input)))
+        (check-type decision keyboard-key-decision)
+        (when (keyboard-decision-deliver-p decision)
+          (ataxia.runtime:seat-keyboard-notify-key
+           (seat-native seat)
+           (keyboard-input-time input)
+           (keyboard-input-keycode input)
+           (keyboard-input-state input)))))
     seat))
 
 (defmethod interaction-handle-keyboard-modifiers
@@ -613,7 +655,15 @@
   (let* ((keyboard (ataxia.runtime:keyboard-modifiers-keyboard event))
          (seat (interaction-seat-for-device interaction keyboard)))
     (when seat
-      (setf (seat-active-keyboard seat) keyboard)
+      (setf (seat-active-keyboard seat) keyboard
+            (seat-depressed-modifiers seat)
+            (ataxia.runtime:keyboard-modifiers-depressed event)
+            (seat-latched-modifiers seat)
+            (ataxia.runtime:keyboard-modifiers-latched event)
+            (seat-locked-modifiers seat)
+            (ataxia.runtime:keyboard-modifiers-locked event)
+            (seat-layout-group seat)
+            (ataxia.runtime:keyboard-modifiers-group event))
       (ataxia.runtime:set-seat-keyboard (seat-native seat) keyboard)
       (ataxia.runtime:seat-keyboard-notify-modifiers
        (seat-native seat) keyboard))

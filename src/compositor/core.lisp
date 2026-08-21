@@ -100,6 +100,37 @@
    (deliver-p :initarg :deliver-p :initform t
               :reader pointer-decision-deliver-p)))
 
+(defclass pointer-axis-input ()
+  ((time :initarg :time :reader pointer-axis-input-time)
+   (orientation :initarg :orientation :reader pointer-axis-input-orientation)
+   (delta :initarg :delta :reader pointer-axis-input-delta)
+   (discrete-delta :initarg :discrete-delta
+                   :reader pointer-axis-input-discrete-delta)
+   (source :initarg :source :reader pointer-axis-input-source)
+   (relative-direction :initarg :relative-direction
+                       :reader pointer-axis-input-relative-direction)))
+
+(defclass pointer-axis-decision ()
+  ((deliver-p :initarg :deliver-p :initform t
+              :reader pointer-axis-decision-deliver-p)))
+
+(defclass keyboard-key-input ()
+  ((time :initarg :time :reader keyboard-input-time)
+   (keycode :initarg :keycode :reader keyboard-input-keycode)
+   (state :initarg :state :reader keyboard-input-state)
+   (depressed-modifiers :initarg :depressed-modifiers
+                        :reader keyboard-input-depressed-modifiers)
+   (latched-modifiers :initarg :latched-modifiers
+                      :reader keyboard-input-latched-modifiers)
+   (locked-modifiers :initarg :locked-modifiers
+                     :reader keyboard-input-locked-modifiers)
+   (layout-group :initarg :layout-group
+                 :reader keyboard-input-layout-group)))
+
+(defclass keyboard-key-decision ()
+  ((deliver-p :initarg :deliver-p :initform t
+              :reader keyboard-decision-deliver-p)))
+
 (defun apply-view-configuration-decision (view decision)
   (when decision
     (check-type decision view-configuration-decision)

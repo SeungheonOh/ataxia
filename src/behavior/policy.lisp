@@ -144,6 +144,10 @@
 (defgeneric behavior-focus-changed (policy seat previous view))
 (defgeneric behavior-handle-pointer-button
     (policy interaction seat hit button state time))
+(defgeneric behavior-handle-pointer-axis
+    (policy interaction seat input))
+(defgeneric behavior-handle-keyboard-key
+    (policy interaction seat input))
 (defgeneric behavior-observe-output (policy output))
 (defgeneric behavior-observe-view (policy view))
 (defgeneric behavior-resolve-animation
@@ -167,6 +171,16 @@
 (defmethod detach-component :before
     ((policy behavior-policy) reason)
   (quiesce-behavior-policy policy reason))
+
+(defmethod behavior-handle-pointer-axis
+    ((policy behavior-policy) interaction seat input)
+  (declare (ignore policy interaction seat input))
+  (make-instance 'pointer-axis-decision))
+
+(defmethod behavior-handle-keyboard-key
+    ((policy behavior-policy) interaction seat input)
+  (declare (ignore policy interaction seat input))
+  (make-instance 'keyboard-key-decision))
 
 (defun adopt-planar-behavior-state (view)
   (let ((state (view-behavior-state view)))

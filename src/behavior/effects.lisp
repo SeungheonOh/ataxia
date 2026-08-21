@@ -75,17 +75,6 @@ void main() {
                   (view-presentation-state view)))
         value))
 
-(defmethod apply-animation-sample
-    ((subject view) (property effect-parameter-binding) value context)
-  (declare (ignore context))
-  (setf (view-effect-parameter
-         subject (effect-parameter-binding-name property))
-        value)
-  subject)
-
-(defmethod animation-property-key ((property effect-parameter-binding))
-  (list :effect-parameter (effect-parameter-binding-name property)))
-
 (defun ensure-soft-shadow-program (policy)
   (let ((renderer (compositor-graphics (component-compositor policy))))
     (unless (shader-program-installed-p

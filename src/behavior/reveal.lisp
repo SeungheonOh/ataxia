@@ -129,23 +129,22 @@ void main() {
            (presentation-effect-parameters (view-presentation-state view)))
   view)
 
-(defmethod apply-animation-sample
-    ((subject view) (property reveal-progress-binding) value context)
-  (call-next-method)
+(defun apply-reveal-progress-animation-value (subject binding value)
+  (setf (gethash (shader-uniform-binding-name binding)
+                 (codec-reveal-uniform-table subject))
+        value)
   (when (>= value (- 1d0 1d-6))
     (clear-codec-reveal-state
-     subject (reveal-binding-previous-program property)))
+     subject (reveal-binding-previous-program binding)))
   subject)
 
-(defmethod finalize-animation-property
-    ((property reveal-progress-binding) (subject view) instance reason)
+(defun finalize-reveal-progress-animation (subject binding instance reason)
   (declare (ignore instance reason))
   (clear-codec-reveal-state
-   subject (reveal-binding-previous-program property)))
+   subject (reveal-binding-previous-program binding)))
 
-(defmethod prepare-animation-property-for-policy
-    ((property reveal-progress-binding) (policy behavior-policy) instance)
-  (declare (ignore property instance))
+(defun prepare-reveal-progress-animation (policy binding instance)
+  (declare (ignore binding instance))
   (ensure-codec-reveal-programs policy))
 
 (defun install-codec-reveal-variant (policy renderer kind external-p)
@@ -176,10 +175,9 @@ void main() {
 (defun codec-reveal-seed (view)
   (coerce (mod (+ (* (view-id view) 37) 11) 997) 'double-float))
 
-(defun make-codec-reveal-animation (policy view)
-  (let ((style (behavior-application-reveal-style policy)))
-    (when (and style (codec-reveal-enabled-p style)
-               (ensure-codec-reveal-programs policy))
+(defun make-codec-reveal-animation (policy view style)
+  (when (and style (codec-reveal-enabled-p style)
+             (ensure-codec-reveal-programs policy))
       (let* ((state (view-presentation-state view))
              (parameters (presentation-effect-parameters state))
              (current-program (view-shader-program-name view))
@@ -207,22 +205,22 @@ void main() {
          (list
           (make-instance
            'animation-track
-           :property
+           :binding
            (make-instance
             'reveal-progress-binding :name 'reveal-progress
             :program-name +codec-reveal-program-name+
             :previous-program previous-program)
+           :conflict-key '(:shader-uniform reveal-progress)
            :from 0d0 :to 1d0 :interpolator #'linear-interpolation)
           (make-instance
            'animation-track
-           :property
+           :binding
            (make-instance 'shader-uniform-binding :name 'corruption-phase)
+           :conflict-key '(:shader-uniform corruption-phase)
            :from seed :to (+ seed 8d0)
-           :interpolator #'linear-interpolation)))))))
+           :interpolator #'linear-interpolation))))))
 
-(defmethod behavior-view-unmapped :after
-    ((policy behavior-policy) view)
-  (declare (ignore policy))
+(defun clear-view-codec-reveal-if-active (view)
   (let* ((parameters
            (presentation-effect-parameters (view-presentation-state view)))
          (previous-program

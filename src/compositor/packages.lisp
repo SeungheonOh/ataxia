@@ -242,6 +242,9 @@
    #:behavior-observe-output
    #:behavior-observe-view
    #:behavior-resolve-animation
+   #:behavior-apply-animation-value
+   #:behavior-finalize-animation-binding
+   #:behavior-prepare-animation-binding
    #:behavior-set-view-animation-definition
    #:behavior-validate-resources
    #:behavior-placement
@@ -273,13 +276,12 @@
    #:animation-policy
    #:animation-policy-fallback
    #:animation-track
-   #:animation-track-property
+   #:animation-track-binding
+   #:animation-track-conflict-key
    #:animation-track-from
    #:animation-track-to
    #:animation-track-interpolator
-   #:animation-property-key
-   #:finalize-animation-property
-   #:prepare-animation-property-for-policy
+   #:animation-track-sampler
    #:shader-uniform-binding
    #:shader-uniform-binding-name
    #:animation-definition

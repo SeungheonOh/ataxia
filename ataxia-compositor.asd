@@ -35,9 +35,10 @@
     :components
     ((:file "interaction")))
    (:module "behavior-implementations"
-    :pathname "src/behavior"
-    :components
-    ((:file "effects")
+   :pathname "src/behavior"
+   :components
+    ((:file "animation-bindings")
+     (:file "effects")
      (:file "reveal")
      (:file "animation")
      (:file "interaction")

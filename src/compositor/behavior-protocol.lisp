@@ -173,6 +173,12 @@
 (defgeneric behavior-observe-view (policy view))
 (defgeneric behavior-resolve-animation
     (policy engine subject descriptor context))
+(defgeneric behavior-apply-animation-value
+    (policy subject binding value instance))
+(defgeneric behavior-finalize-animation-binding
+    (policy subject binding instance reason))
+(defgeneric behavior-prepare-animation-binding
+    (policy subject binding instance))
 (defgeneric behavior-set-view-animation-definition
     (policy view descriptor-class definition))
 (defgeneric behavior-validate-resources

@@ -1,25 +1,21 @@
 ;;;; Per-subject animation engine.
 ;;;;
-;;;; Definitions bind typed transition descriptors to presentation properties.
-;;;; Each view can override resolution without changing the engine or renderer.
+;;;; Definitions bind transitions to opaque behavior-owned mutations. Core owns
+;;;; only timing, sampling, conflict cancellation, and animation lifecycle.
 
 (in-package #:ataxia.compositor)
 
-(defclass animation-policy ()
-  ((definitions :initform (make-hash-table :test #'eq)
-                :reader animation-policy-definitions)
-   (fallback :initarg :fallback :initform nil
-             :accessor animation-policy-fallback)))
-
 (defclass animation-track ()
-  ((property :initarg :property :reader animation-track-property)
+  ((binding :initarg :binding :initarg :property
+            :reader animation-track-binding)
+   (conflict-key :initarg :conflict-key :initform nil
+                 :reader animation-track-conflict-key)
    (from :initarg :from :reader animation-track-from)
    (to :initarg :to :reader animation-track-to)
    (interpolator :initarg :interpolator :initform #'ease-out-cubic
-                 :reader animation-track-interpolator)))
-
-(defclass shader-uniform-binding ()
-  ((name :initarg :name :reader shader-uniform-binding-name)))
+                 :reader animation-track-interpolator)
+   (sampler :initarg :sampler :initform #'sample-numeric-animation-track
+            :reader animation-track-sampler)))
 
 (defclass animation-definition ()
   ((duration :initarg :duration :reader animation-definition-duration)
@@ -37,26 +33,9 @@
                           :accessor animation-resources-finalized-p)))
 
 (defclass animation-engine (compositor-component)
-  ((active :initform nil :accessor animation-engine-active)
-   (default-resolver :initarg :default-resolver
-                     :initform #'default-animation-definition
-                     :reader animation-engine-default-resolver)))
+  ((active :initform nil :accessor animation-engine-active)))
 
 (defgeneric resolve-animation (engine subject descriptor context))
-(defgeneric apply-animation-sample (subject property value context))
-(defgeneric finalize-animation-property (property subject instance reason))
-(defgeneric prepare-animation-property-for-policy
-    (property policy instance))
-
-(defmethod finalize-animation-property
-    (property subject instance reason)
-  (declare (ignore property subject instance reason))
-  nil)
-
-(defmethod prepare-animation-property-for-policy
-    (property (policy behavior-policy) instance)
-  (declare (ignore property policy instance))
-  t)
 
 (defun linear-interpolation (progress)
   progress)
@@ -64,26 +43,11 @@
 (defun ease-out-cubic (progress)
   (- 1d0 (expt (- 1d0 progress) 3)))
 
-(defun set-animation-policy-definition (policy descriptor-class definition)
-  (check-type policy animation-policy)
-  (check-type definition animation-definition)
-  (setf (gethash descriptor-class (animation-policy-definitions policy))
-        definition)
-  policy)
-
-(defun default-animation-definition (subject descriptor context)
-  ;; Core intentionally has no visual policy. Behavior may supply defaults or
-  ;; a caller may install a renderer-independent resolver on the engine.
-  (declare (ignore subject descriptor context))
-  nil)
-
 (defmethod resolve-animation
     ((engine animation-engine) (subject view) descriptor context)
   (behavior-resolve-animation
    (compositor-behavior-policy (component-compositor engine))
    engine subject descriptor context))
-
-
 (defun animation-hook-context (context phase &key metadata timestamp)
   (make-instance
    'hook-context
@@ -101,46 +65,25 @@
   (extension-hooks
    (compositor-extensions (component-compositor engine))))
 
-(defmethod apply-animation-sample
-    ((subject view) property value context)
-  (declare (ignore context))
-  (let ((state (view-presentation-state subject)))
-    (typecase property
-      (shader-uniform-binding
-       (setf (gethash (shader-uniform-binding-name property)
-                      (presentation-shader-uniforms state))
-             value))
-      (symbol
-       (ecase property
-         (opacity (setf (presentation-opacity state) value))
-         (scale (setf (presentation-scale state) value))
-         (offset-x (setf (presentation-offset-x state) value))
-         (offset-y (setf (presentation-offset-y state) value))))
-      (t (error 'compositor-error))))
-  subject)
+(defun active-animation-policy (engine)
+  (compositor-behavior-policy (component-compositor engine)))
 
-(defgeneric animation-property-key (property))
-
-(defmethod animation-property-key (property)
-  property)
-
-(defmethod animation-property-key ((property shader-uniform-binding))
-  (list :shader-uniform (shader-uniform-binding-name property)))
-
-(defun conflicting-animation-properties (definition)
+(defun conflicting-animation-bindings (definition)
   (mapcar (lambda (track)
-            (animation-property-key (animation-track-property track)))
+            (or (animation-track-conflict-key track)
+                (animation-track-binding track)))
           (animation-definition-tracks definition)))
 
-(defun finalize-animation-instance (instance reason)
+(defun finalize-animation-instance (engine instance reason)
   (unless (animation-resources-finalized-p instance)
     (setf (animation-resources-finalized-p instance) t)
     (dolist (track
               (animation-definition-tracks
                (animation-instance-definition instance)))
-      (finalize-animation-property
-       (animation-track-property track)
-       (animation-instance-subject instance) instance reason)))
+      (behavior-finalize-animation-binding
+       (active-animation-policy engine)
+       (animation-instance-subject instance)
+       (animation-track-binding track) instance reason)))
   instance)
 
 (defun prepare-active-animations-for-policy (engine policy)
@@ -148,8 +91,9 @@
     (dolist (track
               (animation-definition-tracks
                (animation-instance-definition instance)))
-      (unless (prepare-animation-property-for-policy
-               (animation-track-property track) policy instance)
+      (unless (behavior-prepare-animation-binding
+               policy (animation-instance-subject instance)
+               (animation-track-binding track) instance)
         (error 'invalid-compositor-state
                :operation :replace-behavior-policy
                :state :animation-resource-rejected))))
@@ -158,7 +102,7 @@
 (defun cancel-animation-instance (engine instance timestamp)
   (when (eq (animation-instance-state instance) :running)
     (setf (animation-instance-state instance) :cancelled)
-    (finalize-animation-instance instance :cancelled)
+    (finalize-animation-instance engine instance :cancelled)
     (run-hook
      (animation-hooks engine) 'animation-cancelled
      (animation-hook-context
@@ -196,7 +140,7 @@
        hooks 'before-animation-start
        (animation-hook-context resolution-context :before
                                :metadata definition))
-      (let ((properties (conflicting-animation-properties definition)))
+      (let ((bindings (conflicting-animation-bindings definition)))
         (setf (animation-engine-active engine)
               (delete-if
                (lambda (instance)
@@ -204,8 +148,8 @@
                         (eq effective-subject
                             (animation-instance-subject instance))
                         (intersection
-                         properties
-                         (conflicting-animation-properties
+                         bindings
+                         (conflicting-animation-bindings
                           (animation-instance-definition instance))
                          :test #'equal))
                    (cancel-animation-instance
@@ -227,7 +171,7 @@
                                  :metadata instance))
         instance))))
 
-(defun sample-track (track progress)
+(defun sample-numeric-animation-track (track progress)
   (let* ((eased (funcall (animation-track-interpolator track) progress))
          (from (animation-track-from track))
          (to (animation-track-to track)))
@@ -245,14 +189,15 @@
                                (animation-instance-started-at instance))
                             duration))))))
     (dolist (track (animation-definition-tracks definition))
-      (apply-animation-sample
+      (behavior-apply-animation-value
+       (active-animation-policy engine)
        (animation-instance-subject instance)
-       (animation-track-property track)
-       (sample-track track progress)
+       (animation-track-binding track)
+       (funcall (animation-track-sampler track) track progress)
        instance))
     (when (= progress 1d0)
       (setf (animation-instance-state instance) :complete)
-      (finalize-animation-instance instance :completed)
+      (finalize-animation-instance engine instance :completed)
       (run-hook
        (animation-hooks engine) 'animation-completed
        (animation-hook-context

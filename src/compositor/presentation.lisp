@@ -15,7 +15,7 @@
 
 (defclass compositor-output ()
   ((native :initarg :native :reader output-native)
-   (viewport :initform (make-instance 'viewport) :reader output-viewport)
+   (behavior-state :initform nil :accessor output-behavior-state)
    (swapchain :initarg :swapchain :accessor output-swapchain)
    (last-snapshot :initform nil :accessor output-last-snapshot)
    (frame-revision :initform 0 :accessor output-frame-revision)
@@ -30,6 +30,9 @@
    (refresh-seconds :initform (/ 1d0 60d0)
                     :accessor output-refresh-seconds)
    (available-p :initform t :accessor output-available-p)))
+
+(defun output-viewport (output)
+  (output-behavior-state output))
 
 (defclass output-system (compositor-component)
   ((outputs :initform (make-hash-table :test #'eq)

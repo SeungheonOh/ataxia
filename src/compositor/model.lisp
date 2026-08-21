@@ -19,10 +19,6 @@
 (defclass behavior-view-state ()
   ((placement :initarg :placement :initform nil
               :accessor behavior-state-placement)
-   (width :initarg :width :initform 900
-          :accessor behavior-state-width)
-   (height :initarg :height :initform 650
-           :accessor behavior-state-height)
    (restore-state :initarg :restore-state :initform nil
                   :accessor behavior-state-restore-state)
    (animation-policy :initarg :animation-policy :initform nil
@@ -62,6 +58,8 @@
    (application :initarg :application :accessor view-application)
    (behavior-state :initform (make-instance 'behavior-view-state)
                    :accessor view-behavior-state)
+   (width :initarg :width :initform 900 :accessor view-width)
+   (height :initarg :height :initform 650 :accessor view-height)
    (title :initarg :title :initform nil :accessor view-title)
    (decoration-mode :initform :client-side :accessor view-decoration-mode)
    (initialized-p :initform nil :accessor view-initialized-p)
@@ -77,18 +75,6 @@
 
 (defun (setf view-placement) (placement view)
   (setf (behavior-state-placement (view-behavior-state view)) placement))
-
-(defun view-width (view)
-  (behavior-state-width (view-behavior-state view)))
-
-(defun (setf view-width) (width view)
-  (setf (behavior-state-width (view-behavior-state view)) width))
-
-(defun view-height (view)
-  (behavior-state-height (view-behavior-state view)))
-
-(defun (setf view-height) (height view)
-  (setf (behavior-state-height (view-behavior-state view)) height))
 
 (defun view-restore-placement (view)
   (behavior-state-restore-state (view-behavior-state view)))

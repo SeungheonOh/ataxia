@@ -171,12 +171,10 @@
       (setf (placement-x placement) left
             (placement-y placement) top
             (placement-width placement) (- right left)
-            (placement-height placement) (- bottom top)
-            (view-width view) (max 1 (round (- right left)))
-            (view-height view) (max 1 (round (- bottom top))))
-      (ataxia.runtime:xdg-toplevel-set-size
-       (view-native view) (view-width view) (view-height view))
-      placement)))
+            (placement-height placement) (- bottom top))
+      (make-instance
+       'view-configuration-decision
+       :width (- right left) :height (- bottom top)))))
 
 (defmethod behavior-update-operation
     ((policy planar-behavior-policy) interaction
@@ -189,48 +187,128 @@
 (defmethod behavior-restore-view
     ((policy planar-behavior-policy) compositor view)
   (declare (ignore compositor))
-  (when (view-restore-placement view)
-    (setf (view-placement view) (view-restore-placement view)
-          (view-restore-placement view) nil
-          (view-width view) (round (placement-width (view-placement view)))
-          (view-height view) (round (placement-height (view-placement view)))))
-  (incf (behavior-policy-revision policy))
-  view)
+  (let ((restore (view-restore-placement view)))
+    (when restore
+      (setf (view-placement view) restore
+            (view-restore-placement view) nil))
+    (incf (behavior-policy-revision policy))
+    (let ((placement (view-placement view)))
+      (make-instance 'view-configuration-decision
+                     :width (placement-width placement)
+                     :height (placement-height placement)))))
 
 (defmethod behavior-configure-view-for-output
     ((policy planar-behavior-policy) compositor view fullscreen-p)
   (let ((output (primary-output (compositor-interaction compositor))))
-    (when output
-      (unless (view-restore-placement view)
-        (setf (view-restore-placement view)
-              (copy-planar-placement (view-placement view))))
-      (let* ((native (output-native output))
-             (panel (if fullscreen-p
-                        0d0
-                        (presentation-panel-height
-                         (compositor-presentation compositor))))
-             (titlebar
-               (if (or fullscreen-p
-                       (not (view-server-decorated-p view)))
-                   0d0
-                   (presentation-titlebar-height
-                    (compositor-presentation compositor))))
-             (scale (viewport-scale (output-viewport output)))
-             (placement (view-placement view))
-             (width (/ (ataxia.runtime:output-width native) scale))
-             (height (/ (- (ataxia.runtime:output-height native)
-                           panel titlebar)
-                        scale)))
-        (multiple-value-bind (world-x world-y)
-            (behavior-unproject-point
-             policy output (output-viewport output) 0d0 panel)
-          (setf (placement-x placement) world-x
-                (placement-y placement) world-y
-                (placement-width placement) width
-                (placement-height placement) height
-                (view-width view) (max 1 (round width))
-                (view-height view) (max 1 (round height)))
-          (ataxia.runtime:xdg-toplevel-set-size
-           (view-native view) (view-width view) (view-height view))))))
+    (if (null output)
+        (make-instance 'view-configuration-decision
+                       :width (view-width view) :height (view-height view))
+        (progn
+          (unless (view-restore-placement view)
+            (setf (view-restore-placement view)
+                  (copy-planar-placement (view-placement view))))
+          (let* ((native (output-native output))
+                 (panel (if fullscreen-p
+                            0d0
+                            (presentation-panel-height
+                             (compositor-presentation compositor))))
+                 (titlebar
+                   (if (or fullscreen-p
+                           (not (view-server-decorated-p view)))
+                       0d0
+                       (presentation-titlebar-height
+                        (compositor-presentation compositor))))
+                 (scale (viewport-scale (output-viewport output)))
+                 (placement (view-placement view))
+                 (width (/ (ataxia.runtime:output-width native) scale))
+                 (height (/ (- (ataxia.runtime:output-height native)
+                               panel titlebar)
+                            scale)))
+            (multiple-value-bind (world-x world-y)
+                (behavior-unproject-point
+                 policy output (output-viewport output) 0d0 panel)
+              (setf (placement-x placement) world-x
+                    (placement-y placement) world-y
+                    (placement-width placement) width
+                    (placement-height placement) height))
+            (incf (behavior-policy-revision policy))
+            (make-instance 'view-configuration-decision
+                           :width width :height height))))))
+
+(defmethod behavior-move-view
+    ((policy planar-behavior-policy) view x y context)
+  (let* ((placement (view-placement view))
+         (old-placement (copy-planar-placement placement)))
+    (check-type placement planar-placement)
+    (setf (placement-x placement) (coerce x 'double-float)
+          (placement-y placement) (coerce y 'double-float))
+    (behavior-update-placement policy view placement context)
+    (incf (behavior-policy-revision policy))
+    (values placement old-placement)))
+
+(defmethod behavior-focus-changed
+    ((policy planar-behavior-policy) seat previous view)
+  (declare (ignore seat previous))
+  (when view
+    (desktop-raise-view
+     (compositor-desktop (component-compositor policy)) view))
   (incf (behavior-policy-revision policy))
   view)
+
+(defun resize-edges-at-point (item x y)
+  (let* ((margin 8d0)
+         (left (presentation-item-x item))
+         (top (presentation-item-y item))
+         (right (+ left (presentation-item-width item)))
+         (bottom (+ top (presentation-item-height item)))
+         (edges 0))
+    (when (<= (abs (- x left)) margin)
+      (setf edges (logior edges +resize-edge-left+)))
+    (when (<= (abs (- x right)) margin)
+      (setf edges (logior edges +resize-edge-right+)))
+    (when (<= (abs (- y top)) margin)
+      (setf edges (logior edges +resize-edge-top+)))
+    (when (<= (abs (- y bottom)) margin)
+      (setf edges (logior edges +resize-edge-bottom+)))
+    edges))
+
+(defmethod behavior-handle-pointer-button
+    ((policy planar-behavior-policy) interaction seat hit button state time)
+  (declare (ignore policy interaction time))
+  (let ((view (and hit (seat-hit-view hit))))
+    (if (and (eq state :pressed) view)
+        (case (presentation-hit-kind hit)
+          (:titlebar
+           (make-instance
+            'pointer-button-decision :focus-target view
+            :operation-kind (and (= button +button-left+) :move)
+            :deliver-p nil))
+          (:frame
+           (make-instance
+            'pointer-button-decision :focus-target view
+            :operation-kind (and (= button +button-left+) :resize)
+            :resize-edges
+            (resize-edges-at-point
+             (presentation-hit-item hit)
+             (seat-pointer-x seat) (seat-pointer-y seat))
+            :deliver-p nil))
+          (otherwise
+           (make-instance 'pointer-button-decision :focus-target view)))
+        (make-instance 'pointer-button-decision))))
+
+(defmethod behavior-observe-output
+    ((policy planar-behavior-policy) output)
+  (declare (ignore policy))
+  (let ((viewport (output-viewport output)))
+    (list :camera-x (viewport-camera-x viewport)
+          :camera-y (viewport-camera-y viewport)
+          :scale (viewport-scale viewport))))
+
+(defmethod behavior-observe-view
+    ((policy planar-behavior-policy) view)
+  (declare (ignore policy))
+  (let ((placement (view-placement view)))
+    (list :x (placement-x placement) :y (placement-y placement)
+          :width (placement-width placement)
+          :height (placement-height placement)
+          :z (placement-z placement))))

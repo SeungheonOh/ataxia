@@ -41,6 +41,20 @@
 
 (defclass planar-behavior-policy (planar-world) ())
 
+(defclass behavior-portable-state ()
+  ((source-policy :initarg :source-policy
+                  :reader portable-state-source-policy)
+   (view-states :initarg :view-states
+                :reader portable-state-view-states)
+   (output-states :initarg :output-states
+                  :reader portable-state-output-states)))
+
+(defclass behavior-installation ()
+  ((view-states :initarg :view-states
+                :reader installation-view-states)
+   (output-states :initarg :output-states
+                  :reader installation-output-states)))
+
 (defgeneric activate-behavior-policy (policy))
 (defgeneric quiesce-behavior-policy (policy reason))
 (defgeneric behavior-view-created (policy view))
@@ -49,12 +63,23 @@
 (defgeneric behavior-view-unmapped (policy view))
 (defgeneric behavior-view-destroying (policy view))
 (defgeneric behavior-view-identity-changed (policy view kind value))
+(defgeneric behavior-output-added (policy output))
+(defgeneric behavior-output-removing (policy output))
+(defgeneric behavior-recommend-initial-size (policy compositor view))
+(defgeneric behavior-set-view-size (policy view width height context))
 (defgeneric behavior-place-view (policy view placement-request))
 (defgeneric behavior-update-placement (policy view placement context))
 (defgeneric behavior-project-view (policy output viewport view timestamp))
 (defgeneric behavior-unproject-point
     (policy output viewport output-x output-y))
 (defgeneric copy-behavior-view-state (policy state))
+(defgeneric copy-behavior-output-state (policy state))
+(defgeneric migrate-behavior-view-state
+    (old-policy new-policy view state))
+(defgeneric migrate-behavior-output-state
+    (old-policy new-policy output state))
+(defgeneric behavior-export-state (policy compositor context))
+(defgeneric behavior-import-state (policy portable-state context))
 (defgeneric behavior-build-view-items
     (policy items output view timestamp titlebar-height))
 (defgeneric behavior-begin-operation
@@ -66,6 +91,16 @@
 (defgeneric behavior-pan-output (policy output delta-x delta-y))
 (defgeneric behavior-zoom-output
     (policy output factor anchor-x anchor-y))
+(defgeneric behavior-move-view (policy view x y context))
+(defgeneric behavior-focus-changed (policy seat previous view))
+(defgeneric behavior-handle-pointer-button
+    (policy interaction seat hit button state time))
+(defgeneric behavior-observe-output (policy output))
+(defgeneric behavior-observe-view (policy view))
+(defgeneric behavior-resolve-animation
+    (policy engine subject descriptor context))
+(defgeneric behavior-set-view-animation-definition
+    (policy view descriptor-class definition))
 
 (defmethod activate-behavior-policy ((policy behavior-policy))
   (setf (behavior-policy-active-p policy) t)
@@ -91,8 +126,6 @@
             (make-instance
              'planar-behavior-state
              :placement (behavior-state-placement state)
-             :width (behavior-state-width state)
-             :height (behavior-state-height state)
              :restore-state (behavior-state-restore-state state)
              :animation-policy (behavior-state-animation-policy state)
              :shader-program-name
@@ -117,14 +150,24 @@
   (adopt-planar-behavior-state view)
   (behavior-place-view policy view nil))
 
+(defmethod behavior-output-added
+    ((policy planar-behavior-policy) output)
+  (setf (output-behavior-state output) (make-instance 'viewport))
+  (incf (behavior-policy-revision policy))
+  output)
+
+(defmethod behavior-output-removing
+    ((policy behavior-policy) output)
+  (setf (output-behavior-state output) nil)
+  (incf (behavior-policy-revision policy))
+  output)
+
 (defmethod behavior-view-committed
     ((policy planar-behavior-policy) view commit initial-commit-p)
   (declare (ignore initial-commit-p))
   (let ((width (ataxia.runtime:surface-commit-width commit))
         (height (ataxia.runtime:surface-commit-height commit)))
     (when (plusp width)
-      (setf (view-width view) width
-            (view-height view) height)
       (let ((placement (view-placement view)))
         (when (typep placement 'planar-placement)
           (setf (placement-width placement) (coerce width 'double-float)
@@ -134,23 +177,49 @@
 
 (defmethod behavior-view-mapped
     ((policy behavior-policy) view)
-  (declare (ignore view))
-  (incf (behavior-policy-revision policy)))
+  (incf (behavior-policy-revision policy))
+  view)
 
 (defmethod behavior-view-unmapped
     ((policy behavior-policy) view)
-  (declare (ignore view))
-  (incf (behavior-policy-revision policy)))
+  (incf (behavior-policy-revision policy))
+  view)
 
 (defmethod behavior-view-destroying
     ((policy behavior-policy) view)
-  (declare (ignore view))
-  (incf (behavior-policy-revision policy)))
+  (incf (behavior-policy-revision policy))
+  view)
 
 (defmethod behavior-view-identity-changed
     ((policy behavior-policy) view kind value)
-  (declare (ignore view kind value))
-  (incf (behavior-policy-revision policy)))
+  (declare (ignore kind value))
+  (incf (behavior-policy-revision policy))
+  view)
+
+(defmethod behavior-recommend-initial-size
+    ((policy planar-behavior-policy) compositor view)
+  (declare (ignore policy view))
+  (let ((output (first (compositor-outputs-list
+                        (compositor-outputs compositor)))))
+    (values
+     (if output
+         (min 900 (max 320 (- (ataxia.runtime:output-width
+                               (output-native output)) 96)))
+         900)
+     (if output
+         (min 650 (max 240 (- (ataxia.runtime:output-height
+                               (output-native output)) 128)))
+         650))))
+
+(defmethod behavior-set-view-size
+    ((policy planar-behavior-policy) view width height context)
+  (declare (ignore context))
+  (let ((placement (view-placement view)))
+    (when placement
+      (setf (placement-width placement) (coerce width 'double-float)
+            (placement-height placement) (coerce height 'double-float))))
+  (incf (behavior-policy-revision policy))
+  (make-instance 'view-configuration-decision :width width :height height))
 
 (defmethod behavior-place-view
     ((policy planar-behavior-policy) view placement-request)
@@ -196,8 +265,6 @@
    :placement
    (and (behavior-state-placement state)
         (copy-world-placement policy (behavior-state-placement state)))
-   :width (behavior-state-width state)
-   :height (behavior-state-height state)
    :restore-state
    (and (behavior-state-restore-state state)
         (copy-world-placement policy (behavior-state-restore-state state)))
@@ -205,6 +272,69 @@
    :shader-program-name (behavior-state-shader-program-name state)
    :presentation-state
    (copy-presentation-state (behavior-state-presentation-state state))))
+
+(defmethod copy-behavior-output-state
+    ((policy planar-behavior-policy) (state viewport))
+  (declare (ignore policy))
+  (make-instance 'viewport
+                 :camera-x (viewport-camera-x state)
+                 :camera-y (viewport-camera-y state)
+                 :scale (viewport-scale state)))
+
+(defmethod migrate-behavior-view-state
+    ((old-policy planar-behavior-policy)
+     (new-policy planar-behavior-policy) view
+     (state planar-behavior-state))
+  (declare (ignore old-policy view))
+  (copy-behavior-view-state new-policy state))
+
+(defmethod migrate-behavior-output-state
+    ((old-policy planar-behavior-policy)
+     (new-policy planar-behavior-policy) output (state viewport))
+  (declare (ignore old-policy output))
+  (copy-behavior-output-state new-policy state))
+
+(defmethod behavior-export-state
+    ((policy behavior-policy) compositor context)
+  (declare (ignore context))
+  (make-instance
+   'behavior-portable-state
+   :source-policy policy
+   :view-states
+   (mapcar
+    (lambda (view)
+      (cons view
+            (copy-behavior-view-state
+             policy (view-behavior-state view))))
+    (desktop-views (compositor-desktop compositor)))
+   :output-states
+   (mapcar
+    (lambda (output)
+      (cons output
+            (copy-behavior-output-state
+             policy (output-behavior-state output))))
+    (compositor-outputs-list (compositor-outputs compositor)))))
+
+(defmethod behavior-import-state
+    ((policy behavior-policy) (portable behavior-portable-state) context)
+  (declare (ignore context))
+  (let ((old-policy (portable-state-source-policy portable)))
+    (make-instance
+     'behavior-installation
+     :view-states
+     (mapcar
+      (lambda (entry)
+        (cons (car entry)
+              (migrate-behavior-view-state
+               old-policy policy (car entry) (cdr entry))))
+      (portable-state-view-states portable))
+     :output-states
+     (mapcar
+      (lambda (entry)
+        (cons (car entry)
+              (migrate-behavior-output-state
+               old-policy policy (car entry) (cdr entry))))
+      (portable-state-output-states portable)))))
 
 (defmethod world-place-view
     ((world planar-world) view (request placement-request))

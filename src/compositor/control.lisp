@@ -67,6 +67,9 @@
 (defclass replace-world-action (control-action)
   ((world :initarg :world :reader replace-world-action-world)))
 
+(defclass replace-behavior-policy-action (control-action)
+  ((policy :initarg :policy :reader replace-policy-action-policy)))
+
 (defclass pan-viewport-action (control-action)
   ((output :initarg :output :reader pan-viewport-action-output)
    (delta-x :initarg :delta-x :reader pan-viewport-action-delta-x)
@@ -129,6 +132,9 @@
     ((action assign-input-device-action))
   :seat)
 (defmethod required-control-capability ((action replace-world-action)) :world)
+(defmethod required-control-capability
+    ((action replace-behavior-policy-action))
+  :world)
 (defmethod required-control-capability ((action pan-viewport-action)) :viewport)
 (defmethod required-control-capability ((action zoom-viewport-action)) :viewport)
 (defmethod required-control-capability
@@ -293,48 +299,49 @@
     ((control control-system) (action move-view-action))
   (let* ((compositor (component-compositor control))
          (view (move-action-view action))
-         (placement (view-placement view)))
-    (unless (typep placement 'planar-placement)
-      (error 'control-request-rejected
-             :action action :reason :incompatible-world))
-    (let ((old (copy-planar-placement placement)))
-      (setf (placement-x placement) (coerce (move-action-x action) 'double-float)
-            (placement-y placement) (coerce (move-action-y action) 'double-float))
-      (world-update-placement
-       (compositor-world compositor) view placement
-       (make-instance
-        'operation-context :subject view
-        :operation
-        (make-instance 'placement-transition :subject view
-                       :old-value old :new-value placement)
-        :old-state old :new-state placement :cause :agent
-        :provenance
-        (make-instance
-         'provenance :kind :control
-         :identity
-         (control-principal-identity
-          (control-action-principal action)))
-        :phase :apply))
-      (schedule-presentation (compositor-presentation compositor))
-      placement)))
+         (policy (compositor-behavior-policy compositor))
+         (old-state
+           (copy-behavior-view-state policy (view-behavior-state view)))
+         (request
+           (make-instance 'placement-request
+                          :x (move-action-x action)
+                          :y (move-action-y action)))
+         (descriptor
+           (make-instance 'placement-transition :subject view
+                          :old-value old-state :new-value request))
+         (context
+           (make-instance
+            'operation-context :subject view :operation descriptor
+            :old-state old-state :new-state request :cause :agent
+            :provenance
+            (make-instance
+             'provenance :kind :control
+             :identity
+             (control-principal-identity
+              (control-action-principal action)))
+            :phase :apply)))
+    (prog1
+        (behavior-move-view
+         policy view (move-action-x action) (move-action-y action) context)
+      (schedule-presentation (compositor-presentation compositor)))))
 
 (defmethod execute-control-action
     ((control control-system) (action place-view-action))
   (let* ((compositor (component-compositor control))
-         (world (compositor-world compositor))
+         (policy (compositor-behavior-policy compositor))
          (view (place-action-view action))
-         (old-placement (view-placement view))
+         (old-state
+           (copy-behavior-view-state policy (view-behavior-state view)))
          (new-placement (place-action-placement action))
          (descriptor
            (make-instance
             'placement-transition :subject view
-            :old-value old-placement :new-value new-placement)))
-    (check-type new-placement world-placement)
-    (world-update-placement
-     world view new-placement
+            :old-value old-state :new-value new-placement)))
+    (behavior-update-placement
+     policy view new-placement
      (make-instance
       'operation-context :subject view :operation descriptor
-      :old-state old-placement :new-state new-placement :cause :agent
+      :old-state old-state :new-state new-placement :cause :agent
       :provenance
       (make-instance
        'provenance :kind :control
@@ -371,6 +378,11 @@
    (component-compositor control) (replace-world-action-world action)))
 
 (defmethod execute-control-action
+    ((control control-system) (action replace-behavior-policy-action))
+  (replace-behavior-policy
+   (component-compositor control) (replace-policy-action-policy action)))
+
+(defmethod execute-control-action
     ((control control-system) (action pan-viewport-action))
   (let* ((compositor (component-compositor control))
          (output (pan-viewport-action-output action)))
@@ -379,8 +391,8 @@
                  (compositor-outputs compositor) (output-native output)))
       (error 'control-request-rejected
              :action action :reason :foreign-output))
-    (pan-viewport
-     (output-viewport output)
+    (behavior-pan-output
+     (compositor-behavior-policy compositor) output
      (pan-viewport-action-delta-x action)
      (pan-viewport-action-delta-y action))
     (schedule-presentation (compositor-presentation compositor) output)
@@ -395,8 +407,8 @@
                  (compositor-outputs compositor) (output-native output)))
       (error 'control-request-rejected
              :action action :reason :foreign-output))
-    (zoom-viewport
-     (output-viewport output)
+    (behavior-zoom-output
+     (compositor-behavior-policy compositor) output
      (zoom-viewport-action-factor action)
      (zoom-viewport-action-anchor-x action)
      (zoom-viewport-action-anchor-y action))
@@ -411,11 +423,10 @@
 (defmethod execute-control-action
     ((control control-system) (action set-view-animation-action))
   (let* ((view (animation-action-view action))
-         (policy (or (view-animation-policy view)
-                     (setf (view-animation-policy view)
-                           (make-instance 'animation-policy)))))
-    (set-animation-policy-definition
-     policy (animation-action-descriptor-class action)
+         (compositor (component-compositor control)))
+    (behavior-set-view-animation-definition
+     (compositor-behavior-policy compositor)
+     view (animation-action-descriptor-class action)
      (animation-action-definition action))))
 
 (defmethod execute-control-action
@@ -447,7 +458,8 @@
     (assert-compositor-owner compositor :observe-compositor)
     (list
      :state (compositor-state compositor)
-     :world (class-name (class-of (compositor-world compositor)))
+     :behavior-policy
+     (class-name (class-of (compositor-behavior-policy compositor)))
      :socket (ataxia.runtime:runtime-socket-name (compositor-runtime compositor))
      :outputs
      (mapcar (lambda (output)
@@ -455,11 +467,9 @@
                      :width (ataxia.runtime:output-width (output-native output))
                      :height (ataxia.runtime:output-height
                               (output-native output))
-                     :camera-x
-                     (viewport-camera-x (output-viewport output))
-                     :camera-y
-                     (viewport-camera-y (output-viewport output))
-                     :scale (viewport-scale (output-viewport output))))
+                     :behavior
+                     (behavior-observe-output
+                      (compositor-behavior-policy compositor) output)))
              (compositor-outputs-list (compositor-outputs compositor)))
      :seats
      (mapcar (lambda (seat)
@@ -476,5 +486,8 @@
                      :app-id (application-app-id (view-application view))
                      :mapped-p (view-mapped-p view)
                      :shader-program (view-shader-program-name view)
-                     :width (view-width view) :height (view-height view)))
+                     :width (view-width view) :height (view-height view)
+                     :behavior
+                     (behavior-observe-view
+                      (compositor-behavior-policy compositor) view)))
              (desktop-views (compositor-desktop compositor))))))

@@ -261,6 +261,8 @@
           (register-compositor-output
            (compositor-outputs compositor) runtime native-output)))
     (when output
+      (behavior-output-added
+       (compositor-behavior-policy compositor) output)
       (dolist (record
                 (loop for record being the hash-values
                         of (surface-records (compositor-surfaces compositor))
@@ -347,6 +349,12 @@
 
 (defmethod ataxia.runtime:output-destroying
     ((compositor compositor) native-output)
+  (let ((output
+          (find-compositor-output
+           (compositor-outputs compositor) native-output)))
+    (when output
+      (behavior-output-removing
+       (compositor-behavior-policy compositor) output)))
   (dolist (record
             (loop for record being the hash-values
                     of (surface-records (compositor-surfaces compositor))
@@ -509,24 +517,19 @@
     ((compositor compositor) toplevel commit initial-commit-p configured-p)
   (let ((view (desktop-find-view (compositor-desktop compositor) toplevel)))
     (when view
+      (let ((width (ataxia.runtime:surface-commit-width commit))
+            (height (ataxia.runtime:surface-commit-height commit)))
+        (when (plusp width)
+          (setf (view-width view) width
+                (view-height view) height)))
       (behavior-view-committed
        (compositor-behavior-policy compositor)
        view commit initial-commit-p)
       (when (and initial-commit-p (not configured-p))
         (setf (view-initialized-p view) t)
-        (let* ((output (primary-output (compositor-interaction compositor)))
-               (width (if output
-                          (min 900
-                               (max 320
-                                    (- (ataxia.runtime:output-width
-                                        (output-native output)) 96)))
-                          900))
-               (height (if output
-                           (min 650
-                                (max 240
-                                     (- (ataxia.runtime:output-height
-                                         (output-native output)) 128)))
-                           650)))
+        (multiple-value-bind (width height)
+            (behavior-recommend-initial-size
+             (compositor-behavior-policy compositor) compositor view)
           (ataxia.runtime:xdg-toplevel-set-wm-capabilities toplevel #x0f)
           (ataxia.runtime:xdg-toplevel-set-bounds
            toplevel width height)
@@ -538,22 +541,21 @@
              (configure-view-for-output compositor view)
              (ataxia.runtime:xdg-toplevel-set-maximized toplevel t))
             (t
-             (setf (view-width view) width (view-height view) height
-                   (placement-width (view-placement view))
-                   (coerce width 'double-float)
-                   (placement-height (view-placement view))
-                   (coerce height 'double-float))
-             (ataxia.runtime:xdg-toplevel-set-size
-              toplevel width height)))))
-      (when (plusp (ataxia.runtime:surface-commit-width commit))
-        (setf (view-width view)
-              (ataxia.runtime:surface-commit-width commit)
-              (view-height view)
-              (ataxia.runtime:surface-commit-height commit)
-              (placement-width (view-placement view))
-              (coerce (view-width view) 'double-float)
-              (placement-height (view-placement view))
-              (coerce (view-height view) 'double-float)))
+             (apply-view-configuration-decision
+              view
+              (behavior-set-view-size
+               (compositor-behavior-policy compositor)
+               view width height
+               (make-instance
+                'operation-context :subject view
+                :operation
+                (make-instance
+                 'content-transition :subject view
+                 :old-state nil :new-state (list width height))
+                :old-state nil :new-state (list width height)
+                :cause :initial-configure
+                :provenance (make-local-provenance :xdg-shell)
+                :phase :apply)))))))
       (setf (view-presentable-p view)
             (not (null (surface-record-texture (view-surface view)))))
       (schedule-presentation (compositor-presentation compositor)))
@@ -569,7 +571,6 @@
             (not (null (surface-record-texture (view-surface view)))))
       (send-surface-enter-all-outputs
        compositor (surface-record-native (view-surface view)))
-      (desktop-raise-view (compositor-desktop compositor) view)
       (behavior-view-mapped (compositor-behavior-policy compositor) view)
       (start-view-visibility-transition compositor view t)
       (let ((seat
@@ -652,13 +653,17 @@
        :serial (ataxia.runtime:xdg-resize-serial event)))))
 
 (defun restore-view-placement (compositor view)
-  (behavior-restore-view
-   (compositor-behavior-policy compositor) compositor view))
+  (apply-view-configuration-decision
+   view
+   (behavior-restore-view
+    (compositor-behavior-policy compositor) compositor view)))
 
 (defun configure-view-for-output (compositor view &key fullscreen-p)
-  (behavior-configure-view-for-output
-   (compositor-behavior-policy compositor)
-   compositor view (not (null fullscreen-p))))
+  (apply-view-configuration-decision
+   view
+   (behavior-configure-view-for-output
+    (compositor-behavior-policy compositor)
+    compositor view (not (null fullscreen-p)))))
 
 (defmethod ataxia.runtime:xdg-toplevel-request-maximize
     ((compositor compositor) toplevel requested-p)
@@ -763,6 +768,7 @@
 
 (defgeneric migrate-world-placement (old-world new-world view placement))
 (defgeneric replace-world (compositor new-world))
+(defgeneric replace-behavior-policy (compositor new-policy))
 
 (defmethod migrate-world-placement
     ((old-world planar-world) (new-world planar-world)
@@ -779,76 +785,144 @@
    :cause :control :provenance (make-local-provenance :compositor)
    :phase phase :metadata metadata))
 
-(defmethod replace-world ((compositor compositor) (new-world world))
-  (assert-compositor-owner compositor :replace-world)
-  (validate-component new-world compositor)
-  (when (eq new-world (compositor-world compositor))
-    (return-from replace-world new-world))
-  (when (find-if #'seat-operation
-                 (interaction-seats (compositor-interaction compositor)))
-    (error 'invalid-compositor-state
-           :operation :replace-world :state :active-interaction))
+(defun install-behavior-state (installation)
+  (dolist (entry (installation-view-states installation))
+    (setf (view-behavior-state (car entry)) (cdr entry)))
+  (dolist (entry (installation-output-states installation))
+    (setf (output-behavior-state (car entry)) (cdr entry)))
+  installation)
+
+(defun validate-behavior-installation (compositor installation)
+  (check-type installation behavior-installation)
+  (let ((views (desktop-views (compositor-desktop compositor)))
+        (outputs (compositor-outputs-list (compositor-outputs compositor))))
+    (unless (and (= (length views)
+                    (length (installation-view-states installation)))
+                 (= (length outputs)
+                    (length (installation-output-states installation)))
+                 (null (set-exclusive-or
+                        views (mapcar #'car
+                                      (installation-view-states installation))
+                        :test #'eq))
+                 (null (set-exclusive-or
+                        outputs (mapcar #'car
+                                        (installation-output-states installation))
+                        :test #'eq)))
+      (error 'invalid-compositor-state
+             :operation :replace-behavior-policy
+             :state :incomplete-migration)))
+  installation)
+
+(defun refresh-policy-pointer-focus (compositor)
+  (let ((time-msec
+          (mod (floor (* 1000d0 (monotonic-seconds))) (expt 2 32))))
+    (dolist (seat (interaction-seats (compositor-interaction compositor)))
+      (unless (seat-operation seat)
+        (update-pointer-focus
+         (compositor-interaction compositor) seat time-msec)))))
+
+(defmethod replace-behavior-policy
+    ((compositor compositor) (new-policy behavior-policy))
+  (assert-compositor-owner compositor :replace-behavior-policy)
+  (validate-component new-policy compositor)
+  (when (eq new-policy (compositor-behavior-policy compositor))
+    (return-from replace-behavior-policy new-policy))
+  (dolist (seat (interaction-seats (compositor-interaction compositor)))
+    (when (seat-operation seat)
+      (cancel-interactive-operation (compositor-interaction compositor) seat)))
   (let* ((hooks (extension-hooks (compositor-extensions compositor)))
-         (old-world (compositor-world compositor))
+         (old-policy (compositor-behavior-policy compositor))
          (requested-descriptor
            (make-instance
-            'component-replacement :subject compositor :role :world
-            :old-component old-world :new-component new-world))
+            'component-replacement :subject compositor :role :behavior-policy
+            :old-component old-policy :new-component new-policy))
          (resolution-context
            (run-hook
             hooks 'component-replacement-resolving
             (component-replacement-context
              compositor requested-descriptor :resolve)))
          (descriptor (context-operation resolution-context))
-         (effective-world
+         (effective-policy
            (and (typep descriptor 'component-replacement)
                 (replacement-new-component descriptor))))
-    (unless (and (typep effective-world 'world)
-                 (eq :world (replacement-role descriptor))
+    (unless (and (typep effective-policy 'behavior-policy)
+                 (eq :behavior-policy (replacement-role descriptor))
                  (eq compositor (operation-subject descriptor)))
       (error 'compositor-error))
-    (validate-component effective-world compositor)
-    (let* ((migrations
-           (mapcar
-            (lambda (view)
-              (let ((old-placement (view-placement view)))
-                (list view old-placement
-                      (migrate-world-placement
-                       old-world effective-world view old-placement))))
-            (desktop-views (compositor-desktop compositor))))
-         (adopted-p nil))
+    (validate-component effective-policy compositor)
+    (unless (eq (component-state effective-policy) :detached)
+      (error 'invalid-compositor-state
+             :operation :replace-behavior-policy
+             :state :policy-already-attached))
+    (let* ((portable
+             (behavior-export-state
+              old-policy compositor resolution-context))
+           (old-installation
+             (make-instance
+              'behavior-installation
+              :view-states
+              (mapcar (lambda (view)
+                        (cons view (view-behavior-state view)))
+                      (desktop-views (compositor-desktop compositor)))
+              :output-states
+              (mapcar (lambda (output)
+                        (cons output (output-behavior-state output)))
+                      (compositor-outputs-list
+                       (compositor-outputs compositor)))))
+           (old-snapshots
+             (mapcar (lambda (output)
+                       (cons output (output-last-snapshot output)))
+                     (compositor-outputs-list
+                      (compositor-outputs compositor))))
+           (adopted-p nil))
       (run-hook
        hooks 'before-component-replacement
        (component-replacement-context compositor descriptor :before))
-      (attach-component effective-world)
+      (attach-component effective-policy)
       (handler-case
-          (progn
-            (dolist (migration migrations)
-              (setf (view-placement (first migration)) (third migration)))
-            (setf (compositor-world compositor) effective-world
+          (let ((new-installation
+                  (validate-behavior-installation
+                   compositor
+                   (behavior-import-state
+                    effective-policy portable resolution-context))))
+            (install-behavior-state new-installation)
+            (setf (compositor-behavior-policy compositor) effective-policy
                   adopted-p t)
-            (detach-component old-world :replaced)
+            ;; Build immutable snapshots before retiring the old policy. Any
+            ;; migration or scene failure rolls the entire object graph back.
+            (dolist (output
+                      (compositor-outputs-list
+                       (compositor-outputs compositor)))
+              (setf (output-last-snapshot output)
+                    (build-presentation-snapshot
+                     (compositor-presentation compositor)
+                     output (monotonic-seconds))))
+            (refresh-policy-pointer-focus compositor)
+            (detach-component old-policy :replaced)
             (schedule-presentation (compositor-presentation compositor))
             (run-hook
              hooks 'after-component-replacement
              (component-replacement-context compositor descriptor :after))
-            effective-world)
+            effective-policy)
         (serious-condition (condition)
-          ;; Restore one coherent world/placement set before reporting failure.
           (when adopted-p
-            (setf (compositor-world compositor) old-world)
-            (dolist (migration migrations)
-              (setf (view-placement (first migration)) (second migration))))
-          (when (eq (component-state old-world) :detached)
-            (attach-component old-world))
-          (when (eq (component-state effective-world) :attached)
-            (detach-component effective-world :migration-failed))
+            (setf (compositor-behavior-policy compositor) old-policy)
+            (install-behavior-state old-installation)
+            (dolist (entry old-snapshots)
+              (setf (output-last-snapshot (car entry)) (cdr entry))))
+          (when (eq (component-state old-policy) :detached)
+            (attach-component old-policy))
+          (when (eq (component-state effective-policy) :attached)
+            (detach-component effective-policy :migration-failed))
           (ignore-errors
             (run-hook
              hooks 'component-replacement-failed
              (component-replacement-context
               compositor descriptor :failed condition)))
           (error condition))))))
+
+(defmethod replace-world ((compositor compositor) (new-world world))
+  (replace-behavior-policy compositor new-world))
 
 (defun launch-application (compositor command)
   (let ((socket

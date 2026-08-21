@@ -49,6 +49,15 @@
    #:replacement-role
    #:replacement-old-component
    #:replacement-new-component
+   #:view-configuration-decision
+   #:configuration-width
+   #:configuration-height
+   #:pointer-button-decision
+   #:pointer-decision-focus-target
+   #:pointer-decision-operation-kind
+   #:pointer-decision-resize-edges
+   #:pointer-decision-deliver-p
+   #:apply-view-configuration-decision
    #:operation-context
    #:context-subject
    #:context-operation
@@ -105,8 +114,6 @@
    #:view-presentation-state
    #:behavior-view-state
    #:behavior-state-placement
-   #:behavior-state-width
-   #:behavior-state-height
    #:behavior-state-restore-state
    #:behavior-state-animation-policy
    #:behavior-state-shader-program-name
@@ -130,6 +137,13 @@
    #:behavior-policy-revision
    #:planar-behavior-policy
    #:planar-behavior-state
+   #:behavior-portable-state
+   #:portable-state-source-policy
+   #:portable-state-view-states
+   #:portable-state-output-states
+   #:behavior-installation
+   #:installation-view-states
+   #:installation-output-states
    #:activate-behavior-policy
    #:quiesce-behavior-policy
    #:behavior-view-created
@@ -138,11 +152,20 @@
    #:behavior-view-unmapped
    #:behavior-view-destroying
    #:behavior-view-identity-changed
+   #:behavior-output-added
+   #:behavior-output-removing
+   #:behavior-recommend-initial-size
+   #:behavior-set-view-size
    #:behavior-place-view
    #:behavior-update-placement
    #:behavior-project-view
    #:behavior-unproject-point
    #:copy-behavior-view-state
+   #:copy-behavior-output-state
+   #:migrate-behavior-view-state
+   #:migrate-behavior-output-state
+   #:behavior-export-state
+   #:behavior-import-state
    #:behavior-build-view-items
    #:behavior-begin-operation
    #:behavior-update-operation
@@ -150,6 +173,13 @@
    #:behavior-restore-view
    #:behavior-pan-output
    #:behavior-zoom-output
+   #:behavior-move-view
+   #:behavior-focus-changed
+   #:behavior-handle-pointer-button
+   #:behavior-observe-output
+   #:behavior-observe-view
+   #:behavior-resolve-animation
+   #:behavior-set-view-animation-definition
    #:world
    #:planar-world
    #:world-placement
@@ -178,6 +208,7 @@
    #:pan-viewport
    #:zoom-viewport
    #:replace-world
+   #:replace-behavior-policy
    #:migrate-world-placement
    #:presentation-state
    #:presentation-opacity
@@ -283,6 +314,7 @@
    #:output-system
    #:compositor-output
    #:output-native
+   #:output-behavior-state
    #:output-viewport
    #:output-last-snapshot
    #:output-commit-pending-p
@@ -336,6 +368,7 @@
    #:destroy-seat-action
    #:assign-input-device-action
    #:replace-world-action
+   #:replace-behavior-policy-action
    #:pan-viewport-action
    #:zoom-viewport-action
    #:launch-application-action

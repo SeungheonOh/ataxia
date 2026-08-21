@@ -337,10 +337,12 @@
                             :key #'seat-focused-view :test #'eq)))
         (ataxia.runtime:xdg-toplevel-set-activated
          (view-native previous) nil))
+      (behavior-focus-changed
+       (compositor-behavior-policy
+        (component-compositor interaction))
+       seat previous view)
       (if view
           (progn
-            (desktop-raise-view
-             (compositor-desktop (component-compositor interaction)) view)
             (ataxia.runtime:xdg-toplevel-set-activated
              (view-native view) t)
             (let ((keyboard (seat-active-keyboard seat)))
@@ -356,6 +358,7 @@
   view)
 
 (defun interaction-hook-context (interaction view descriptor phase)
+  (declare (ignore interaction))
   (make-instance
    'hook-context :subject view :operation descriptor
    :old-state (and (typep descriptor 'interaction-transition)
@@ -385,37 +388,34 @@
 (defmethod begin-interactive-operation
     ((interaction interaction-system) (seat logical-seat) (view view)
      kind edges &key button)
-  (let ((placement (view-placement view)))
-    (unless (and (interaction-owns-seat-p interaction seat)
-                 (interaction-owns-view-p interaction view))
-      (error 'invalid-compositor-state
-             :operation :begin-interactive-operation
-             :state :foreign-object))
-    (unless (typep placement 'world-placement)
-      (error 'compositor-error))
-    (let* ((descriptor
-             (make-instance 'interaction-transition :subject view
-                            :old-state nil :new-state kind))
-           (context
-             (interaction-hook-context interaction view descriptor :before))
-           (hooks
-             (extension-hooks
-              (compositor-extensions (component-compositor interaction)))))
-      (run-hook hooks 'before-interactive-operation context)
-      (cancel-interactive-operation interaction seat)
-      (setf (seat-operation seat)
-            (behavior-begin-operation
-             (compositor-behavior-policy
-              (component-compositor interaction))
-             interaction seat view kind edges
-             (or button (pressed-operation-button seat))))
-      (when (eq kind :resize)
-        (ataxia.runtime:xdg-toplevel-set-resizing (view-native view) t))
-      (focus-view interaction seat view)
-      (start-interaction-animation interaction view nil kind)
-      (run-hook hooks 'after-interactive-operation
-                (interaction-hook-context interaction view descriptor :after))
-      (seat-operation seat))))
+  (unless (and (interaction-owns-seat-p interaction seat)
+               (interaction-owns-view-p interaction view))
+    (error 'invalid-compositor-state
+           :operation :begin-interactive-operation
+           :state :foreign-object))
+  (let* ((descriptor
+           (make-instance 'interaction-transition :subject view
+                          :old-state nil :new-state kind))
+         (context
+           (interaction-hook-context interaction view descriptor :before))
+         (hooks
+           (extension-hooks
+            (compositor-extensions (component-compositor interaction)))))
+    (run-hook hooks 'before-interactive-operation context)
+    (cancel-interactive-operation interaction seat)
+    (setf (seat-operation seat)
+          (behavior-begin-operation
+           (compositor-behavior-policy
+            (component-compositor interaction))
+           interaction seat view kind edges
+           (or button (pressed-operation-button seat))))
+    (when (eq kind :resize)
+      (ataxia.runtime:xdg-toplevel-set-resizing (view-native view) t))
+    (focus-view interaction seat view)
+    (start-interaction-animation interaction view nil kind)
+    (run-hook hooks 'after-interactive-operation
+              (interaction-hook-context interaction view descriptor :after))
+    (seat-operation seat)))
 
 (defmethod begin-interactive-move
     ((interaction interaction-system) (seat logical-seat) (view view)
@@ -461,9 +461,14 @@
     ((interaction interaction-system) (seat logical-seat))
   (let ((operation (seat-operation seat)))
     (when operation
-      (behavior-update-operation
-       (compositor-behavior-policy (component-compositor interaction))
-       interaction operation)
+      (let ((decision
+              (behavior-update-operation
+               (compositor-behavior-policy
+                (component-compositor interaction))
+               interaction operation)))
+        (when (typep decision 'view-configuration-decision)
+          (apply-view-configuration-decision
+           (interactive-operation-view operation) decision)))
       (schedule-presentation
        (compositor-presentation (component-compositor interaction))))
     operation))
@@ -517,23 +522,6 @@
        (compositor-presentation (component-compositor interaction))))
     seat))
 
-(defun resize-edges-at-point (item x y)
-  (let* ((margin 8d0)
-         (left (presentation-item-x item))
-         (top (presentation-item-y item))
-         (right (+ left (presentation-item-width item)))
-         (bottom (+ top (presentation-item-height item)))
-         (edges 0))
-    (when (<= (abs (- x left)) margin)
-      (setf edges (logior edges +resize-edge-left+)))
-    (when (<= (abs (- x right)) margin)
-      (setf edges (logior edges +resize-edge-right+)))
-    (when (<= (abs (- y top)) margin)
-      (setf edges (logior edges +resize-edge-top+)))
-    (when (<= (abs (- y bottom)) margin)
-      (setf edges (logior edges +resize-edge-bottom+)))
-    edges))
-
 (defmethod interaction-handle-pointer-button
     ((interaction interaction-system) event)
   (let ((seat
@@ -549,26 +537,28 @@
              (operation (seat-operation seat))
              (hit (unless operation
                     (update-pointer-focus interaction seat time)))
-             (view (seat-hit-view hit)))
+             (decision
+               (behavior-handle-pointer-button
+                (compositor-behavior-policy
+                 (component-compositor interaction))
+                interaction seat hit button state time)))
         (if (eq state :pressed)
             (setf (gethash button (seat-pressed-buttons seat)) t)
             (remhash button (seat-pressed-buttons seat)))
-        (when (and (eq state :pressed) view)
-          (focus-view interaction seat view)
-          (case (presentation-hit-kind hit)
-            (:titlebar
-             (when (= button +button-left+)
-               (begin-interactive-move
-                interaction seat view :button button)))
-            (:frame
-             (when (= button +button-left+)
-               (begin-interactive-resize
-                interaction seat view
-                (resize-edges-at-point
-                 (presentation-hit-item hit)
-                 (seat-pointer-x seat) (seat-pointer-y seat))
-                :button button)))))
-        (when (seat-pointer-focus-surface seat)
+        (let ((view (pointer-decision-focus-target decision)))
+          (when view
+            (focus-view interaction seat view))
+          (case (pointer-decision-operation-kind decision)
+            (:move
+             (begin-interactive-move
+              interaction seat view :button button))
+            (:resize
+             (begin-interactive-resize
+              interaction seat view
+              (pointer-decision-resize-edges decision)
+              :button button))))
+        (when (and (pointer-decision-deliver-p decision)
+                   (seat-pointer-focus-surface seat))
           (ataxia.runtime:seat-pointer-notify-button
            (seat-native seat) time button state))
         (when (and (eq state :released) operation

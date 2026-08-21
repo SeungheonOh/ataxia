@@ -87,6 +87,30 @@
    (old-component :initarg :old-component :reader replacement-old-component)
    (new-component :initarg :new-component :reader replacement-new-component)))
 
+(defclass view-configuration-decision ()
+  ((width :initarg :width :reader configuration-width)
+   (height :initarg :height :reader configuration-height)))
+
+(defclass pointer-button-decision ()
+  ((focus-target :initarg :focus-target :initform nil
+                 :reader pointer-decision-focus-target)
+   (operation-kind :initarg :operation-kind :initform nil
+                   :reader pointer-decision-operation-kind)
+   (resize-edges :initarg :resize-edges :initform 0
+                 :reader pointer-decision-resize-edges)
+   (deliver-p :initarg :deliver-p :initform t
+              :reader pointer-decision-deliver-p)))
+
+(defun apply-view-configuration-decision (view decision)
+  (when decision
+    (check-type decision view-configuration-decision)
+    (let ((width (max 1 (round (configuration-width decision))))
+          (height (max 1 (round (configuration-height decision)))))
+      (setf (view-width view) width
+            (view-height view) height)
+      (ataxia.runtime:xdg-toplevel-set-size (view-native view) width height)))
+  decision)
+
 (defclass operation-context ()
   ((subject :initarg :subject :reader context-subject)
    (operation :initarg :operation :reader context-operation)

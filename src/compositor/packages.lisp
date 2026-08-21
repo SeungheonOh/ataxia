@@ -149,6 +149,8 @@
    #:camera-longitude
    #:camera-latitude
    #:camera-field-of-view
+   #:spherical-mesh-columns
+   #:spherical-mesh-rows
    #:behavior-portable-state
    #:portable-state-source-policy
    #:portable-state-view-states
@@ -283,6 +285,12 @@
    #:snapshot-revision
    #:snapshot-items
    #:presentation-item
+   #:presentation-geometry
+   #:mesh-geometry
+   #:mesh-geometry-vertices
+   #:mesh-geometry-vertex-count
+   #:make-mesh-geometry
+   #:mesh-geometry-bounds
    #:presentation-item-kind
    #:presentation-item-owner
    #:presentation-item-surface
@@ -290,6 +298,7 @@
    #:presentation-item-y
    #:presentation-item-width
    #:presentation-item-height
+   #:presentation-item-geometry
    #:presentation-item-texture
    #:presentation-item-shader-program-name
    #:presentation-item-shader-uniforms

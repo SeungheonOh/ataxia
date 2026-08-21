@@ -66,6 +66,39 @@
     (when (eq (component-state animation) :attached)
       (detach-component animation reason))))
 
+(defclass presentation-geometry () ())
+
+(defclass mesh-geometry (presentation-geometry)
+  ((vertices :initarg :vertices :reader mesh-geometry-vertices)
+   (vertex-count :initarg :vertex-count :reader mesh-geometry-vertex-count)))
+
+(defun make-mesh-geometry (vertices)
+  (let ((values (coerce vertices 'vector)))
+    (unless (zerop (mod (length values) 12))
+      (error 'compositor-error))
+    (make-instance 'mesh-geometry :vertices values
+                   :vertex-count (/ (length values) 4))))
+
+(defun mesh-geometry-bounds (geometry)
+  (let ((vertices (mesh-geometry-vertices geometry)))
+    (if (zerop (length vertices))
+        (values 0d0 0d0 0d0 0d0)
+        (loop with minimum-x = most-positive-double-float
+              with minimum-y = most-positive-double-float
+              with maximum-x = most-negative-double-float
+              with maximum-y = most-negative-double-float
+              for offset from 0 below (length vertices) by 4
+              for x = (coerce (aref vertices offset) 'double-float)
+              for y = (coerce (aref vertices (+ offset 1)) 'double-float)
+              do (setf minimum-x (min minimum-x x)
+                       minimum-y (min minimum-y y)
+                       maximum-x (max maximum-x x)
+                       maximum-y (max maximum-y y))
+              finally
+                 (return (values minimum-x minimum-y
+                                 (- maximum-x minimum-x)
+                                 (- maximum-y minimum-y)))))))
+
 (defclass presentation-item ()
   ((kind :initarg :kind :reader presentation-item-kind)
    (owner :initarg :owner :initform nil :reader presentation-item-owner)
@@ -74,6 +107,8 @@
    (y :initarg :y :reader presentation-item-y)
    (width :initarg :width :reader presentation-item-width)
    (height :initarg :height :reader presentation-item-height)
+   (geometry :initarg :geometry :initform nil
+             :reader presentation-item-geometry)
    (texture :initarg :texture :initform nil :reader presentation-item-texture)
    (shader-program-name :initarg :shader-program-name :initform nil
                         :reader presentation-item-shader-program-name)
@@ -263,11 +298,12 @@
       (remhash native (output-table outputs)))
     output))
 
-(defun make-solid-item (x y width height color &key owner interactive-p hit-kind)
+(defun make-solid-item
+    (x y width height color &key owner interactive-p hit-kind geometry)
   (make-instance 'presentation-item
                  :kind :solid :x x :y y :width width :height height
                  :color color :owner owner :interactive-p interactive-p
-                 :hit-kind hit-kind))
+                 :hit-kind hit-kind :geometry geometry))
 
 (defun make-shadow-item (x y width height color inset corner-radius blur-radius
                          &key owner)
@@ -481,6 +517,62 @@
        (<= (presentation-item-y item) y
            (+ (presentation-item-y item) (presentation-item-height item)))))
 
+(defun barycentric-coordinate (point-x point-y ax ay bx by cx cy)
+  (let ((denominator
+          (+ (* (- by cy) (- ax cx))
+             (* (- cx bx) (- ay cy)))))
+    (unless (< (abs denominator) 1d-12)
+      (let* ((first
+               (/ (+ (* (- by cy) (- point-x cx))
+                     (* (- cx bx) (- point-y cy)))
+                  denominator))
+             (second
+               (/ (+ (* (- cy ay) (- point-x cx))
+                     (* (- ax cx) (- point-y cy)))
+                  denominator))
+             (third (- 1d0 first second)))
+        (when (and (>= first -1d-7) (>= second -1d-7) (>= third -1d-7))
+          (values first second third))))))
+
+(defun mesh-local-point (geometry output-x output-y source-width source-height)
+  (let ((vertices (mesh-geometry-vertices geometry)))
+    (loop for offset from 0 below (length vertices) by 12
+          do (multiple-value-bind (first second third)
+                 (barycentric-coordinate
+                  output-x output-y
+                  (aref vertices offset) (aref vertices (+ offset 1))
+                  (aref vertices (+ offset 4)) (aref vertices (+ offset 5))
+                  (aref vertices (+ offset 8)) (aref vertices (+ offset 9)))
+               (when first
+                 (let ((texture-x
+                         (+ (* first (aref vertices (+ offset 2)))
+                            (* second (aref vertices (+ offset 6)))
+                            (* third (aref vertices (+ offset 10)))))
+                       (texture-y
+                         (+ (* first (aref vertices (+ offset 3)))
+                            (* second (aref vertices (+ offset 7)))
+                            (* third (aref vertices (+ offset 11))))))
+                   (return
+                     (values t (* texture-x source-width)
+                             (* texture-y source-height))))))
+          finally (return (values nil 0d0 0d0)))))
+
+(defun presentation-item-local-point (item output-x output-y)
+  (let ((geometry (presentation-item-geometry item)))
+    (if (typep geometry 'mesh-geometry)
+        (mesh-local-point
+         geometry output-x output-y
+         (presentation-item-source-width item)
+         (presentation-item-source-height item))
+        (values
+         t
+         (* (/ (- output-x (presentation-item-x item))
+               (max 1d0 (presentation-item-width item)))
+            (presentation-item-source-width item))
+         (* (/ (- output-y (presentation-item-y item))
+               (max 1d0 (presentation-item-height item)))
+            (presentation-item-source-height item))))))
+
 (defun presentation-item-live-p (item)
   "Reject geometry that still references a surface retired after the snapshot."
   (let ((surface (presentation-item-surface item))
@@ -508,38 +600,32 @@
     (when (and (presentation-item-live-p item)
                (presentation-item-interactive-p item)
                (point-in-item-p item output-x output-y))
-      (let* ((kind (presentation-item-hit-kind item))
-             (local-x
-               (* (/ (- output-x (presentation-item-x item))
-                     (max 1d0 (presentation-item-width item)))
-                  (presentation-item-source-width item)))
-             (local-y
-               (* (/ (- output-y (presentation-item-y item))
-                     (max 1d0 (presentation-item-height item)))
-                  (presentation-item-source-height item)))
-             (surface nil)
-             (surface-x local-x)
-             (surface-y local-y))
-        (case kind
-          (:content
-           (multiple-value-setq (surface surface-x surface-y)
-             (ataxia.runtime:xdg-surface-at
-              (view-native (presentation-item-owner item)) local-x local-y)))
-          ((:popup :subsurface)
-           (multiple-value-setq (surface surface-x surface-y)
-             (ataxia.runtime:surface-at
-              (presentation-item-surface item) local-x local-y))))
-        ;; Input regions can exclude pixels inside an item's visual rectangle.
-        ;; In that case wlroots returns no surface and no coordinates, so keep
-        ;; searching lower items instead of constructing an invalid hit.
-        (when (or surface (member kind '(:frame :titlebar) :test #'eq))
-          (return
-            (make-presentation-hit
-             :item item :owner (presentation-item-owner item)
-             :surface surface
-             :surface-x (coerce surface-x 'double-float)
-             :surface-y (coerce surface-y 'double-float)
-             :kind kind)))))))
+      (multiple-value-bind (inside-p local-x local-y)
+          (presentation-item-local-point item output-x output-y)
+        (when inside-p
+          (let* ((kind (presentation-item-hit-kind item))
+                 (surface nil)
+                 (surface-x local-x)
+                 (surface-y local-y))
+            (case kind
+              (:content
+               (multiple-value-setq (surface surface-x surface-y)
+                 (ataxia.runtime:xdg-surface-at
+                  (view-native (presentation-item-owner item))
+                  local-x local-y)))
+              ((:popup :subsurface)
+               (multiple-value-setq (surface surface-x surface-y)
+                 (ataxia.runtime:surface-at
+                  (presentation-item-surface item) local-x local-y))))
+            ;; wlroots may exclude pixels through a surface input region.
+            (when (or surface (member kind '(:frame :titlebar) :test #'eq))
+              (return
+                (make-presentation-hit
+                 :item item :owner (presentation-item-owner item)
+                 :surface surface
+                 :surface-x (coerce surface-x 'double-float)
+                 :surface-y (coerce surface-y 'double-float)
+                 :kind kind)))))))))
 
 (defmethod renderer-draw-item
     ((renderer direct-gles-renderer) frame-context
@@ -561,7 +647,8 @@
       (frame-context-height frame-context)
       (presentation-item-x item) (presentation-item-y item)
       (presentation-item-width item) (presentation-item-height item)
-      (presentation-item-color item)))
+      (presentation-item-color item)
+      (presentation-item-geometry item)))
     (:surface
      (draw-textured-rectangle
       renderer (frame-context-width frame-context)
@@ -570,7 +657,8 @@
       (presentation-item-width item) (presentation-item-height item)
       (presentation-item-texture item) (presentation-item-opacity item)
       (presentation-item-shader-program-name item)
-      (presentation-item-shader-uniforms item))))
+      (presentation-item-shader-uniforms item)
+      (presentation-item-geometry item))))
   item)
 
 (defmethod render-presentation-frame

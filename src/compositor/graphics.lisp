@@ -187,6 +187,8 @@ void main() {
    (programs :initform (make-hash-table :test #'equal)
              :reader renderer-programs)
    (vertex-scratch :initform nil :accessor renderer-vertex-scratch)
+   (vertex-scratch-capacity :initform 0
+                            :accessor renderer-vertex-scratch-capacity)
    (background :initarg :background
                :initform '(0.035 0.045 0.065 1.0)
                :reader renderer-background)))
@@ -300,7 +302,8 @@ void main() {
          (runtime (compositor-runtime compositor)))
     (ataxia.runtime:with-egl-context ((ataxia.runtime:runtime-egl runtime))
       (setf (renderer-vertex-scratch renderer)
-            (cffi:foreign-alloc :float :count 24)
+            (cffi:foreign-alloc :float :count 4096)
+            (renderer-vertex-scratch-capacity renderer) 4096
             (renderer-solid-program renderer)
             (compile-shader-program
              (builtin-program-descriptor
@@ -342,7 +345,8 @@ void main() {
                  (renderer-programs renderer)))))
   (when (renderer-vertex-scratch renderer)
     (cffi:foreign-free (renderer-vertex-scratch renderer))
-    (setf (renderer-vertex-scratch renderer) nil)))
+    (setf (renderer-vertex-scratch renderer) nil
+          (renderer-vertex-scratch-capacity renderer) 0)))
 
 (defun replace-shader-program (renderer name descriptor)
   (assert-compositor-owner
@@ -465,6 +469,16 @@ void main() {
           (cffi:mem-aref scratch :float (+ offset 3))
           (coerce texture-y 'single-float))))
 
+(defun ensure-vertex-scratch-capacity (renderer float-count)
+  (when (> float-count (renderer-vertex-scratch-capacity renderer))
+    (let ((capacity (max float-count
+                         (* 2 (renderer-vertex-scratch-capacity renderer)))))
+      (cffi:foreign-free (renderer-vertex-scratch renderer))
+      (setf (renderer-vertex-scratch renderer)
+            (cffi:foreign-alloc :float :count capacity)
+            (renderer-vertex-scratch-capacity renderer) capacity)))
+  (renderer-vertex-scratch renderer))
+
 (defun fill-rectangle-vertices
     (renderer output-width output-height x y width height)
   (let* ((left (- (* 2d0 (/ x output-width)) 1d0))
@@ -483,6 +497,35 @@ void main() {
     (put-vertex scratch 5 left bottom 0d0 1d0)
     scratch))
 
+(defun fill-mesh-vertices
+    (renderer output-width output-height geometry)
+  (let* ((vertices (mesh-geometry-vertices geometry))
+         (vertex-count (mesh-geometry-vertex-count geometry))
+         (scratch
+           (ensure-vertex-scratch-capacity renderer (* vertex-count 4))))
+    (loop for vertex-index from 0 below vertex-count
+          for offset = (* vertex-index 4)
+          for x = (aref vertices offset)
+          for y = (aref vertices (+ offset 1))
+          do (put-vertex
+              scratch vertex-index
+              (- (* 2d0 (/ x output-width)) 1d0)
+              (- (* 2d0 (/ y output-height)) 1d0)
+              (aref vertices (+ offset 2))
+              (aref vertices (+ offset 3))))
+    scratch))
+
+(defun fill-item-vertices
+    (renderer output-width output-height x y width height geometry)
+  (if (typep geometry 'mesh-geometry)
+      (progn
+        (fill-mesh-vertices renderer output-width output-height geometry)
+        (mesh-geometry-vertex-count geometry))
+      (progn
+        (fill-rectangle-vertices
+         renderer output-width output-height x y width height)
+        6)))
+
 (defun bind-rectangle-vertices (renderer)
   (let ((scratch (renderer-vertex-scratch renderer)))
     (%gl-enable-vertex-attrib-array 0)
@@ -492,10 +535,12 @@ void main() {
      1 2 +gl-float+ +gl-false+ 16 (cffi:inc-pointer scratch 8))))
 
 (defun draw-solid-rectangle
-    (renderer output-width output-height x y width height color)
-  (let ((program (renderer-solid-program renderer)))
-    (fill-rectangle-vertices
-     renderer output-width output-height x y width height)
+    (renderer output-width output-height x y width height color
+     &optional geometry)
+  (let ((program (renderer-solid-program renderer))
+        (vertex-count
+          (fill-item-vertices
+           renderer output-width output-height x y width height geometry)))
     (%gl-use-program (shader-native-program program))
     (bind-rectangle-vertices renderer)
     (destructuring-bind (red green blue alpha) color
@@ -503,7 +548,7 @@ void main() {
        (uniform-location program 'color)
        (coerce red 'single-float) (coerce green 'single-float)
        (coerce blue 'single-float) (coerce alpha 'single-float)))
-    (%gl-draw-arrays +gl-triangles+ 0 6)))
+    (%gl-draw-arrays +gl-triangles+ 0 vertex-count)))
 
 (defun draw-shadow-rectangle
     (renderer output-width output-height x y width height color inset
@@ -534,11 +579,12 @@ void main() {
 
 (defun draw-textured-rectangle
     (renderer output-width output-height x y width height attributes opacity
-     program-name uniform-values)
+     program-name uniform-values &optional geometry)
   (let* ((target (ataxia.runtime:gles-texture-target attributes))
-         (program (shader-program-for-texture renderer program-name target)))
-    (fill-rectangle-vertices
-     renderer output-width output-height x y width height)
+         (program (shader-program-for-texture renderer program-name target))
+         (vertex-count
+           (fill-item-vertices
+            renderer output-width output-height x y width height geometry)))
     (%gl-use-program (shader-native-program program))
     (bind-rectangle-vertices renderer)
     (%gl-active-texture +gl-texture0+)
@@ -555,7 +601,7 @@ void main() {
     (%gl-uniform-1f
      (uniform-location program 'texture-has-alpha)
      (if (ataxia.runtime:gles-texture-has-alpha-p attributes) 1.0 0.0))
-    (%gl-draw-arrays +gl-triangles+ 0 6)
+    (%gl-draw-arrays +gl-triangles+ 0 vertex-count)
     (%gl-bind-texture target 0)))
 
 (defmethod renderer-begin-frame

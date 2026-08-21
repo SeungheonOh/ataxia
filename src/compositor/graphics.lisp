@@ -192,6 +192,14 @@ void main() {
         (%gl-delete-shader shader)
         (error condition)))))
 
+(defun shader-interface-name (name)
+  "Translate idiomatic Lisp symbols while preserving explicit GLSL strings."
+  (etypecase name
+    (symbol
+     (substitute #\_ #\-
+                 (string-downcase (symbol-name name))))
+    (string name)))
+
 (defun compile-shader-program (descriptor)
   (check-type descriptor shader-program-descriptor)
   (let ((vertex 0) (fragment 0) (program 0))
@@ -219,7 +227,7 @@ void main() {
              (dolist (name (program-uniform-names descriptor))
                (setf (gethash name uniforms)
                      (%gl-get-uniform-location
-                      program (string-downcase (symbol-name name)))))
+                      program (shader-interface-name name))))
              (prog1
                  (make-instance 'shader-program
                                 :descriptor descriptor

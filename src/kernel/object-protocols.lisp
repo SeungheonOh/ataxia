@@ -15,6 +15,13 @@
 (defclass render-source () ()
   (:documentation "Opaque sampling or geometry resource referenced by a drawable surface."))
 
+(defgeneric render-source-width (render-source))
+(defgeneric render-source-height (render-source))
+(defgeneric render-source-gles-target (render-source))
+(defgeneric render-source-gles-name (render-source))
+(defgeneric render-source-has-alpha-p (render-source))
+(defgeneric render-source-generation (render-source))
+
 (defclass drawable-surface ()
   ((id :initarg :id :reader drawable-surface-id)
    (local-x :initarg :local-x :reader drawable-surface-local-x)

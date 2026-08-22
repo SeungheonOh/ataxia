@@ -17,4 +17,5 @@
      (:file "object-protocols")
      (:file "world-protocol")
      (:file "frames")
-     (:file "objects")))))
+     (:file "objects")
+     (:file "kernel")))))

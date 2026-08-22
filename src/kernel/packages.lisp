@@ -11,6 +11,12 @@
    #:drawable
    #:interactable
    #:render-source
+   #:render-source-width
+   #:render-source-height
+   #:render-source-gles-target
+   #:render-source-gles-name
+   #:render-source-has-alpha-p
+   #:render-source-generation
    #:drawable-surface
    #:drawable-surface-id
    #:drawable-surface-local-x
@@ -82,6 +88,20 @@
    #:application-title
    #:application-app-id
    #:application-mapped-p
+   #:client-request
+   #:client-request-seat
+   #:client-request-serial
+   #:move-client-request
+   #:resize-client-request
+   #:resize-client-request-edges
+   #:state-client-request
+   #:state-client-request-name
+   #:state-client-request-value
+   #:fullscreen-client-request
+   #:fullscreen-client-request-output
+   #:window-menu-client-request
+   #:window-menu-client-request-x
+   #:window-menu-client-request-y
 
    ;; Kernel/World contract.
    #:world
@@ -130,6 +150,11 @@
    ;; Kernel aggregate and mechanisms.
    #:kernel
    #:make-kernel
+   #:create-kernel
+   #:start-kernel
+   #:run-kernel
+   #:request-kernel-stop
+   #:destroy-kernel
    #:kernel-runtime
    #:kernel-world
    #:kernel-state
@@ -143,5 +168,6 @@
    #:install-world
    #:create-logical-seat
    #:destroy-logical-seat
+   #:assign-input-device
    #:request-output-frame
    #:set-wayland-surface-output-membership))

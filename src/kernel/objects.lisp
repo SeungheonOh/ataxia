@@ -34,7 +34,8 @@
    (name :initarg :name :reader seat-name)
    (capabilities :initarg :capabilities :initform 0 :accessor seat-capabilities)
    (input-devices :initform (make-hash-table :test #'eq)
-                  :reader seat-input-devices))
+                  :reader seat-input-devices)
+   (keyboard :initform nil :accessor %seat-keyboard))
   (:documentation "Stable seat identity owning one real Runtime wlr-seat."))
 
 (defclass surface-node (kernel-object)
@@ -47,7 +48,13 @@
    (height :initarg :height :initform 0 :accessor surface-height)
    (mapped-p :initarg :mapped-p :initform nil :accessor surface-mapped-p)
    (commit-sequence :initarg :commit-sequence :initform 0
-                    :accessor surface-commit-sequence))
+                    :accessor surface-commit-sequence)
+   (application :initform nil :accessor %surface-application)
+   (source-box :initform #(0d0 0d0 0d0 0d0) :accessor %surface-source-box)
+   (buffer-transform :initform 0 :accessor %surface-buffer-transform)
+   (damage :initform nil :accessor %surface-damage)
+   (render-source :initform nil :accessor %surface-render-source)
+   (protocol-token :initform nil :accessor %surface-protocol-token))
   (:documentation "Kernel-private committed state for one wl_surface in an application tree."))
 
 (defclass wayland-application (kernel-object drawable interactable)
@@ -61,6 +68,36 @@
   (:documentation
    "World-visible Wayland application; all surface and input resolution remains Kernel-owned."))
 
+(defclass wayland-render-source (render-source)
+  ((buffer :initarg :buffer :reader %render-source-buffer)
+   (width :initarg :width :reader render-source-width)
+   (height :initarg :height :reader render-source-height)
+   (gles-target :initarg :gles-target :reader render-source-gles-target)
+   (gles-name :initarg :gles-name :reader render-source-gles-name)
+   (has-alpha-p :initarg :has-alpha-p :reader render-source-has-alpha-p)
+   (generation :initarg :generation :reader render-source-generation)
+   (retain-count :initform 1 :accessor %render-source-retain-count))
+  (:documentation
+   "Ref-counted view of a Runtime-retained client buffer and its GLES texture."))
+
+(defclass surface-protocol-token ()
+  ((surface :initarg :surface :reader %protocol-token-surface)
+   (generation :initarg :generation :reader %protocol-token-generation))
+  (:documentation "Opaque token Kernel accepts back from a World frame result."))
+
+(defmethod retain-render-source ((source wayland-render-source))
+  (unless (plusp (%render-source-retain-count source))
+    (error "Cannot retain a released Wayland render source."))
+  (incf (%render-source-retain-count source))
+  source)
+
+(defmethod release-render-source ((source wayland-render-source))
+  (unless (plusp (%render-source-retain-count source))
+    (error "Wayland render source released more than it was retained."))
+  (when (zerop (decf (%render-source-retain-count source)))
+    (ataxia.runtime:release-buffer (%render-source-buffer source)))
+  nil)
+
 (defmethod drawable-surfaces ((application wayland-application))
   (values (%application-drawable-surfaces application)
           (%application-drawable-revision application)))
@@ -71,3 +108,24 @@
             (surface-local-y surface)
             (surface-width surface)
             (surface-height surface))))
+
+(defclass client-request ()
+  ((seat :initarg :seat :initform nil :reader client-request-seat)
+   (serial :initarg :serial :initform nil :reader client-request-serial))
+  (:documentation "Stable Kernel copy of a client request requiring World policy."))
+
+(defclass move-client-request (client-request) ())
+
+(defclass resize-client-request (client-request)
+  ((edges :initarg :edges :reader resize-client-request-edges)))
+
+(defclass state-client-request (client-request)
+  ((name :initarg :name :reader state-client-request-name)
+   (value :initarg :value :reader state-client-request-value)))
+
+(defclass fullscreen-client-request (state-client-request)
+  ((output :initarg :output :initform nil :reader fullscreen-client-request-output)))
+
+(defclass window-menu-client-request (client-request)
+  ((x :initarg :x :reader window-menu-client-request-x)
+   (y :initarg :y :reader window-menu-client-request-y)))

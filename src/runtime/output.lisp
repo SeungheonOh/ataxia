@@ -106,6 +106,8 @@
   (event :pointer))
 (defcfun ("ataxia_output_requested_state" %output-requested-state) :pointer
   (event :pointer))
+(defcfun ("ataxia_output_state_committed" %output-state-committed) :uint32
+  (state :pointer))
 
 (in-package #:ataxia.runtime)
 
@@ -350,6 +352,11 @@
         (ataxia.runtime.raw:%output-state-set-damage-rectangles
          (%object-pointer state) (cffi:null-pointer) 0)))
   state)
+
+(defun output-state-committed-fields (state)
+  (check-type state wlr-output-state)
+  (%assert-runtime-live (%native-runtime state) :output-state-committed-fields)
+  (ataxia.runtime.raw:%output-state-committed (%object-pointer state)))
 
 (defun %assert-output-state-pair (output state operation)
   (check-type output wlr-output)

@@ -109,6 +109,8 @@ ATAXIA_WLR_GLUE_API int32_t ataxia_output_height(
 	const struct wlr_output *output);
 ATAXIA_WLR_GLUE_API float ataxia_output_scale(
 	const struct wlr_output *output);
+ATAXIA_WLR_GLUE_API uint32_t ataxia_output_transform(
+	const struct wlr_output *output);
 ATAXIA_WLR_GLUE_API bool ataxia_output_enabled(
 	const struct wlr_output *output);
 ATAXIA_WLR_GLUE_API bool ataxia_output_frame_pending(
@@ -140,6 +142,8 @@ ATAXIA_WLR_GLUE_API uint32_t ataxia_output_present_flags(
 ATAXIA_WLR_GLUE_API const struct wlr_output_state *
 ataxia_output_requested_state(
 	const struct wlr_output_event_request_state *event);
+ATAXIA_WLR_GLUE_API uint32_t ataxia_output_state_committed(
+	const struct wlr_output_state *state);
 ATAXIA_WLR_GLUE_API struct wlr_output_state *ataxia_output_state_create(void);
 ATAXIA_WLR_GLUE_API void ataxia_output_state_destroy(
 	struct wlr_output_state *state);

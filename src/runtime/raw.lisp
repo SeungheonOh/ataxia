@@ -250,6 +250,8 @@
   (output :pointer))
 (defcfun ("ataxia_output_scale" %output-scale) :float
   (output :pointer))
+(defcfun ("ataxia_output_transform" %output-transform) :uint32
+  (output :pointer))
 (defcfun ("ataxia_output_enabled" %output-enabled) :boolean
   (output :pointer))
 (defcfun ("ataxia_output_frame_pending" %output-frame-pending) :boolean

@@ -174,6 +174,10 @@ float ataxia_output_scale(const struct wlr_output *output) {
 	return output == NULL ? 1.0f : output->scale;
 }
 
+uint32_t ataxia_output_transform(const struct wlr_output *output) {
+	return output == NULL ? WL_OUTPUT_TRANSFORM_NORMAL : output->transform;
+}
+
 bool ataxia_output_enabled(const struct wlr_output *output) {
 	return output != NULL && output->enabled;
 }
@@ -268,6 +272,10 @@ int32_t ataxia_output_present_refresh_nanoseconds(
 uint32_t ataxia_output_present_flags(
 		const struct wlr_output_event_present *event) {
 	return event == NULL ? 0 : event->flags;
+}
+
+uint32_t ataxia_output_state_committed(const struct wlr_output_state *state) {
+	return state == NULL ? 0 : state->committed;
 }
 
 const struct wlr_output_state *ataxia_output_requested_state(

@@ -106,6 +106,7 @@
    #:%output-width
    #:%output-height
    #:%output-scale
+   #:%output-transform
    #:%output-enabled
    #:%output-frame-pending
    #:%output-damage-region
@@ -120,6 +121,7 @@
    #:%output-present-refresh-nanoseconds
    #:%output-present-flags
    #:%output-requested-state
+   #:%output-state-committed
    #:%wlr-output-init-render
    #:%wlr-output-preferred-mode
    #:%wlr-output-create-global
@@ -342,6 +344,7 @@
    #:output-width
    #:output-height
    #:output-scale
+   #:output-transform
    #:output-enabled-p
    #:output-global-p
    #:damage-rectangle
@@ -373,6 +376,7 @@
    #:output-state-set-mode
    #:output-state-set-custom-mode
    #:output-state-set-damage
+   #:output-state-committed-fields
    #:output-test-state
    #:output-commit-state
    #:output-schedule-frame

@@ -1,4 +1,4 @@
-;;;; Planar behavior policy state and lifecycle.
+;;;; Planar behavior controller state and lifecycle.
 ;;;;
 ;;;; The planar controller directly owns its world, output cameras, seats,
 ;;;; visual choices, and compositor-facing behavior endpoints.

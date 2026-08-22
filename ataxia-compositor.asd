@@ -36,7 +36,7 @@
     ((:file "animation-bindings")
      (:file "effects")
      (:file "reveal")
-     (:file "standard-policy")
+     (:file "planar-policy")
      (:file "interaction")
      (:file "scene")
      (:file "planar")

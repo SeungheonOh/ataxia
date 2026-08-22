@@ -269,10 +269,6 @@
    #:requested-placement-y
    #:requested-placement-width
    #:requested-placement-height
-   #:planar-viewport
-   #:planar-viewport-camera-x
-   #:planar-viewport-camera-y
-   #:planar-viewport-scale
    #:replace-behavior-policy
    #:presentation-state
    #:presentation-opacity

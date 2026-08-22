@@ -5,7 +5,7 @@
 
 (in-package #:ataxia.runtime.raw)
 
-(defconstant +expected-glue-abi+ 7)
+(defconstant +expected-glue-abi+ 8)
 (defparameter +expected-wlroots-version+ "0.20.2")
 
 (define-foreign-library libwayland-server
@@ -221,6 +221,10 @@
   "ataxia_seat_event_destroy" seat)
 (define-signal-binding %seat-event-request-set-cursor
   "ataxia_seat_event_request_set_cursor" seat)
+(define-signal-binding %seat-event-request-start-drag
+  "ataxia_seat_event_request_start_drag" seat)
+(define-signal-binding %drag-event-destroy
+  "ataxia_drag_event_destroy" drag)
 (defcfun ("ataxia_seat_cursor_surface" %seat-cursor-surface) :pointer
   (event :pointer))
 (defcfun ("ataxia_seat_cursor_serial" %seat-cursor-serial) :uint32
@@ -229,6 +233,16 @@
   (event :pointer))
 (defcfun ("ataxia_seat_cursor_hotspot_y" %seat-cursor-hotspot-y) :int32
   (event :pointer))
+(defcfun ("ataxia_seat_drag_request_drag" %seat-drag-request-drag) :pointer
+  (event :pointer))
+(defcfun ("ataxia_seat_drag_request_origin" %seat-drag-request-origin) :pointer
+  (event :pointer))
+(defcfun ("ataxia_seat_drag_request_serial" %seat-drag-request-serial) :uint32
+  (event :pointer))
+(defcfun ("wlr_seat_start_pointer_drag" %wlr-seat-start-pointer-drag) :void
+  (seat :pointer) (drag :pointer) (serial :uint32))
+(defcfun ("wlr_drag_destroy" %wlr-drag-destroy) :void
+  (drag :pointer))
 (define-signal-binding %surface-event-commit
   "ataxia_surface_event_commit" surface)
 (define-signal-binding %surface-event-map

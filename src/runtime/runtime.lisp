@@ -929,6 +929,17 @@
            (funcall function runtime))
       (destroy-runtime runtime))))
 
+(defun %adopt-drag (runtime pointer)
+  (let ((drag (%wrap-pointer 'wlr-drag pointer runtime)))
+    (%attach-object-signal
+     drag :drag-destroy
+     (ataxia.runtime.raw:%drag-event-destroy pointer)
+     (lambda (data)
+       (declare (ignore data))
+       (%retire-object-listeners drag :immediate-p t)
+       (%invalidate-native-object drag)))
+    drag))
+
 (defun create-seat (runtime name)
   (%assert-runtime-live runtime :create-seat)
   (check-type name string)
@@ -958,6 +969,26 @@
            (ataxia.runtime.raw:%seat-cursor-hotspot-x event-pointer)
            :hotspot-y
            (ataxia.runtime.raw:%seat-cursor-hotspot-y event-pointer))))))
+    (%attach-object-signal
+     seat :seat-request-start-drag
+     (ataxia.runtime.raw:%seat-event-request-start-drag pointer)
+     (lambda (event-pointer)
+       (let ((drag-pointer
+               (%require-pointer
+                (ataxia.runtime.raw:%seat-drag-request-drag event-pointer)
+                :seat-request-start-drag :drag))
+             (origin-pointer
+               (%require-pointer
+                (ataxia.runtime.raw:%seat-drag-request-origin event-pointer)
+                :seat-request-start-drag :origin)))
+         (seat-request-start-drag
+          (%runtime-sink runtime)
+          (%make-seat-drag-request
+           :seat seat
+           :drag (%adopt-drag runtime drag-pointer)
+           :origin (%adopt-core-surface runtime origin-pointer)
+           :serial
+           (ataxia.runtime.raw:%seat-drag-request-serial event-pointer))))))
     (%attach-object-signal
      seat :seat-destroy
      (ataxia.runtime.raw:%seat-event-destroy pointer)
@@ -1121,6 +1152,23 @@
                             :seat-validate-pointer-grab-serial)
     (ataxia.runtime.raw:%wlr-seat-validate-pointer-grab-serial
      (%object-pointer seat) (%object-pointer origin) serial)))
+
+(defun seat-start-pointer-drag (seat drag serial)
+  (check-type drag wlr-drag)
+  (check-type serial (unsigned-byte 32))
+  (let ((runtime (%native-runtime seat)))
+    (%assert-runtime-live runtime :seat-start-pointer-drag)
+    (%assert-object-runtime runtime drag :seat-start-pointer-drag)
+    (ataxia.runtime.raw:%wlr-seat-start-pointer-drag
+     (%object-pointer seat) (%object-pointer drag) serial))
+  drag)
+
+(defun destroy-drag (drag)
+  (when (and drag (native-object-live-p drag))
+    (let ((runtime (%native-runtime drag)))
+      (%assert-runtime-live runtime :destroy-drag)
+      (ataxia.runtime.raw:%wlr-drag-destroy (%object-pointer drag))))
+  nil)
 
 (defun seat-keyboard-notify-key (seat time-msec keycode state)
   (check-type time-msec (unsigned-byte 32))

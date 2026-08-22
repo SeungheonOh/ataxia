@@ -269,6 +269,18 @@
         :hotspot-y
         (ataxia.runtime:seat-cursor-request-hotspot-y request))))))
 
+(defmethod ataxia.runtime:seat-request-start-drag
+    ((kernel kernel) request)
+  (declare (ignore kernel))
+  (let ((seat (ataxia.runtime:seat-drag-request-seat request))
+        (drag (ataxia.runtime:seat-drag-request-drag request))
+        (origin (ataxia.runtime:seat-drag-request-origin request))
+        (serial (ataxia.runtime:seat-drag-request-serial request)))
+    (if (ataxia.runtime:seat-validate-pointer-grab-serial
+         seat origin serial)
+        (ataxia.runtime:seat-start-pointer-drag seat drag serial)
+        (ataxia.runtime:destroy-drag drag))))
+
 (defmethod ataxia.runtime:compositor-new-surface
     ((kernel kernel) runtime surface)
   (declare (ignore runtime))
@@ -378,6 +390,12 @@
     ((kernel kernel) toplevel commit initial-commit-p configured-p)
   (declare (ignore commit))
   (when (and initial-commit-p (not configured-p))
+    (let ((decoration
+            (ataxia.runtime:find-xdg-toplevel-decoration
+             (kernel-runtime kernel) toplevel)))
+      (when decoration
+        (ataxia.runtime:xdg-toplevel-decoration-set-mode
+         decoration :client-side)))
     (ataxia.runtime:xdg-surface-schedule-configure toplevel))
   (gethash toplevel (%kernel-toplevel-table kernel)))
 

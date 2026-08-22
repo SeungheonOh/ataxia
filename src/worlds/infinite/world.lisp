@@ -216,33 +216,14 @@
            (%canvas-seat-seat seat-state) :keyboard t))))
   window)
 
-(defun %window-hit-test (world state x y)
+(defun %window-at-screen-point (world state x y)
   (dolist (window (reverse (%world-stacking world)))
     (when (%window-visible-p window)
       (multiple-value-bind (window-x window-y width height)
           (%window-screen-geometry state window)
-        (multiple-value-bind (border title-height grip)
-            (%window-decoration-metrics state window)
-          (let ((left (- window-x border))
-                (top (- window-y title-height))
-                (right (+ window-x width border))
-                (bottom (+ window-y height border)))
-            (when (and (<= left x right) (<= top y bottom))
-              (let ((edges 0))
-                (when (< x (+ left grip))
-                  (setf edges (logior edges +resize-left+)))
-                (when (> x (- right grip))
-                  (setf edges (logior edges +resize-right+)))
-                (when (< y (+ top grip))
-                  (setf edges (logior edges +resize-top+)))
-                (when (> y (- bottom grip))
-                  (setf edges (logior edges +resize-bottom+)))
-                (return
-                  (values window
-                          (cond ((plusp edges) :resize)
-                                ((< y window-y) :title)
-                                (t :content))
-                          edges))))))))))
+        (when (and (<= window-x x (+ window-x width))
+                   (<= window-y y (+ window-y height)))
+          (return window))))))
 
 (defun %top-visible-window (world &optional excluded)
   (find-if (lambda (window)
@@ -268,23 +249,21 @@
               (+ local-y (* (/ (- y window-y) height) local-height))))))
 
 (defun %deliver-motion (world seat-state input)
-  (let ((state (%canvas-seat-output seat-state)))
-    (multiple-value-bind (window part edges)
-        (if state
-            (%window-hit-test
-             world state (%canvas-seat-x seat-state) (%canvas-seat-y seat-state))
-            (values nil nil 0))
-      (declare (ignore edges))
-      (setf (%canvas-seat-hovered seat-state) window)
-      (if (eq part :content)
-          (multiple-value-bind (local-x local-y)
-              (%window-local-position
-               state window (%canvas-seat-x seat-state) (%canvas-seat-y seat-state))
-            (ataxia.kernel:interactable-pointer-motion
-             (canvas-window-application window) world
-             (%canvas-seat-seat seat-state) local-x local-y input))
-          (ataxia.kernel:clear-wayland-focus
-           (%canvas-seat-seat seat-state) :pointer t)))))
+  (let* ((state (%canvas-seat-output seat-state))
+         (window
+           (and state
+                (%window-at-screen-point
+                 world state (%canvas-seat-x seat-state) (%canvas-seat-y seat-state)))))
+    (setf (%canvas-seat-hovered seat-state) window)
+    (if window
+        (multiple-value-bind (local-x local-y)
+            (%window-local-position
+             state window (%canvas-seat-x seat-state) (%canvas-seat-y seat-state))
+          (ataxia.kernel:interactable-pointer-motion
+           (canvas-window-application window) world
+           (%canvas-seat-seat seat-state) local-x local-y input))
+        (ataxia.kernel:clear-wayland-focus
+         (%canvas-seat-seat seat-state) :pointer t))))
 
 (defun %deliver-button-to-window (world seat-state window input &key clamp-p)
   (when window
@@ -825,27 +804,19 @@
                             :pressed))
              (buttons (%canvas-seat-buttons seat-state)))
         (if pressed-p
-            (multiple-value-bind (window part edges)
-                (%window-hit-test
-                 world (%canvas-seat-output seat-state)
-                 (%canvas-seat-x seat-state) (%canvas-seat-y seat-state))
+            (let ((window
+                    (%window-at-screen-point
+                     world (%canvas-seat-output seat-state)
+                     (%canvas-seat-x seat-state) (%canvas-seat-y seat-state))))
               (when window (%focus-window world seat-state window))
-              (cond
-                ((= code +button-middle+)
-                 (setf (gethash code buttons) :world)
-                 (%begin-pan seat-state))
-                ((and (= code +button-left+) window (eq part :title))
-                 (setf (gethash code buttons) :world)
-                 (%begin-window-operation world seat-state window :move))
-                ((and (= code +button-left+) window (eq part :resize))
-                 (setf (gethash code buttons) :world)
-                 (%begin-window-operation
-                  world seat-state window :resize :edges edges))
-                (t
-                 (setf (gethash code buttons) (or window :world))
-                 (when (eq part :content)
-                   (%deliver-button-to-window
-                    world seat-state window input :clamp-p nil)))))
+              (if (= code +button-middle+)
+                  (progn
+                    (setf (gethash code buttons) :world)
+                    (%begin-pan seat-state))
+                  (progn
+                    (setf (gethash code buttons) (or window :world))
+                    (%deliver-button-to-window
+                     world seat-state window input :clamp-p nil))))
             (let ((target (gethash code buttons))
                   (operation (%canvas-seat-operation seat-state)))
               (cond
@@ -868,12 +839,11 @@
     ((world infinite-world) seat input)
   (let ((seat-state (gethash seat (%world-seats world))))
     (when seat-state
-      (multiple-value-bind (window part edges)
-          (%window-hit-test
-           world (%canvas-seat-output seat-state)
-           (%canvas-seat-x seat-state) (%canvas-seat-y seat-state))
-        (declare (ignore edges))
-        (if (eq part :content)
+      (let ((window
+              (%window-at-screen-point
+               world (%canvas-seat-output seat-state)
+               (%canvas-seat-x seat-state) (%canvas-seat-y seat-state))))
+        (if window
             (%deliver-axis-to-window world seat-state window input)
             (when (eq (ataxia.kernel:cursor-axis-input-orientation input)
                       :vertical)

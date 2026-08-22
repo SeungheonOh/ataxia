@@ -12,9 +12,6 @@
 (defconstant +resize-bottom+ 2)
 (defconstant +resize-left+ 4)
 (defconstant +resize-right+ 8)
-(defconstant +decoration-title-height+ 30d0)
-(defconstant +decoration-border-width+ 3d0)
-(defconstant +decoration-resize-grip+ 7d0)
 
 (defclass canvas-window (ataxia.world:application-binding)
   ((x :initarg :x :accessor canvas-window-x)
@@ -143,28 +140,9 @@
                  (* -10d0 (canvas-window-elevation window)))
               scaled-width scaled-height))))
 
-(defun %window-decoration-metrics (state window)
-  (if (%canvas-window-restore-geometry window)
-      (values 0d0 0d0 0d0)
-      (let ((scale (* (%canvas-output-zoom state)
-                      (canvas-window-scale window))))
-        (values (* +decoration-border-width+ scale)
-                (* +decoration-title-height+ scale)
-                (max 6d0 (* +decoration-resize-grip+ scale))))))
-
-(defun %window-frame-screen-geometry (state window)
-  (multiple-value-bind (x y width height)
-      (%window-screen-geometry state window)
-    (multiple-value-bind (border title-height grip)
-        (%window-decoration-metrics state window)
-      (declare (ignore grip))
-      (values (- x border) (- y title-height)
-              (+ width (* 2d0 border))
-              (+ height title-height border)))))
-
 (defun %window-buffer-coverage (state window)
   (multiple-value-bind (x y width height)
-      (%window-frame-screen-geometry state window)
+      (%window-screen-geometry state window)
     (%screen-rectangle-to-buffer
      state x y width height (+ 28d0 (* 14d0 (canvas-window-elevation window))))))
 

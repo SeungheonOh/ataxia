@@ -12,13 +12,14 @@
 #include <stdint.h>
 
 #define ATAXIA_WLR_GLUE_API __attribute__((visibility("default")))
-#define ATAXIA_WLR_GLUE_ABI_VERSION 7u
+#define ATAXIA_WLR_GLUE_ABI_VERSION 8u
 
 struct wl_signal;
 struct wlr_allocator;
 struct wlr_backend;
 struct wlr_buffer;
 struct wlr_compositor;
+struct wlr_drag;
 struct wlr_input_device;
 struct wlr_keyboard;
 struct wlr_keyboard_key_event;
@@ -35,6 +36,7 @@ struct wlr_pointer_motion_event;
 struct wlr_renderer;
 struct wlr_seat;
 struct wlr_seat_pointer_request_set_cursor_event;
+struct wlr_seat_request_start_drag_event;
 struct wlr_subsurface;
 struct wlr_surface;
 struct wlr_texture;
@@ -237,6 +239,16 @@ ATAXIA_WLR_GLUE_API struct wl_signal *ataxia_seat_event_destroy(
 	struct wlr_seat *seat);
 ATAXIA_WLR_GLUE_API struct wl_signal *ataxia_seat_event_request_set_cursor(
 	struct wlr_seat *seat);
+ATAXIA_WLR_GLUE_API struct wl_signal *ataxia_seat_event_request_start_drag(
+	struct wlr_seat *seat);
+ATAXIA_WLR_GLUE_API struct wlr_drag *ataxia_seat_drag_request_drag(
+	const struct wlr_seat_request_start_drag_event *event);
+ATAXIA_WLR_GLUE_API struct wlr_surface *ataxia_seat_drag_request_origin(
+	const struct wlr_seat_request_start_drag_event *event);
+ATAXIA_WLR_GLUE_API uint32_t ataxia_seat_drag_request_serial(
+	const struct wlr_seat_request_start_drag_event *event);
+ATAXIA_WLR_GLUE_API struct wl_signal *ataxia_drag_event_destroy(
+	struct wlr_drag *drag);
 ATAXIA_WLR_GLUE_API struct wlr_surface *ataxia_seat_cursor_surface(
 	const struct wlr_seat_pointer_request_set_cursor_event *event);
 ATAXIA_WLR_GLUE_API uint32_t ataxia_seat_cursor_serial(

@@ -17,6 +17,7 @@
 #include <wlr/render/wlr_texture.h>
 #include <wlr/types/wlr_buffer.h>
 #include <wlr/types/wlr_compositor.h>
+#include <wlr/types/wlr_data_device.h>
 #include <wlr/types/wlr_input_device.h>
 #include <wlr/types/wlr_keyboard.h>
 #include <wlr/types/wlr_output.h>
@@ -127,6 +128,9 @@ SIGNAL_ACCESSOR(ataxia_input_device_event_destroy, wlr_input_device,
 SIGNAL_ACCESSOR(ataxia_seat_event_destroy, wlr_seat, events.destroy)
 SIGNAL_ACCESSOR(ataxia_seat_event_request_set_cursor, wlr_seat,
 	events.request_set_cursor)
+SIGNAL_ACCESSOR(ataxia_seat_event_request_start_drag, wlr_seat,
+	events.request_start_drag)
+SIGNAL_ACCESSOR(ataxia_drag_event_destroy, wlr_drag, events.destroy)
 SIGNAL_ACCESSOR(ataxia_surface_event_commit, wlr_surface, events.commit)
 SIGNAL_ACCESSOR(ataxia_surface_event_map, wlr_surface, events.map)
 SIGNAL_ACCESSOR(ataxia_surface_event_unmap, wlr_surface, events.unmap)
@@ -497,6 +501,21 @@ int32_t ataxia_seat_cursor_hotspot_x(
 int32_t ataxia_seat_cursor_hotspot_y(
 		const struct wlr_seat_pointer_request_set_cursor_event *event) {
 	return event == NULL ? 0 : event->hotspot_y;
+}
+
+struct wlr_drag *ataxia_seat_drag_request_drag(
+		const struct wlr_seat_request_start_drag_event *event) {
+	return event == NULL ? NULL : event->drag;
+}
+
+struct wlr_surface *ataxia_seat_drag_request_origin(
+		const struct wlr_seat_request_start_drag_event *event) {
+	return event == NULL ? NULL : event->origin;
+}
+
+uint32_t ataxia_seat_drag_request_serial(
+		const struct wlr_seat_request_start_drag_event *event) {
+	return event == NULL ? 0 : event->serial;
 }
 
 uint32_t ataxia_surface_current_committed(const struct wlr_surface *surface) {

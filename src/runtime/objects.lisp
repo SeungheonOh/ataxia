@@ -46,6 +46,7 @@
   ((name :initarg :name :accessor %seat-name)))
 
 (defclass wlr-data-device-manager (native-object) ())
+(defclass wlr-drag (native-object) ())
 
 (defstruct (damage-rectangle
              (:constructor %make-damage-rectangle (&key x y width height))
@@ -160,6 +161,15 @@
   (hotspot-x 0 :type (signed-byte 32) :read-only t)
   (hotspot-y 0 :type (signed-byte 32) :read-only t))
 
+(defstruct (seat-drag-request
+             (:constructor %make-seat-drag-request
+                 (&key seat drag origin serial))
+             (:conc-name seat-drag-request-))
+  (seat nil :type wlr-seat :read-only t)
+  (drag nil :type wlr-drag :read-only t)
+  (origin nil :type wlr-surface :read-only t)
+  (serial 0 :type (unsigned-byte 32) :read-only t))
+
 (defclass runtime-sink () ())
 
 (defclass diagnostic-sink (runtime-sink)
@@ -187,6 +197,7 @@
 (defgeneric keyboard-repeat-info (sink event))
 (defgeneric seat-destroying (sink seat))
 (defgeneric seat-request-set-cursor (sink request))
+(defgeneric seat-request-start-drag (sink request))
 (defgeneric surface-committed (sink surface event))
 (defgeneric surface-mapped (sink surface))
 (defgeneric surface-unmapped (sink surface))
@@ -233,6 +244,8 @@
 (defmethod seat-destroying ((sink runtime-sink) seat)
   (declare (ignore sink seat)))
 (defmethod seat-request-set-cursor ((sink runtime-sink) request)
+  (declare (ignore sink request)))
+(defmethod seat-request-start-drag ((sink runtime-sink) request)
   (declare (ignore sink request)))
 (defmethod surface-committed ((sink runtime-sink) surface event)
   (declare (ignore sink surface event)))

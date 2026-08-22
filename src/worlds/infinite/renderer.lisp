@@ -239,7 +239,7 @@ void main() {
 
 (defun %draw-window-shadow (renderer state window)
   (multiple-value-bind (x y width height)
-      (%window-frame-screen-geometry state window)
+      (%window-screen-geometry state window)
     (let ((lift (canvas-window-elevation window)))
       (loop for layer from 4 downto 1
             for spread = (+ (* layer 4d0) (* lift 8d0))
@@ -250,39 +250,7 @@ void main() {
                             (+ height (* 2d0 spread))
                             (list 0d0 0d0 0d0 alpha))))))
 
-(defun %draw-window-decoration (renderer state window active-p)
-  (multiple-value-bind (content-x content-y content-width content-height)
-      (%window-screen-geometry state window)
-    (declare (ignore content-height))
-    (multiple-value-bind (frame-x frame-y frame-width frame-height)
-        (%window-frame-screen-geometry state window)
-      (multiple-value-bind (border title-height grip)
-          (%window-decoration-metrics state window)
-        (declare (ignore grip))
-        (when (plusp title-height)
-          (%draw-solid renderer state frame-x frame-y frame-width frame-height
-                       (if active-p
-                           '(0.075d0 0.095d0 0.14d0 1d0)
-                           '(0.045d0 0.055d0 0.08d0 1d0)))
-          (%draw-solid renderer state content-x (- content-y title-height)
-                       content-width title-height
-                       (if active-p
-                           '(0.10d0 0.14d0 0.22d0 1d0)
-                           '(0.065d0 0.075d0 0.105d0 1d0)))
-          (%draw-solid renderer state content-x (- content-y title-height)
-                       content-width (max 1d0 border)
-                       (if active-p
-                           '(0.30d0 0.52d0 0.96d0 1d0)
-                           '(0.16d0 0.19d0 0.27d0 1d0)))
-          (let* ((handle-width (min (* content-width 0.24d0) 120d0))
-                 (handle-x (+ content-x (/ (- content-width handle-width) 2d0)))
-                 (handle-y (- content-y (/ title-height 2d0) 1d0)))
-            (%draw-solid renderer state handle-x handle-y handle-width 2d0
-                         (if active-p
-                             '(0.48d0 0.60d0 0.82d0 0.62d0)
-                             '(0.30d0 0.34d0 0.43d0 0.52d0)))))))))
-
-(defun %draw-window (renderer state window active-p tokens)
+(defun %draw-window (renderer state window tokens)
   (let ((application (canvas-window-application window)))
     (multiple-value-bind (root-x root-y root-width root-height)
         (ataxia.kernel:drawable-local-bounds application)
@@ -291,7 +259,6 @@ void main() {
         (multiple-value-bind (x y width height)
             (%window-screen-geometry state window)
           (%draw-window-shadow renderer state window)
-          (%draw-window-decoration renderer state window active-p)
           (multiple-value-bind (surfaces revision)
               (ataxia.kernel:drawable-surfaces application)
             (declare (ignore revision))
@@ -380,13 +347,7 @@ void main() {
                      (ataxia.world:region-intersects-p
                       (%window-buffer-coverage output-state window)
                       (list damage)))
-            (setf tokens
-                  (%draw-window
-                   renderer output-state window
-                   (some (lambda (seat-state)
-                           (eq window (%canvas-seat-focused seat-state)))
-                         seats)
-                   tokens))))
+            (setf tokens (%draw-window renderer output-state window tokens))))
         (dolist (seat-state seats)
           (when (eq output-state (%canvas-seat-output seat-state))
             (setf tokens

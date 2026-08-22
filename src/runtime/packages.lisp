@@ -182,10 +182,15 @@
    #:%keyboard-repeat-delay
    #:%seat-event-destroy
    #:%seat-event-request-set-cursor
+   #:%seat-event-request-start-drag
+   #:%drag-event-destroy
    #:%seat-cursor-surface
    #:%seat-cursor-serial
    #:%seat-cursor-hotspot-x
    #:%seat-cursor-hotspot-y
+   #:%seat-drag-request-drag
+   #:%seat-drag-request-origin
+   #:%seat-drag-request-serial
    #:%wlr-data-device-manager-create
    #:%wlr-seat-set-keyboard
    #:%wlr-seat-pointer-notify-enter
@@ -195,6 +200,8 @@
    #:%wlr-seat-pointer-notify-axis
    #:%wlr-seat-pointer-notify-frame
    #:%wlr-seat-validate-pointer-grab-serial
+   #:%wlr-seat-start-pointer-drag
+   #:%wlr-drag-destroy
    #:%wlr-seat-keyboard-notify-key
    #:%wlr-seat-keyboard-notify-clear-focus
    #:%seat-keyboard-notify-modifiers-current
@@ -466,6 +473,7 @@
    #:surface-commit-damage-rectangles
    #:wlr-seat
    #:wlr-data-device-manager
+   #:wlr-drag
    #:wlr-viewporter
    #:wlr-fractional-scale-manager-v1
    #:wlr-presentation
@@ -492,6 +500,11 @@
    #:seat-cursor-request-serial
    #:seat-cursor-request-hotspot-x
    #:seat-cursor-request-hotspot-y
+   #:seat-drag-request
+   #:seat-drag-request-seat
+   #:seat-drag-request-drag
+   #:seat-drag-request-origin
+   #:seat-drag-request-serial
    #:wlr-xdg-shell
    #:wlr-xdg-surface
    #:wlr-xdg-toplevel
@@ -593,6 +606,7 @@
    #:keyboard-repeat-info
    #:seat-destroying
    #:seat-request-set-cursor
+   #:seat-request-start-drag
    #:surface-committed
    #:surface-mapped
    #:surface-unmapped
@@ -670,6 +684,8 @@
    #:seat-pointer-notify-axis
    #:seat-pointer-notify-frame
    #:seat-validate-pointer-grab-serial
+   #:seat-start-pointer-drag
+   #:destroy-drag
    #:seat-keyboard-notify-key
    #:seat-keyboard-notify-modifiers
    #:seat-keyboard-notify-enter

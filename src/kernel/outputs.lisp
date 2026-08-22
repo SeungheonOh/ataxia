@@ -68,13 +68,20 @@
     (world-output-added (kernel-world kernel) output)
     output))
 
-(defun %retire-output (output)
+(defun %retire-output (output &key (protocol-active-p t))
   (when (eq (object-state output) :live)
     (let ((kernel (object-kernel output)))
       (world-output-removing (kernel-world kernel) output)
       (when (%output-swapchain output)
         (ataxia.runtime:destroy-output-swapchain (%output-swapchain output))
         (setf (%output-swapchain output) nil))
+      (dolist (surface (%hash-values (%kernel-surface-table kernel)))
+        (when (gethash output (%surface-output-membership surface))
+          (when protocol-active-p
+            (ataxia.runtime:surface-send-leave
+             (surface-runtime-object surface)
+             (output-runtime-object output)))
+          (remhash output (%surface-output-membership surface))))
       (clrhash (%output-target-tokens output))
       (remhash (output-runtime-object output) (%kernel-output-table kernel))
       (%retire-object
@@ -136,7 +143,7 @@
          (and (eq kernel (object-kernel surface))
               (eq (object-state surface) :live)
               (= (%protocol-token-generation token)
-                 (object-generation surface))))))
+                 (surface-commit-sequence surface))))))
 
 (defun %validate-frame-result (kernel lease result)
   (unless (typep result 'world-frame-result)
@@ -271,7 +278,7 @@
     (error "Expected a Kernel-owned Wayland surface token."))
   (let* ((surface (%protocol-token-surface token))
          (kernel (object-kernel surface))
-         (current (%protocol-token-outputs token))
+         (current (%surface-output-membership surface))
          (desired (make-hash-table :test #'eq)))
     (unless (%validate-protocol-token kernel token)
       (error "Wayland surface token is no longer live."))

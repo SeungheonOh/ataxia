@@ -21,13 +21,13 @@
   (dolist (application (kernel-objects kernel))
     (%retire-wayland-application application :runtime-stopping))
   (dolist (output (kernel-outputs kernel))
-    (%retire-output output))
+    (%retire-output output :protocol-active-p nil))
   (dolist (seat (kernel-seats kernel))
     (%retire-logical-seat seat))
   (dolist (input-device (kernel-input-devices kernel))
     (%retire-input-device input-device))
   (dolist (surface (%hash-values (%kernel-surface-table kernel)))
-    (%retire-surface-node surface))
+    (%retire-surface-node surface :protocol-active-p nil))
   kernel)
 
 (defmethod ataxia.runtime:runtime-started
@@ -253,6 +253,8 @@
            (and runtime-surface
                 (%ensure-surface-node kernel runtime-surface))))
     (when seat
+      (when surface
+        (setf (%surface-externally-exposed-p surface) t))
       (world-seat-cursor-request
        (kernel-world kernel) seat
        (make-instance
@@ -274,12 +276,14 @@
   (let* ((surface (%ensure-surface-node kernel runtime-surface))
          (application (%surface-tree-application surface)))
     (%update-surface-node surface commit)
-    (if (and application (eq (object-state application) :live))
-        (%invalidate-application application)
-        (world-object-invalidated
-         (kernel-world kernel) surface
-         (make-drawable-invalidation
-          (surface-commit-sequence surface) (%surface-damage surface))))))
+    (cond
+      ((and application (eq (object-state application) :live))
+       (%invalidate-application application))
+      ((%surface-externally-exposed-p surface)
+       (world-object-invalidated
+        (kernel-world kernel) surface
+        (make-drawable-invalidation
+         (surface-commit-sequence surface) (%surface-damage surface)))))))
 
 (defmethod ataxia.runtime:surface-mapped
     ((kernel kernel) runtime-surface)
@@ -302,9 +306,10 @@
     ((kernel kernel) runtime-surface)
   (let ((surface (gethash runtime-surface (%kernel-surface-table kernel))))
     (when surface
-      (world-object-changed
-       (kernel-world kernel) surface
-       (make-object-change :destroying nil))
+      (when (%surface-externally-exposed-p surface)
+        (world-object-changed
+         (kernel-world kernel) surface
+         (make-object-change :destroying nil)))
       (%retire-surface-node surface))))
 
 (defmethod ataxia.runtime:surface-new-subsurface

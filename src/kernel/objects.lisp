@@ -62,7 +62,10 @@
    (buffer-transform :initform 0 :accessor %surface-buffer-transform)
    (damage :initform nil :accessor %surface-damage)
    (render-source :initform nil :accessor %surface-render-source)
-   (protocol-token :initform nil :accessor %surface-protocol-token))
+   (protocol-token :initform nil :accessor %surface-protocol-token)
+   (output-membership :initform (make-hash-table :test #'eq)
+                      :reader %surface-output-membership)
+   (externally-exposed-p :initform nil :accessor %surface-externally-exposed-p))
   (:documentation "Kernel-private committed state for one wl_surface in an application tree."))
 
 (defclass wayland-application (kernel-object drawable interactable)
@@ -90,9 +93,7 @@
 
 (defclass surface-protocol-token ()
   ((surface :initarg :surface :reader %protocol-token-surface)
-   (generation :initarg :generation :reader %protocol-token-generation)
-   (outputs :initform (make-hash-table :test #'eq)
-            :reader %protocol-token-outputs))
+   (generation :initarg :generation :reader %protocol-token-generation))
   (:documentation "Opaque token Kernel accepts back from a World frame result."))
 
 (defclass output-target-token ()

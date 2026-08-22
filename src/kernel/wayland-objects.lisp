@@ -19,7 +19,7 @@
               (make-instance
                'surface-protocol-token
                :surface surface
-               :generation (object-generation surface)))
+               :generation (surface-commit-sequence surface)))
         (%register-object kernel surface :runtime-object runtime-surface)
         (setf (gethash runtime-surface (%kernel-surface-table kernel)) surface)
         surface)))
@@ -85,6 +85,11 @@
           (%surface-damage surface)
           (%runtime-damage-rectangles
            (ataxia.runtime:surface-commit-damage-rectangles commit))))
+    (setf (%surface-protocol-token surface)
+          (make-instance
+           'surface-protocol-token
+           :surface surface
+           :generation (surface-commit-sequence surface))))
   (when (surface-mapped-p surface)
     (setf (%surface-render-source surface)
           (%make-wayland-render-source
@@ -200,7 +205,7 @@
         (%surface-application surface) nil)
   surface)
 
-(defun %retire-surface-node (surface)
+(defun %retire-surface-node (surface &key (protocol-active-p t))
   (when (eq (object-state surface) :live)
     (let* ((kernel (object-kernel surface))
            (application (%surface-tree-application surface))
@@ -210,6 +215,15 @@
         (setf (surface-parent child) nil
               (%surface-application child) nil))
       (setf (surface-children surface) nil)
+      (maphash
+       (lambda (output present-p)
+         (declare (ignore present-p))
+         (when protocol-active-p
+           (ataxia.runtime:surface-send-leave
+            (surface-runtime-object surface)
+            (output-runtime-object output))))
+       (%surface-output-membership surface))
+      (clrhash (%surface-output-membership surface))
       (%release-surface-source surface)
       (remhash runtime-surface (%kernel-surface-table kernel))
       (%retire-object kernel surface :runtime-object runtime-surface)

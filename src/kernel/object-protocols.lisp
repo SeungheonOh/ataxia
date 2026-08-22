@@ -64,6 +64,82 @@
   (focus-changed-p nil :type boolean :read-only t)
   (capture-changed-p nil :type boolean :read-only t))
 
+(defstruct (object-change (:constructor make-object-change (kind value)))
+  (kind nil :type keyword :read-only t)
+  (value nil :read-only t))
+
+(defstruct (drawable-invalidation
+             (:constructor make-drawable-invalidation (revision damage)))
+  (revision 0 :type (integer 0) :read-only t)
+  (damage nil :type list :read-only t))
+
+(defclass toplevel-configuration ()
+  ((width :initarg :width :initform :unchanged :reader configuration-width)
+   (height :initarg :height :initform :unchanged :reader configuration-height)
+   (activated :initarg :activated :initform :unchanged
+              :reader configuration-activated)
+   (resizing :initarg :resizing :initform :unchanged
+             :reader configuration-resizing)
+   (tiled-edges :initarg :tiled-edges :initform :unchanged
+                :reader configuration-tiled-edges)
+   (bounds-width :initarg :bounds-width :initform :unchanged
+                 :reader configuration-bounds-width)
+   (bounds-height :initarg :bounds-height :initform :unchanged
+                  :reader configuration-bounds-height))
+  (:documentation "World-selected XDG configure fields; :UNCHANGED preserves a field."))
+
+(defstruct (cursor-motion-input
+             (:constructor make-cursor-motion-input
+                 (&key device time-msec absolute-p delta-x delta-y
+                       unaccelerated-delta-x unaccelerated-delta-y x y)))
+  (device nil :read-only t)
+  (time-msec 0 :type (unsigned-byte 32) :read-only t)
+  (absolute-p nil :type boolean :read-only t)
+  (delta-x 0d0 :type double-float :read-only t)
+  (delta-y 0d0 :type double-float :read-only t)
+  (unaccelerated-delta-x 0d0 :type double-float :read-only t)
+  (unaccelerated-delta-y 0d0 :type double-float :read-only t)
+  (x 0d0 :type double-float :read-only t)
+  (y 0d0 :type double-float :read-only t))
+
+(defstruct (cursor-button-input
+             (:constructor make-cursor-button-input
+                 (&key device time-msec code state)))
+  (device nil :read-only t)
+  (time-msec 0 :type (unsigned-byte 32) :read-only t)
+  (code 0 :type (unsigned-byte 32) :read-only t)
+  (state :released :type keyword :read-only t))
+
+(defstruct (cursor-axis-input
+             (:constructor make-cursor-axis-input
+                 (&key device time-msec source orientation
+                       relative-direction delta discrete-delta)))
+  (device nil :read-only t)
+  (time-msec 0 :type (unsigned-byte 32) :read-only t)
+  (source :wheel :type keyword :read-only t)
+  (orientation :vertical :type keyword :read-only t)
+  (relative-direction :identical :type keyword :read-only t)
+  (delta 0d0 :type double-float :read-only t)
+  (discrete-delta 0 :type (signed-byte 32) :read-only t))
+
+(defstruct (key-input
+             (:constructor make-key-input
+                 (&key device time-msec keycode state update-state-p)))
+  (device nil :read-only t)
+  (time-msec 0 :type (unsigned-byte 32) :read-only t)
+  (keycode 0 :type (unsigned-byte 32) :read-only t)
+  (state :released :type keyword :read-only t)
+  (update-state-p nil :type boolean :read-only t))
+
+(defstruct (modifiers-input
+             (:constructor make-modifiers-input
+                 (&key device depressed latched locked group)))
+  (device nil :read-only t)
+  (depressed 0 :type (unsigned-byte 32) :read-only t)
+  (latched 0 :type (unsigned-byte 32) :read-only t)
+  (locked 0 :type (unsigned-byte 32) :read-only t)
+  (group 0 :type (unsigned-byte 32) :read-only t))
+
 (defgeneric interactable-pointer-motion
     (object world seat local-x local-y input)
   (:documentation "Deliver resolved pointer motion synchronously."))

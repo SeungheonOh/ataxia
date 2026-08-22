@@ -40,6 +40,62 @@
    #:interaction-result-object
    #:interaction-result-focus-changed-p
    #:interaction-result-capture-changed-p
+   #:object-change
+   #:make-object-change
+   #:object-change-kind
+   #:object-change-value
+   #:drawable-invalidation
+   #:make-drawable-invalidation
+   #:drawable-invalidation-revision
+   #:drawable-invalidation-damage
+   #:toplevel-configuration
+   #:configuration-width
+   #:configuration-height
+   #:configuration-activated
+   #:configuration-resizing
+   #:configuration-tiled-edges
+   #:configuration-bounds-width
+   #:configuration-bounds-height
+   #:cursor-motion-input
+   #:make-cursor-motion-input
+   #:cursor-motion-input-device
+   #:cursor-motion-input-time-msec
+   #:cursor-motion-input-absolute-p
+   #:cursor-motion-input-delta-x
+   #:cursor-motion-input-delta-y
+   #:cursor-motion-input-unaccelerated-delta-x
+   #:cursor-motion-input-unaccelerated-delta-y
+   #:cursor-motion-input-x
+   #:cursor-motion-input-y
+   #:cursor-button-input
+   #:make-cursor-button-input
+   #:cursor-button-input-device
+   #:cursor-button-input-time-msec
+   #:cursor-button-input-code
+   #:cursor-button-input-state
+   #:cursor-axis-input
+   #:make-cursor-axis-input
+   #:cursor-axis-input-device
+   #:cursor-axis-input-time-msec
+   #:cursor-axis-input-source
+   #:cursor-axis-input-orientation
+   #:cursor-axis-input-relative-direction
+   #:cursor-axis-input-delta
+   #:cursor-axis-input-discrete-delta
+   #:key-input
+   #:make-key-input
+   #:key-input-device
+   #:key-input-time-msec
+   #:key-input-keycode
+   #:key-input-state
+   #:key-input-update-state-p
+   #:modifiers-input
+   #:make-modifiers-input
+   #:modifiers-input-device
+   #:modifiers-input-depressed
+   #:modifiers-input-latched
+   #:modifiers-input-locked
+   #:modifiers-input-group
    #:interactable-pointer-motion
    #:interactable-pointer-button
    #:interactable-pointer-axis
@@ -102,6 +158,12 @@
    #:window-menu-client-request
    #:window-menu-client-request-x
    #:window-menu-client-request-y
+   #:cursor-surface-request
+   #:cursor-surface-request-seat
+   #:cursor-surface-request-surface
+   #:cursor-surface-request-serial
+   #:cursor-surface-request-hotspot-x
+   #:cursor-surface-request-hotspot-y
 
    ;; Kernel/World contract.
    #:world
@@ -121,6 +183,7 @@
    #:world-cursor-button
    #:world-cursor-axis
    #:world-key-event
+   #:world-seat-cursor-request
    #:world-client-request
    #:world-graphics-attached
    #:world-render
@@ -130,6 +193,12 @@
 
    ;; Frame boundary.
    #:frame-lease
+   #:frame-damage-rectangle
+   #:make-frame-damage-rectangle
+   #:frame-damage-rectangle-x
+   #:frame-damage-rectangle-y
+   #:frame-damage-rectangle-width
+   #:frame-damage-rectangle-height
    #:frame-output
    #:frame-target-token
    #:frame-framebuffer
@@ -169,5 +238,6 @@
    #:create-logical-seat
    #:destroy-logical-seat
    #:assign-input-device
+   #:clear-wayland-focus
    #:request-output-frame
    #:set-wayland-surface-output-membership))

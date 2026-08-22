@@ -19,7 +19,15 @@
    (width :initarg :width :accessor output-width)
    (height :initarg :height :accessor output-height)
    (scale :initarg :scale :accessor output-scale)
-   (enabled-p :initarg :enabled-p :accessor output-enabled-p))
+   (enabled-p :initarg :enabled-p :accessor output-enabled-p)
+   (swapchain :initform nil :accessor %output-swapchain)
+   (swapchain-generation :initform 0 :accessor %output-swapchain-generation)
+   (target-tokens :initform (make-hash-table :test #'eql)
+                  :reader %output-target-tokens)
+   (frame-requested-p :initform nil :accessor %output-frame-requested-p)
+   (frame-active-p :initform nil :accessor %output-frame-active-p)
+   (next-frame-requested-p :initform nil
+                           :accessor %output-next-frame-requested-p))
   (:documentation "Configured output identity backed by one Runtime wlr-output."))
 
 (defclass kernel-input-device (kernel-object)
@@ -38,7 +46,7 @@
    (keyboard :initform nil :accessor %seat-keyboard))
   (:documentation "Stable seat identity owning one real Runtime wlr-seat."))
 
-(defclass surface-node (kernel-object)
+(defclass surface-node (kernel-object drawable)
   ((runtime-object :initarg :runtime-object :reader surface-runtime-object)
    (parent :initarg :parent :initform nil :accessor surface-parent)
    (children :initform nil :accessor surface-children)
@@ -82,8 +90,16 @@
 
 (defclass surface-protocol-token ()
   ((surface :initarg :surface :reader %protocol-token-surface)
-   (generation :initarg :generation :reader %protocol-token-generation))
+   (generation :initarg :generation :reader %protocol-token-generation)
+   (outputs :initform (make-hash-table :test #'eq)
+            :reader %protocol-token-outputs))
   (:documentation "Opaque token Kernel accepts back from a World frame result."))
+
+(defclass output-target-token ()
+  ((output :initarg :output :reader %target-token-output)
+   (generation :initarg :generation :reader %target-token-generation)
+   (native-address :initarg :native-address :reader %target-token-address))
+  (:documentation "World-opaque identity for one swapchain buffer generation."))
 
 (defmethod retain-render-source ((source wayland-render-source))
   (unless (plusp (%render-source-retain-count source))
@@ -129,3 +145,12 @@
 (defclass window-menu-client-request (client-request)
   ((x :initarg :x :reader window-menu-client-request-x)
    (y :initarg :y :reader window-menu-client-request-y)))
+
+(defclass cursor-surface-request ()
+  ((seat :initarg :seat :reader cursor-surface-request-seat)
+   (surface :initarg :surface :initform nil
+            :reader cursor-surface-request-surface)
+   (serial :initarg :serial :reader cursor-surface-request-serial)
+   (hotspot-x :initarg :hotspot-x :reader cursor-surface-request-hotspot-x)
+   (hotspot-y :initarg :hotspot-y :reader cursor-surface-request-hotspot-y))
+  (:documentation "Stable client request to replace or hide one seat cursor surface."))

@@ -57,6 +57,9 @@
 (defgeneric world-key-event (world seat input)
   (:documentation "Let WORLD interpret a copied keyboard event."))
 
+(defgeneric world-seat-cursor-request (world seat request)
+  (:documentation "Report a validated client cursor-surface request using stable Kernel objects."))
+
 (defgeneric world-client-request (world object request)
   (:documentation "Let WORLD decide a typed client policy request."))
 

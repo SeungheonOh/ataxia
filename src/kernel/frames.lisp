@@ -6,6 +6,13 @@
 
 (in-package #:ataxia.kernel)
 
+(defstruct (frame-damage-rectangle
+             (:constructor make-frame-damage-rectangle (x y width height)))
+  (x 0 :type integer :read-only t)
+  (y 0 :type integer :read-only t)
+  (width 0 :type integer :read-only t)
+  (height 0 :type integer :read-only t))
+
 (defclass frame-lease ()
   ((output :initarg :output :reader frame-output)
    (target-token :initarg :target-token :reader frame-target-token)

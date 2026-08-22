@@ -12,7 +12,7 @@
 #include <stdint.h>
 
 #define ATAXIA_WLR_GLUE_API __attribute__((visibility("default")))
-#define ATAXIA_WLR_GLUE_ABI_VERSION 8u
+#define ATAXIA_WLR_GLUE_ABI_VERSION 9u
 
 struct wl_signal;
 struct wlr_allocator;
@@ -241,6 +241,8 @@ ATAXIA_WLR_GLUE_API struct wl_signal *ataxia_seat_event_request_set_cursor(
 	struct wlr_seat *seat);
 ATAXIA_WLR_GLUE_API struct wl_signal *ataxia_seat_event_request_start_drag(
 	struct wlr_seat *seat);
+ATAXIA_WLR_GLUE_API bool ataxia_seat_pointer_drag_active(
+	const struct wlr_seat *seat);
 ATAXIA_WLR_GLUE_API struct wlr_drag *ataxia_seat_drag_request_drag(
 	const struct wlr_seat_request_start_drag_event *event);
 ATAXIA_WLR_GLUE_API struct wlr_surface *ataxia_seat_drag_request_origin(

@@ -184,7 +184,15 @@
         :device input-device
         :time-msec (ataxia.runtime:pointer-button-time-msec event)
         :code (ataxia.runtime:pointer-button-code event)
-        :state (ataxia.runtime:pointer-button-state event))))))
+        :state (ataxia.runtime:pointer-button-state event)))
+      (let ((runtime-seat (seat-runtime-object seat)))
+        (when (and (eq (ataxia.runtime:pointer-button-state event) :released)
+                   (ataxia.runtime:seat-pointer-drag-active-p runtime-seat))
+          (ataxia.runtime:seat-pointer-notify-button
+           runtime-seat
+           (ataxia.runtime:pointer-button-time-msec event)
+           (ataxia.runtime:pointer-button-code event)
+           :released))))))
 
 (defmethod ataxia.runtime:pointer-axis ((kernel kernel) event)
   (let* ((runtime-input (ataxia.runtime:pointer-axis-pointer event))

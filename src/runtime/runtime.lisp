@@ -1153,6 +1153,12 @@
     (ataxia.runtime.raw:%wlr-seat-validate-pointer-grab-serial
      (%object-pointer seat) (%object-pointer origin) serial)))
 
+(defun seat-pointer-drag-active-p (seat)
+  (let ((runtime (%native-runtime seat)))
+    (%assert-runtime-live runtime :seat-pointer-drag-active-p)
+    (ataxia.runtime.raw:%seat-pointer-drag-active
+     (%object-pointer seat))))
+
 (defun seat-start-pointer-drag (seat drag serial)
   (check-type drag wlr-drag)
   (check-type serial (unsigned-byte 32))

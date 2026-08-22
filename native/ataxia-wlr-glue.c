@@ -503,6 +503,11 @@ int32_t ataxia_seat_cursor_hotspot_y(
 	return event == NULL ? 0 : event->hotspot_y;
 }
 
+bool ataxia_seat_pointer_drag_active(const struct wlr_seat *seat) {
+	return seat != NULL && seat->drag != NULL &&
+		seat->drag->grab_type == WLR_DRAG_GRAB_KEYBOARD_POINTER;
+}
+
 struct wlr_drag *ataxia_seat_drag_request_drag(
 		const struct wlr_seat_request_start_drag_event *event) {
 	return event == NULL ? NULL : event->drag;

@@ -5,7 +5,7 @@
 
 (in-package #:ataxia.runtime.raw)
 
-(defconstant +expected-glue-abi+ 8)
+(defconstant +expected-glue-abi+ 9)
 (defparameter +expected-wlroots-version+ "0.20.2")
 
 (define-foreign-library libwayland-server
@@ -225,6 +225,8 @@
   "ataxia_seat_event_request_start_drag" seat)
 (define-signal-binding %drag-event-destroy
   "ataxia_drag_event_destroy" drag)
+(defcfun ("ataxia_seat_pointer_drag_active" %seat-pointer-drag-active) :boolean
+  (seat :pointer))
 (defcfun ("ataxia_seat_cursor_surface" %seat-cursor-surface) :pointer
   (event :pointer))
 (defcfun ("ataxia_seat_cursor_serial" %seat-cursor-serial) :uint32

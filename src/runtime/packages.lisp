@@ -184,6 +184,7 @@
    #:%seat-event-request-set-cursor
    #:%seat-event-request-start-drag
    #:%drag-event-destroy
+   #:%seat-pointer-drag-active
    #:%seat-cursor-surface
    #:%seat-cursor-serial
    #:%seat-cursor-hotspot-x
@@ -684,6 +685,7 @@
    #:seat-pointer-notify-axis
    #:seat-pointer-notify-frame
    #:seat-validate-pointer-grab-serial
+   #:seat-pointer-drag-active-p
    #:seat-start-pointer-drag
    #:destroy-drag
    #:seat-keyboard-notify-key

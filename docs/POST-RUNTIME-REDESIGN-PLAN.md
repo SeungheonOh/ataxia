@@ -17,9 +17,9 @@ Four parts of the crude proposal need stricter boundaries:
 
 | Proposed idea | Verdict | Required refinement |
 |---|---|---|
-| World renders objects | Partly correct | World declares geometry, materials, effects, mappings, and passes. The Kernel alone binds EGL, executes GLES, acquires output buffers, and commits output state. |
+| World renders objects | Correct with a frame boundary | Kernel opens a bounded frame lease by acquiring the output buffer, activating EGL, and binding the output framebuffer. World executes the actual GLES draw calls only during that lease. |
 | World owns damage strategy | Partly correct | World supplies projection and conservative damage mapping. The Kernel owns damage history, surface commit damage, old/new coverage, frame pacing, and output submission. |
-| Every object implements `render` and `handle-input` | Too broad | Immediate rendering and object-local input hide frame and focus invariants. Use presentation contribution, mapping, inspection, and action protocols instead. |
+| Every object implements `render` and `handle-input` | Needs context | Rendering is valid only through a World method receiving a live frame lease and snapshot. Input still routes through World because focus, grabs, background gestures, and camera operations are not object-local concerns. |
 | Application is one world object | Correct | The Kernel must still retain every `wl_surface`, subsurface, popup, buffer, commit, transform, and damage region beneath it. |
 | Each seat may have its own camera | Conditional | One physical output has one final image. Different simultaneous cameras require different outputs or explicit split-screen viewports. |
 | Runtime never changes again | Only for the baseline | The current Runtime is enough for the initial compositor. New Wayland protocol families must later be added horizontally inside Runtime, not emulated above it. |
@@ -39,18 +39,25 @@ popup lifecycle, input regions, or buffer release ordering.
 
 ### 2.2 Output submission remains one transaction
 
-World must not call GL or commit an output from an event callback. The Kernel
-owns the full transaction:
+World may call GLES only inside a bounded frame lease opened by Kernel. It must
+not draw from input, lifecycle, timer, control, or arbitrary REPL callbacks and
+must never commit the output itself. Kernel owns the full transaction:
 
 1. accumulate pending invalidation;
 2. wait for an output frame opportunity;
 3. build an immutable presentation snapshot;
 4. acquire a scanout-compatible buffer;
-5. bind Runtime's EGL context and output framebuffer;
-6. execute direct GLES with damage scissoring;
-7. test and commit one `wlr_output_state`;
-8. send presentation feedback and frame completion;
-9. retire frame resources.
+5. make Runtime's EGL context current and bind the output framebuffer;
+6. establish a known GL baseline and open a dynamically scoped frame lease;
+7. call `world-render`, which executes direct GLES;
+8. close the lease and restore Kernel-required GL state;
+9. test and commit one `wlr_output_state`;
+10. send presentation feedback and frame completion;
+11. retire frame resources.
+
+If World signals an error or leaves the frame incomplete, Kernel does not commit
+that buffer. It restores GL state with `unwind-protect`, preserves or escalates
+pending damage, and schedules a safe retry or fallback.
 
 ### 2.3 One geometry drives draw, damage, and input
 
@@ -86,8 +93,8 @@ flowchart TD
       ROOT[Compositor aggregate]
       MODEL[Native object model]
       IO[Seat and output mechanisms]
-      FRAME[Presentation, damage, and frame engine]
-      GLES[Direct GLES executor]
+      FRAME[Presentation, damage, frame transaction]
+      LEASE[EGL and output frame lease]
       CLOCK[Opaque animation executor]
       CONTROL[Authorized control plane]
     end
@@ -96,14 +103,16 @@ flowchart TD
       WORLD[One monolithic World controller]
       META[World-owned object, output, and seat state]
       SPACE[Placement, camera, projection, picking]
-      POLICY[Interaction, focus choice, scene, effects]
+      POLICY[Interaction, scene, effects, direct GLES]
     end
 
     RT <--> ROOT
     ROOT <--> WORLD
-    WORLD -->|immutable presentation declarations| FRAME
-    FRAME --> GLES
-    GLES --> RT
+    WORLD -->|immutable snapshot and damage mapping| FRAME
+    FRAME -->|opens bounded lease| WORLD
+    FRAME --> LEASE
+    WORLD -->|GLES calls during lease| LEASE
+    LEASE --> RT
     CONTROL --> ROOT
 ```
 
@@ -142,7 +151,8 @@ The Kernel is stable Common Lisp mechanism above Runtime. It owns:
 - output configuration, swapchains, frame pacing, and output commit state;
 - authoritative damage history and retained output targets;
 - immutable snapshots and their retirement;
-- direct GLES programs, textures, framebuffers, and draw execution;
+- output-buffer acquisition, EGL activation, framebuffer binding, GL baseline,
+  frame-lease lifetime, and failed-frame recovery;
 - animation clocks, instances, sampling, and lifecycle only;
 - authorization, external control transport, and owner-thread ingress;
 - installation and replacement of one active World.
@@ -160,7 +170,8 @@ World is one monolithic replaceable CLOS object. It owns:
 - stacking interpretation and focus policy;
 - move, resize, maximize, fullscreen, selection, and gesture meaning;
 - scene composition, backgrounds, chrome, panels, cursors, and overlays;
-- shader and effect selection;
+- actual direct GLES rendering, shaders, programs, buffers, meshes,
+  intermediate targets, and effect execution;
 - animation definitions and opaque animation binding meaning;
 - policy-specific semantic commands and observations;
 - portable export/import of World-owned state.
@@ -182,11 +193,12 @@ definitions. Each World owns its entire state and lifecycle.
 | Actual `wlr_seat` focus and delivery | Executes | Owns and validates | Chooses intended target |
 | Cursor world/output position | No | Queries for delivery | Owns per seat |
 | Active move/resize/navigation operation | No | Provides validated mechanisms | Owns |
-| Scene contents and visible style | No | Defines declaration types | Owns |
+| Scene contents and visible style | No | Retains stable objects and snapshots | Owns |
 | Damage history and frame scheduling | Exposes frame events | Owns | Requests discrete invalidation |
 | Projection of local damage | No | Invokes mapping and validates | Mapping supplied by World |
 | Animation timing and sampling | No | Owns | Defines bindings and effects |
-| EGL/GLES and output submission | Supplies exact access | Owns | Declares only |
+| EGL activation and output submission | Supplies exact access | Owns | Uses only through lease |
+| GLES draw calls and World GL resources | Supplies context | Opens and contains lease | Owns |
 | External authorization | No | Owns | Handles authorized semantic actions |
 
 ## 5. Stable Object Model
@@ -199,8 +211,8 @@ identity and protocol-neutral client facts, not placement:
 ```lisp
 (defclass wayland-application ()
   ((id              :reader object-id)
-   (toplevel         :reader application-toplevel)
-   (root-surface     :reader application-root-surface)
+   (native-role      :reader %application-native-role)
+   (surface-tree     :reader %application-surface-tree)
    (popups           :reader application-popups)
    (title            :reader application-title)
    (app-id           :reader application-app-id)
@@ -211,7 +223,9 @@ identity and protocol-neutral client facts, not placement:
 ```
 
 It deliberately has no `x`, `y`, `z`, scale, camera, opacity, or animation
-slots.
+slots. `%application-native-role` and `%application-surface-tree` are private
+Kernel readers; World receives stable application identity and prepared content,
+not the Runtime toplevel or surface wrappers.
 
 ### 5.2 Surface tree
 
@@ -246,9 +260,10 @@ presentable-object
 ```
 
 RmlUi is feasible, but it needs a C++ adapter implementing RmlUi's render and
-system interfaces. The adapter should record compiled geometry, textures,
-scissors, transforms, and layers into Kernel-owned resources or immutable draw
-descriptions. It must not issue GLES draws outside the Kernel frame transaction.
+system interfaces. It may retain compiled geometry and textures as World-owned
+graphics resources. Its render callbacks may issue GLES when RmlUi rendering is
+invoked from `world-render` with a live frame lease; they must reject drawing at
+all other times.
 
 ## 6. CLOS Protocols
 
@@ -279,14 +294,16 @@ own two-dimensional local coordinates:
 (defgeneric object-local-bounds (object))
 (defgeneric contribute-object-content (object content-context builder))
 (defgeneric object-local-hit (object local-x local-y))
+(defgeneric world-render-object (world object instance frame-lease))
 ```
 
-`contribute-object-content` emits geometry and materials only; it never draws.
-The Kernel implementation for `wayland-application` expands the live surface
-tree. A native UI implementation emits its retained geometry. `object-local-hit`
-returns a typed local hit, such as a concrete leaf `wl_surface` or native UI
-element. World still decides whether an instance is pickable, its ordering, and
-what policy action follows the hit.
+`contribute-object-content` prepares immutable local presentation records; it
+never draws. The Kernel implementation for `wayland-application` expands the
+live surface tree. A native UI implementation contributes retained local
+content. `object-local-hit` returns a typed local hit, such as a concrete leaf
+`surface-node` or native UI element. `world-render-object` performs the actual
+World-specific GLES rendering during the lease. World decides whether an
+instance is pickable, its ordering, and what policy action follows the hit.
 
 ### 6.3 Kernel-to-World protocol
 
@@ -317,7 +334,9 @@ These are typed generics, not a universal event structure:
 (defgeneric world-xdg-state-request (world application request))
 
 (defgeneric world-build-presentation (world output frame-context builder))
-(defgeneric world-compose-frame (world snapshot frame-context))
+(defgeneric world-graphics-attached (world graphics-context))
+(defgeneric world-render (world frame-lease snapshot))
+(defgeneric world-graphics-detaching (world graphics-context reason))
 
 (defgeneric world-resolve-animation (world subject transition context))
 (defgeneric world-prepare-binding (world subject binding instance))
@@ -351,7 +370,7 @@ damage-object / damage-output-region / damage-output
 current-presentation-snapshot
 pick-presentation
 start-animation / cancel-animations
-register-shader-program / release-world-resources
+enqueue-world-graphics-task
 create-logical-seat / destroy-logical-seat
 run-hook
 ```
@@ -362,8 +381,7 @@ mailbox inside the owner thread.
 
 ## 7. Presentation Protocol
 
-World does not call `(render object context)`. It contributes immutable
-instances to a builder:
+World first contributes immutable instances to a builder:
 
 ```lisp
 (present builder
@@ -376,8 +394,14 @@ instances to a builder:
 ```
 
 For a `wayland-application`, Kernel expands the current surface tree into
-surface-texture items under the supplied application-local mapping. For native
-objects, a content provider contributes local geometry and materials.
+surface presentation records under the supplied application-local mapping. A
+record contains the retained texture view, source box, surface transform,
+mapping, coverage, and input identity required by World. For native objects, a
+content provider contributes its immutable local records.
+
+The retained texture view is a Kernel value containing only the GLES target,
+texture name, alpha information, dimensions, and generation. It does not expose
+the underlying `wlr_texture`, `wlr_buffer`, or `wl_surface` wrapper to World.
 
 The mapping protocol is the essential geometry boundary:
 
@@ -394,29 +418,65 @@ non-invertible mapping may split an object into several instances or decline
 precise damage, causing Kernel to conservatively damage the item or output.
 
 The immutable `presentation-snapshot` contains ordered instances, expanded
-surface items, mappings, output coverage, input tags, and referenced resources.
-Rendering, picking, cursor-to-surface coordinates, output membership, and damage
-all consume this same snapshot.
+surface records, mappings, output coverage, input tags, opaque World render
+payloads, and referenced resources. `world-render` must draw this snapshot.
+Picking, cursor-to-surface coordinates, output membership, and damage consume
+the same snapshot and mappings.
 
 ## 8. Direct GLES Rendering
 
-Kernel owns a small renderer-neutral declaration vocabulary:
+Kernel passes World a dynamically scoped `frame-lease`:
 
-- geometry: quad, triangle mesh, or retained native geometry;
-- material: solid, surface texture, or registered shader material;
-- pass: item pass, intermediate target, or output composition pass;
-- effect resources: named uniforms, textures, and declared history targets.
+```lisp
+(defclass frame-lease ()
+  ((output       :reader frame-output)
+   (framebuffer  :reader frame-framebuffer)
+   (width        :reader frame-width)
+   (height       :reader frame-height)
+   (scale        :reader frame-scale)
+   (transform    :reader frame-transform)
+   (damage       :reader frame-damage)
+   (timestamp    :reader frame-timestamp)
+   (snapshot     :reader frame-snapshot)
+   (generation   :reader frame-generation)
+   (valid-p      :reader frame-lease-valid-p)))
+```
 
-World may provide shader source and choose programs, uniforms, meshes, and pass
-ordering. Kernel compiles and validates the programs in Runtime's EGL context,
-owns all GL handles, and executes them at the correct frame point.
+The lease is valid only during the dynamic extent of `world-render`. Kernel has
+already made EGL current, acquired and retained the output buffer, bound the
+output framebuffer, and established its documented initial state. World may
+then issue arbitrary GLES calls, including compiling programs, uploading
+buffers, rendering meshes, using intermediate FBOs, sampling client textures,
+and running per-window or output-wide effects.
+
+Before `world-render` returns, World must place the final image in the leased
+output framebuffer for every damaged region. It may change GL state freely
+inside the lease. Kernel re-establishes its required state after the callback;
+World must not rely on GL state surviving between leases.
+
+World must not retain the lease, call `eglMakeCurrent`, delete or reconfigure
+the Kernel-owned output framebuffer, dispatch the Wayland loop, or invoke output
+test/commit functions. Raw GLES is intentionally trusted, so these rules are an
+architectural contract rather than a sandbox.
+
+World owns its programs, VAOs, VBOs, intermediate textures, and other GL names.
+Those resources are scoped to the World generation. Kernel invokes
+`world-graphics-attached` and `world-graphics-detaching` with EGL current so the
+World can create and delete them safely. Live shader or resource mutations use
+`enqueue-world-graphics-task`, which runs at an owner-thread safe point with a
+current graphics context.
+
+Runtime client texture names remain valid only while the corresponding retained
+buffer and snapshot resources remain live. World may sample them during the
+lease but must not cache a client texture name beyond the resource generation
+advertised by Kernel.
 
 The first implementation should continue using Runtime's retained client buffer
 and wlroots GLES texture access. Reimplementing DMA-BUF-to-EGLImage and SHM
 upload would duplicate synchronization, format, modifier, and lifetime work
 already provided by wlroots. This remains a custom compositor renderer because
-all composition and shaders are Ataxia GLES code; wlroots only imports the
-client buffer and supplies the EGL environment.
+World executes all composition and shaders as Ataxia GLES code; wlroots only
+imports the client buffer and supplies the EGL environment.
 
 Direct scanout, hardware overlay planes, and hardware cursors are optional
 Kernel optimizations, not World APIs. Arbitrary transforms, post-processing, or
@@ -425,8 +485,8 @@ ineligible for direct scanout. Explicit synchronization, advanced color
 management, HDR, or new DRM plane controls may require additive Runtime APIs;
 they must not be approximated inside World.
 
-Output-wide and history-based effects are possible. Every pass declares a
-damage rule:
+Output-wide and history-based effects are possible. Every World render stage
+declares a damage rule:
 
 ```text
 :local       output damage is unchanged
@@ -435,7 +495,8 @@ damage rule:
 :full        the whole output is required
 ```
 
-Kernel rejects a pass that cannot state a safe damage rule.
+Kernel rejects or escalates to full-output damage when a World render stage
+cannot state a safe damage rule.
 
 ## 9. Damage and Frame Scheduling
 
@@ -458,7 +519,6 @@ sequenceDiagram
     participant R as Runtime
     participant K as Kernel
     participant W as World
-    participant G as GLES executor
 
     R->>K: surface commit with effective damage
     K->>K: retain content, queue damage, schedule presentation
@@ -466,10 +526,13 @@ sequenceDiagram
     W->>K: optional discrete presentation request
     R->>K: output frame opportunity
     K->>W: build-presentation(output, context, builder)
-    W-->>K: immutable object instances and pass plan
+    W-->>K: immutable object instances and render metadata
     K->>K: project old/new/local damage through mappings
-    K->>G: execute damaged regions
-    G-->>K: completed output buffer
+    K->>K: acquire buffer, activate EGL, bind framebuffer
+    K->>W: world-render(frame-lease, snapshot)
+    W->>W: execute GLES for damaged regions
+    W-->>K: completed frame lease
+    K->>K: close lease and restore required GL state
     K->>R: test and commit output state
     K->>R: feedback and frame completion
 ```
@@ -561,8 +624,8 @@ World replacement is a transaction:
 4. construct a fresh candidate World;
 5. import view, output, and seat state without referencing the old class;
 6. build trial snapshots for all active outputs;
-7. validate finite geometry, inverse mappings, damage coverage, shaders, and
-   resource ownership;
+7. validate finite geometry, inverse mappings, damage coverage, and candidate
+   World graphics initialization under a current EGL context;
 8. atomically install the candidate and snapshots;
 9. recompute actual client focus and surface membership;
 10. damage every affected output;
@@ -580,8 +643,8 @@ recreate the ownership ambiguity this redesign is intended to remove.
 
 Use these rules instead:
 
-- frame scheduler, damage ledger, buffer cache, shader registry, actual focus,
-  and protocol seat management are Kernel mechanisms;
+- frame scheduler, damage ledger, client-buffer cache, actual focus, and
+  protocol seat management are Kernel mechanisms;
 - World owns one monolithic state graph;
 - reusable World code is a pure function, macro, numerical library, immutable
   definition, or explicitly World-private cache;
@@ -602,10 +665,10 @@ matrix operations, color transforms, and surface-tree traversal helpers.
 | 3D/spatial desktop | Feasible | World owns depth and picking; Wayland client input remains 2D surface-local |
 | Multiple physical or virtual seats | Feasible | One Runtime `wlr_seat` per logical seat and per-seat World state |
 | Multiple seat-specific cameras | Conditional | Separate outputs or explicit split-screen viewports |
-| Per-window shaders and animations | Feasible | World-owned definitions over Kernel-owned execution |
-| Output-wide shader effects | Feasible | Declarative passes with conservative damage rules |
+| Per-window shaders and animations | Feasible | World-owned GLES resources and bindings sampled by the Kernel animation clock |
+| Output-wide shader effects | Feasible | World executes them during the frame lease and supplies conservative damage rules |
 | Temporal/datamosh feedback | Feasible | History textures, explicit lifetime, usually expanded/full damage |
-| RmlUi native UI | Feasible, separate integration | C++ adapter records presentation resources; Kernel executes GLES |
+| RmlUi native UI | Feasible, separate integration | C++ adapter renders only while World holds a live frame lease |
 | New Wayland protocol families | Not above current Runtime alone | Add exact horizontal Runtime modules first |
 
 ## 16. Proposed Source Layout
@@ -618,13 +681,13 @@ src/compositor/
   objects.lisp                stable application/output/seat identities
   surface-store.lisp          surface trees, commits, buffers, textures
   world-protocol.lisp         Kernel-owned typed World API
-  presentation-types.lisp     immutable geometry, material, mapping, snapshot
+  presentation-types.lisp     mapping, instances, surface records, snapshots
   scene-compiler.lisp         expands application surface trees
   damage-ledger.lisp          authoritative old/new/local output damage
   output-engine.lisp          output config, pacing, swapchains, commits
   seat-engine.lisp            devices, seats, focus, constraints, delivery
   animation-executor.lisp     opaque timing and lifecycle
-  gles-renderer.lisp          direct GLES resource and draw execution
+  frame-lease.lisp            EGL activation, output FBO, GL containment
   world-host.lisp             install, migrate, validate, retire Worlds
   control.lisp                principals, actions, owner-thread inbox
   control-transport.lisp
@@ -641,6 +704,7 @@ src/world/
     mapping.lisp
     interaction.lisp
     presentation.lisp
+    graphics.lisp             planar GLES resources and draw execution
     animation.lisp
     control.lisp
   spherical/
@@ -648,6 +712,7 @@ src/world/
     mapping.lisp
     interaction.lisp
     presentation.lisp
+    graphics.lisp             spherical GLES resources and draw execution
     animation.lisp
     control.lisp
 
@@ -691,12 +756,13 @@ Exit: applications and surface trees can be inspected live without placement.
 
 Exit: Firefox and Foot content state remains stable across repeated commits.
 
-### Phase 3: Presentation declarations and direct GLES
+### Phase 3: Presentation snapshots and frame leases
 
-- Define immutable geometry, material, mapping, instance, snapshot, and pass
-  types.
-- Implement surface-tree expansion and direct GLES execution.
+- Define immutable mapping, instance, surface-record, snapshot, and World render
+  metadata types.
+- Implement surface-tree expansion and bounded frame leases.
 - Add output swapchain, framebuffer, state test/commit, feedback, and frame done.
+- Implement direct GLES drawing in the minimal planar World.
 - Begin with full-output redraw only.
 
 Exit: a minimal hard-coded planar World renders Firefox and Foot correctly.
@@ -733,8 +799,8 @@ branch.
 ### Phase 7: Animation and effects
 
 - Implement opaque Kernel animation execution.
-- Add per-application World definitions and shader bindings.
-- Add declarative per-window and output-wide passes with damage rules.
+- Add per-application World definitions, shader resources, and bindings.
+- Add World-rendered per-window and output-wide stages with damage rules.
 
 Exit: two applications can use different animations; time-varying effects stop
 scheduling when their Kernel timeline ends.
@@ -742,7 +808,7 @@ scheduling when their Kernel timeline ends.
 ### Phase 8: Transactional World replacement
 
 - Define neutral portable state and candidate installation.
-- Validate trial snapshots and shader resources.
+- Validate trial snapshots and candidate World graphics initialization.
 - Atomically replace, refresh focus, damage outputs, and retire old generations.
 
 Exit: planar-to-planar replacement works without restart or stale resources.
@@ -767,11 +833,13 @@ agent inspection model as applications.
 ## 18. Completion Criteria
 
 - No file above Runtime contains raw wlroots/libwayland pointers or calls
-  Runtime-private bindings; the GLES executor may own typed GL handles.
+  Runtime-private bindings; World graphics code may own typed GL handles.
 - Runtime callbacks remain exact and Wayland-specific.
 - Kernel contains no planar, spherical, chrome, shadow, or concrete animation
   property assumptions.
-- World never binds EGL, issues GLES, commits outputs, or owns frame pacing.
+- World issues GLES only while a valid Kernel frame lease is dynamically active;
+  it never activates EGL, acquires output buffers, commits outputs, or owns frame
+  pacing.
 - World does not maintain authoritative surface or output damage history.
 - Every rendered client surface is picked and damaged through its rendered
   mapping.

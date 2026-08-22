@@ -20,6 +20,13 @@
                    (%tiling-layout-transition-duration layout))))
       1d0))
 
+(defun %spring-progress (progress)
+  (cond
+    ((not (plusp progress)) 0d0)
+    ((>= progress 1d0) 1d0)
+    (t (- 1d0 (* (exp (* -7d0 progress))
+                   (cos (* 10d0 progress)))))))
+
 (defun %tile-geometry (world node &optional (timestamp (%now)))
   (let* ((layout (%world-layout world))
          (target (gethash node (%tiling-layout-placements layout))))
@@ -28,9 +35,8 @@
               (and (%tiling-layout-previous layout)
                    (gethash node (%tiling-layout-previous layout)))))
         (if previous
-            (let ((progress
-                    (ataxia.world:ease-out-cubic
-                     (%layout-progress layout timestamp))))
+            (let ((progress (%spring-progress
+                             (%layout-progress layout timestamp))))
               (flet ((blend (old new) (+ old (* (- new old) progress))))
                 (values
                  (blend (%tile-rectangle-x previous) (%tile-rectangle-x target))
@@ -39,6 +45,18 @@
                  (blend (%tile-rectangle-height previous) (%tile-rectangle-height target)))))
             (values (%tile-rectangle-x target) (%tile-rectangle-y target)
                     (%tile-rectangle-width target) (%tile-rectangle-height target)))))))
+
+(defun %tile-visual-geometry (world node &optional (timestamp (%now)))
+  (multiple-value-bind (x y width height) (%tile-geometry world node timestamp)
+    (when x
+      (let* ((lift (%tile-elevation node))
+             (scale (* (%tile-scale node) (+ 1d0 (* 0.026d0 lift))))
+             (visual-width (* width scale))
+             (visual-height (* height scale)))
+        (values (- (+ x (/ width 2d0)) (/ visual-width 2d0))
+                (- (+ y (/ height 2d0)) (/ visual-height 2d0)
+                   (* 7d0 lift))
+                visual-width visual-height)))))
 
 (defun %capture-layout (world timestamp)
   (let ((captured (make-hash-table :test #'eq)))

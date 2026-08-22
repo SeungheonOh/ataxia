@@ -19,21 +19,64 @@ void main() {
 uniform vec4 u_color;
 void main() { gl_FragColor = vec4(u_color.rgb * u_color.a, u_color.a); }")
 
+(defparameter +tiling-border-fragment-shader+
+  "precision highp float;
+uniform vec4 u_color_a;
+uniform vec4 u_color_b;
+uniform float u_phase;
+varying vec2 v_uv;
+void main() {
+  float angle = u_phase * 2.4;
+  vec2 axis = vec2(cos(angle), sin(angle));
+  float wave = 0.5 + 0.5 * sin(6.2831853 * (dot(v_uv - 0.5, axis) + u_phase));
+  vec4 color = mix(u_color_a, u_color_b, wave);
+  gl_FragColor = vec4(color.rgb * color.a, color.a);
+}")
+
+(defparameter +tiling-shadow-fragment-shader+
+  "precision mediump float;
+uniform float u_strength;
+varying vec2 v_uv;
+void main() {
+  vec2 edge = abs(v_uv - 0.5) * 2.0;
+  float distance_to_edge = max(edge.x, edge.y);
+  float alpha = (1.0 - smoothstep(0.52, 1.0, distance_to_edge)) * u_strength;
+  gl_FragColor = vec4(0.008 * alpha, 0.018 * alpha, 0.040 * alpha, alpha);
+}")
+
 (defun %tiling-texture-fragment-shader (external-p)
   (format nil
           "~:[~;#extension GL_OES_EGL_image_external : require~%~]precision highp float;
 uniform ~:[sampler2D~;samplerExternalOES~] u_texture;
 uniform float u_has_alpha;
+uniform float u_opacity;
+uniform float u_effect;
+uniform float u_seed;
 varying vec2 v_uv;
+float noise(vec2 point) {
+  return fract(sin(dot(point, vec2(12.9898, 78.233)) + u_seed) * 43758.5453);
+}
 void main() {
-  vec4 sample_value = texture2D(u_texture, v_uv);
-  sample_value.a = mix(1.0, sample_value.a, u_has_alpha);
-  gl_FragColor = sample_value;
+  float band = floor((v_uv.y + noise(vec2(u_seed, 3.7)) * 0.013) * 61.0);
+  float active = step(0.57, noise(vec2(band, floor(u_effect * 23.0))));
+  float displacement = (noise(vec2(band, u_seed)) - 0.5) * 0.085 * u_effect * active;
+  float wave = sin((v_uv.y * 29.0 + u_seed * 7.0) * 6.2831853) * 0.004 * u_effect;
+  vec2 shifted = clamp(v_uv + vec2(displacement + wave, 0.0), 0.0, 1.0);
+  float split = 0.011 * u_effect;
+  vec4 center = texture2D(u_texture, shifted);
+  vec4 left_sample = texture2D(u_texture, clamp(shifted - vec2(split, 0.0), 0.0, 1.0));
+  vec4 right_sample = texture2D(u_texture, clamp(shifted + vec2(split, 0.0), 0.0, 1.0));
+  center.r = mix(center.r, right_sample.r, u_effect);
+  center.b = mix(center.b, left_sample.b, u_effect);
+  float dropout = step(0.91, noise(vec2(band * 1.73, u_seed + 5.0))) * u_effect;
+  center.rgb = mix(center.rgb, center.bgr * 0.55, dropout);
+  center.a = mix(1.0, center.a, u_has_alpha);
+  gl_FragColor = center * u_opacity;
 }"
           external-p external-p))
 
 (defstruct (%tiling-renderer (:constructor %make-tiling-renderer))
-  solid-program texture-program external-program
+  solid-program border-program shadow-program texture-program external-program
   (vertex-buffer 0 :type (unsigned-byte 32)))
 
 (defun %create-tiling-renderer ()
@@ -42,7 +85,15 @@ void main() {
         (progn
           (setf (%tiling-renderer-solid-program renderer)
                 (ataxia.world.gles:make-gles-program
-                 +tiling-vertex-shader+ +tiling-solid-fragment-shader+
+                +tiling-vertex-shader+ +tiling-solid-fragment-shader+
+                 :attributes '(("a_position" . 0) ("a_uv" . 1)))
+                (%tiling-renderer-border-program renderer)
+                (ataxia.world.gles:make-gles-program
+                 +tiling-vertex-shader+ +tiling-border-fragment-shader+
+                 :attributes '(("a_position" . 0) ("a_uv" . 1)))
+                (%tiling-renderer-shadow-program renderer)
+                (ataxia.world.gles:make-gles-program
+                 +tiling-vertex-shader+ +tiling-shadow-fragment-shader+
                  :attributes '(("a_position" . 0) ("a_uv" . 1)))
                 (%tiling-renderer-texture-program renderer)
                 (ataxia.world.gles:make-gles-program
@@ -65,6 +116,8 @@ void main() {
   (when renderer
     (dolist (program
               (list (%tiling-renderer-solid-program renderer)
+                    (%tiling-renderer-border-program renderer)
+                    (%tiling-renderer-shadow-program renderer)
                     (%tiling-renderer-texture-program renderer)
                     (%tiling-renderer-external-program renderer)))
       (ataxia.world.gles:destroy-gles-program program))
@@ -114,6 +167,35 @@ void main() {
     (apply #'ataxia.world.gles:gles-uniform-4f program "u_color" color)
     (ataxia.world.gles:gles-draw-triangles 6)))
 
+(defun %draw-border
+    (renderer state x y width height color-a color-b phase)
+  (let ((program (%tiling-renderer-border-program renderer)))
+    (%bind-vertices
+     renderer
+     (%quad-vertices
+      (%screen-quad state x y width height)
+      (list (cons 0d0 0d0) (cons 1d0 0d0)
+            (cons 0d0 1d0) (cons 1d0 1d0))))
+    (ataxia.world.gles:gles-use-program program)
+    (apply #'ataxia.world.gles:gles-uniform-4f program "u_color_a" color-a)
+    (apply #'ataxia.world.gles:gles-uniform-4f program "u_color_b" color-b)
+    (ataxia.world.gles:gles-uniform-1f program "u_phase" phase)
+    (ataxia.world.gles:gles-draw-triangles 6)))
+
+(defun %draw-shadow (renderer state x y width height strength lift)
+  (let* ((spread (+ 18d0 (* 9d0 lift)))
+         (program (%tiling-renderer-shadow-program renderer)))
+    (%bind-vertices
+     renderer
+     (%quad-vertices
+      (%screen-quad state (- x spread) (+ y (* 10d0 lift) (- spread))
+                    (+ width (* 2d0 spread)) (+ height (* 2d0 spread)))
+      (list (cons 0d0 0d0) (cons 1d0 0d0)
+            (cons 0d0 1d0) (cons 1d0 1d0))))
+    (ataxia.world.gles:gles-use-program program)
+    (ataxia.world.gles:gles-uniform-1f program "u_strength" strength)
+    (ataxia.world.gles:gles-draw-triangles 6)))
+
 (defun %source-uv (surface)
   (let* ((box (ataxia.kernel:drawable-surface-source-box surface))
          (left (aref box 0))
@@ -131,7 +213,8 @@ void main() {
      (list (cons 0d0 0d0) (cons 1d0 0d0)
            (cons 0d0 1d0) (cons 1d0 1d0)))))
 
-(defun %draw-surface (renderer state surface x y width height)
+(defun %draw-surface
+    (renderer state surface x y width height opacity effect seed)
   (let* ((source (ataxia.kernel:drawable-surface-render-source surface))
          (target (ataxia.kernel:render-source-gles-target source))
          (external-p (= target ataxia.world.gles:+texture-external-oes+))
@@ -149,32 +232,43 @@ void main() {
     (ataxia.world.gles:gles-bind-texture
      target (ataxia.kernel:render-source-gles-name source))
     (ataxia.world.gles:gles-uniform-1i program "u_texture" 0)
+    (ataxia.world.gles:gles-uniform-1f program "u_opacity" opacity)
     (ataxia.world.gles:gles-uniform-1f
      program "u_has_alpha"
      (if (ataxia.kernel:render-source-has-alpha-p source) 1d0 0d0))
+    (ataxia.world.gles:gles-uniform-1f program "u_effect" effect)
+    (ataxia.world.gles:gles-uniform-1f program "u_seed" seed)
     (ataxia.world.gles:call-with-gles-linear-filter
      target (lambda () (ataxia.world.gles:gles-draw-triangles 6)))))
 
 (defun %tile-buffer-coverage (world state node &optional (timestamp (%now)))
-  (multiple-value-bind (x y width height) (%tile-geometry world node timestamp)
-    (when x (%screen-rectangle-to-buffer state x y width height 3d0))))
-
-(defun %tile-focused-p (world node)
-  (some (lambda (seat-state) (eq node (%tiling-seat-focused seat-state)))
-        (%seat-states world)))
+  (multiple-value-bind (x y width height)
+      (%tile-visual-geometry world node timestamp)
+    (when x (%screen-rectangle-to-buffer state x y width height 30d0))))
 
 (defun %draw-tile (renderer world state node timestamp tokens)
   (let ((component (tile-node-component node)))
     (multiple-value-bind (root-x root-y root-width root-height)
         (ataxia.kernel:drawable-local-bounds component)
       (when (and (plusp root-width) (plusp root-height))
-        (multiple-value-bind (x y width height) (%tile-geometry world node timestamp)
+        (multiple-value-bind (x y width height)
+            (%tile-visual-geometry world node timestamp)
           (when x
-            (%draw-solid
-             renderer state (- x 3d0) (- y 3d0) (+ width 6d0) (+ height 6d0)
-             (if (%tile-focused-p world node)
-                 '(0.05d0 0.55d0 0.88d0 1d0)
-                 '(0.12d0 0.14d0 0.18d0 1d0)))
+            (let* ((focus (%tile-border-intensity node))
+                   (lift (%tile-elevation node))
+                   (energy (max focus lift))
+                   (seed (/ (mod (sxhash node) 997) 997d0)))
+              (%draw-shadow renderer state x y width height
+                            (+ 0.18d0 (* 0.24d0 lift) (* 0.08d0 focus)) lift)
+              (%draw-border
+               renderer state (- x 3d0) (- y 3d0) (+ width 6d0) (+ height 6d0)
+               (list (+ 0.12d0 (* 0.02d0 energy))
+                     (+ 0.14d0 (* 0.56d0 focus) (* 0.42d0 lift))
+                     (+ 0.18d0 (* 0.70d0 focus) (* 0.72d0 lift)) 1d0)
+               (list (+ 0.12d0 (* 0.72d0 lift))
+                     (+ 0.14d0 (* 0.20d0 focus))
+                     (+ 0.18d0 (* 0.76d0 focus) (* 0.58d0 lift)) 1d0)
+               (+ seed (* 0.35d0 focus) (* 0.48d0 lift)))
             (multiple-value-bind (surfaces revision)
                 (ataxia.kernel:drawable-surfaces component)
               (declare (ignore revision))
@@ -196,12 +290,14 @@ void main() {
                            (surface-height
                              (* height (/ (ataxia.kernel:drawable-surface-height surface)
                                           root-height))))
-                       (%draw-surface renderer state surface
-                                      surface-x surface-y surface-width surface-height)
+                       (%draw-surface
+                        renderer state surface
+                        surface-x surface-y surface-width surface-height
+                        (%tile-opacity node) (%tile-effect node) seed)
                        (let ((token
                                (ataxia.kernel:drawable-surface-protocol-token surface)))
                          (when token (pushnew token tokens :test #'eq)))))
-                   surfaces)))))))
+                   surfaces))))))))
   tokens)
 
 (defun %draw-solid-cursor (renderer state x y)
@@ -226,7 +322,8 @@ void main() {
                   (+ (- y (%tiling-seat-cursor-hotspot-y seat-state))
                      (ataxia.kernel:drawable-surface-local-y surface))
                   (ataxia.kernel:drawable-surface-width surface)
-                  (ataxia.kernel:drawable-surface-height surface))
+                  (ataxia.kernel:drawable-surface-height surface)
+                  1d0 0d0 0d0)
                  (let ((token
                          (ataxia.kernel:drawable-surface-protocol-token surface)))
                    (when token (pushnew token tokens :test #'eq))))

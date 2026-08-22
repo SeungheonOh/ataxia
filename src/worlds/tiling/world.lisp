@@ -39,6 +39,71 @@
       (%request-output-frame world state)))
   world)
 
+(defun %ease-out-back (progress)
+  (let* ((overshoot 1.35d0)
+         (offset (- progress 1d0)))
+    (+ 1d0 (* (+ overshoot 1d0) offset offset offset)
+       (* overshoot offset offset))))
+
+(defun %animate-node-scalar
+    (world node channel target duration reader writer
+     &key (easing #'ataxia.world:ease-out-cubic))
+  (let ((start (funcall reader node))
+        (destination (coerce target 'double-float)))
+    (ataxia.world:start-animation
+     (%world-animator world) node channel (%now) duration
+     (lambda (subject progress)
+       (funcall writer subject
+                (+ start (* (- destination start) progress))))
+     :easing easing
+     :finish (lambda (subject) (funcall writer subject destination))))
+  (%damage-node world node)
+  (%request-all-frames world)
+  node)
+
+(defun %animate-node-entry (world node)
+  (setf (%tile-opacity node) 0d0
+        (%tile-scale node) 0.84d0
+        (%tile-effect node) 1d0)
+  (ataxia.world:start-animation
+   (%world-animator world) node :presence (%now) 0.42d0
+   (lambda (subject progress)
+     (let ((settled (max 0d0 (min 1d0 progress))))
+       (setf (%tile-opacity subject) (min 1d0 (* 1.35d0 settled))
+             (%tile-scale subject) (+ 0.84d0 (* 0.16d0 progress))
+             (%tile-effect subject) (expt (- 1d0 settled) 1.6d0))))
+   :easing #'%ease-out-back
+   :finish (lambda (subject)
+             (setf (%tile-opacity subject) 1d0
+                   (%tile-scale subject) 1d0
+                   (%tile-effect subject) 0d0)))
+  (%damage-node world node)
+  (%request-all-frames world)
+  node)
+
+(defun %animate-node-focus (world node focused-p)
+  (%animate-node-scalar
+   world node :focus (if focused-p 1d0 0d0)
+   (if focused-p 0.22d0 0.16d0)
+   #'%tile-border-intensity
+   (lambda (subject value) (setf (%tile-border-intensity subject) value))))
+
+(defun %animate-node-lift (world node raised-p)
+  (%animate-node-scalar
+   world node :lift (if raised-p 1d0 0d0)
+   (if raised-p 0.16d0 0.24d0)
+   #'%tile-elevation
+   (lambda (subject value) (setf (%tile-elevation subject) value))))
+
+(defun %advance-node-animations (world timestamp)
+  (when (> timestamp (%world-last-animation-time world))
+    (multiple-value-bind (changed active-p)
+        (ataxia.world:advance-animations (%world-animator world) timestamp)
+      (setf (%world-last-animation-time world) timestamp)
+      (dolist (node changed) (%damage-node world node timestamp))
+      (when active-p (%request-all-frames world))))
+  world)
+
 (defun %set-component-membership (component outputs)
   (multiple-value-bind (surfaces revision)
       (ataxia.kernel:drawable-surfaces component)
@@ -87,6 +152,8 @@
       (when old (%damage-node world old))
       (setf (%tiling-seat-focused seat-state) node)
       (when old
+        (unless (%node-focused-p world old)
+          (%animate-node-focus world old nil))
         (ataxia.kernel:interactable-focus
          (tile-node-component old) world seat :clear-keyboard)
         (unless (%node-focused-p world old)
@@ -94,6 +161,7 @@
            (tile-node-component old) world :activated nil)))
       (ataxia.kernel:clear-wayland-focus seat :keyboard t)
       (when node
+        (%animate-node-focus world node t)
         (ataxia.kernel:request-object-state
          (tile-node-component node) world :activated t)
         (ataxia.kernel:interactable-focus
@@ -279,7 +347,7 @@
   (unless (%tile-fullscreen-p node)
     (setf (%tiling-seat-drag-node seat-state) node)
     (%focus-node world seat-state node)
-    (%damage-node world node))
+    (%animate-node-lift world node t))
   node)
 
 (defun %finish-tile-drag (world seat-state input)
@@ -287,7 +355,7 @@
     (when node
       (%deliver-button world seat-state node input :clamp-p t)
       (setf (%tiling-seat-drag-node seat-state) nil)
-      (%damage-node world node))
+      (%animate-node-lift world node nil))
     node))
 
 (defun %adjust-master-ratio (world seat-state amount)
@@ -380,6 +448,7 @@
             (%tile-mapped-p node)
             (ataxia.kernel:application-mapped-p application))
       (when (%tile-mapped-p node)
+        (%animate-node-entry world node)
         (%recompute-layout world)
         (dolist (seat (%seat-states world))
           (when (eq state (%tiling-seat-output seat))
@@ -391,6 +460,7 @@
   (declare (ignore reason))
   (let ((node (find-tile-node world application)))
     (when node
+      (ataxia.world:cancel-subject-animations (%world-animator world) node)
       (%damage-node world node)
       (%set-component-membership application nil)
       (remhash application (%world-kernel-index world))
@@ -424,14 +494,23 @@
                (ataxia.kernel:object-change-value change))
          (%recompute-layout world)
          (if (%tile-mapped-p node)
-             (dolist (seat-state (%seat-states world))
-               (when (eq (%tile-output-state node)
-                         (%tiling-seat-output seat-state))
-                 (%focus-node world seat-state node)))
-             (dolist (seat-state (%seat-states world))
-               (when (eq node (%tiling-seat-drag-node seat-state))
-                 (setf (%tiling-seat-drag-node seat-state) nil))
-               (%focus-replacement world seat-state node))))))
+             (progn
+               (%animate-node-entry world node)
+               (dolist (seat-state (%seat-states world))
+                 (when (eq (%tile-output-state node)
+                           (%tiling-seat-output seat-state))
+                   (%focus-node world seat-state node))))
+             (progn
+               (ataxia.world:cancel-subject-animations
+                (%world-animator world) node)
+               (setf (%tile-opacity node) 1d0
+                     (%tile-scale node) 1d0
+                     (%tile-effect node) 0d0
+                     (%tile-elevation node) 0d0)
+               (dolist (seat-state (%seat-states world))
+                 (when (eq node (%tiling-seat-drag-node seat-state))
+                   (setf (%tiling-seat-drag-node seat-state) nil))
+                 (%focus-replacement world seat-state node)))))))
     (ataxia.kernel:surface-node
      (when (eq (ataxia.kernel:object-change-kind change) :destroying)
        (dolist (seat-state (%seat-states world))
@@ -706,6 +785,7 @@
           (ataxia.kernel:drawable-prepare-frame (tile-node-component node))
         (when damage (%damage-node world node timestamp))
         (when active-p (%request-output-frame world state))))
+    (%advance-node-animations world timestamp)
     (%advance-layout-animation world timestamp)
     (multiple-value-bind (region damage-frame)
         (ataxia.world:damage-begin-frame

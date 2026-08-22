@@ -24,7 +24,12 @@
    (mapped-p :initform nil :accessor %tile-mapped-p)
    (hidden-p :initform nil :accessor %tile-hidden-p)
    (fullscreen-p :initform nil :accessor %tile-fullscreen-p)
-   (drawable-revision :initform 0 :accessor %tile-drawable-revision))
+   (drawable-revision :initform 0 :accessor %tile-drawable-revision)
+   (opacity :initform 1d0 :accessor %tile-opacity)
+   (scale :initform 1d0 :accessor %tile-scale)
+   (effect :initform 0d0 :accessor %tile-effect)
+   (elevation :initform 0d0 :accessor %tile-elevation)
+   (border-intensity :initform 0d0 :accessor %tile-border-intensity))
   (:documentation "World-owned tiling state for one drawable and interactable component."))
 
 (defmethod initialize-instance :after ((node tile-node) &key)
@@ -44,7 +49,7 @@
   (placements (make-hash-table :test #'eq))
   previous
   (transition-start 0d0 :type double-float)
-  (transition-duration 0.16d0 :type double-float))
+  (transition-duration 0.28d0 :type double-float))
 
 (defstruct (%tiling-output (:constructor %make-tiling-output (output)))
   output
@@ -77,8 +82,10 @@
    (layout :initform (%make-tiling-layout) :reader %world-layout)
    (outputs :initform (make-hash-table :test #'eq) :reader %world-outputs)
    (seats :initform (make-hash-table :test #'eq) :reader %world-seats)
+   (animator :initform (ataxia.world:make-animator) :reader %world-animator)
    (damage :initform (ataxia.world:make-damage-tracker) :reader %world-damage)
    (renderer :initform nil :accessor %world-renderer)
+   (last-animation-time :initform -1d0 :accessor %world-last-animation-time)
    (quiescing-p :initform nil :accessor %world-quiescing-p))
   (:documentation "Per-output master-stack tiling policy and direct GLES renderer."))
 

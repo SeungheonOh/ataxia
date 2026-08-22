@@ -84,7 +84,7 @@
           (ataxia.runtime:surface-commit-sequence commit)
           (%surface-damage surface)
           (%runtime-damage-rectangles
-           (ataxia.runtime:surface-commit-damage-rectangles commit))))
+           (ataxia.runtime:surface-commit-damage-rectangles commit)))
     (setf (%surface-protocol-token surface)
           (make-instance
            'surface-protocol-token

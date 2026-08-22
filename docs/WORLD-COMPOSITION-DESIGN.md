@@ -373,7 +373,7 @@ Do not create a generic function merely because a function might someday have
 a second implementation. Start with an ordinary function, and promote it to a
 protocol only when dispatch is useful.
 
-Internal protocols belong in a World-support package, not in
+Internal protocols belong in a World implementation-support package, not in
 `ataxia.kernel`. Kernel's package must remain limited to the Kernel/World and
 Kernel/object boundaries already defined.
 
@@ -428,7 +428,7 @@ Shared code should be outside every concrete World:
 
 ```text
 src/
-  world-support/
+  world/
     packages.lisp
     values.lisp
     math/
@@ -458,7 +458,7 @@ src/
       ...
 ```
 
-`ataxia-world-support` should depend on `ataxia-kernel` only where a helper
+`ataxia-world` should depend on `ataxia-kernel` only where a helper
 uses Kernel value types. Math and region modules should avoid even that
 dependency. Concrete World systems depend on both Kernel and the support
 modules they choose to use.
@@ -533,5 +533,5 @@ snapshot contract and reports equivalent coverage requirements.
 
 The fullscreen World is the boundary proof: after refactoring, its Kernel-facing
 methods should be short orchestration methods, while reusable mechanisms live
-in `world-support` and fullscreen-specific placement and input policy remain in
+in `world` and fullscreen-specific placement and input policy remain in
 `worlds/fullscreen`.

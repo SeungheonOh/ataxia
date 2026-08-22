@@ -27,46 +27,55 @@
           (ataxia.runtime:output-enabled-p runtime-output)))
   output)
 
+(defun %prepare-runtime-output (kernel runtime-output)
+  (handler-case
+      (progn
+        (ataxia.runtime:initialize-output-render
+         runtime-output
+         (ataxia.runtime:runtime-allocator (kernel-runtime kernel))
+         (ataxia.runtime:runtime-renderer (kernel-runtime kernel)))
+        (let ((state (ataxia.runtime:create-output-state runtime-output)))
+          (unwind-protect
+               (progn
+                 (ataxia.runtime:output-state-set-enabled state t)
+                 (let ((mode (ataxia.runtime:output-preferred-mode runtime-output)))
+                   (if mode
+                       (ataxia.runtime:output-state-set-mode state mode)
+                       (ataxia.runtime:output-state-set-custom-mode
+                        state
+                        (max 1 (ataxia.runtime:output-width runtime-output))
+                        (max 1 (ataxia.runtime:output-height runtime-output)))))
+                 (unless (ataxia.runtime:output-test-state runtime-output state)
+                   (error "wlroots rejected the initial output state."))
+                 (unless (ataxia.runtime:output-commit-state runtime-output state)
+                   (error "wlroots failed to commit the initial output state.")))
+            (ataxia.runtime:destroy-output-state state)))
+        (ataxia.runtime:create-output-global runtime-output)
+        t)
+    (serious-condition (cause)
+      (format *error-output* "[kernel] output unavailable: ~A: ~A~%"
+              (or (ataxia.runtime:output-name runtime-output) "unknown") cause)
+      (finish-output *error-output*)
+      nil)))
+
 (defun %configure-new-output (kernel runtime-output)
-  (ataxia.runtime:initialize-output-render
-   runtime-output
-   (ataxia.runtime:runtime-allocator (kernel-runtime kernel))
-   (ataxia.runtime:runtime-renderer (kernel-runtime kernel)))
-  (let ((state (ataxia.runtime:create-output-state runtime-output)))
-    (unwind-protect
-         (progn
-           (ataxia.runtime:output-state-set-enabled state t)
-           (let ((mode (ataxia.runtime:output-preferred-mode runtime-output)))
-             (if mode
-                 (ataxia.runtime:output-state-set-mode state mode)
-                 (ataxia.runtime:output-state-set-custom-mode
-                  state
-                  (max 1 (ataxia.runtime:output-width runtime-output))
-                  (max 1 (ataxia.runtime:output-height runtime-output)))))
-           (unless (ataxia.runtime:output-test-state runtime-output state)
-             (error "wlroots rejected initial output state for ~A."
-                    (ataxia.runtime:output-name runtime-output)))
-           (unless (ataxia.runtime:output-commit-state runtime-output state)
-             (error "wlroots failed to commit initial output state for ~A."
-                    (ataxia.runtime:output-name runtime-output))))
-      (ataxia.runtime:destroy-output-state state)))
-  (ataxia.runtime:create-output-global runtime-output)
-  (let ((output
-          (make-instance
-           'kernel-output
-           :kernel kernel
-           :id (%allocate-object-id kernel)
-           :runtime-object runtime-output
-           :name (ataxia.runtime:output-name runtime-output)
-           :description (ataxia.runtime:output-description runtime-output)
-           :width (ataxia.runtime:output-width runtime-output)
-           :height (ataxia.runtime:output-height runtime-output)
-           :scale (ataxia.runtime:output-scale runtime-output)
-           :enabled-p (ataxia.runtime:output-enabled-p runtime-output))))
-    (%register-object kernel output :runtime-object runtime-output)
-    (setf (gethash runtime-output (%kernel-output-table kernel)) output)
-    (world-output-added (kernel-world kernel) output)
-    output))
+  (when (%prepare-runtime-output kernel runtime-output)
+    (let ((output
+            (make-instance
+             'kernel-output
+             :kernel kernel
+             :id (%allocate-object-id kernel)
+             :runtime-object runtime-output
+             :name (ataxia.runtime:output-name runtime-output)
+             :description (ataxia.runtime:output-description runtime-output)
+             :width (ataxia.runtime:output-width runtime-output)
+             :height (ataxia.runtime:output-height runtime-output)
+             :scale (ataxia.runtime:output-scale runtime-output)
+             :enabled-p (ataxia.runtime:output-enabled-p runtime-output))))
+      (%register-object kernel output :runtime-object runtime-output)
+      (setf (gethash runtime-output (%kernel-output-table kernel)) output)
+      (world-output-added (kernel-world kernel) output)
+      output)))
 
 (defun %retire-output (output &key (protocol-active-p t))
   (when (eq (object-state output) :live)

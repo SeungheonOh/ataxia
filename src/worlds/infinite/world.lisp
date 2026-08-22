@@ -527,6 +527,14 @@
             (canvas-window-height window) (coerce height 'double-float))))
   window)
 
+(defun %window-resize-active-p (world window)
+  (some (lambda (seat-state)
+          (let ((operation (%canvas-seat-operation seat-state)))
+            (and operation
+                 (eq (%canvas-operation-kind operation) :resize)
+                 (eq (%canvas-operation-window operation) window))))
+        (%seat-states world)))
+
 (defun %set-window-expanded (world window state requested-p output-state)
   (if requested-p
       (progn
@@ -688,7 +696,8 @@
      (let ((window (find-canvas-window world object)))
        (when window
          (%damage-window world window)
-         (%sync-window-size window)
+         (unless (%window-resize-active-p world window)
+           (%sync-window-size window))
          (setf (%canvas-window-drawable-revision window)
                (ataxia.kernel:drawable-invalidation-revision invalidation))
          (%damage-window world window)

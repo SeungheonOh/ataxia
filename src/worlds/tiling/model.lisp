@@ -57,7 +57,7 @@
   seat output
   (x 0d0 :type double-float)
   (y 0d0 :type double-float)
-  focused hovered last-pointer-input
+  focused hovered last-pointer-input drag-node
   (buttons (make-hash-table :test #'eql))
   (modifiers 0 :type integer)
   (consumed-keys (make-hash-table :test #'eql))

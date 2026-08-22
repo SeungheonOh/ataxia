@@ -9,6 +9,7 @@
   :serial t
   :components
   ((:module "src/worlds/tiling"
+    :serial t
     :components
     ((:file "packages")
      (:file "model")

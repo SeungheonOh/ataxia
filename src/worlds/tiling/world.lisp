@@ -247,6 +247,49 @@
                  (nth right (%world-nodes world)))
         (%recompute-layout world)))))
 
+(defun %insert-node-relative (world node target after-p)
+  (let* ((without-node (remove node (%world-nodes world) :test #'eq :count 1))
+         (target-index (position target without-node :test #'eq))
+         (insert-index (+ target-index (if after-p 1 0))))
+    (setf (%world-nodes world)
+          (append (subseq without-node 0 insert-index)
+                  (list node)
+                  (nthcdr insert-index without-node))))
+  (%recompute-layout world))
+
+(defun %drag-reorder (world seat-state)
+  (let* ((dragged (%tiling-seat-drag-node seat-state))
+         (state (%tiling-seat-output seat-state))
+         (target (%node-at-point world state
+                                 (%tiling-seat-x seat-state)
+                                 (%tiling-seat-y seat-state))))
+    (when (and dragged target (not (eq dragged target))
+               (eq state (%tile-output-state dragged))
+               (eq state (%tile-output-state target)))
+      (multiple-value-bind (target-x target-y target-width target-height)
+          (%tile-geometry world target)
+        (declare (ignore target-x target-width))
+        (%insert-node-relative
+         world dragged target
+         (and (not (eq target (first (%output-nodes world state))))
+              (> (%tiling-seat-y seat-state)
+                 (+ target-y (/ target-height 2d0)))))))))
+
+(defun %begin-tile-drag (world seat-state node)
+  (unless (%tile-fullscreen-p node)
+    (setf (%tiling-seat-drag-node seat-state) node)
+    (%focus-node world seat-state node)
+    (%damage-node world node))
+  node)
+
+(defun %finish-tile-drag (world seat-state input)
+  (let ((node (%tiling-seat-drag-node seat-state)))
+    (when node
+      (%deliver-button world seat-state node input :clamp-p t)
+      (setf (%tiling-seat-drag-node seat-state) nil)
+      (%damage-node world node))
+    node))
+
 (defun %adjust-master-ratio (world seat-state amount)
   (let ((state (%tiling-seat-output seat-state)))
     (when state
@@ -354,6 +397,8 @@
       (setf (%world-nodes world)
             (delete node (%world-nodes world) :test #'eq))
       (dolist (seat-state (%seat-states world))
+        (when (eq node (%tiling-seat-drag-node seat-state))
+          (setf (%tiling-seat-drag-node seat-state) nil))
         (when (eq node (%tiling-seat-hovered seat-state))
           (ataxia.kernel:interactable-pointer-leave
            application world (%tiling-seat-seat seat-state))
@@ -384,6 +429,8 @@
                          (%tiling-seat-output seat-state))
                  (%focus-node world seat-state node)))
              (dolist (seat-state (%seat-states world))
+               (when (eq node (%tiling-seat-drag-node seat-state))
+                 (setf (%tiling-seat-drag-node seat-state) nil))
                (%focus-replacement world seat-state node))))))
     (ataxia.kernel:surface-node
      (when (eq (ataxia.kernel:object-change-kind change) :destroying)
@@ -503,7 +550,9 @@
       (%damage-cursor world seat-state)
       (setf (%tiling-seat-last-pointer-input seat-state) input)
       (%update-seat-position seat-state input)
-      (%deliver-motion world seat-state input)
+      (if (%tiling-seat-drag-node seat-state)
+          (%drag-reorder world seat-state)
+          (%deliver-motion world seat-state input))
       (%damage-cursor world seat-state)))
   input)
 
@@ -524,7 +573,10 @@
               (when target (setf (gethash code buttons) target))
               (%deliver-button world seat-state target input))
             (let ((target (gethash code buttons)))
-              (%deliver-button world seat-state target input :clamp-p t)
+              (if (and (= code +button-left+)
+                       (%tiling-seat-drag-node seat-state))
+                  (%finish-tile-drag world seat-state input)
+                  (%deliver-button world seat-state target input :clamp-p t))
               (remhash code buttons)
               (%revalidate-seat-pointer world seat-state input)))
         (%damage-cursor world seat-state))))
@@ -591,6 +643,15 @@
   (let ((node (find-tile-node world application)))
     (when node
       (typecase request
+        (ataxia.kernel:move-client-request
+         (let ((seat-state
+                 (gethash (ataxia.kernel:client-request-seat request)
+                          (%world-seats world))))
+           (when (and seat-state
+                      (eq node
+                          (gethash +button-left+
+                                   (%tiling-seat-buttons seat-state))))
+             (%begin-tile-drag world seat-state node))))
         (ataxia.kernel:fullscreen-client-request
          (%set-fullscreen
           world node (ataxia.kernel:state-client-request-value request)))

@@ -1,8 +1,8 @@
-;;;; Coordinate-free packed-plane state.
+;;;; Unified packed-scene state.
 ;;;;
-;;;; ATLAS-WINDOW deliberately has no position. Window identity, dimensions,
-;;;; and protocol state are durable; placement is a derived result rebuilt by
-;;;; the atlas packer whenever the set of visible rectangles changes.
+;;;; Every presented Wayland application or native component occupies the same
+;;;; ATLAS-OBJECT node type. Mapping objects define placement without exposing
+;;;; the component implementation to rendering, picking, damage, or input.
 
 (in-package #:ataxia.atlas-world)
 
@@ -13,23 +13,85 @@
 (defconstant +resize-left+ 4)
 (defconstant +resize-right+ 8)
 
-(defclass atlas-window (ataxia.world:application-binding)
-  ((width :initarg :width :accessor atlas-window-width)
-   (height :initarg :height :accessor atlas-window-height)
-   (mapped-p :initform nil :accessor %atlas-window-mapped-p)
-   (hidden-p :initform nil :accessor %atlas-window-hidden-p)
-   (drawable-revision :initform 0 :accessor %atlas-window-drawable-revision)
-   (appearance-start :initform nil :accessor %atlas-window-appearance-start)
-   (restore-size :initform nil :accessor %atlas-window-restore-size))
-  (:documentation
-   "World attachment for one packed Wayland application. Placement is never stored here; it is derived from the complete visible window set."))
+(defclass atlas-mapping () ())
 
-(defun atlas-window-application (window)
-  (ataxia.world:binding-application window))
+(defclass atlas-plane-mapping (atlas-mapping) ())
+
+(defclass atlas-output-mapping (atlas-mapping)
+  ((output-state :initarg :output-state :reader %mapping-output-state)
+   (x :initarg :x :accessor %mapping-x)
+   (y :initarg :y :accessor %mapping-y)))
+
+(defgeneric %mapping-packed-p (mapping))
+(defmethod %mapping-packed-p ((mapping atlas-mapping)) nil)
+(defmethod %mapping-packed-p ((mapping atlas-plane-mapping)) t)
+
+(defclass atlas-scene-root ()
+  ((children :initform nil :accessor %scene-root-children)))
+
+(defclass atlas-object ()
+  ((component :initarg :component :reader atlas-object-component)
+   (mapping :initarg :mapping :accessor %atlas-object-mapping)
+   (parent :initform nil :accessor %atlas-object-parent)
+   (children :initform nil :accessor %atlas-object-children)
+   (layer :initarg :layer :initform 0 :reader %atlas-object-layer)
+   (width :initarg :width :accessor atlas-object-width)
+   (height :initarg :height :accessor atlas-object-height)
+   (mapped-p :initarg :mapped-p :initform t :accessor %atlas-object-mapped-p)
+   (hidden-p :initform nil :accessor %atlas-object-hidden-p)
+   (drawable-revision :initform 0 :accessor %atlas-object-drawable-revision)
+   (appearance-start :initform nil :accessor %atlas-object-appearance-start)
+   (restore-size :initform nil :accessor %atlas-object-restore-size))
+  (:documentation
+   "World-owned scene node for any drawable and interactable component."))
+
+(defmethod initialize-instance :after ((object atlas-object) &key)
+  (unless (typep (atlas-object-component object) 'ataxia.kernel:drawable)
+    (error "ATLAS-OBJECT requires a drawable component."))
+  (unless (typep (atlas-object-component object) 'ataxia.kernel:interactable)
+    (error "ATLAS-OBJECT requires an interactable component.")))
+
+(defun %scene-objects (world)
+  (%scene-root-children (%world-scene world)))
+
+(defun %scene-object-sequence (world)
+  (labels ((walk (object)
+             (cons object (mapcan #'walk (%atlas-object-children object)))))
+    (mapcan #'walk (%scene-objects world))))
+
+(defun %insert-scene-object (world object)
+  (let ((root (%world-scene world)))
+    (setf (%atlas-object-parent object) root
+          (%scene-root-children root)
+          (stable-sort
+           (append (%scene-root-children root) (list object)) #'<
+           :key #'%atlas-object-layer)))
+  object)
+
+(defun %remove-scene-object (world object)
+  (declare (ignore world))
+  (let ((parent (%atlas-object-parent object)))
+    (typecase parent
+      (atlas-scene-root
+       (setf (%scene-root-children parent)
+             (delete object (%scene-root-children parent) :test #'eq)))
+      (atlas-object
+       (setf (%atlas-object-children parent)
+             (delete object (%atlas-object-children parent) :test #'eq)))
+      (null nil)))
+  (setf (%atlas-object-parent object) nil)
+  object)
+
+(defun %object-visible-p (object)
+  (and (%atlas-object-mapped-p object)
+       (not (%atlas-object-hidden-p object))))
+
+(defun %packed-object-p (object)
+  (%mapping-packed-p (%atlas-object-mapping object)))
 
 (defstruct (%atlas-placement
-             (:constructor %make-atlas-placement (window x y width height)))
-  window
+             (:constructor %make-atlas-placement (object x y width height)))
+  object
   (x 0d0 :type double-float)
   (y 0d0 :type double-float)
   (width 0d0 :type double-float)
@@ -64,29 +126,13 @@
   (cursor-hotspot-x 0 :type integer)
   (cursor-hotspot-y 0 :type integer))
 
-(defstruct (%atlas-slint-panel
-             (:constructor %make-atlas-slint-panel
-                 (component output-state x y)))
-  component output-state
-  (x 0d0 :type double-float)
-  (y 0d0 :type double-float))
-
-(defun %panel-component (panel)
-  (%atlas-slint-panel-component panel))
-
-(defun %panel-screen-geometry (panel)
-  (values (%atlas-slint-panel-x panel)
-          (%atlas-slint-panel-y panel)
-          (ataxia.world.slint:slint-component-width (%panel-component panel))
-          (ataxia.world.slint:slint-component-height (%panel-component panel))))
-
 (defstruct (%atlas-operation
              (:constructor %make-atlas-operation
-                 (&key kind button window edges forward-release-p
+                 (&key kind button object edges forward-release-p
                        cursor-x cursor-y camera-x camera-y
-                       window-width window-height)))
-  kind button window edges forward-release-p cursor-x cursor-y camera-x camera-y
-  window-width window-height)
+                       object-width object-height)))
+  kind button object edges forward-release-p cursor-x cursor-y camera-x camera-y
+  object-width object-height)
 
 (defstruct (%world-frame-cookie
              (:constructor %make-world-frame-cookie (damage-frame)))
@@ -94,21 +140,21 @@
 
 (defclass atlas-world (ataxia.kernel:world)
   ((kernel :initform nil :accessor ataxia.kernel:world-kernel)
-   (windows :initform (make-hash-table :test #'eq) :reader %world-windows)
-   (order :initform nil :accessor %world-order)
+   (kernel-object-index :initform (make-hash-table :test #'eq)
+                        :reader %world-kernel-object-index)
+   (scene :initform (make-instance 'atlas-scene-root) :reader %world-scene)
    (layout :initform (%make-atlas-layout) :reader %world-layout)
    (outputs :initform (make-hash-table :test #'eq) :reader %world-outputs)
+   (output-components :initform (make-hash-table :test #'eq)
+                      :reader %world-output-components)
+   (retired-components :initform nil :accessor %world-retired-components)
    (seats :initform (make-hash-table :test #'eq) :reader %world-seats)
    (damage :initform (ataxia.world:make-damage-tracker) :reader %world-damage)
    (renderer :initform nil :accessor %world-renderer)
-   (slint-panels :initform (make-hash-table :test #'eq)
-                 :reader %world-slint-panels)
-   (retired-slint-panels :initform nil
-                         :accessor %world-retired-slint-panels)
-   (slint-timer :initform nil :accessor %world-slint-timer)
+   (component-timer :initform nil :accessor %world-component-timer)
    (quiescing-p :initform nil :accessor %world-quiescing-p))
   (:documentation
-   "A packed, coordinate-free window plane with per-output parallel cameras."))
+   "Packed component tree with per-output parallel cameras and overlays."))
 
 (defun %hash-values (table)
   (loop for value being the hash-values of table collect value))
@@ -131,7 +177,3 @@
   (dolist (state (%output-states world))
     (%request-output-state-frame world state))
   world)
-
-(defun %window-visible-p (window)
-  (and (%atlas-window-mapped-p window)
-       (not (%atlas-window-hidden-p window))))

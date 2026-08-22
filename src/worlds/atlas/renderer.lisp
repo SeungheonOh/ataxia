@@ -137,23 +137,34 @@ void main() {
           (bottom (reduce #'max points :key #'cdr)))
       (ataxia.world:make-rectangle left top (- right left) (- bottom top)))))
 
-(defun %window-screen-geometry (state layout window timestamp)
+(defgeneric %mapping-screen-geometry (mapping state layout object timestamp))
+
+(defmethod %mapping-screen-geometry
+    ((mapping atlas-plane-mapping) state layout object timestamp)
+  (declare (ignore mapping))
   (multiple-value-bind (x y width height)
-      (%placement-geometry layout window timestamp)
+      (%placement-geometry layout object timestamp)
     (when x
       (multiple-value-bind (screen-x screen-y) (%world-to-screen state x y)
         (let ((zoom (%atlas-output-zoom state)))
           (values screen-x screen-y (* width zoom) (* height zoom)))))))
 
-(defun %window-buffer-coverage (state layout window timestamp)
+(defmethod %mapping-screen-geometry
+    ((mapping atlas-output-mapping) state layout object timestamp)
+  (declare (ignore layout timestamp))
+  (when (eq state (%mapping-output-state mapping))
+    (values (%mapping-x mapping) (%mapping-y mapping)
+            (atlas-object-width object) (atlas-object-height object))))
+
+(defun %object-screen-geometry (state layout object timestamp)
+  (%mapping-screen-geometry
+   (%atlas-object-mapping object) state layout object timestamp))
+
+(defun %object-buffer-coverage (state layout object timestamp)
   (multiple-value-bind (x y width height)
-      (%window-screen-geometry state layout window timestamp)
+      (%object-screen-geometry state layout object timestamp)
     (when x
       (%screen-rectangle-to-buffer state x y width height 3d0))))
-
-(defun %panel-buffer-coverage (state panel)
-  (multiple-value-bind (x y width height) (%panel-screen-geometry panel)
-    (%screen-rectangle-to-buffer state x y width height)))
 
 (defun %ndc-point (state x y)
   (values (- (* 2d0 (/ x (%atlas-output-buffer-width state))) 1d0)
@@ -238,70 +249,54 @@ void main() {
     (ataxia.world.gles:call-with-gles-linear-filter
      target (lambda () (ataxia.world.gles:gles-draw-triangles 6)))))
 
-(defun %window-opacity (window timestamp)
-  (let ((start (%atlas-window-appearance-start window)))
+(defun %object-opacity (object timestamp)
+  (let ((start (%atlas-object-appearance-start object)))
     (if start
         (ataxia.world:ease-out-cubic
          (max 0d0 (min 1d0 (/ (- timestamp start) 0.18d0))))
         1d0)))
 
-(defun %draw-window (renderer state layout window timestamp tokens)
-  (let ((application (atlas-window-application window)))
+(defun %draw-object (renderer state layout object timestamp tokens)
+  (let ((component (atlas-object-component object)))
     (multiple-value-bind (root-x root-y root-width root-height)
-        (ataxia.kernel:drawable-local-bounds application)
+        (ataxia.kernel:drawable-local-bounds component)
       (when (and (plusp root-width) (plusp root-height))
         (multiple-value-bind (x y width height)
-            (%window-screen-geometry state layout window timestamp)
-          (multiple-value-bind (surfaces revision)
-              (ataxia.kernel:drawable-surfaces application)
-            (declare (ignore revision))
-            (map nil
-                 (lambda (surface)
-                   (let ((surface-x
-                           (+ x (* width
-                                   (/ (- (ataxia.kernel:drawable-surface-local-x surface)
-                                         root-x)
-                                      root-width))))
-                         (surface-y
-                           (+ y (* height
-                                   (/ (- (ataxia.kernel:drawable-surface-local-y surface)
-                                         root-y)
-                                      root-height))))
-                         (surface-width
-                           (* width
-                              (/ (ataxia.kernel:drawable-surface-width surface)
-                                 root-width)))
-                         (surface-height
-                           (* height
-                              (/ (ataxia.kernel:drawable-surface-height surface)
-                                 root-height))))
-                     (%draw-surface
-                      renderer state surface surface-x surface-y
-                      surface-width surface-height
-                      (%window-opacity window timestamp))
-                     (let ((token
-                             (ataxia.kernel:drawable-surface-protocol-token
-                              surface)))
-                       (when token (pushnew token tokens :test #'eq)))))
-                 surfaces))))))
+            (%object-screen-geometry state layout object timestamp)
+          (when x
+            (multiple-value-bind (surfaces revision)
+                (ataxia.kernel:drawable-surfaces component)
+              (declare (ignore revision))
+              (map nil
+                   (lambda (surface)
+                     (let ((surface-x
+                             (+ x (* width
+                                     (/ (- (ataxia.kernel:drawable-surface-local-x surface)
+                                           root-x)
+                                        root-width))))
+                           (surface-y
+                             (+ y (* height
+                                     (/ (- (ataxia.kernel:drawable-surface-local-y surface)
+                                           root-y)
+                                        root-height))))
+                           (surface-width
+                             (* width
+                                (/ (ataxia.kernel:drawable-surface-width surface)
+                                   root-width)))
+                           (surface-height
+                             (* height
+                                (/ (ataxia.kernel:drawable-surface-height surface)
+                                   root-height))))
+                       (%draw-surface
+                        renderer state surface surface-x surface-y
+                        surface-width surface-height
+                        (%object-opacity object timestamp))
+                       (let ((token
+                               (ataxia.kernel:drawable-surface-protocol-token
+                                surface)))
+                         (when token (pushnew token tokens :test #'eq)))))
+                   surfaces)))))))
   tokens)
-
-(defun %draw-slint-panel (renderer state panel)
-  (multiple-value-bind (x y width height) (%panel-screen-geometry panel)
-    (declare (ignore width height))
-    (multiple-value-bind (surfaces revision)
-        (ataxia.kernel:drawable-surfaces (%panel-component panel))
-      (declare (ignore revision))
-      (map nil
-           (lambda (surface)
-             (%draw-surface
-              renderer state surface
-              (+ x (ataxia.kernel:drawable-surface-local-x surface))
-              (+ y (ataxia.kernel:drawable-surface-local-y surface))
-              (ataxia.kernel:drawable-surface-width surface)
-              (ataxia.kernel:drawable-surface-height surface)
-              1d0))
-           surfaces))))
 
 (defun %draw-solid-cursor (renderer state x y)
   (%draw-solid renderer state (- x 2d0) (- y 2d0) 5d0 29d0
@@ -343,7 +338,7 @@ void main() {
      '(0.018d0 0.021d0 0.029d0 1d0))))
 
 (defun %render-atlas
-    (renderer state layout windows panel seats damage-region timestamp)
+    (renderer state layout objects seats damage-region timestamp)
   (let ((tokens nil))
     (ataxia.world.gles:gles-reset-state)
     (ataxia.world.gles:gles-set-scissor-enabled t)
@@ -355,20 +350,16 @@ void main() {
         (ataxia.world.gles:gles-set-scissor x y width height)
         (ataxia.world.gles:gles-clear 0.034d0 0.039d0 0.052d0 1d0)
         (%draw-atlas-plane renderer state layout)
-        (dolist (window windows)
+        (dolist (object objects)
           (let ((coverage
-                  (and (%window-visible-p window)
-                       (%window-buffer-coverage
-                        state layout window timestamp))))
+                  (and (%object-visible-p object)
+                       (%object-buffer-coverage
+                        state layout object timestamp))))
             (when (and coverage
                        (ataxia.world:region-intersects-p coverage (list damage)))
               (setf tokens
-                    (%draw-window
-                     renderer state layout window timestamp tokens)))))
-        (when (and panel
-                   (ataxia.world:region-intersects-p
-                    (%panel-buffer-coverage state panel) (list damage)))
-          (%draw-slint-panel renderer state panel))
+                    (%draw-object
+                     renderer state layout object timestamp tokens)))))
         (dolist (seat-state seats)
           (when (eq state (%atlas-seat-output seat-state))
             (setf tokens

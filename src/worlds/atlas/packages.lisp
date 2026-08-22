@@ -7,10 +7,10 @@
    #:make-atlas-world
    #:run-atlas-compositor
    #:main
-   #:atlas-window
-   #:atlas-window-application
-   #:atlas-window-width
-   #:atlas-window-height
-   #:find-atlas-window
+   #:atlas-object
+   #:atlas-object-component
+   #:atlas-object-width
+   #:atlas-object-height
+   #:find-atlas-object
    #:set-output-camera
    #:fit-output-camera))

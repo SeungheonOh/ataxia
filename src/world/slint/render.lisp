@@ -65,6 +65,21 @@
 (defmethod ataxia.kernel:drawable-surfaces ((component slint-component))
   (values (%component-surfaces component) (%component-revision component)))
 
+(defmethod ataxia.kernel:drawable-attach-graphics ((component slint-component))
+  (attach-slint-component-graphics component))
+
+(defmethod ataxia.kernel:drawable-detach-graphics ((component slint-component))
+  (detach-slint-component-graphics component))
+
+(defmethod ataxia.kernel:drawable-prepare-frame ((component slint-component))
+  (update-slint-timers)
+  (unless (slint-component-graphics-attached-p component)
+    (attach-slint-component-graphics component))
+  (render-slint-component component))
+
+(defmethod ataxia.kernel:drawable-active-p ((component slint-component))
+  (slint-component-active-p component))
+
 (defun slint-component-graphics-attached-p (component)
   (plusp (%component-texture component)))
 

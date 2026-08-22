@@ -50,6 +50,23 @@
 (defgeneric drawable-local-bounds (drawable)
   (:documentation "Return object-local X, Y, width, and height as four values."))
 
+(defgeneric drawable-attach-graphics (drawable)
+  (:documentation "Acquire World graphics resources while a frame graphics scope is active."))
+
+(defgeneric drawable-detach-graphics (drawable)
+  (:documentation "Release World graphics resources while a frame graphics scope is active."))
+
+(defgeneric drawable-prepare-frame (drawable)
+  (:documentation "Update frame-local content and return object-local damage plus activity."))
+
+(defgeneric drawable-active-p (drawable)
+  (:documentation "Report whether DRAWABLE currently requires animation frames."))
+
+(defmethod drawable-attach-graphics ((drawable drawable)) drawable)
+(defmethod drawable-detach-graphics ((drawable drawable)) drawable)
+(defmethod drawable-prepare-frame ((drawable drawable)) (values nil nil))
+(defmethod drawable-active-p ((drawable drawable)) nil)
+
 (defgeneric retain-render-source (render-source)
   (:documentation "Retain a render source beyond the drawable query that returned it."))
 
@@ -151,6 +168,9 @@
 (defgeneric interactable-pointer-axis
     (object world seat local-x local-y input)
   (:documentation "Deliver a resolved pointer axis event synchronously."))
+
+(defgeneric interactable-pointer-leave (object world seat)
+  (:documentation "Notify OBJECT that pointer focus left its local area."))
 
 (defgeneric interactable-key-event (object world seat input)
   (:documentation "Deliver a keyboard event to the target selected by World."))

@@ -1,7 +1,7 @@
-;;;; Slint components embedded by the packed atlas World.
+;;;; Slint component construction for the packed atlas World.
 ;;;;
-;;;; Atlas owns placement, damage projection, frame scheduling, and lifetime.
-;;;; The reusable Slint engine owns only scene rendering and local input.
+;;;; This module creates and retires native components. Once inserted, they use
+;;;; the same scene, rendering, damage, focus, and input paths as Wayland apps.
 
 (in-package #:ataxia.atlas-world)
 
@@ -70,13 +70,13 @@
     }
 }")
 
-(defun %panel-size (state)
+(defun %output-component-size (state)
   (multiple-value-bind (width height) (%output-logical-size state)
     (values (max 260d0 (min 680d0 (- width 48d0)))
             (max 64d0 (min 82d0 (- height 48d0))))))
 
-(defun %make-output-panel (world state)
-  (multiple-value-bind (width height) (%panel-size state)
+(defun %make-output-component (world state)
+  (multiple-value-bind (width height) (%output-component-size state)
     (let* ((output (%atlas-output-output state))
            (component
              (ataxia.world.slint:make-slint-component
@@ -85,141 +85,103 @@
               :component-name "AtaxiaPanel"
               :width width :height height
               :scale (ataxia.kernel:output-scale output)))
-           (panel (%make-atlas-slint-panel component state 24d0 24d0)))
+           (object
+             (make-instance
+              'atlas-object :component component
+              :mapping (make-instance
+                        'atlas-output-mapping
+                        :output-state state :x 24d0 :y 24d0)
+              :layer 100 :width width :height height)))
       (ataxia.world.slint:set-slint-component-invalidator
        component
        (lambda (ignored)
          (declare (ignore ignored))
          (unless (%world-quiescing-p world)
            (%request-output-state-frame world state)
-           (%schedule-slint-timer world))))
-      panel)))
+           (%schedule-component-timer world))))
+      object)))
 
-(defun %resize-output-panel (panel)
-  (let* ((state (%atlas-slint-panel-output-state panel))
+(defun %resize-output-component (object)
+  (let* ((state (%mapping-output-state (%atlas-object-mapping object)))
          (output (%atlas-output-output state)))
-    (multiple-value-bind (width height) (%panel-size state)
+    (multiple-value-bind (width height) (%output-component-size state)
       (ataxia.world.slint:resize-slint-component
-       (%panel-component panel) width height
-       :scale (ataxia.kernel:output-scale output))))
-  panel)
+       (atlas-object-component object) width height
+       :scale (ataxia.kernel:output-scale output))
+      (setf (atlas-object-width object) width
+            (atlas-object-height object) height)))
+  object)
 
-(defun %panel-at-screen-point (world state x y)
-  (let ((panel (and state (gethash (%atlas-output-output state)
-                                  (%world-slint-panels world)))))
-    (when panel
-      (multiple-value-bind (panel-x panel-y width height)
-          (%panel-screen-geometry panel)
-        (when (and (<= panel-x x (+ panel-x width))
-                   (<= panel-y y (+ panel-y height)))
-          panel)))))
+(defun %component-animation-active-p (world)
+  (some (lambda (object)
+          (ataxia.kernel:drawable-active-p
+           (atlas-object-component object)))
+        (%scene-object-sequence world)))
 
-(defun %panel-local-position (panel x y)
-  (values (- x (%atlas-slint-panel-x panel))
-          (- y (%atlas-slint-panel-y panel))))
-
-(defun %damage-panel-region (world panel region)
-  (let* ((state (%atlas-slint-panel-output-state panel))
-         (output (%atlas-output-output state)))
-    (when (and (gethash output (%world-outputs world)) region)
-      (ataxia.world:damage-add-region
-       (%world-damage world) output
-       (mapcar
-        (lambda (rectangle)
-          (%screen-rectangle-to-buffer
-           state
-           (+ (%atlas-slint-panel-x panel)
-              (ataxia.world:rectangle-x rectangle))
-           (+ (%atlas-slint-panel-y panel)
-              (ataxia.world:rectangle-y rectangle))
-           (ataxia.world:rectangle-width rectangle)
-           (ataxia.world:rectangle-height rectangle)))
-        region))))
-  panel)
-
-(defun %slint-animation-active-p (world)
-  (some (lambda (panel)
-          (ataxia.world.slint:slint-component-active-p
-           (%panel-component panel)))
-        (%hash-values (%world-slint-panels world))))
-
-(defun %schedule-slint-timer (world)
-  (let ((timer (%world-slint-timer world)))
+(defun %schedule-component-timer (world)
+  (let ((timer (%world-component-timer world)))
     (when timer
       (let* ((deadline (ataxia.world.slint:slint-next-timer-milliseconds))
              (delay
                (cond
-                 ((%slint-animation-active-p world)
+                 ((%component-animation-active-p world)
                   (if (zerop deadline) 16 (max 1 (min 16 deadline))))
                  ((= deadline #xffffffffffffffff) 86400000)
                  (t (max 1 (min deadline 86400000))))))
         (ataxia.runtime:update-event-loop-timer timer delay))))
   world)
 
-(defun %slint-timer-fired (world source)
+(defun %component-timer-fired (world source)
   (declare (ignore source))
   (unless (%world-quiescing-p world)
     (ataxia.world.slint:update-slint-timers)
     (%request-all-frames world)
-    (%schedule-slint-timer world))
+    (%schedule-component-timer world))
   0)
 
-(defun %install-slint-timer (world)
-  (unless (%world-slint-timer world)
-    (setf (%world-slint-timer world)
+(defun %install-component-timer (world)
+  (unless (%world-component-timer world)
+    (setf (%world-component-timer world)
           (ataxia.runtime:add-event-loop-timer
            (ataxia.kernel:kernel-runtime (ataxia.kernel:world-kernel world))
-           (lambda (source) (%slint-timer-fired world source))))
-    (%schedule-slint-timer world))
+           (lambda (source) (%component-timer-fired world source))))
+    (%schedule-component-timer world))
   world)
 
-(defun %remove-slint-timer (world)
-  (when (%world-slint-timer world)
-    (ataxia.runtime:remove-event-loop-source (%world-slint-timer world))
-    (setf (%world-slint-timer world) nil))
+(defun %remove-component-timer (world)
+  (when (%world-component-timer world)
+    (ataxia.runtime:remove-event-loop-source (%world-component-timer world))
+    (setf (%world-component-timer world) nil))
   world)
 
-(defun %render-output-panel (world state)
-  (let ((panel (gethash (%atlas-output-output state)
-                        (%world-slint-panels world))))
-    (when panel
-      (let ((component (%panel-component panel)))
-        (unless (ataxia.world.slint:slint-component-graphics-attached-p component)
-          (ataxia.world.slint:attach-slint-component-graphics component))
-        (multiple-value-bind (damage active-p)
-            (ataxia.world.slint:render-slint-component component)
-          (%damage-panel-region world panel damage)
-          (when active-p (%request-output-state-frame world state))))))
-  (%schedule-slint-timer world)
-  world)
-
-(defun %retire-output-panel (world output)
-  (let ((panel (gethash output (%world-slint-panels world))))
-    (when panel
+(defun %retire-output-component (world output)
+  (let ((object (gethash output (%world-output-components world))))
+    (when object
       (ataxia.world.slint:set-slint-component-invalidator
-       (%panel-component panel) nil)
-      (remhash output (%world-slint-panels world))
-      (push panel (%world-retired-slint-panels world))))
+       (atlas-object-component object) nil)
+      (%remove-scene-object world object)
+      (remhash output (%world-output-components world))
+      (push object (%world-retired-components world))))
   world)
 
-(defun %reap-retired-slint-panels (world)
-  (dolist (panel (%world-retired-slint-panels world))
-    (let ((component (%panel-component panel)))
+(defun %reap-retired-components (world)
+  (dolist (object (%world-retired-components world))
+    (let ((component (atlas-object-component object)))
       (when (ataxia.world.slint:slint-component-graphics-attached-p component)
-        (ataxia.world.slint:detach-slint-component-graphics component))
+        (ataxia.kernel:drawable-detach-graphics component))
       (ataxia.world.slint:destroy-slint-component component)))
-  (setf (%world-retired-slint-panels world) nil)
+  (setf (%world-retired-components world) nil)
   world)
 
-(defun %destroy-slint-panels (world)
+(defun %destroy-output-components (world)
   (maphash
-   (lambda (output panel)
+   (lambda (output object)
      (declare (ignore output))
-     (let ((component (%panel-component panel)))
+     (let ((component (atlas-object-component object)))
        (ataxia.world.slint:set-slint-component-invalidator component nil)
        (when (ataxia.world.slint:slint-component-graphics-attached-p component)
-         (ataxia.world.slint:detach-slint-component-graphics component))
+         (ataxia.kernel:drawable-detach-graphics component))
        (ataxia.world.slint:destroy-slint-component component)))
-   (%world-slint-panels world))
-  (clrhash (%world-slint-panels world))
-  (%reap-retired-slint-panels world))
+   (%world-output-components world))
+  (clrhash (%world-output-components world))
+  (%reap-retired-components world))

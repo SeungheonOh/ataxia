@@ -55,6 +55,14 @@
      :pointer-scroll))
   (%notify-change component))
 
+(defmethod ataxia.kernel:interactable-pointer-leave
+    ((component slint-component) world seat)
+  (declare (ignore world seat))
+  (ataxia.world.slint.raw::check-result
+   (ataxia.world.slint.raw::%pointer-exit (%live-native component))
+   :pointer-exit)
+  (%notify-change component))
+
 (defmethod ataxia.kernel:interactable-key-event
     ((component slint-component) world seat input)
   (declare (ignore world seat))
@@ -101,9 +109,3 @@
     ((component slint-component) world state value)
   (declare (ignore world state value))
   component)
-
-(defun slint-component-pointer-exit (component)
-  (ataxia.world.slint.raw::check-result
-   (ataxia.world.slint.raw::%pointer-exit (%live-native component))
-   :pointer-exit)
-  (%notify-change component))

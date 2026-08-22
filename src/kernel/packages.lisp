@@ -32,6 +32,10 @@
    #:drawable-surface-generation
    #:drawable-surfaces
    #:drawable-local-bounds
+   #:drawable-attach-graphics
+   #:drawable-detach-graphics
+   #:drawable-prepare-frame
+   #:drawable-active-p
    #:retain-render-source
    #:release-render-source
    #:interaction-result
@@ -99,6 +103,7 @@
    #:interactable-pointer-motion
    #:interactable-pointer-button
    #:interactable-pointer-axis
+   #:interactable-pointer-leave
    #:interactable-key-event
    #:interactable-focus
    #:request-object-configuration

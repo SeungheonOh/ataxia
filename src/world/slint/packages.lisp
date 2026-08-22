@@ -22,7 +22,6 @@
    #:detach-slint-component-graphics
    #:render-slint-component
    #:slint-component-active-p
-   #:slint-component-pointer-exit
    #:set-slint-property
    #:update-slint-timers
    #:slint-next-timer-milliseconds))

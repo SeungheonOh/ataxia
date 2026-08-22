@@ -1,8 +1,7 @@
-;;;; Clockwise outward rectangle packer.
+;;;; Clockwise outward component packer.
 ;;;;
-;;;; The first window anchors the plane. Later windows score every edge-adjacent
-;;;; opening by envelope size, shape, shared edges, and a light clockwise bias.
-;;;; This fills cavities while making compact growth sprawl in every direction.
+;;;; Only mappings that opt into the packed plane participate. The algorithm
+;;;; operates on ATLAS-OBJECT dimensions and never inspects their components.
 
 (in-package #:ataxia.atlas-world)
 
@@ -51,9 +50,9 @@
                      (- (%placement-bottom placement) size)))))
    :test #'=))
 
-(defun %packing-candidates (window placements)
-  (let* ((width (atlas-window-width window))
-         (height (atlas-window-height window))
+(defun %packing-candidates (object placements)
+  (let* ((width (atlas-object-width object))
+         (height (atlas-object-height object))
          (x-alignments (%packing-alignments placements :x width))
          (y-alignments (%packing-alignments placements :y height))
          (seen (make-hash-table :test #'equal))
@@ -61,7 +60,7 @@
     (labels ((consider (direction x y)
                (let* ((key (list direction x y))
                       (candidate
-                        (%make-atlas-placement window x y width height)))
+                        (%make-atlas-placement object x y width height)))
                  (unless (or (gethash key seen)
                              (some (lambda (placement)
                                      (%placements-overlap-p candidate placement))
@@ -121,10 +120,10 @@
         when (> left-value right-value) return nil
         finally (return nil)))
 
-(defun %best-packing-candidate (window placements preferred occupied-area)
+(defun %best-packing-candidate (object placements preferred occupied-area)
   (let ((best nil)
         (best-score nil))
-    (dolist (entry (%packing-candidates window placements))
+    (dolist (entry (%packing-candidates object placements))
       (let ((score
               (%packing-score
                (cdr entry) (car entry) preferred placements occupied-area)))
@@ -139,16 +138,16 @@
     (decf (%atlas-placement-y placement) min-y))
   placements)
 
-(defun %pack-atlas (windows)
-  "Pack visible WINDOWS clockwise by insertion order and return their extent."
+(defun %pack-atlas (objects)
+  "Pack visible OBJECTS clockwise by insertion order and return their extent."
   (let ((table (make-hash-table :test #'eq)))
-    (if (null windows)
+    (if (null objects)
         (values table 0d0 0d0)
-        (let* ((first (first windows))
+        (let* ((first (first objects))
                (first-placement
                  (%make-atlas-placement
                   first 0d0 0d0
-                  (atlas-window-width first) (atlas-window-height first)))
+                  (atlas-object-width first) (atlas-object-height first)))
                (placed (list first-placement))
                (occupied-area
                  (* (%atlas-placement-width first-placement)
@@ -158,18 +157,18 @@
                (max-x (%placement-right first-placement))
                (max-y (%placement-bottom first-placement)))
           (setf (gethash first table) first-placement)
-          (loop for window in (rest windows)
+          (loop for object in (rest objects)
                 for index from 0
                 for preferred = (nth (mod index 4) '(:right :down :left :up))
                 for entry =
                   (%best-packing-candidate
-                   window placed preferred occupied-area)
+                   object placed preferred occupied-area)
                 for placement = (cdr entry)
                 do (push placement placed)
                    (incf occupied-area
                          (* (%atlas-placement-width placement)
                             (%atlas-placement-height placement)))
-                   (setf (gethash window table) placement
+                   (setf (gethash object table) placement
                          min-x (min min-x (%atlas-placement-x placement))
                          min-y (min min-y (%atlas-placement-y placement))
                          max-x (max max-x (%placement-right placement))
@@ -185,12 +184,12 @@
                    (%atlas-layout-transition-duration layout))))
       1d0))
 
-(defun %placement-geometry (layout window timestamp)
-  (let ((target (gethash window (%atlas-layout-placements layout))))
+(defun %placement-geometry (layout object timestamp)
+  (let ((target (gethash object (%atlas-layout-placements layout))))
     (when target
       (let* ((previous
                (and (%atlas-layout-previous layout)
-                    (gethash window (%atlas-layout-previous layout))))
+                    (gethash object (%atlas-layout-previous layout))))
              (progress (%layout-transition-progress layout timestamp))
              (eased (ataxia.world:ease-out-cubic progress)))
         (if previous

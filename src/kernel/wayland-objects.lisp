@@ -325,6 +325,13 @@
         (make-interaction-result :status :delivered :object application))
       (make-interaction-result :status :miss :object application)))
 
+(defmethod interactable-pointer-leave
+    ((application wayland-application) world (seat logical-seat))
+  (declare (ignore world))
+  (ataxia.runtime:seat-pointer-notify-clear-focus (seat-runtime-object seat))
+  (make-interaction-result
+   :status :delivered :object application :focus-changed-p t))
+
 (defmethod interactable-key-event
     ((application wayland-application) world (seat logical-seat) input)
   (declare (ignore world))

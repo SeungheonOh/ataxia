@@ -1,7 +1,7 @@
 ;;;; CLOS identity and lifecycle for one interpreted Slint component.
 ;;;;
 ;;;; The component is a native World object. Its logical size and invalidation
-;;;; callback belong to the World; Slint's opaque scene stays behind CFFI.
+;;;; callback belong to the World; the Slint ABI state stays in the Lisp layer.
 
 (in-package #:ataxia.world.slint)
 
@@ -60,7 +60,7 @@
             source source-path (or component-name "")
             (%physical-size width scale) (%physical-size height scale)
             (coerce scale 'single-float))))
-    (when (cffi:null-pointer-p native)
+    (unless native
       (ataxia.world.slint.raw::native-error :component-creation))
     (make-instance
      'slint-component :native native :width width :height height :scale scale
@@ -95,7 +95,7 @@
     (when (plusp (%component-texture component))
       (error "Detach Slint component graphics before destroying it."))
     (ataxia.world.slint.raw::%component-destroy (%component-native component))
-    (setf (%component-native component) (cffi:null-pointer)
+    (setf (%component-native component) nil
           (%component-destroyed-p component) t
           (%component-invalidator component) nil))
   nil)

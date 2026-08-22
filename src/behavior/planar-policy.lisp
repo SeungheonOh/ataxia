@@ -263,7 +263,7 @@
               (placement (view-placement view)))
           (multiple-value-bind (x y width height)
               (if projection-output
-                  (behavior-project-view
+                  (project-planar-view
                    policy projection-output view (monotonic-seconds))
                   (values (placement-x placement) (placement-y placement)
                           (placement-width placement)
@@ -415,8 +415,7 @@
   (setf (view-placement view) placement)
   placement)
 
-(defmethod behavior-project-view
-    ((policy planar-behavior-policy) output view timestamp)
+(defun project-planar-view (policy output view timestamp)
   (declare (ignore policy timestamp))
   (let* ((viewport (output-behavior-state output))
          (placement (view-placement view))
@@ -429,8 +428,7 @@
             (* (placement-width placement) scale)
             (* (placement-height placement) scale))))
 
-(defmethod behavior-unproject-point
-    ((policy planar-behavior-policy) output output-x output-y)
+(defun unproject-planar-point (policy output output-x output-y)
   (declare (ignore policy))
   (let ((viewport (output-behavior-state output)))
     (values (+ (planar-viewport-camera-x viewport)

@@ -539,17 +539,6 @@
                             :program-name program-name :uniforms uniforms)
    :x x :y y :width width :height height :owner owner :geometry geometry))
 
-(defun scaled-view-geometry (x y width height state)
-  (let* ((scale (presentation-scale state))
-         (scaled-width (* width scale))
-         (scaled-height (* height scale)))
-    (values (+ x (/ (- width scaled-width) 2d0)
-               (presentation-offset-x state))
-            (+ y (/ (- height scaled-height) 2d0)
-               (presentation-offset-y state))
-            scaled-width scaled-height)))
-
-
 (defmethod build-presentation-snapshot
     ((presentation presentation-system) (output compositor-output) timestamp)
   (let* ((compositor (component-compositor presentation))

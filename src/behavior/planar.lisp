@@ -53,7 +53,7 @@
                (view-presentable-p view)
                (surface-record-texture record))
       (multiple-value-bind (world-x world-y world-width world-height)
-          (behavior-project-view
+          (project-planar-view
            policy output view timestamp)
         (let ((effective-titlebar-height
                 (if (or (view-fullscreen-p view)
@@ -255,7 +255,7 @@
                                panel titlebar)
                             scale)))
             (multiple-value-bind (world-x world-y)
-                (behavior-unproject-point
+                (unproject-planar-point
                  policy output 0d0 panel)
               (setf (placement-x placement) world-x
                     (placement-y placement) world-y

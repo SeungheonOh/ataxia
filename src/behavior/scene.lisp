@@ -5,6 +5,16 @@
 
 (in-package #:ataxia.compositor)
 
+(defun scaled-view-geometry (x y width height state)
+  (let* ((scale (presentation-scale state))
+         (scaled-width (* width scale))
+         (scaled-height (* height scale)))
+    (values (+ x (/ (- width scaled-width) 2d0)
+               (presentation-offset-x state))
+            (+ y (/ (- height scaled-height) 2d0)
+               (presentation-offset-y state))
+            scaled-width scaled-height)))
+
 (defun presentation-shader-values (owner)
   ;; Copy values into the frame snapshot so shell edits cannot mutate a frame
   ;; while its items are being submitted.

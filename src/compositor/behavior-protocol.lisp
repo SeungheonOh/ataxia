@@ -149,8 +149,6 @@
 (defgeneric behavior-set-view-size (policy view width height context))
 (defgeneric behavior-place-view (policy view placement-request))
 (defgeneric behavior-update-placement (policy view placement context))
-(defgeneric behavior-project-view (policy output view timestamp))
-(defgeneric behavior-unproject-point (policy output output-x output-y))
 (defgeneric copy-behavior-placement (policy placement))
 (defgeneric copy-behavior-view-state (policy state))
 (defgeneric copy-behavior-output-state (policy state))

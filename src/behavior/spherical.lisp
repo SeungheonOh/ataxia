@@ -292,8 +292,7 @@
             (values (- center-x (/ width 2d0))
                     (- center-y (/ height 2d0)) width height))))))
 
-(defmethod behavior-project-view
-    ((policy spherical-behavior-policy) output view timestamp)
+(defun project-spherical-view (policy output view timestamp)
   (declare (ignore policy timestamp))
   (project-spherical-placement
    (output-behavior-state output) output (view-placement view)))
@@ -321,12 +320,6 @@
                       forward right up))))
       (values (atan (second ray) (first ray))
               (asin (third ray))))))
-
-(defmethod behavior-unproject-point
-    ((policy spherical-behavior-policy) output output-x output-y)
-  (declare (ignore policy))
-  (unproject-spherical-point
-   (output-behavior-state output) output output-x output-y))
 
 (defmethod copy-behavior-view-state
     ((policy spherical-behavior-policy) (state spherical-behavior-state))
@@ -368,7 +361,7 @@
               (placement (view-placement view)))
           (multiple-value-bind (x y width height)
               (if projection-output
-                  (behavior-project-view
+                  (project-spherical-view
                    policy projection-output view (monotonic-seconds))
                   (values 0d0 0d0
                           (coerce (view-width view) 'double-float)

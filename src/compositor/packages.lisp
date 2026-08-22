@@ -227,8 +227,6 @@
    #:behavior-set-view-size
    #:behavior-place-view
    #:behavior-update-placement
-   #:behavior-project-view
-   #:behavior-unproject-point
    #:copy-behavior-placement
    #:copy-behavior-view-state
    #:copy-behavior-output-state

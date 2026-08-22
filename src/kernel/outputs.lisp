@@ -1,0 +1,306 @@
+;;;; Output and frame mechanisms.
+;;;;
+;;;; Kernel configures wlr-output, acquires swapchain buffers, activates EGL,
+;;;; and commits exactly the damage returned by World. It owns no presentation
+;;;; graph, drawing, damage history, or fallback policy.
+
+(in-package #:ataxia.kernel)
+
+(cffi:defcfun ("glBindFramebuffer" %gl-bind-framebuffer) :void
+  (target :uint32)
+  (framebuffer :uint32))
+
+(cffi:defcfun ("glViewport" %gl-viewport) :void
+  (x :int32)
+  (y :int32)
+  (width :int32)
+  (height :int32))
+
+(defconstant +gl-framebuffer+ #x8d40)
+
+(defun %refresh-output-object (output)
+  (let ((runtime-output (output-runtime-object output)))
+    (setf (output-width output) (ataxia.runtime:output-width runtime-output)
+          (output-height output) (ataxia.runtime:output-height runtime-output)
+          (output-scale output) (ataxia.runtime:output-scale runtime-output)
+          (output-enabled-p output)
+          (ataxia.runtime:output-enabled-p runtime-output)))
+  output)
+
+(defun %configure-new-output (kernel runtime-output)
+  (ataxia.runtime:initialize-output-render
+   runtime-output
+   (ataxia.runtime:runtime-allocator (kernel-runtime kernel))
+   (ataxia.runtime:runtime-renderer (kernel-runtime kernel)))
+  (let ((state (ataxia.runtime:create-output-state runtime-output)))
+    (unwind-protect
+         (progn
+           (ataxia.runtime:output-state-set-enabled state t)
+           (let ((mode (ataxia.runtime:output-preferred-mode runtime-output)))
+             (if mode
+                 (ataxia.runtime:output-state-set-mode state mode)
+                 (ataxia.runtime:output-state-set-custom-mode
+                  state
+                  (max 1 (ataxia.runtime:output-width runtime-output))
+                  (max 1 (ataxia.runtime:output-height runtime-output)))))
+           (unless (ataxia.runtime:output-test-state runtime-output state)
+             (error "wlroots rejected initial output state for ~A."
+                    (ataxia.runtime:output-name runtime-output)))
+           (unless (ataxia.runtime:output-commit-state runtime-output state)
+             (error "wlroots failed to commit initial output state for ~A."
+                    (ataxia.runtime:output-name runtime-output))))
+      (ataxia.runtime:destroy-output-state state)))
+  (ataxia.runtime:create-output-global runtime-output)
+  (let ((output
+          (make-instance
+           'kernel-output
+           :kernel kernel
+           :id (%allocate-object-id kernel)
+           :runtime-object runtime-output
+           :name (ataxia.runtime:output-name runtime-output)
+           :description (ataxia.runtime:output-description runtime-output)
+           :width (ataxia.runtime:output-width runtime-output)
+           :height (ataxia.runtime:output-height runtime-output)
+           :scale (ataxia.runtime:output-scale runtime-output)
+           :enabled-p (ataxia.runtime:output-enabled-p runtime-output))))
+    (%register-object kernel output :runtime-object runtime-output)
+    (setf (gethash runtime-output (%kernel-output-table kernel)) output)
+    (world-output-added (kernel-world kernel) output)
+    output))
+
+(defun %retire-output (output)
+  (when (eq (object-state output) :live)
+    (let ((kernel (object-kernel output)))
+      (world-output-removing (kernel-world kernel) output)
+      (when (%output-swapchain output)
+        (ataxia.runtime:destroy-output-swapchain (%output-swapchain output))
+        (setf (%output-swapchain output) nil))
+      (clrhash (%output-target-tokens output))
+      (remhash (output-runtime-object output) (%kernel-output-table kernel))
+      (%retire-object
+       kernel output :runtime-object (output-runtime-object output))))
+  output)
+
+(defun request-output-frame (output)
+  "Request one frame; calls made during rendering latch one following frame."
+  (check-type output kernel-output)
+  (if (%output-frame-active-p output)
+      (setf (%output-next-frame-requested-p output) t)
+      (unless (%output-frame-requested-p output)
+        (setf (%output-frame-requested-p output) t)
+        (ataxia.runtime:output-schedule-frame
+         (output-runtime-object output))))
+  output)
+
+(defun %ensure-output-swapchain (output)
+  (or (%output-swapchain output)
+      (let ((swapchain
+              (ataxia.runtime:configure-output-swapchain
+               (output-runtime-object output))))
+        (setf (%output-swapchain output) swapchain)
+        (incf (%output-swapchain-generation output))
+        (clrhash (%output-target-tokens output))
+        swapchain)))
+
+(defun %intern-target-token (output buffer)
+  (let* ((address (ataxia.runtime:native-object-address buffer))
+         (table (%output-target-tokens output)))
+    (or (gethash address table)
+        (setf (gethash address table)
+              (make-instance
+               'output-target-token
+               :output output
+               :generation (%output-swapchain-generation output)
+               :native-address address)))))
+
+(defun %frame-timestamp ()
+  (/ (get-internal-real-time)
+     (coerce internal-time-units-per-second 'double-float)))
+
+(defun %valid-damage-rectangle-p (rectangle width height)
+  (and (typep rectangle 'frame-damage-rectangle)
+       (<= 0 (frame-damage-rectangle-x rectangle))
+       (<= 0 (frame-damage-rectangle-y rectangle))
+       (plusp (frame-damage-rectangle-width rectangle))
+       (plusp (frame-damage-rectangle-height rectangle))
+       (<= (+ (frame-damage-rectangle-x rectangle)
+              (frame-damage-rectangle-width rectangle))
+           width)
+       (<= (+ (frame-damage-rectangle-y rectangle)
+              (frame-damage-rectangle-height rectangle))
+           height)))
+
+(defun %validate-protocol-token (kernel token)
+  (and (typep token 'surface-protocol-token)
+       (let ((surface (%protocol-token-surface token)))
+         (and (eq kernel (object-kernel surface))
+              (eq (object-state surface) :live)
+              (= (%protocol-token-generation token)
+                 (object-generation surface))))))
+
+(defun %validate-frame-result (kernel lease result)
+  (unless (typep result 'world-frame-result)
+    (error "World returned ~S instead of WORLD-FRAME-RESULT." result))
+  (unless (and (frame-result-complete-p result)
+               (eq (frame-target-token lease)
+                   (frame-result-target-token result)))
+    (error "World returned an incomplete result or the wrong target token."))
+  (map nil
+       (lambda (rectangle)
+         (unless (%valid-damage-rectangle-p
+                  rectangle (frame-width lease) (frame-height lease))
+           (error "World returned out-of-bounds frame damage ~S." rectangle)))
+       (frame-result-damage result))
+  (map nil
+       (lambda (token)
+         (unless (%validate-protocol-token kernel token)
+           (error "World returned an invalid Wayland protocol token.")))
+       (frame-result-protocol-tokens result))
+  result)
+
+(defun %runtime-damage (rectangles)
+  (map 'list
+   (lambda (rectangle)
+     (ataxia.runtime:make-damage-rectangle
+      (frame-damage-rectangle-x rectangle)
+      (frame-damage-rectangle-y rectangle)
+      (frame-damage-rectangle-width rectangle)
+      (frame-damage-rectangle-height rectangle)))
+   rectangles))
+
+(defun %notify-presented-surfaces (output result)
+  (let ((runtime-output (output-runtime-object output))
+        (seen (make-hash-table :test #'eq)))
+    (map nil
+         (lambda (token)
+           (let ((surface (%protocol-token-surface token)))
+             (unless (gethash surface seen)
+               (setf (gethash surface seen) t)
+               (ataxia.runtime:mark-surface-textured-on-output
+                (surface-runtime-object surface) runtime-output)
+               (ataxia.runtime:surface-send-frame-done
+                (surface-runtime-object surface)))))
+         (frame-result-protocol-tokens result))))
+
+(defun %execute-world-frame (output framebuffer target-token)
+  (let* ((kernel (object-kernel output))
+         (world (kernel-world kernel))
+         (lease
+           (make-instance
+            'frame-lease
+            :output output
+            :target-token target-token
+            :framebuffer framebuffer
+            :width (output-width output)
+            :height (output-height output)
+            :scale (output-scale output)
+            :transform 0
+            :timestamp (%frame-timestamp)
+            :generation (%output-swapchain-generation output))))
+    (unwind-protect
+         (ataxia.runtime:call-with-egl-context
+          (ataxia.runtime:runtime-egl (kernel-runtime kernel))
+          (lambda ()
+            (%gl-bind-framebuffer +gl-framebuffer+ framebuffer)
+            (%gl-viewport 0 0 (output-width output) (output-height output))
+            (%validate-frame-result kernel lease (world-render world lease))))
+      (setf (frame-lease-valid-p lease) nil))))
+
+(defun %commit-world-frame (output buffer result)
+  (let* ((kernel (object-kernel output))
+         (runtime-output (output-runtime-object output))
+         (state (ataxia.runtime:create-output-state runtime-output)))
+    (unwind-protect
+         (progn
+           (ataxia.runtime:output-state-set-buffer state buffer)
+           (ataxia.runtime:output-state-set-damage
+            state (%runtime-damage (frame-result-damage result)))
+           (unless (ataxia.runtime:output-test-state runtime-output state)
+             (world-frame-failed
+              (kernel-world kernel) output result :output-test-failed)
+             (return-from %commit-world-frame nil))
+           (unless (ataxia.runtime:output-commit-state runtime-output state)
+             (world-frame-failed
+              (kernel-world kernel) output result :output-commit-failed)
+             (return-from %commit-world-frame nil))
+           (%refresh-output-object output)
+           (world-frame-committed
+            (kernel-world kernel) output result :committed)
+           (%notify-presented-surfaces output result)
+           t)
+      (ataxia.runtime:destroy-output-state state))))
+
+(defun %render-output-frame (output)
+  (let ((kernel (object-kernel output))
+        (buffer nil)
+        (result nil))
+    (setf (%output-frame-requested-p output) nil
+          (%output-frame-active-p output) t)
+    (unwind-protect
+         (progn
+           (handler-case
+               (let* ((swapchain (%ensure-output-swapchain output))
+                      (acquired-buffer
+                        (ataxia.runtime:acquire-output-buffer swapchain)))
+                 (setf buffer acquired-buffer)
+                 (let* ((framebuffer
+                          (ataxia.runtime:output-buffer-framebuffer
+                           (ataxia.runtime:runtime-renderer
+                            (kernel-runtime kernel))
+                           buffer))
+                        (target-token (%intern-target-token output buffer)))
+                   (setf result
+                         (%execute-world-frame
+                          output framebuffer target-token))))
+             (serious-condition (cause)
+               (world-frame-failed
+                (kernel-world kernel) output result cause)
+               (setf result nil)))
+           (when result
+             (%commit-world-frame output buffer result)))
+      (when buffer
+        (ataxia.runtime:release-buffer buffer))
+      (setf (%output-frame-active-p output) nil)
+      (when (%output-next-frame-requested-p output)
+        (setf (%output-next-frame-requested-p output) nil)
+        (request-output-frame output)))))
+
+(defun set-wayland-surface-output-membership (token outputs)
+  "Apply World-computed output membership for one opaque Wayland surface token."
+  (unless (typep token 'surface-protocol-token)
+    (error "Expected a Kernel-owned Wayland surface token."))
+  (let* ((surface (%protocol-token-surface token))
+         (kernel (object-kernel surface))
+         (current (%protocol-token-outputs token))
+         (desired (make-hash-table :test #'eq)))
+    (unless (%validate-protocol-token kernel token)
+      (error "Wayland surface token is no longer live."))
+    (dolist (output outputs)
+      (check-type output kernel-output)
+      (unless (and (eq kernel (object-kernel output))
+                   (eq (object-state output) :live))
+        (error "Output does not belong to this live Wayland surface."))
+      (setf (gethash output desired) t)
+      (unless (gethash output current)
+        (ataxia.runtime:surface-send-enter
+         (surface-runtime-object surface)
+         (output-runtime-object output))))
+    (maphash
+     (lambda (output present-p)
+       (declare (ignore present-p))
+       (unless (gethash output desired)
+         (ataxia.runtime:surface-send-leave
+          (surface-runtime-object surface)
+          (output-runtime-object output))))
+     current)
+    (clrhash current)
+    (maphash
+     (lambda (output present-p)
+       (declare (ignore present-p))
+       (setf (gethash output current) t))
+     desired)
+    (when outputs
+      (ataxia.runtime:notify-surface-preferred-scale
+       (surface-runtime-object surface)
+       (reduce #'max outputs :key #'output-scale)))
+    token))

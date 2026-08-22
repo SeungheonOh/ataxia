@@ -178,20 +178,28 @@
          (input-device (%event-input-device kernel runtime-input))
          (seat (and input-device (input-seat input-device))))
     (when seat
-      (world-cursor-button
-       (kernel-world kernel) seat
-       (make-cursor-button-input
-        :device input-device
-        :time-msec (ataxia.runtime:pointer-button-time-msec event)
-        :code (ataxia.runtime:pointer-button-code event)
-        :state (ataxia.runtime:pointer-button-state event)))
-      (let ((runtime-seat (seat-runtime-object seat)))
-        (when (and (eq (ataxia.runtime:pointer-button-state event) :released)
-                   (ataxia.runtime:seat-pointer-drag-active-p runtime-seat))
+      (let* ((runtime-seat (seat-runtime-object seat))
+             (button (ataxia.runtime:pointer-button-code event))
+             (state (ataxia.runtime:pointer-button-state event))
+             (press-count
+               (ataxia.runtime:seat-pointer-button-press-count
+                runtime-seat button)))
+        (world-cursor-button
+         (kernel-world kernel) seat
+         (make-cursor-button-input
+          :device input-device
+          :time-msec (ataxia.runtime:pointer-button-time-msec event)
+          :code button
+          :state state))
+        (when (and (eq state :released)
+                   (plusp press-count)
+                   (= press-count
+                      (ataxia.runtime:seat-pointer-button-press-count
+                       runtime-seat button)))
           (ataxia.runtime:seat-pointer-notify-button
            runtime-seat
            (ataxia.runtime:pointer-button-time-msec event)
-           (ataxia.runtime:pointer-button-code event)
+           button
            :released))))))
 
 (defmethod ataxia.runtime:pointer-axis ((kernel kernel) event)
@@ -223,6 +231,9 @@
          (input-device (%event-input-device kernel runtime-input))
          (seat (and input-device (input-seat input-device))))
     (when seat
+      (ataxia.runtime:set-seat-keyboard
+       (seat-runtime-object seat) runtime-input)
+      (setf (%seat-keyboard seat) runtime-input)
       (world-key-event
        (kernel-world kernel) seat
        (make-key-input
@@ -238,6 +249,9 @@
          (input-device (%event-input-device kernel runtime-input))
          (seat (and input-device (input-seat input-device))))
     (when seat
+      (ataxia.runtime:set-seat-keyboard
+       (seat-runtime-object seat) runtime-input)
+      (setf (%seat-keyboard seat) runtime-input)
       (world-key-event
        (kernel-world kernel) seat
        (make-modifiers-input

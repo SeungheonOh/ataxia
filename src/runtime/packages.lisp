@@ -185,6 +185,7 @@
    #:%seat-event-request-start-drag
    #:%drag-event-destroy
    #:%seat-pointer-drag-active
+   #:%seat-pointer-button-press-count
    #:%seat-cursor-surface
    #:%seat-cursor-serial
    #:%seat-cursor-hotspot-x
@@ -686,6 +687,7 @@
    #:seat-pointer-notify-frame
    #:seat-validate-pointer-grab-serial
    #:seat-pointer-drag-active-p
+   #:seat-pointer-button-press-count
    #:seat-start-pointer-drag
    #:destroy-drag
    #:seat-keyboard-notify-key

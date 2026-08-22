@@ -508,6 +508,22 @@ bool ataxia_seat_pointer_drag_active(const struct wlr_seat *seat) {
 		seat->drag->grab_type == WLR_DRAG_GRAB_KEYBOARD_POINTER;
 }
 
+uint32_t ataxia_seat_pointer_button_press_count(const struct wlr_seat *seat,
+		uint32_t button) {
+	if (seat == NULL) {
+		return 0;
+	}
+	for (size_t index = 0; index < seat->pointer_state.button_count; index++) {
+		const struct wlr_seat_pointer_button *pressed =
+			&seat->pointer_state.buttons[index];
+		if (pressed->button == button) {
+			return pressed->n_pressed > UINT32_MAX
+				? UINT32_MAX : (uint32_t)pressed->n_pressed;
+		}
+	}
+	return 0;
+}
+
 struct wlr_drag *ataxia_seat_drag_request_drag(
 		const struct wlr_seat_request_start_drag_event *event) {
 	return event == NULL ? NULL : event->drag;

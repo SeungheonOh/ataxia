@@ -1159,6 +1159,13 @@
     (ataxia.runtime.raw:%seat-pointer-drag-active
      (%object-pointer seat))))
 
+(defun seat-pointer-button-press-count (seat button)
+  (check-type button (unsigned-byte 32))
+  (let ((runtime (%native-runtime seat)))
+    (%assert-runtime-live runtime :seat-pointer-button-press-count)
+    (ataxia.runtime.raw:%seat-pointer-button-press-count
+     (%object-pointer seat) button)))
+
 (defun seat-start-pointer-drag (seat drag serial)
   (check-type drag wlr-drag)
   (check-type serial (unsigned-byte 32))

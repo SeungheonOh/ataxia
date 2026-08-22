@@ -245,8 +245,7 @@
             :app-id (ataxia.runtime:xdg-toplevel-app-id toplevel)
             :mapped-p (ataxia.runtime:surface-mapped-p runtime-surface))))
     (setf (%surface-application root) application)
-    (%register-object kernel application :runtime-object toplevel
-                      :world-visible-p t)
+    (%register-object kernel application :runtime-object toplevel)
     (setf (gethash toplevel (%kernel-toplevel-table kernel)) application)
     (world-register-object (kernel-world kernel) application)
     application))
@@ -260,8 +259,7 @@
                (%kernel-toplevel-table kernel))
       (%retire-object
        kernel application
-       :runtime-object (application-toplevel application)
-       :world-visible-p t)))
+       :runtime-object (application-toplevel application))))
   application)
 
 (defun %pointer-event-time (input)

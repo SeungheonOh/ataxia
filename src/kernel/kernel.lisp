@@ -13,8 +13,6 @@
    (next-object-id :initform 0 :accessor %kernel-next-object-id)
    (objects :initform (make-hash-table :test #'eql)
             :reader %kernel-object-table)
-   (world-objects :initform (make-hash-table :test #'eql)
-                  :reader %kernel-world-object-table)
    (runtime-index :initform (make-hash-table :test #'eq)
                   :reader %kernel-runtime-index)
    (outputs :initform (make-hash-table :test #'eq)
@@ -37,9 +35,6 @@
 (defun %hash-values (table)
   (loop for value being the hash-values of table collect value))
 
-(defun kernel-objects (kernel)
-  (%hash-values (%kernel-world-object-table kernel)))
-
 (defun kernel-outputs (kernel)
   (%hash-values (%kernel-output-table kernel)))
 
@@ -55,19 +50,14 @@
 (defun %allocate-object-id (kernel)
   (incf (%kernel-next-object-id kernel)))
 
-(defun %register-object (kernel object &key runtime-object world-visible-p)
+(defun %register-object (kernel object &key runtime-object)
   (setf (gethash (object-id object) (%kernel-object-table kernel)) object)
   (when runtime-object
     (setf (gethash runtime-object (%kernel-runtime-index kernel)) object))
-  (when world-visible-p
-    (setf (gethash (object-id object) (%kernel-world-object-table kernel))
-          object))
   (setf (object-state object) :live)
   object)
 
-(defun %retire-object (kernel object &key runtime-object world-visible-p)
-  (when world-visible-p
-    (remhash (object-id object) (%kernel-world-object-table kernel)))
+(defun %retire-object (kernel object &key runtime-object)
   (when runtime-object
     (remhash runtime-object (%kernel-runtime-index kernel)))
   (remhash (object-id object) (%kernel-object-table kernel))
@@ -175,6 +165,6 @@
         (world-output-added world output))
       (dolist (seat (kernel-seats kernel))
         (world-seat-added world seat))
-      (dolist (object (kernel-objects kernel))
-        (world-register-object world object))))
+      (dolist (application (%hash-values (%kernel-toplevel-table kernel)))
+        (world-register-object world application))))
   world)

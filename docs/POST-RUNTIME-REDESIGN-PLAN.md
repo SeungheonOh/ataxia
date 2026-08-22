@@ -243,10 +243,11 @@ and owns `wayland-application`; World constructs and owns `native-component`.
 World calls the same protocols without branching on whether an object is a
 Wayland client, RmlUi document, cursor, panel, or other native component.
 
-Kernel provides `kernel-objects`, `find-kernel-object`, and capability queries.
-Those functions return only Kernel-owned Wayland/protocol objects. World owns
-native-object existence and also maintains the derived wrapper/index structures
-described below for every object it presents.
+Kernel provides `find-kernel-object` and capability-specific protocol queries.
+It does not maintain a second registry classifying which objects are visible to
+World. World owns native-object existence and maintains the derived wrapper/index
+structures described below for every object it presents. When World is replaced,
+Kernel replays applications directly from its authoritative toplevel registry.
 
 ### 5.1 Drawable interface
 
@@ -659,7 +660,7 @@ owning object and a typed request value.
 World calls these synchronously on the owner thread:
 
 ```text
-kernel-objects / find-kernel-object
+find-kernel-object
 seat-wayland-capture
 clear-wayland-focus
 request-output-frame

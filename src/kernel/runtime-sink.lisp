@@ -18,7 +18,7 @@
   input-device)
 
 (defun %retire-kernel-runtime-state (kernel)
-  (dolist (application (kernel-objects kernel))
+  (dolist (application (%hash-values (%kernel-toplevel-table kernel)))
     (%retire-wayland-application application :runtime-stopping))
   (dolist (output (kernel-outputs kernel))
     (%retire-output output :protocol-active-p nil))

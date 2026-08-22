@@ -227,7 +227,6 @@
    #:kernel-runtime
    #:kernel-world
    #:kernel-state
-   #:kernel-objects
    #:kernel-outputs
    #:kernel-input-devices
    #:kernel-seats

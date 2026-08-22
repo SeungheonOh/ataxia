@@ -502,7 +502,6 @@
         (%attach-surface-child parent surface x y)))
     (setf (gethash popup (%kernel-popup-table kernel)) surface
           (gethash popup (%kernel-runtime-index kernel)) surface)
-    (ataxia.runtime:xdg-surface-schedule-configure popup)
     (let ((application (%surface-tree-application surface)))
       (when application
         (%invalidate-application application)))))

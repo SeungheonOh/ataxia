@@ -216,14 +216,33 @@
            (%canvas-seat-seat seat-state) :keyboard t))))
   window)
 
-(defun %window-at-screen-point (world state x y)
+(defun %window-hit-test (world state x y)
   (dolist (window (reverse (%world-stacking world)))
     (when (%window-visible-p window)
       (multiple-value-bind (window-x window-y width height)
           (%window-screen-geometry state window)
-        (when (and (<= window-x x (+ window-x width))
-                   (<= window-y y (+ window-y height)))
-          (return window))))))
+        (multiple-value-bind (border title-height grip)
+            (%window-decoration-metrics state window)
+          (let ((left (- window-x border))
+                (top (- window-y title-height))
+                (right (+ window-x width border))
+                (bottom (+ window-y height border)))
+            (when (and (<= left x right) (<= top y bottom))
+              (let ((edges 0))
+                (when (< x (+ left grip))
+                  (setf edges (logior edges +resize-left+)))
+                (when (> x (- right grip))
+                  (setf edges (logior edges +resize-right+)))
+                (when (< y (+ top grip))
+                  (setf edges (logior edges +resize-top+)))
+                (when (> y (- bottom grip))
+                  (setf edges (logior edges +resize-bottom+)))
+                (return
+                  (values window
+                          (cond ((plusp edges) :resize)
+                                ((< y window-y) :title)
+                                (t :content))
+                          edges))))))))))
 
 (defun %top-visible-window (world &optional excluded)
   (find-if (lambda (window)
@@ -249,21 +268,23 @@
               (+ local-y (* (/ (- y window-y) height) local-height))))))
 
 (defun %deliver-motion (world seat-state input)
-  (let* ((state (%canvas-seat-output seat-state))
-         (window
-           (and state
-                (%window-at-screen-point
-                 world state (%canvas-seat-x seat-state) (%canvas-seat-y seat-state)))))
-    (setf (%canvas-seat-hovered seat-state) window)
-    (if window
-        (multiple-value-bind (local-x local-y)
-            (%window-local-position
-             state window (%canvas-seat-x seat-state) (%canvas-seat-y seat-state))
-          (ataxia.kernel:interactable-pointer-motion
-           (canvas-window-application window) world
-           (%canvas-seat-seat seat-state) local-x local-y input))
-        (ataxia.kernel:clear-wayland-focus
-         (%canvas-seat-seat seat-state) :pointer t))))
+  (let ((state (%canvas-seat-output seat-state)))
+    (multiple-value-bind (window part edges)
+        (if state
+            (%window-hit-test
+             world state (%canvas-seat-x seat-state) (%canvas-seat-y seat-state))
+            (values nil nil 0))
+      (declare (ignore edges))
+      (setf (%canvas-seat-hovered seat-state) window)
+      (if (eq part :content)
+          (multiple-value-bind (local-x local-y)
+              (%window-local-position
+               state window (%canvas-seat-x seat-state) (%canvas-seat-y seat-state))
+            (ataxia.kernel:interactable-pointer-motion
+             (canvas-window-application window) world
+             (%canvas-seat-seat seat-state) local-x local-y input))
+          (ataxia.kernel:clear-wayland-focus
+           (%canvas-seat-seat seat-state) :pointer t)))))
 
 (defun %deliver-button-to-window (world seat-state window input &key clamp-p)
   (when window
@@ -400,18 +421,22 @@
     (setf (%canvas-seat-operation seat-state)
           (%make-canvas-operation
            :kind :pan
+           :button +button-middle+
            :cursor-x (%canvas-seat-x seat-state)
            :cursor-y (%canvas-seat-y seat-state)
            :camera-x (%canvas-output-camera-x state)
            :camera-y (%canvas-output-camera-y state)))))
 
-(defun %begin-window-operation (world seat-state window kind &key edges)
+(defun %begin-window-operation
+    (world seat-state window kind &key edges forward-release-p)
   (let ((state (%canvas-seat-output seat-state)))
     (multiple-value-bind (world-x world-y)
         (%screen-to-world state (%canvas-seat-x seat-state) (%canvas-seat-y seat-state))
       (setf (%canvas-seat-operation seat-state)
             (%make-canvas-operation
              :kind kind :window window :edges edges
+             :button +button-left+
+             :forward-release-p forward-release-p
              :cursor-x (%canvas-seat-x seat-state)
              :cursor-y (%canvas-seat-y seat-state)
              :window-x (canvas-window-x window)
@@ -632,6 +657,12 @@
             (delete window (%world-stacking world) :test #'eq))
       (dolist (seat-state (%seat-states world))
         (%replace-focused-window world seat-state window)
+        (let ((buttons (%canvas-seat-buttons seat-state)))
+          (dolist (code
+                    (loop for code being the hash-keys of buttons
+                          using (hash-value target)
+                          when (eq target window) collect code))
+            (remhash code buttons)))
         (when (and (%canvas-seat-operation seat-state)
                    (eq window
                        (%canvas-operation-window
@@ -792,25 +823,43 @@
       (let* ((code (ataxia.kernel:cursor-button-input-code input))
              (pressed-p (eq (ataxia.kernel:cursor-button-input-state input)
                             :pressed))
-             (operation (%canvas-seat-operation seat-state))
-             (window
-               (or (and operation (%canvas-operation-window operation))
-                   (%window-at-screen-point
-                    world (%canvas-seat-output seat-state)
-                    (%canvas-seat-x seat-state) (%canvas-seat-y seat-state)))))
+             (buttons (%canvas-seat-buttons seat-state)))
         (if pressed-p
-            (setf (gethash code (%canvas-seat-buttons seat-state)) t)
-            (remhash code (%canvas-seat-buttons seat-state)))
-        (cond
-          ((= code +button-middle+)
-           (if pressed-p (%begin-pan seat-state) (%finish-operation world seat-state)))
-          (t
-           (when (and pressed-p window)
-             (%focus-window world seat-state window))
-           (%deliver-button-to-window
-            world seat-state window input :clamp-p (not (null operation)))
-           (when (and (not pressed-p) operation)
-             (%finish-operation world seat-state))))
+            (multiple-value-bind (window part edges)
+                (%window-hit-test
+                 world (%canvas-seat-output seat-state)
+                 (%canvas-seat-x seat-state) (%canvas-seat-y seat-state))
+              (when window (%focus-window world seat-state window))
+              (cond
+                ((= code +button-middle+)
+                 (setf (gethash code buttons) :world)
+                 (%begin-pan seat-state))
+                ((and (= code +button-left+) window (eq part :title))
+                 (setf (gethash code buttons) :world)
+                 (%begin-window-operation world seat-state window :move))
+                ((and (= code +button-left+) window (eq part :resize))
+                 (setf (gethash code buttons) :world)
+                 (%begin-window-operation
+                  world seat-state window :resize :edges edges))
+                (t
+                 (setf (gethash code buttons) (or window :world))
+                 (when (eq part :content)
+                   (%deliver-button-to-window
+                    world seat-state window input :clamp-p nil)))))
+            (let ((target (gethash code buttons))
+                  (operation (%canvas-seat-operation seat-state)))
+              (cond
+                ((and operation
+                      (= code (%canvas-operation-button operation)))
+                 (when (%canvas-operation-forward-release-p operation)
+                   (%deliver-button-to-window
+                    world seat-state (%canvas-operation-window operation)
+                    input :clamp-p t))
+                 (%finish-operation world seat-state))
+                ((typep target 'canvas-window)
+                 (%deliver-button-to-window
+                  world seat-state target input :clamp-p t)))
+              (remhash code buttons)))
         (%damage-cursor world seat-state)
         (%request-all-frames world))))
   input)
@@ -819,11 +868,12 @@
     ((world infinite-world) seat input)
   (let ((seat-state (gethash seat (%world-seats world))))
     (when seat-state
-      (let ((window
-              (%window-at-screen-point
-               world (%canvas-seat-output seat-state)
-               (%canvas-seat-x seat-state) (%canvas-seat-y seat-state))))
-        (if window
+      (multiple-value-bind (window part edges)
+          (%window-hit-test
+           world (%canvas-seat-output seat-state)
+           (%canvas-seat-x seat-state) (%canvas-seat-y seat-state))
+        (declare (ignore edges))
+        (if (eq part :content)
             (%deliver-axis-to-window world seat-state window input)
             (when (eq (ataxia.kernel:cursor-axis-input-orientation input)
                       :vertical)
@@ -872,35 +922,43 @@
                  (gethash (ataxia.kernel:client-request-seat request)
                           (%world-seats world))))
            (when (and seat-state
-                      (gethash +button-left+ (%canvas-seat-buttons seat-state)))
-             (%begin-window-operation world seat-state window :move))))
+                      (eq window
+                          (gethash +button-left+
+                                   (%canvas-seat-buttons seat-state))))
+             (%begin-window-operation
+              world seat-state window :move :forward-release-p t))))
         (ataxia.kernel:resize-client-request
          (let ((seat-state
                  (gethash (ataxia.kernel:client-request-seat request)
                           (%world-seats world))))
            (when (and seat-state
-                      (gethash +button-left+ (%canvas-seat-buttons seat-state)))
+                      (eq window
+                          (gethash +button-left+
+                                   (%canvas-seat-buttons seat-state))))
              (%begin-window-operation
               world seat-state window :resize
-              :edges (ataxia.kernel:resize-client-request-edges request)))))
+              :edges (ataxia.kernel:resize-client-request-edges request)
+              :forward-release-p t))))
         (ataxia.kernel:fullscreen-client-request
-         (%damage-window world window)
-         (%set-window-expanded
-          world window :fullscreen
-          (ataxia.kernel:state-client-request-value request)
-          (or (and (ataxia.kernel:fullscreen-client-request-output request)
-                   (gethash
-                    (ataxia.kernel:fullscreen-client-request-output request)
-                    (%world-outputs world)))
-              (%first-output-state world))))
+         (when (%canvas-window-mapped-p window)
+           (%damage-window world window)
+           (%set-window-expanded
+            world window :fullscreen
+            (ataxia.kernel:state-client-request-value request)
+            (or (and (ataxia.kernel:fullscreen-client-request-output request)
+                     (gethash
+                      (ataxia.kernel:fullscreen-client-request-output request)
+                      (%world-outputs world)))
+                (%first-output-state world)))))
         (ataxia.kernel:state-client-request
          (case (ataxia.kernel:state-client-request-name request)
            (:maximized
-            (%damage-window world window)
-            (%set-window-expanded
-             world window :maximized
-             (ataxia.kernel:state-client-request-value request)
-             (%first-output-state world)))
+            (when (%canvas-window-mapped-p window)
+              (%damage-window world window)
+              (%set-window-expanded
+               world window :maximized
+               (ataxia.kernel:state-client-request-value request)
+               (%first-output-state world))))
            (:minimized
             (%damage-window world window)
             (setf (%canvas-window-hidden-p window)
@@ -956,7 +1014,7 @@
       (let ((tokens
               (if region
                   (%render-canvas
-                   (%world-renderer world) lease state
+                   (%world-renderer world) state
                    (%world-stacking world) (%seat-states world) region)
                   #())))
         (make-instance

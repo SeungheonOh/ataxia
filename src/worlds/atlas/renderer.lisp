@@ -151,6 +151,10 @@ void main() {
     (when x
       (%screen-rectangle-to-buffer state x y width height 3d0))))
 
+(defun %panel-buffer-coverage (state panel)
+  (multiple-value-bind (x y width height) (%panel-screen-geometry panel)
+    (%screen-rectangle-to-buffer state x y width height)))
+
 (defun %ndc-point (state x y)
   (values (- (* 2d0 (/ x (%atlas-output-buffer-width state))) 1d0)
           (- (* 2d0 (/ y (%atlas-output-buffer-height state))) 1d0)))
@@ -282,6 +286,23 @@ void main() {
                  surfaces))))))
   tokens)
 
+(defun %draw-slint-panel (renderer state panel)
+  (multiple-value-bind (x y width height) (%panel-screen-geometry panel)
+    (declare (ignore width height))
+    (multiple-value-bind (surfaces revision)
+        (ataxia.kernel:drawable-surfaces (%panel-component panel))
+      (declare (ignore revision))
+      (map nil
+           (lambda (surface)
+             (%draw-surface
+              renderer state surface
+              (+ x (ataxia.kernel:drawable-surface-local-x surface))
+              (+ y (ataxia.kernel:drawable-surface-local-y surface))
+              (ataxia.kernel:drawable-surface-width surface)
+              (ataxia.kernel:drawable-surface-height surface)
+              1d0))
+           surfaces))))
+
 (defun %draw-solid-cursor (renderer state x y)
   (%draw-solid renderer state (- x 2d0) (- y 2d0) 5d0 29d0
                '(0.02d0 0.025d0 0.04d0 0.95d0))
@@ -322,7 +343,7 @@ void main() {
      '(0.018d0 0.021d0 0.029d0 1d0))))
 
 (defun %render-atlas
-    (renderer state layout windows seats damage-region timestamp)
+    (renderer state layout windows panel seats damage-region timestamp)
   (let ((tokens nil))
     (ataxia.world.gles:gles-reset-state)
     (ataxia.world.gles:gles-set-scissor-enabled t)
@@ -344,6 +365,10 @@ void main() {
               (setf tokens
                     (%draw-window
                      renderer state layout window timestamp tokens)))))
+        (when (and panel
+                   (ataxia.world:region-intersects-p
+                    (%panel-buffer-coverage state panel) (list damage)))
+          (%draw-slint-panel renderer state panel))
         (dolist (seat-state seats)
           (when (eq state (%atlas-seat-output seat-state))
             (setf tokens

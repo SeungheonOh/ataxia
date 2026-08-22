@@ -1,0 +1,13 @@
+[package]
+name = "ataxia-slint-native"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+futures-lite = "2.6.1"
+slint = { version = "=1.16.1", default-features = false, features = ["std", "renderer-software", "compat-1-2"] }
+slint-interpreter = { version = "=1.16.1", default-features = false, features = ["std", "renderer-software", "compat-1-2"] }
+xkbcommon = "0.9.0"

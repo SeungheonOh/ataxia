@@ -64,6 +64,22 @@
   (cursor-hotspot-x 0 :type integer)
   (cursor-hotspot-y 0 :type integer))
 
+(defstruct (%atlas-slint-panel
+             (:constructor %make-atlas-slint-panel
+                 (component output-state x y)))
+  component output-state
+  (x 0d0 :type double-float)
+  (y 0d0 :type double-float))
+
+(defun %panel-component (panel)
+  (%atlas-slint-panel-component panel))
+
+(defun %panel-screen-geometry (panel)
+  (values (%atlas-slint-panel-x panel)
+          (%atlas-slint-panel-y panel)
+          (ataxia.world.slint:slint-component-width (%panel-component panel))
+          (ataxia.world.slint:slint-component-height (%panel-component panel))))
+
 (defstruct (%atlas-operation
              (:constructor %make-atlas-operation
                  (&key kind button window edges forward-release-p
@@ -75,6 +91,46 @@
 (defstruct (%world-frame-cookie
              (:constructor %make-world-frame-cookie (damage-frame)))
   damage-frame)
+
+(defclass atlas-world (ataxia.kernel:world)
+  ((kernel :initform nil :accessor ataxia.kernel:world-kernel)
+   (windows :initform (make-hash-table :test #'eq) :reader %world-windows)
+   (order :initform nil :accessor %world-order)
+   (layout :initform (%make-atlas-layout) :reader %world-layout)
+   (outputs :initform (make-hash-table :test #'eq) :reader %world-outputs)
+   (seats :initform (make-hash-table :test #'eq) :reader %world-seats)
+   (damage :initform (ataxia.world:make-damage-tracker) :reader %world-damage)
+   (renderer :initform nil :accessor %world-renderer)
+   (slint-panels :initform (make-hash-table :test #'eq)
+                 :reader %world-slint-panels)
+   (retired-slint-panels :initform nil
+                         :accessor %world-retired-slint-panels)
+   (slint-timer :initform nil :accessor %world-slint-timer)
+   (quiescing-p :initform nil :accessor %world-quiescing-p))
+  (:documentation
+   "A packed, coordinate-free window plane with per-output parallel cameras."))
+
+(defun %hash-values (table)
+  (loop for value being the hash-values of table collect value))
+
+(defun %output-states (world)
+  (%hash-values (%world-outputs world)))
+
+(defun %seat-states (world)
+  (%hash-values (%world-seats world)))
+
+(defun %first-output-state (world)
+  (first (%output-states world)))
+
+(defun %request-output-state-frame (world state)
+  (when (and state (not (%world-quiescing-p world)))
+    (ataxia.kernel:request-output-frame (%atlas-output-output state)))
+  world)
+
+(defun %request-all-frames (world)
+  (dolist (state (%output-states world))
+    (%request-output-state-frame world state))
+  world)
 
 (defun %window-visible-p (window)
   (and (%atlas-window-mapped-p window)

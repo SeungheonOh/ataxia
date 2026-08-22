@@ -16,7 +16,8 @@
    `(:source-registry (:tree ,root) (:tree ,dependencies)
      :inherit-configuration))
   (dolist (system '("ataxia-runtime.asd" "ataxia-kernel.asd"
-                    "ataxia-world.asd" "ataxia-sly-control.asd"
+                    "ataxia-world.asd" "ataxia-slint.asd"
+                    "ataxia-sly-control.asd"
                     "ataxia-atlas-world.asd"))
     (asdf:load-asd (merge-pathnames system root)))
   (asdf:load-system "ataxia-atlas-world"))

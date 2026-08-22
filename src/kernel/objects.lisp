@@ -121,11 +121,16 @@
           (%application-drawable-revision application)))
 
 (defmethod drawable-local-bounds ((application wayland-application))
-  (let ((surface (application-root-surface application)))
-    (values (surface-local-x surface)
-            (surface-local-y surface)
-            (surface-width surface)
-            (surface-height surface))))
+  (multiple-value-bind (x y width height)
+      (ataxia.runtime:xdg-surface-geometry
+       (application-toplevel application))
+    (if (and width height (plusp width) (plusp height))
+        (values x y width height)
+        (let ((surface (application-root-surface application)))
+          (values (surface-local-x surface)
+                  (surface-local-y surface)
+                  (surface-width surface)
+                  (surface-height surface))))))
 
 (defclass client-request ()
   ((seat :initarg :seat :initform nil :reader client-request-seat)

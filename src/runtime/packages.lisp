@@ -279,6 +279,7 @@
    #:%xdg-surface-surface
    #:%xdg-surface-initial-commit
    #:%xdg-surface-configured
+   #:%xdg-surface-geometry
    #:%xdg-surface-event-destroy
    #:%xdg-toplevel-title
    #:%xdg-toplevel-app-id
@@ -697,6 +698,7 @@
    #:destroy-seat
    #:create-xdg-shell
    #:xdg-surface-ping
+   #:xdg-surface-geometry
    #:xdg-surface-at
    #:xdg-popup-surface-at
    #:xdg-toplevel-set-size

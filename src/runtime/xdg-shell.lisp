@@ -101,6 +101,9 @@
   (surface :pointer))
 (defcfun ("ataxia_xdg_surface_configured" %xdg-surface-configured) :boolean
   (surface :pointer))
+(defcfun ("ataxia_xdg_surface_geometry" %xdg-surface-geometry) :boolean
+  (surface :pointer)
+  (geometry :pointer))
 (define-signal-binding %xdg-surface-event-destroy
   "ataxia_xdg_surface_event_destroy" surface)
 (defcfun ("ataxia_xdg_toplevel_title" %xdg-toplevel-title) :pointer
@@ -644,6 +647,17 @@
     (%assert-runtime-live runtime :xdg-surface-ping)
     (ataxia.runtime.raw:%wlr-xdg-surface-ping (%xdg-base-pointer object)))
   object)
+
+(defun xdg-surface-geometry (object)
+  (let ((runtime (%native-runtime object)))
+    (%assert-runtime-live runtime :xdg-surface-geometry)
+    (cffi:with-foreign-object (geometry :int32 4)
+      (when (ataxia.runtime.raw:%xdg-surface-geometry
+             (%xdg-base-pointer object) geometry)
+        (values (cffi:mem-aref geometry :int32 0)
+                (cffi:mem-aref geometry :int32 1)
+                (cffi:mem-aref geometry :int32 2)
+                (cffi:mem-aref geometry :int32 3))))))
 
 (defun %xdg-surface-at (object surface-x surface-y function operation)
   (let ((runtime (%native-runtime object)))

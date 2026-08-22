@@ -254,7 +254,6 @@ void main() {
   (let ((application (canvas-window-application window)))
     (multiple-value-bind (root-x root-y root-width root-height)
         (ataxia.kernel:drawable-local-bounds application)
-      (declare (ignore root-x root-y))
       (when (and (plusp root-width) (plusp root-height))
         (multiple-value-bind (x y width height)
             (%window-screen-geometry state window)
@@ -266,11 +265,13 @@ void main() {
                  (lambda (surface)
                    (let* ((surface-x
                             (+ x (* width
-                                    (/ (ataxia.kernel:drawable-surface-local-x surface)
+                                    (/ (- (ataxia.kernel:drawable-surface-local-x surface)
+                                          root-x)
                                        root-width))))
                           (surface-y
                             (+ y (* height
-                                    (/ (ataxia.kernel:drawable-surface-local-y surface)
+                                    (/ (- (ataxia.kernel:drawable-surface-local-y surface)
+                                          root-y)
                                        root-height))))
                           (surface-width
                             (* width

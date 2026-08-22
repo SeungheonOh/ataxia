@@ -829,6 +829,18 @@ bool ataxia_xdg_surface_configured(const struct wlr_xdg_surface *surface) {
 	return surface != NULL && surface->configured;
 }
 
+bool ataxia_xdg_surface_geometry(const struct wlr_xdg_surface *surface,
+		int32_t geometry[4]) {
+	if (surface == NULL || geometry == NULL) {
+		return false;
+	}
+	geometry[0] = surface->geometry.x;
+	geometry[1] = surface->geometry.y;
+	geometry[2] = surface->geometry.width;
+	geometry[3] = surface->geometry.height;
+	return true;
+}
+
 const char *ataxia_xdg_toplevel_title(
 		const struct wlr_xdg_toplevel *toplevel) {
 	return toplevel == NULL ? NULL : toplevel->title;

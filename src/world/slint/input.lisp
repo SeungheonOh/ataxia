@@ -24,6 +24,7 @@
    (ataxia.world.slint.raw::%pointer-motion
     (%live-native component) (%single local-x) (%single local-y))
    :pointer-motion)
+  (poll-slint-callbacks component)
   (%notify-change component))
 
 (defmethod ataxia.kernel:interactable-pointer-button
@@ -35,6 +36,7 @@
     (%button-number (ataxia.kernel:cursor-button-input-code input))
     (eq (ataxia.kernel:cursor-button-input-state input) :pressed))
    :pointer-button)
+  (poll-slint-callbacks component)
   (%notify-change component))
 
 (defmethod ataxia.kernel:interactable-pointer-axis
@@ -53,6 +55,7 @@
       (%single (if horizontal-p delta 0d0))
       (%single (if horizontal-p 0d0 delta)))
      :pointer-scroll))
+  (poll-slint-callbacks component)
   (%notify-change component))
 
 (defmethod ataxia.kernel:interactable-pointer-leave
@@ -61,6 +64,7 @@
   (ataxia.world.slint.raw::check-result
    (ataxia.world.slint.raw::%pointer-exit (%live-native component))
    :pointer-exit)
+  (poll-slint-callbacks component)
   (%notify-change component))
 
 (defmethod ataxia.kernel:interactable-key-event
@@ -87,6 +91,7 @@
        (ataxia.kernel:modifiers-input-locked input)
        (ataxia.kernel:modifiers-input-group input))
       :modifiers)))
+  (poll-slint-callbacks component)
   (%notify-change component))
 
 (defmethod ataxia.kernel:interactable-focus
@@ -98,6 +103,7 @@
    (ataxia.world.slint.raw::%focus
     (%live-native component) (eq focus-kind :keyboard))
    :focus)
+  (poll-slint-callbacks component)
   (%notify-change component))
 
 (defmethod ataxia.kernel:request-object-configuration

@@ -20,7 +20,7 @@ use slint::platform::{
     Key, Platform, PlatformError, PointerEventButton, WindowAdapter, WindowEvent,
 };
 use slint::{ComponentHandle, LogicalPosition, PhysicalSize, SharedString};
-use slint_interpreter::{Compiler, ComponentInstance};
+use slint_interpreter::{Compiler, ComponentInstance, Value};
 use xkbcommon::xkb;
 
 #[repr(C)]
@@ -45,6 +45,7 @@ impl Platform for AtaxiaPlatform {
 pub struct NativeComponent {
     _instance: ComponentInstance,
     window: Rc<MinimalSoftwareWindow>,
+    callbacks: Rc<RefCell<VecDeque<CallbackEvent>>>,
     pixels: Vec<PremultipliedRgbaColor>,
     damage: Vec<DamageRectangle>,
     width: u32,
@@ -53,6 +54,11 @@ pub struct NativeComponent {
     revision: u64,
     xkb_state: xkb::State,
     pressed_keys: HashMap<u32, SharedString>,
+}
+
+struct CallbackEvent {
+    name: CString,
+    value: CString,
 }
 
 thread_local! {
@@ -70,6 +76,19 @@ fn set_error(message: impl Into<String>) {
 
 fn clear_error() {
     set_error("");
+}
+
+fn c_string(value: impl Into<String>) -> CString {
+    CString::new(value.into().replace('\0', " ")).unwrap_or_default()
+}
+
+fn callback_value(value: Option<&Value>) -> String {
+    match value {
+        Some(Value::String(value)) => value.to_string(),
+        Some(Value::Number(value)) => value.to_string(),
+        Some(Value::Bool(value)) => value.to_string(),
+        _ => String::new(),
+    }
 }
 
 fn ffi_bool(operation: impl FnOnce() -> Result<(), String>) -> bool {
@@ -203,7 +222,7 @@ fn pointer_button(value: u32) -> PointerEventButton {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn ataxia_slint_abi_version() -> u32 {
-    1
+    2
 }
 
 #[unsafe(no_mangle)]
@@ -271,6 +290,7 @@ pub unsafe extern "C" fn ataxia_slint_component_create(
         let component = NativeComponent {
             _instance: instance,
             window,
+            callbacks: Rc::new(RefCell::new(VecDeque::new())),
             pixels: vec![PremultipliedRgbaColor::default(); (width as usize) * (height as usize)],
             damage: Vec::new(),
             width,
@@ -638,4 +658,74 @@ pub unsafe extern "C" fn ataxia_slint_component_set_boolean(
         component.window.request_redraw();
         Ok(())
     })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ataxia_slint_component_register_callback(
+    component: *mut NativeComponent,
+    name: *const c_char,
+) -> bool {
+    ffi_bool(|| {
+        let component = unsafe { component_mut(component) }?;
+        let name = unsafe { required_string(name, "callback name") }?;
+        let event_name = name.clone();
+        let callbacks = component.callbacks.clone();
+        component
+            ._instance
+            .set_callback(&name, move |arguments| {
+                callbacks.borrow_mut().push_back(CallbackEvent {
+                    name: c_string(event_name.clone()),
+                    value: c_string(callback_value(arguments.first())),
+                });
+                Value::Void
+            })
+            .map_err(|error| error.to_string())?;
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ataxia_slint_component_callback_count(
+    component: *mut NativeComponent,
+) -> usize {
+    unsafe { component.as_ref() }.map_or(0, |component| component.callbacks.borrow().len())
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ataxia_slint_component_callback_name(
+    component: *mut NativeComponent,
+    index: usize,
+) -> *const c_char {
+    unsafe { component.as_ref() }
+        .and_then(|component| {
+            component
+                .callbacks
+                .borrow()
+                .get(index)
+                .map(|event| event.name.as_ptr())
+        })
+        .unwrap_or(ptr::null())
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ataxia_slint_component_callback_value(
+    component: *mut NativeComponent,
+    index: usize,
+) -> *const c_char {
+    unsafe { component.as_ref() }
+        .and_then(|component| {
+            component
+                .callbacks
+                .borrow()
+                .get(index)
+                .map(|event| event.value.as_ptr())
+        })
+        .unwrap_or(ptr::null())
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ataxia_slint_component_clear_callbacks(component: *mut NativeComponent) {
+    if let Some(component) = unsafe { component.as_ref() } {
+        component.callbacks.borrow_mut().clear();
+    }
 }

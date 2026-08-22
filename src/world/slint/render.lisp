@@ -223,4 +223,5 @@
       (when (/= revision (%component-revision component))
         (setf (%component-revision component) revision)
         (%refresh-surface component logical-damage))
+      (poll-slint-callbacks component)
       (values logical-damage (slint-component-active-p component)))))

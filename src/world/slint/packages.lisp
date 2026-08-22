@@ -23,5 +23,8 @@
    #:render-slint-component
    #:slint-component-active-p
    #:set-slint-property
+   #:set-slint-callback
+   #:remove-slint-callback
+   #:poll-slint-callbacks
    #:update-slint-timers
    #:slint-next-timer-milliseconds))

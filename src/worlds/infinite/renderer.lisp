@@ -294,6 +294,41 @@ void main() {
                  surfaces))))))
   tokens)
 
+(defun %draw-overlay (renderer state overlay tokens)
+  (let ((component (canvas-overlay-component overlay)))
+    (multiple-value-bind (root-x root-y root-width root-height)
+        (ataxia.kernel:drawable-local-bounds component)
+      (when (and (plusp root-width) (plusp root-height))
+        (multiple-value-bind (surfaces revision)
+            (ataxia.kernel:drawable-surfaces component)
+          (declare (ignore revision))
+          (map nil
+               (lambda (surface)
+                 (let* ((x (+ (canvas-overlay-x overlay)
+                              (* (canvas-overlay-width overlay)
+                                 (/ (- (ataxia.kernel:drawable-surface-local-x surface)
+                                       root-x)
+                                    root-width))))
+                        (y (+ (canvas-overlay-y overlay)
+                              (* (canvas-overlay-height overlay)
+                                 (/ (- (ataxia.kernel:drawable-surface-local-y surface)
+                                       root-y)
+                                    root-height))))
+                        (width (* (canvas-overlay-width overlay)
+                                  (/ (ataxia.kernel:drawable-surface-width surface)
+                                     root-width)))
+                        (height (* (canvas-overlay-height overlay)
+                                   (/ (ataxia.kernel:drawable-surface-height surface)
+                                      root-height)))
+                        (token (ataxia.kernel:drawable-surface-protocol-token surface)))
+                   (%draw-surface
+                    renderer state surface x y width height
+                    (canvas-overlay-opacity overlay) 0d0
+                    (coerce (mod (sxhash overlay) 997) 'double-float))
+                   (when token (pushnew token tokens :test #'eq))))
+               surfaces)))))
+  tokens)
+
 (defun %draw-seat-cursor (renderer state seat-state tokens)
   (let ((cursor (%canvas-seat-cursor-surface seat-state))
         (x (%canvas-seat-x seat-state))
@@ -331,7 +366,8 @@ void main() {
            '(0.96d0 0.98d0 1d0 1d0))))
     tokens))
 
-(defun %render-canvas (renderer output-state windows seats damage-region)
+(defun %render-canvas
+    (renderer output-state windows overlays seats damage-region)
   (let ((tokens nil))
     (ataxia.world.gles:gles-reset-state)
     (ataxia.world.gles:gles-set-scissor-enabled t)
@@ -349,6 +385,12 @@ void main() {
                       (%window-buffer-coverage output-state window)
                       (list damage)))
             (setf tokens (%draw-window renderer output-state window tokens))))
+        (dolist (overlay overlays)
+          (when (and (%overlay-visible-on-state-p overlay output-state)
+                     (ataxia.world:region-intersects-p
+                      (%overlay-buffer-coverage output-state overlay)
+                      (list damage)))
+            (setf tokens (%draw-overlay renderer output-state overlay tokens))))
         (dolist (seat-state seats)
           (when (eq output-state (%canvas-seat-output seat-state))
             (setf tokens

@@ -8,6 +8,8 @@
 
 (defconstant +button-left+ 272)
 (defconstant +button-middle+ 274)
+(defconstant +modifier-logo+ #x40)
+(defconstant +key-space+ 57)
 (defconstant +resize-top+ 1)
 (defconstant +resize-bottom+ 2)
 (defconstant +resize-left+ 4)
@@ -36,6 +38,53 @@
 (defun canvas-window-application (window)
   (ataxia.world:binding-application window))
 
+(defclass canvas-overlay ()
+  ((component :initarg :component :reader canvas-overlay-component)
+   (output :initarg :output :accessor canvas-overlay-output)
+   (x :initarg :x :accessor canvas-overlay-x)
+   (y :initarg :y :accessor canvas-overlay-y)
+   (width :initarg :width :accessor canvas-overlay-width)
+   (height :initarg :height :accessor canvas-overlay-height)
+   (layer :initarg :layer :initform 0 :accessor canvas-overlay-layer)
+   (visible-p :initarg :visible-p :initform nil
+              :accessor canvas-overlay-visible-p)
+   (opacity :initarg :opacity :initform 1d0
+            :accessor canvas-overlay-opacity))
+  (:documentation
+   "Output-local drawable content composited above the World scene and below cursors. Interactable components also participate in input picking."))
+
+(defmethod initialize-instance :after ((overlay canvas-overlay) &key)
+  (unless (typep (canvas-overlay-component overlay) 'ataxia.kernel:drawable)
+    (error "CANVAS-OVERLAY requires a drawable component.")))
+
+(defun make-canvas-overlay
+    (component output x y width height &key (layer 0) visible-p (opacity 1d0))
+  (make-instance
+   'canvas-overlay :component component :output output
+   :x (coerce x 'double-float) :y (coerce y 'double-float)
+   :width (coerce width 'double-float) :height (coerce height 'double-float)
+   :layer layer :visible-p visible-p :opacity (coerce opacity 'double-float)))
+
+(defgeneric %overlay-visibility-changed (overlay visible-p))
+
+(defmethod %overlay-visibility-changed ((overlay canvas-overlay) visible-p)
+  (declare (ignore visible-p))
+  overlay)
+
+(defgeneric %overlay-output-changed (overlay output-state))
+
+(defmethod %overlay-output-changed
+    ((overlay canvas-overlay) output-state)
+  (declare (ignore output-state))
+  overlay)
+
+(defgeneric %destroy-overlay (overlay))
+
+(defmethod %destroy-overlay ((overlay canvas-overlay))
+  (ataxia.kernel:drawable-detach-graphics
+   (canvas-overlay-component overlay))
+  nil)
+
 (defstruct (%canvas-output (:constructor %make-canvas-output (output)))
   output
   (camera-x 0d0 :type double-float)
@@ -50,7 +99,9 @@
   (x 0d0 :type double-float)
   (y 0d0 :type double-float)
   (buttons (make-hash-table :test #'eql))
-  focused hovered operation
+  focused hovered operation previous-focus
+  (modifiers 0 :type integer)
+  (launcher-shortcut-p nil :type boolean)
   cursor-surface
   (cursor-hotspot-x 0 :type integer)
   (cursor-hotspot-y 0 :type integer))
@@ -145,6 +196,20 @@
       (%window-screen-geometry state window)
     (%screen-rectangle-to-buffer
      state x y width height (+ 28d0 (* 14d0 (canvas-window-elevation window))))))
+
+(defun %overlay-buffer-coverage (state overlay)
+  (%screen-rectangle-to-buffer
+   state
+   (canvas-overlay-x overlay) (canvas-overlay-y overlay)
+   (canvas-overlay-width overlay) (canvas-overlay-height overlay)))
+
+(defun %overlay-on-state-p (overlay state)
+  (eq (canvas-overlay-output overlay) (%canvas-output-output state)))
+
+(defun %overlay-visible-on-state-p (overlay state)
+  (and (canvas-overlay-visible-p overlay)
+       (plusp (canvas-overlay-opacity overlay))
+       (%overlay-on-state-p overlay state)))
 
 (defun %window-visible-p (window)
   (and (%canvas-window-mapped-p window)

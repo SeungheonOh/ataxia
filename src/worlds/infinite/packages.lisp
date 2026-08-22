@@ -18,6 +18,23 @@
    #:canvas-window-elevation
    #:canvas-window-effect
    #:canvas-window-animation-hooks
+   #:canvas-overlay
+   #:make-canvas-overlay
+   #:canvas-overlay-component
+   #:canvas-overlay-output
+   #:canvas-overlay-x
+   #:canvas-overlay-y
+   #:canvas-overlay-width
+   #:canvas-overlay-height
+   #:canvas-overlay-layer
+   #:canvas-overlay-visible-p
+   #:canvas-overlay-opacity
+   #:world-overlays
+   #:add-overlay
+   #:remove-overlay
+   #:show-overlay
+   #:hide-overlay
+   #:toggle-application-launcher
    #:find-canvas-window
    #:set-window-position
    #:set-window-animation-hook

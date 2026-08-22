@@ -5,7 +5,7 @@
   :version "0.1.0"
   :author "Ataxia contributors"
   :license "Unspecified"
-  :depends-on ("ataxia-world" "ataxia-sly-control" "cffi")
+  :depends-on ("ataxia-world" "ataxia-slint" "ataxia-sly-control" "cffi")
   :serial t
   :components
   ((:module "src/worlds/infinite"
@@ -14,4 +14,5 @@
      (:file "model")
      (:file "renderer")
      (:file "world")
+     (:file "launcher")
      (:file "main")))))

@@ -25,6 +25,8 @@
    (surfaces :initform #() :accessor %component-surfaces)
    (pressed-keys :initform (make-hash-table :test #'eql)
                  :reader %component-pressed-keys)
+   (callbacks :initform (make-hash-table :test #'equal)
+              :reader %component-callbacks)
    (invalidator :initarg :invalidator :initform nil
                 :accessor %component-invalidator)
    (destroyed-p :initform nil :accessor %component-destroyed-p)))
@@ -97,7 +99,8 @@
     (ataxia.world.slint.raw::%component-destroy (%component-native component))
     (setf (%component-native component) (cffi:null-pointer)
           (%component-destroyed-p component) t
-          (%component-invalidator component) nil))
+          (%component-invalidator component) nil)
+    (clrhash (%component-callbacks component)))
   nil)
 
 (defun set-slint-property (component name value)
@@ -111,6 +114,37 @@
        (boolean (ataxia.world.slint.raw::%set-boolean native name value)))
      :set-property))
   (%notify-change component))
+
+(defun set-slint-callback (component name function)
+  "Connect a public Slint callback to a synchronous Lisp function."
+  (check-type name string)
+  (check-type function function)
+  (ataxia.world.slint.raw::check-result
+   (ataxia.world.slint.raw::%register-callback
+    (%live-native component) name)
+   :register-callback)
+  (setf (gethash name (%component-callbacks component)) function)
+  component)
+
+(defun remove-slint-callback (component name)
+  (remhash name (%component-callbacks component))
+  component)
+
+(defun poll-slint-callbacks (component)
+  "Dispatch queued Slint callbacks and return their count."
+  (let* ((native (%live-native component))
+         (count (ataxia.world.slint.raw::%callback-count native))
+         (events
+           (loop for index below count
+                 collect
+                 (cons (ataxia.world.slint.raw::%callback-name native index)
+                       (ataxia.world.slint.raw::%callback-value native index)))))
+    (ataxia.world.slint.raw::%clear-callbacks native)
+    (dolist (event events)
+      (let ((function (gethash (car event) (%component-callbacks component))))
+        (when function
+          (funcall function component (cdr event)))))
+    count))
 
 (defun update-slint-timers ()
   (ataxia.world.slint.raw::%update-timers))

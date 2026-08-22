@@ -5,7 +5,7 @@
 
 (in-package #:ataxia.world.slint.raw)
 
-(defconstant +expected-abi+ 1)
+(defconstant +expected-abi+ 2)
 
 (defcstruct damage-rectangle
   (x :int32)
@@ -80,6 +80,16 @@
   (component :pointer) (name :string) (value :double))
 (defcfun ("ataxia_slint_component_set_boolean" %set-boolean) :boolean
   (component :pointer) (name :string) (value :boolean))
+(defcfun ("ataxia_slint_component_register_callback" %register-callback) :boolean
+  (component :pointer) (name :string))
+(defcfun ("ataxia_slint_component_callback_count" %callback-count) :size
+  (component :pointer))
+(defcfun ("ataxia_slint_component_callback_name" %callback-name) :string
+  (component :pointer) (index :size))
+(defcfun ("ataxia_slint_component_callback_value" %callback-value) :string
+  (component :pointer) (index :size))
+(defcfun ("ataxia_slint_component_clear_callbacks" %clear-callbacks) :void
+  (component :pointer))
 
 (defun native-error (operation)
   (error "Slint ~A failed: ~A" operation (or (%last-error) "unknown error")))

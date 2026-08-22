@@ -95,7 +95,6 @@ flowchart TD
       IO[Seat and output mechanisms]
       FRAME[Presentation, damage, frame transaction]
       LEASE[EGL and output frame lease]
-      CLOCK[Opaque animation executor]
       CONTROL[Authorized control plane]
     end
 
@@ -103,7 +102,7 @@ flowchart TD
       WORLD[One monolithic World controller]
       META[World-owned object, output, and seat state]
       SPACE[Placement, camera, projection, picking]
-      POLICY[Interaction, scene, effects, direct GLES]
+      POLICY[Interaction, animation, scene, effects, direct GLES]
     end
 
     RT <--> ROOT
@@ -153,12 +152,12 @@ The Kernel is stable Common Lisp mechanism above Runtime. It owns:
 - immutable snapshots and their retirement;
 - output-buffer acquisition, EGL activation, framebuffer binding, GL baseline,
   frame-lease lifetime, and failed-frame recovery;
-- animation clocks, instances, sampling, and lifecycle only;
 - authorization, external control transport, and owner-thread ingress;
 - installation and replacement of one active World.
 
 Kernel has no planar or spherical coordinates, no default window chrome, no
-shadow choice, no camera semantics, and no concrete animation properties.
+shadow choice, no camera semantics, and no animation subsystem, state, or
+dispatch.
 
 ### 3.3 World
 
@@ -172,7 +171,9 @@ World is one monolithic replaceable CLOS object. It owns:
 - scene composition, backgrounds, chrome, panels, cursors, and overlays;
 - actual direct GLES rendering, shaders, programs, buffers, meshes,
   intermediate targets, and effect execution;
-- animation definitions and opaque animation binding meaning;
+- animation definitions, clocks, timelines, easing, sampling, bindings,
+  conflicts, cancellation, completion, and GPU animation state;
+- animation-driven damage and requests for subsequent presentation frames;
 - policy-specific semantic commands and observations;
 - portable export/import of World-owned state.
 
@@ -194,9 +195,9 @@ definitions. Each World owns its entire state and lifecycle.
 | Cursor world/output position | No | Queries for delivery | Owns per seat |
 | Active move/resize/navigation operation | No | Provides validated mechanisms | Owns |
 | Scene contents and visible style | No | Retains stable objects and snapshots | Owns |
-| Damage history and frame scheduling | Exposes frame events | Owns | Requests discrete invalidation |
+| Damage history and frame scheduling | Exposes frame events | Owns generic mechanism | Requests damage and every needed frame |
 | Projection of local damage | No | Invokes mapping and validates | Mapping supplied by World |
-| Animation timing and sampling | No | Owns | Defines bindings and effects |
+| Animation definitions, timing, sampling, and lifecycle | No | No | Owns completely |
 | EGL activation and output submission | Supplies exact access | Owns | Uses only through lease |
 | GLES draw calls and World GL resources | Supplies context | Opens and contains lease | Owns |
 | External authorization | No | Owns | Handles authorized semantic actions |
@@ -490,11 +491,6 @@ These are typed generics, not a universal event structure:
 (defgeneric world-render (world frame-lease snapshot))
 (defgeneric world-graphics-detaching (world graphics-context reason))
 
-(defgeneric world-resolve-animation (world subject transition context))
-(defgeneric world-prepare-binding (world subject binding instance))
-(defgeneric world-apply-binding (world subject binding value instance))
-(defgeneric world-finalize-binding (world subject binding instance reason))
-
 (defgeneric world-observe (world principal request))
 (defgeneric world-control (world principal action))
 (defgeneric world-export-state (world context))
@@ -507,7 +503,7 @@ state.
 
 `world-register-object`, cursor and keyboard endpoints, client requests,
 presentation building, and `world-render` are required World methods. Output,
-seat, invalidation, animation, observation, and migration methods are required
+seat, invalidation, observation, and migration methods are required
 when the corresponding capability is enabled. The base World does not silently
 invent desktop behavior for missing required methods.
 
@@ -541,7 +537,7 @@ schedule-presentation
 damage-object / damage-output-region / damage-output
 current-presentation-snapshot
 pick-presentation-candidates
-start-animation / cancel-animations
+schedule-owner-task-at / cancel-owner-task
 enqueue-world-graphics-task
 create-logical-seat / destroy-logical-seat
 run-hook
@@ -697,7 +693,6 @@ There is one authoritative Kernel damage ledger per output.
 - old and new coverage after a World placement change;
 - cursor old and new coverage;
 - explicit World output damage;
-- active Kernel animation samples;
 - output configuration or resource loss.
 
 ### 9.2 Frame algorithm
@@ -730,11 +725,13 @@ sequenceDiagram
     K->>R: feedback and frame completion
 ```
 
-World does not scan objects for content changes and does not own a continuous
-redraw loop. It requests presentation when World-owned state changes. Kernel
-continues scheduling only while it owns an active animation/timeline or receives
-new client/output invalidation. A surface commit schedules presentation in
-Kernel even if World does nothing with its semantic invalidation callback.
+World does not scan objects for client content changes. It requests presentation
+when World-owned state changes. Kernel schedules frames only for Runtime/output
+invalidation or an explicit World request; it has no active-animation flag,
+timeline, or continuous-redraw mode. While World-owned temporal state remains
+active, World damages the affected coverage and requests the next presentation
+itself. A surface commit schedules presentation in Kernel even if World does
+nothing with its semantic invalidation callback.
 
 ## 10. Input, Focus, and Multiple Seats
 
@@ -794,22 +791,43 @@ unless World defines separate output ownership or split-screen regions.
 
 ## 11. Animation
 
-Kernel's animation executor knows only:
+Animation is entirely World-private. Kernel defines no animation class,
+protocol method, clock, timeline, easing function, binding, conflict key,
+cancellation rule, completion callback, or animation executor.
 
-- monotonic time;
-- duration and normalized progress;
-- samplers/easing functions;
-- opaque binding identity and conflict keys;
-- instance cancellation and completion;
-- scheduling another frame while instances remain active.
+Each World owns:
 
-World owns all concrete meaning, including opacity, transform, placement,
-camera parameters, shader uniforms, shadow parameters, reveal state, or any
-future property. Two applications may carry completely different definitions
-for the same transition descriptor.
+- its animation definitions and per-object selection rules;
+- start times, durations, delays, normalized progress, easing, and sampling;
+- active instances, conflict resolution, cancellation, and completion;
+- opacity, transforms, placement, camera values, shader uniforms, shadows,
+  reveal state, history buffers, and every other animated property;
+- damage requests and conservative effect-damage rules for each sample;
+- the decision to request another presentation frame.
 
-Time-varying shaders use a bounded Kernel animation or timeline. World does not
-implement its own perpetual frame callback.
+The generic frame context supplies a monotonic presentation timestamp because
+all rendering needs stable frame time; it has no animation semantics. A World
+starts an animation by mutating its own state, damaging affected coverage, and
+calling `schedule-presentation`. During `world-build-presentation`, it samples
+its own active instances at the frame timestamp, builds the resulting snapshot,
+declares any shader/effect damage required for that sample, and requests another
+presentation only if its own temporal state remains active. Kernel still
+projects authoritative old/new snapshot coverage into its generic damage ledger.
+When World stops requesting frames, Kernel stops without knowing that an
+animation ended.
+
+`schedule-presentation` is generation-aware frame infrastructure: a request made
+while building or rendering the current frame is latched for the following
+output opportunity rather than consumed by the current commit. This behavior is
+identical for animations, cursor changes, deferred UI work, and any other World
+request.
+
+Delayed starts may use the general owner-thread
+`schedule-owner-task-at`/`cancel-owner-task` mechanism. Those tasks are ordinary
+event-loop callbacks used for any delayed World work; Kernel stores no animation
+identity or timing rule. Time-varying shaders follow the same World-owned path.
+Two applications may therefore use unrelated animation definitions, clocks,
+bindings, and shader programs.
 
 ## 12. Agentic Control and Introspection
 
@@ -861,6 +879,7 @@ Use these rules instead:
 - frame scheduler, damage ledger, client-buffer cache, actual focus, and
   protocol seat management are Kernel mechanisms;
 - World owns one monolithic state graph;
+- any animation scheduler or timeline is private state inside that World;
 - reusable World code is a pure function, macro, numerical library, immutable
   definition, or explicitly World-private cache;
 - no shared stateful CLOS manager has an independent compositor lifecycle;
@@ -880,7 +899,7 @@ matrix operations, color transforms, and surface-tree traversal helpers.
 | 3D/spatial desktop | Feasible | World owns depth and picking; Wayland client input remains 2D surface-local |
 | Multiple physical or virtual seats | Feasible | One Runtime `wlr_seat` per logical seat and per-seat World state |
 | Multiple seat-specific cameras | Conditional | Separate outputs or explicit split-screen viewports |
-| Per-window shaders and animations | Feasible | World-owned GLES resources and bindings sampled by the Kernel animation clock |
+| Per-window shaders and animations | Feasible | World owns definitions, timing, sampling, resources, damage, and repeated frame requests |
 | Output-wide shader effects | Feasible | World executes them during the frame lease and supplies conservative damage rules |
 | Temporal/datamosh feedback | Feasible | History textures, explicit lifetime, usually expanded/full damage |
 | RmlUi native UI | Feasible, separate integration | C++ adapter renders only while World holds a live frame lease |
@@ -902,7 +921,6 @@ src/compositor/
   damage-ledger.lisp          authoritative old/new/local output damage
   output-engine.lisp          output config, pacing, swapchains, commits
   seat-engine.lisp            devices, seats, focus, constraints, delivery
-  animation-executor.lisp     opaque timing and lifecycle
   frame-lease.lisp            EGL activation, output FBO, GL containment
   world-host.lisp             install, migrate, validate, retire Worlds
   control.lisp                principals, actions, owner-thread inbox
@@ -1026,12 +1044,16 @@ branch.
 
 ### Phase 7: Animation and effects
 
-- Implement opaque Kernel animation execution.
-- Add per-application World definitions, shader resources, and bindings.
+- Implement World-private timelines, easing, sampling, bindings, conflicts,
+  cancellation, and completion independently in each World.
+- Add per-object World definitions, shader resources, and bindings.
+- Sample from generic frame timestamps, damage changed coverage, and explicitly
+  request each subsequent frame while World temporal state remains active.
 - Add World-rendered per-window and output-wide stages with damage rules.
 
 Exit: two applications can use different animations; time-varying effects stop
-scheduling when their Kernel timeline ends.
+scheduling when World stops requesting frames. Kernel contains no animation
+code or state.
 
 ### Phase 8: Transactional World replacement
 
@@ -1064,8 +1086,9 @@ agent inspection model as applications.
 - No file above Runtime contains raw wlroots/libwayland pointers or calls
   Runtime-private bindings; World graphics code may own typed GL handles.
 - Runtime callbacks remain exact and Wayland-specific.
-- Kernel contains no planar, spherical, chrome, shadow, or concrete animation
-  property assumptions.
+- Kernel contains no planar, spherical, chrome, or shadow assumptions and no
+  animation classes, protocol methods, clocks, timelines, samplers, bindings,
+  lifecycle, executor, or active-animation state.
 - World issues GLES only while a valid Kernel frame lease is dynamically active;
   it never activates EGL, acquires output buffers, commits outputs, or owns frame
   pacing.
@@ -1088,9 +1111,11 @@ agent inspection model as applications.
   mapping.
 - Planar and spherical Worlds share no stateful superclass or controller.
 - Multiple seats have independent protocol focus, World cursors, and operations.
-- Per-application animation definitions and shader parameters are World-owned.
-- Behavior-driven redraw requests are discrete; Kernel timelines own continued
-  animation scheduling.
+- Per-application animation definitions, timing, instances, shader parameters,
+  damage requests/rules, cancellation, completion, and repeated frame requests
+  are World-owned.
+- Kernel treats every animation-driven presentation request as an ordinary
+  World request and cannot determine whether any animation exists.
 - External agents use authenticated typed actions; local live mutation runs at
   an owner-thread safe point.
 - A World can be replaced without restarting Runtime or disconnecting clients.

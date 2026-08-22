@@ -67,7 +67,7 @@
 (defmethod ataxia.runtime:output-frame
     ((kernel kernel) runtime-output)
   (let ((output (gethash runtime-output (%kernel-output-table kernel))))
-    (when output
+    (when (and output (output-enabled-p output))
       (%render-output-frame output))))
 
 (defmethod ataxia.runtime:output-needs-frame
@@ -95,10 +95,13 @@
 
 (defmethod ataxia.runtime:output-request-state
     ((kernel kernel) runtime-output state)
-  (let ((output (gethash runtime-output (%kernel-output-table kernel))))
+  (let ((output (gethash runtime-output (%kernel-output-table kernel)))
+        (fields (ataxia.runtime:output-state-committed-fields state)))
     (when (and output
                (ataxia.runtime:output-test-state runtime-output state)
                (ataxia.runtime:output-commit-state runtime-output state))
+      (when (logtest +output-state-buffer-configuration-fields+ fields)
+        (%reset-output-swapchain output))
       (%refresh-output-object output)
       (world-output-changed
        (kernel-world kernel) output

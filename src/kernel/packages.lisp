@@ -117,6 +117,7 @@
    #:output-width
    #:output-height
    #:output-scale
+   #:output-transform
    #:output-enabled-p
    #:kernel-input-device
    #:input-runtime-object

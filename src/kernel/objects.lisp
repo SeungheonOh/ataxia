@@ -19,6 +19,7 @@
    (width :initarg :width :accessor output-width)
    (height :initarg :height :accessor output-height)
    (scale :initarg :scale :accessor output-scale)
+   (transform :initarg :transform :accessor output-transform)
    (enabled-p :initarg :enabled-p :accessor output-enabled-p)
    (swapchain :initform nil :accessor %output-swapchain)
    (swapchain-generation :initform 0 :accessor %output-swapchain-generation)

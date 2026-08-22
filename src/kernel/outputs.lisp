@@ -17,12 +17,15 @@
   (height :int32))
 
 (defconstant +gl-framebuffer+ #x8d40)
+(defconstant +output-state-buffer-configuration-fields+ #xbc)
 
 (defun %refresh-output-object (output)
   (let ((runtime-output (output-runtime-object output)))
     (setf (output-width output) (ataxia.runtime:output-width runtime-output)
           (output-height output) (ataxia.runtime:output-height runtime-output)
           (output-scale output) (ataxia.runtime:output-scale runtime-output)
+          (output-transform output)
+          (ataxia.runtime:output-transform runtime-output)
           (output-enabled-p output)
           (ataxia.runtime:output-enabled-p runtime-output)))
   output)
@@ -71,19 +74,25 @@
              :width (ataxia.runtime:output-width runtime-output)
              :height (ataxia.runtime:output-height runtime-output)
              :scale (ataxia.runtime:output-scale runtime-output)
+             :transform (ataxia.runtime:output-transform runtime-output)
              :enabled-p (ataxia.runtime:output-enabled-p runtime-output))))
       (%register-object kernel output :runtime-object runtime-output)
       (setf (gethash runtime-output (%kernel-output-table kernel)) output)
       (world-output-added (kernel-world kernel) output)
       output)))
 
+(defun %reset-output-swapchain (output)
+  (when (%output-swapchain output)
+    (ataxia.runtime:destroy-output-swapchain (%output-swapchain output))
+    (setf (%output-swapchain output) nil))
+  (clrhash (%output-target-tokens output))
+  output)
+
 (defun %retire-output (output &key (protocol-active-p t))
   (when (eq (object-state output) :live)
     (let ((kernel (object-kernel output)))
       (world-output-removing (kernel-world kernel) output)
-      (when (%output-swapchain output)
-        (ataxia.runtime:destroy-output-swapchain (%output-swapchain output))
-        (setf (%output-swapchain output) nil))
+      (%reset-output-swapchain output)
       (dolist (surface (%hash-values (%kernel-surface-table kernel)))
         (when (gethash output (%surface-output-membership surface))
           (when protocol-active-p
@@ -91,7 +100,6 @@
              (surface-runtime-object surface)
              (output-runtime-object output)))
           (remhash output (%surface-output-membership surface))))
-      (clrhash (%output-target-tokens output))
       (remhash (output-runtime-object output) (%kernel-output-table kernel))
       (%retire-object
        kernel output :runtime-object (output-runtime-object output))))
@@ -100,12 +108,14 @@
 (defun request-output-frame (output)
   "Request one frame; calls made during rendering latch one following frame."
   (check-type output kernel-output)
-  (if (%output-frame-active-p output)
-      (setf (%output-next-frame-requested-p output) t)
-      (unless (%output-frame-requested-p output)
-        (setf (%output-frame-requested-p output) t)
-        (ataxia.runtime:output-schedule-frame
-         (output-runtime-object output))))
+  (when (and (eq (object-state output) :live)
+             (output-enabled-p output))
+    (if (%output-frame-active-p output)
+        (setf (%output-next-frame-requested-p output) t)
+        (unless (%output-frame-requested-p output)
+          (setf (%output-frame-requested-p output) t)
+          (ataxia.runtime:output-schedule-frame
+           (output-runtime-object output)))))
   output)
 
 (defun %ensure-output-swapchain (output)

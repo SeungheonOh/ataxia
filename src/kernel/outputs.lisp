@@ -208,7 +208,8 @@
                 (surface-runtime-object surface)))))
          (frame-result-protocol-tokens result))))
 
-(defun %execute-world-frame (output framebuffer target-token)
+(defun %execute-world-frame
+    (output framebuffer target-token buffer-width buffer-height)
   (let* ((kernel (object-kernel output))
          (world (kernel-world kernel))
          (lease
@@ -217,10 +218,10 @@
             :output output
             :target-token target-token
             :framebuffer framebuffer
-            :width (output-width output)
-            :height (output-height output)
+            :width buffer-width
+            :height buffer-height
             :scale (output-scale output)
-            :transform 0
+            :transform (output-transform output)
             :timestamp (%frame-timestamp)
             :generation (%output-swapchain-generation output))))
     (unwind-protect
@@ -228,7 +229,7 @@
           (ataxia.runtime:runtime-egl (kernel-runtime kernel))
           (lambda ()
             (%gl-bind-framebuffer +gl-framebuffer+ framebuffer)
-            (%gl-viewport 0 0 (output-width output) (output-height output))
+            (%gl-viewport 0 0 buffer-width buffer-height)
             (%validate-frame-result kernel lease (world-render world lease))))
       (setf (frame-lease-valid-p lease) nil))))
 
@@ -277,7 +278,9 @@
                         (target-token (%intern-target-token output buffer)))
                    (setf result
                          (%execute-world-frame
-                          output framebuffer target-token))))
+                          output framebuffer target-token
+                          (ataxia.runtime:buffer-width buffer)
+                          (ataxia.runtime:buffer-height buffer)))))
              (serious-condition (cause)
                (world-frame-failed
                 (kernel-world kernel) output result cause)

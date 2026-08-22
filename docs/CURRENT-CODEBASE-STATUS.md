@@ -1,6 +1,6 @@
 # Current Codebase Status
 
-Implementation baseline reviewed: `f9d3c56`.
+Implementation baseline reviewed: `46d56a1`.
 
 This document describes the code as it exists. It is not the target policy
 design in `COMPOSITOR-POLICY-DESIGN.md`.
@@ -11,15 +11,17 @@ design in `COMPOSITOR-POLICY-DESIGN.md`.
 - Native C is limited to ABI accessors and listener glue.
 - Runtime owns wlroots objects, callbacks, event-loop integration, and exact
   Wayland operations.
-- The compositor owns surfaces, applications, outputs, seats, focus, damage,
-  direct GLES rendering, animation execution, and external control.
-- One replaceable behavior policy owns planar or spherical workspace semantics.
+- The compositor owns protocol objects, surfaces, applications, outputs, seats,
+  focus, damage, direct GLES execution, animation timing, and external control.
+- One replaceable behavior controller owns planar or spherical world state,
+  viewport control, cursor position, interaction, scene composition, animation
+  definitions, and policy-specific control commands.
 - Planar and spherical policies render through the same immutable presentation
   items used for hit testing and damage projection.
 - Pointer, keyboard, XDG toplevel, popup, multiple-seat, move, resize, animation,
   shader, and control paths are implemented.
-- The policy boundary remains transitional: behavior code is not yet the strict
-  black box described in the current policy design.
+- Behavior requests discrete damage or presentation when its state changes.
+  Only the core animation executor schedules subsequent samples over time.
 - Protocol coverage is sufficient for common native clients such as Foot and
   Firefox, but many desktop protocols are not implemented.
 - Validation is manual in the UTM guest; the repository has no automated test
@@ -241,11 +243,12 @@ protocol-specific sink generics; it does not define workspace behavior.
 - Defines the current replaceable behavior-policy contract.
 - Defines behavior view, placement, presentation, portable, and installation
   state objects.
-- Declares 53 generics covering lifecycle, cursor, interaction, world geometry,
-  scene construction, animation, observation, and migration.
-- Connects every compositor mechanism to the active policy.
-- Current interface is broader and more reentrant than the target black-box
-  policy design.
+- Declares the typed CLOS contract for lifecycle, cursor, interaction, scene
+  construction, opaque animation bindings, observation, and migration.
+- Exposes synchronous core mechanisms, including presentation scheduling, to
+  the active behavior controller.
+- Contains no planar or spherical projection protocol; each concrete behavior
+  keeps its coordinate model and inverse mapping private.
 
 ## 7. Compositor Mechanism Modules
 
@@ -253,9 +256,9 @@ protocol-specific sink generics; it does not define workspace behavior.
 
 - Owns animation definitions, tracks, instances, timing, sampling, conflicts,
   cancellation, and completion.
-- Supports opacity, scale, offsets, shader uniforms, and behavior-defined
-  property bindings.
-- Delegates definition resolution to the active behavior policy.
+- Treats bindings, conflict keys, sampled values, and completion as opaque.
+- Delegates definition resolution and binding preparation, application, and
+  finalization to the active behavior controller.
 - Schedules presentation while active instances remain.
 
 ### `src/compositor/graphics.lisp`
@@ -296,17 +299,22 @@ protocol-specific sink generics; it does not define workspace behavior.
 
 ## 8. Behavior Implementation Modules
 
-All behavior files currently use `ataxia.compositor` and can access compositor
-internals directly.
+Behavior implementations use direct synchronous CLOS calls into compositor
+mechanisms. They do not call Runtime bindings or execute GLES.
 
-### `src/behavior/standard-policy.lisp`
+### `src/behavior/animation-bindings.lisp`
 
-- Defines shared policy lifecycle and default pass-through input behavior.
-- Defines planar placement, viewport, view state, and default planar policy.
-- Owns policy seat-state tables and policy revision.
-- Handles initial placement, size recommendation, pan, zoom, and state copying.
-- Exports and imports view, output, and seat state for live policy replacement.
-- Stores behavior view/output payloads back into core view/output slots.
+- Defines behavior-owned animation policies and shader-uniform bindings.
+- Keeps concrete property vocabulary out of the core animation executor.
+
+### `src/behavior/planar-policy.lisp`
+
+- Defines planar placement, private viewport state, and the monolithic planar
+  behavior controller.
+- Owns visual configuration, view placement, output cameras, seat state,
+  lifecycle, pan, zoom, and portable-state migration.
+- Shares only stateless functions and method-generating macros with other
+  concrete behaviors; no stateful behavior controller is composed into it.
 
 ### `src/behavior/effects.lisp`
 
@@ -332,14 +340,11 @@ internals directly.
 
 ### `src/behavior/interaction.lisp`
 
-- Owns current per-seat cursor coordinates, cursor output, and active operation.
-- Converts relative and absolute device motion into layout coordinates.
-- Confines pointer coordinates through compositor output and constraint helpers.
-- Defines move/resize begin, update, cancel, focus, hooks, animation, and damage
-  behavior.
-- Calls compositor focus, XDG resizing, client-size, presentation, hook, and
-  animation mechanisms directly.
-- This is the largest current mismatch with the target black-box policy model.
+- Contains stateless pointer, cursor-damage, and operation helpers.
+- Generates concrete policy methods without owning a shared interaction object
+  or shared interaction state.
+- Concrete planar and spherical controllers own cursor coordinates and active
+  operation instances and request core focus, configure, animation, and damage.
 
 ### `src/behavior/scene.lisp`
 
@@ -347,7 +352,8 @@ internals directly.
   all logical-seat cursor items.
 - Freezes shader uniform values into frame items.
 - Supplies the default two-pass scene/present frame plan.
-- Reads titlebar and panel dimensions from `presentation-system`.
+- Reads titlebar and panel dimensions from the active behavior controller.
+- Owns presentation-only scale and offset geometry used by behavior effects.
 
 ### `src/behavior/planar.lisp`
 
@@ -360,14 +366,21 @@ internals directly.
 
 ### `src/behavior/spherical.lisp`
 
-- Defines angular placement and a per-output spherical camera.
+- Defines the independent monolithic spherical behavior controller, angular
+  placement, per-output spherical cameras, seats, and operations.
 - Projects views onto curved triangle meshes and maps output points back to
   surface coordinates.
 - Builds curved root surfaces, subsurfaces, popups, shadows, and mappings.
 - Implements spherical move, resize, pan, zoom, maximize/fullscreen, restore,
   observations, and mesh caching.
-- Implements bidirectional planar/spherical state migration.
+- Imports and exports neutral portable state without referencing planar types.
 - Serves as the proof that presentation and input do not require planar geometry.
+
+### `src/behavior/control.lisp`
+
+- Decodes and executes behavior-specific pan, zoom, placement, and per-window
+  animation commands.
+- Uses the core control plane only for authorization, transport, and dispatch.
 
 ## 9. Compositor Service Modules
 
@@ -377,9 +390,8 @@ internals directly.
   bounded cross-thread queue.
 - Uses `eventfd` to wake the Wayland event loop.
 - Executes actions only on the compositor owner thread.
-- Supports observe, focus, move, place, seat create/destroy, device assignment,
-  policy replacement, pan, zoom, launch, animation, shader, and damage-debug
-  actions.
+- Supports core observe, focus, move, seat, device, policy replacement, launch,
+  shader, and damage-debug actions plus an authorized behavior-action envelope.
 - Exposes core and behavior observations without evaluating arbitrary code.
 
 ### `src/compositor/control-transport.lisp`
@@ -438,12 +450,12 @@ internals directly.
 
 1. Runtime copies the native motion event.
 2. Interaction resolves the logical seat and sends relative-pointer motion.
-3. Behavior updates policy-owned cursor coordinates.
+3. The active concrete behavior updates its policy-owned cursor coordinates.
 4. Compositor helpers enforce output bounds and pointer constraints.
 5. Without an active operation, interaction hit-tests the last snapshot and
    sends Wayland pointer focus/motion.
-6. With an active operation, planar or spherical behavior updates placement and
-   may request client resize.
+6. With an active operation, the concrete behavior updates its private
+   placement and may synchronously request a client resize from core.
 7. Old/new cursor and subject coverage are scheduled for presentation.
 
 ### Output Frame and Damage
@@ -520,12 +532,13 @@ internals directly.
 - The active object is still named `behavior-policy`, not `compositor-policy`.
 - Core and behavior share one package.
 - Behavior receives raw Runtime event objects in several methods.
-- Behavior directly calls focus, configure, renderer, hook, animation, and
-  presentation mechanisms.
+- Behavior directly calls validated focus, configure, shader-registration,
+  hook, animation, and presentation mechanisms through CLOS.
 - View and output policy payloads are stored in core objects.
-- Cursor layout position is policy-owned even though it survives policy changes.
-- The interface is a large family of generics rather than a strict facts-in,
-  intentions-out black box.
+- Cursor layout position is behavior-owned and migrates through neutral portable
+  seat state during live replacement.
+- Package boundaries do not mechanically prevent behavior from reaching private
+  core implementation symbols; the enforced boundary is architectural.
 
 ### Protocol coverage
 

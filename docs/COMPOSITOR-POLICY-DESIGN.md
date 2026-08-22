@@ -19,7 +19,7 @@ flowchart TD
     C --> M[Protocol and resource mechanisms]
     C --> P[Active compositor policy]
 
-    P -->|typed decisions and bounded ports| M
+    P -->|direct synchronous CLOS calls| M
     M -->|lifecycle facts and stable objects| P
 
     M --> G[Direct GLES renderer]
@@ -69,12 +69,12 @@ Use this rule for every piece of state:
 
 A second rule governs side effects:
 
-> The policy may mutate only policy-owned state. The compositor is the sole
-> writer of protocol state, native resources, client configuration, focus,
-> damage queues, frame state, and renderer resources.
+> The behavior may mutate only behavior-owned state. It invokes compositor
+> mechanisms synchronously through CLOS when it needs protocol mutation,
+> damage, presentation, animation execution, or renderer resource registration.
 
-The policy can request those effects through explicit synchronous ports. The
-port implementation performs validation and owns the mutation.
+The compositor validates and performs those effects. Behavior never calls
+Runtime bindings and never executes GLES directly.
 
 ## 4. Ownership Matrix
 
@@ -89,7 +89,7 @@ port implementation performs validation and owns the mutation.
 | Native seats, devices, capabilities, pressed keys/buttons | Compositor | Required for correct protocol delivery and serial validation |
 | Keyboard and pointer focus | Compositor | Drives Wayland enter, leave, activation, and delivery |
 | Client cursor surface, hotspot, and cursor role | Compositor | Wayland cursor protocol state |
-| Device/output-space pointer position | Compositor interaction system | Persists across policy replacement and is required for client input |
+| Device/output-space pointer position | Behavior controller | Cursor meaning and viewport interaction change with the world model; neutral coordinates migrate during replacement |
 | Pointer constraints and relative-pointer delivery | Compositor | Protocol enforcement cannot be delegated |
 | View placement in a world | Policy | Coordinates and dimensions are model-specific |
 | Output camera or viewport | Policy | Meaning differs between plane, sphere, and other worlds |
@@ -131,85 +131,52 @@ flowchart LR
     CP --> WS[policy-owned world state]
     CP --> VS[policy-owned view state]
     CP --> OS[policy-owned output state]
-    CP --> SS[policy-owned seat operation state]
-
-    I --> PS[core pointer-state per seat]
+    CP --> SS[policy-owned seat and operation state]
 ```
 
-The policy may be implemented across several files or through CLOS mixins. It
-is still one installed object and one replacement unit.
+The behavior may be implemented across several files, but each concrete world
+is one installed controller and one replacement unit.
 
 ## 6. Policy CLOS Shape
 
 ### 6.1 Base policy
 
-The base object owns all replaceable state. Core view, output, and seat objects
-do not contain active-policy payload slots.
+The base object carries only lifecycle and revision state. Concrete controllers
+own their seat tables and visual configuration. Core view and output identities
+provide opaque behavior-state attachment slots that core never interprets.
 
 ```lisp
-(defclass compositor-policy (compositor-component)
-  ((view-states
-    :initform (make-hash-table :test #'eq)
-    :reader policy-view-states)
-   (output-states
-    :initform (make-hash-table :test #'eq)
-    :reader policy-output-states)
-   (seat-states
-    :initform (make-hash-table :test #'eq)
-    :reader policy-seat-states)
-   (revision
-    :initform 0
-    :accessor policy-revision)
-   (state
-    :initform :detached
-    :accessor policy-state)))
+(defclass behavior-policy (compositor-component)
+  ((active-p :initform nil :accessor behavior-policy-active-p)
+   (revision :initform 0 :accessor behavior-policy-revision)))
 ```
 
-Keeping state inside the policy has three important properties:
+Keeping the meaning of attached state inside the policy has three important
+properties:
 
-1. A candidate policy can construct its complete state beside the active
-   policy without mutating live core objects.
-2. Failed migration can be discarded without restoring `view` or `output`
-   slots one by one.
-3. Core code cannot accidentally inspect a planar or spherical state object.
+1. Portable migration contains no planar or spherical concrete type.
+2. Candidate state can be validated before its attachments are installed.
+3. Core code cannot inspect a planar or spherical state object.
 
-The policy tables may contain direct references to stable core identity objects.
-They must not retain transient Runtime callback objects or unowned native
-pointers.
+Behavior state may reference stable core identity objects. It must not retain
+transient Runtime callback objects or unowned native pointers.
 
-### 6.2 Policy composition
+### 6.2 Concrete controllers
 
-Policies should normally use CLOS mixins rather than separately replaceable
-components:
+Planar and spherical behaviors are independent monolithic controllers:
 
 ```lisp
-(defclass standard-policy-mixin () (...))
-(defclass planar-world-mixin () (...))
-(defclass spherical-world-mixin () (...))
-(defclass desktop-scene-mixin () (...))
-(defclass direct-manipulation-mixin () (...))
-
-(defclass planar-compositor-policy
-    (standard-policy-mixin
-     planar-world-mixin
-     desktop-scene-mixin
-     direct-manipulation-mixin
-     compositor-policy)
+(defclass planar-behavior-policy (behavior-policy)
   (...))
 
-(defclass spherical-compositor-policy
-    (standard-policy-mixin
-     spherical-world-mixin
-     desktop-scene-mixin
-     direct-manipulation-mixin
-     compositor-policy)
+(defclass spherical-behavior-policy (behavior-policy)
   (...))
 ```
 
-This keeps method implementations in focused files while retaining one object,
-one owner thread, direct calls, and atomic replacement. A policy may use private
-helper objects for caches or algorithms, but they are not compositor components
-and have no independent lifecycle.
+Both controllers own their complete world, viewport, cursor, operation, and
+visual state. They may share fully contained stateless functions and macros,
+but not stateful CLOS mixins or shared controller objects. Private caches remain
+part of the owning concrete controller and have no independent lifecycle.
 
 ### 6.3 Method families
 
@@ -225,79 +192,39 @@ policy animation and effects
 policy agent control
 ```
 
-One policy class may implement all families directly. Mixins may share default
-implementations between policies.
+One concrete policy class implements all families. Stateless helper functions
+may be shared when they do not impose state layout or world semantics.
 
-## 7. Core Pointer State and Policy Pointer Meaning
+## 7. Behavior-Owned Cursor State
 
-Screen-space pointer state and policy-space pointer state have different
-lifetimes and must not be combined.
-
-### 7.1 Core pointer state
-
-The interaction system owns one `pointer-state` per logical seat:
+The logical seat owns Wayland seat state, devices, pressed buttons, client
+cursor surfaces, cursor hotspots, and focus. The active behavior owns the
+cursor's current layout coordinates, output, and active operation:
 
 ```lisp
-(defclass pointer-state ()
-  ((layout-x :accessor pointer-layout-x)
-   (layout-y :accessor pointer-layout-y)
-   (output :accessor pointer-output)
-   (focused-surface :accessor pointer-focused-surface)
-   (surface-x :accessor pointer-surface-x)
-   (surface-y :accessor pointer-surface-y)
-   (cursor-record :accessor pointer-cursor-record)
-   (cursor-hotspot-x :accessor pointer-cursor-hotspot-x)
-   (cursor-hotspot-y :accessor pointer-cursor-hotspot-y)))
+(defclass planar-seat-state ()
+  ((cursor-x :accessor behavior-cursor-x)
+   (cursor-y :accessor behavior-cursor-y)
+   (cursor-output :accessor behavior-state-cursor-output)
+   (operation :accessor behavior-seat-operation)))
 ```
 
-This state may be stored in an `eq` table keyed by `logical-seat`; it does not
-need to make `logical-seat` itself a large state object.
+Each concrete behavior has its own seat-state and operation classes. The table
+is keyed by the stable core `logical-seat` identity.
 
 The compositor owns:
 
-- output-layout coordinates;
 - pointer confinement and locking;
 - client surface-local coordinates derived from the rendered snapshot;
 - enter, leave, motion, button, axis, and relative-pointer delivery;
-- damage for the visible cursor image.
+- validation helpers for output bounds and pointer constraints;
+- hit testing against the last rendered snapshot.
 
-### 7.2 Policy pointer state
-
-The policy may associate additional state with the same seat:
-
-- a point on an infinite plane;
-- a ray and sphere intersection;
-- a selected task node;
-- a camera-manipulation gesture;
-- an active move or resize operation;
-- snapping, inertia, or gesture recognizer state.
-
-This state may be discarded or migrated when the policy changes. The physical
-screen pointer remains where it was.
-
-### 7.3 Pointer motion customization
-
-The policy can still customize pointer movement without owning the canonical
-coordinates. The compositor asks it to map raw device motion to a requested
-layout position:
-
-```lisp
-(defgeneric policy-map-pointer-motion
-    (policy seat pointer-state input))
-```
-
-The method returns requested `x` and `y` values as multiple values. It may apply
-acceleration, nonlinear movement, camera-relative movement, or policy-specific
-warping. The compositor then:
-
-1. validates that the values are finite reals;
-2. applies output-layout bounds;
-3. enforces active pointer constraints;
-4. stores the resulting canonical coordinates;
-5. hit-tests the last rendered snapshot;
-6. updates client focus and surface-local coordinates;
-7. asks the policy to update any active policy operation;
-8. damages the old and new cursor regions.
+The behavior applies relative or absolute motion, uses compositor helpers to
+enforce constraints, updates its state, drives its own operation mathematics,
+requests client focus or resize, and schedules old/new cursor damage. Neutral
+cursor coordinates and output identity migrate through `portable-seat-state`
+when the controller is replaced.
 
 No object allocation is required on the pointer-motion hot path. Multiple
 values or a reusable per-seat result object are sufficient.
@@ -316,21 +243,9 @@ The world family owns:
 - movement, resizing, and restoration mathematics;
 - policy-specific maximize and fullscreen geometry.
 
-Representative generics:
-
-```lisp
-(defgeneric policy-create-view-state (policy view))
-(defgeneric policy-create-output-state (policy output))
-(defgeneric policy-place-view (policy view request))
-(defgeneric policy-project-view (policy output view timestamp))
-(defgeneric policy-unproject-point (policy output x y))
-(defgeneric policy-update-placement (policy view operation input))
-(defgeneric policy-configure-view-for-output
-    (policy view output mode))
-```
-
-The compositor never reads policy placement slots. It handles the resulting
-presentation items and client configure requests.
+Projection and inverse projection are deliberately not core protocol methods.
+Each concrete behavior keeps those algorithms private and returns compositor
+presentation items, mappings, and client configure requests.
 
 ### 8.2 Interaction meaning
 
@@ -392,16 +307,16 @@ hit-test geometry is forbidden.
 
 ### 8.4 Animation and effects
 
-The compositor animation engine owns time and execution:
+The compositor animation engine owns only generic time and execution:
 
 - active instance lifetime;
 - sampling and easing;
 - conflict resolution;
 - cancellation;
 - presentation scheduling while tracks are active;
-- applying validated values to supported bindings.
+- calling behavior methods with opaque bindings and sampled values.
 
-The policy owns selection:
+The policy owns all animation meaning:
 
 - default animation definitions;
 - per-view overrides;
@@ -409,9 +324,10 @@ The policy owns selection:
 - effect parameter bindings;
 - reveal or disappearance styles;
 - output-wide transition choices.
+- binding preparation, application, conflict identity, and finalization.
 
 Shader sources may be supplied by policy code or changed from the local Lisp
-shell. Compilation and GL resource ownership remain compositor ports. Programs
+shell. Compilation and GL resource ownership remain compositor mechanisms. Programs
 are scoped to the policy so failed compilation or replacement cannot corrupt
 the renderer registry.
 
@@ -430,7 +346,7 @@ The policy may expose:
 - policy replacement and migration options.
 
 The policy may not expose native pointers or bypass core focus, configure,
-rendering, or security ports. An agent can replace a shader or world model
+rendering, or security mechanisms. An agent can replace a shader or world model
 without gaining an accidental path around Wayland invariants.
 
 ## 9. Compositor-to-Policy Calls
@@ -449,10 +365,10 @@ callbacks into stable core objects or copied value inputs.
 | Output removing | Stable output | Migrate or remove policy output state |
 | Seat added or removing | Stable logical seat | Create or remove policy-only seat state |
 | Validated XDG request | Stable view, seat, serial result, request values | Accept, ignore, or reinterpret geometry semantics |
-| Pointer mapping | Seat, core pointer state, copied motion input | Return requested output-layout position |
+| Pointer motion | Seat and copied motion input | Update behavior cursor state, operation, focus, and damage |
 | Pointer action | Seat, immutable presentation hit, button or axis input | Consume, deliver, focus, or begin an operation |
 | Keyboard action | Seat, modifiers, copied key input | Consume, deliver, or perform a policy command |
-| Active operation update | Operation, canonical pointer state, timestamp | Mutate policy placement and request core effects |
+| Active operation update | Seat, behavior-owned operation, timestamp | Mutate private placement and request core effects |
 | Scene build | Output, timestamp, immutable core model queries | Produce ordered presentation items |
 | Frame composition | Snapshot, damage summary, timestamp | Produce a render-pass plan |
 | Animation resolution | Subject and typed transition | Select a definition or no animation |
@@ -463,32 +379,30 @@ callbacks into stable core objects or copied value inputs.
 These calls are typed generics grouped by purpose. There is no single generic
 event envelope containing arbitrary keywords.
 
-## 10. Policy-to-Compositor Ports
+## 10. Behavior-to-Compositor Calls
 
-The policy may perform compositor effects only through this bounded set of
-synchronous ports.
+Behavior invokes compositor mechanisms directly through synchronous CLOS calls
+on the owner thread. These calls are the architectural boundary; there is no
+mailbox or separate Layer 3 runtime.
 
-| Port | Effect owned by compositor |
+| Call | Effect owned by compositor |
 |---|---|
-| `policy-request-focus` | Validate target, update logical focus, send Wayland focus and activation |
-| `policy-request-raise-view` | Update canonical desktop ordering when the policy uses it |
-| `policy-request-view-size` | Validate size, update authoritative client size, send XDG configure |
-| `policy-request-resizing-state` | Send the XDG resizing state |
-| `policy-request-toplevel-state` | Apply maximize, fullscreen, minimize, or activation protocol state |
-| `policy-request-presentation` | Accumulate subject, output, rectangular, or full damage and schedule a frame |
-| `policy-request-animation` | Start a typed transition through the core animation engine |
-| `policy-cancel-animations` | Cancel core-owned animation instances for a subject |
-| `policy-run-hook` | Invoke an allowed typed extension point with compositor ordering |
-| `policy-install-shader` | Compile and register a policy-scoped GLES program |
-| `policy-release-shaders` | Retire programs owned by the policy after frame safety checks |
-| `policy-query-snapshot` | Obtain the immutable snapshot used for input and damage reasoning |
+| `focus-view` | Validate target, update logical focus, send Wayland focus and activation |
+| `configure-view-size` | Validate size and send XDG configure |
+| `set-view-resizing` | Send the XDG resizing state |
+| `schedule-presentation` | Accumulate output, rectangular, or full damage and schedule a frame |
+| `schedule-presentation-subject` | Damage retained and next coverage for a changed subject |
+| `start-transition` | Start opaque tracks through the core animation executor |
+| `cancel-animations-for-subject` | Cancel core-owned animation instances for a subject |
+| `run-hook` | Invoke a typed extension point with compositor ordering |
+| `replace-shader-program` | Compile and register a behavior-scoped GLES program |
+| `release-shader-program-owner` | Retire programs owned by the behavior |
 
-Ports are ordinary functions or generic functions. They do not enqueue work
-when called on the owner thread. Each port asserts ownership, validates inputs,
-performs the effect immediately where safe, and returns the applied result.
+These are ordinary functions or generic functions. They do not enqueue work on
+the owner thread. Core validates inputs, performs the effect where safe, and
+returns the applied result.
 
-The policy must not call Runtime bindings, mutate core slots, or call renderer
-implementation functions directly.
+The policy must not call Runtime bindings, bind EGL state, or issue GLES draws.
 
 ## 11. Representative Flows
 
@@ -499,7 +413,7 @@ sequenceDiagram
     participant R as Runtime
     participant C as Compositor
     participant P as Policy
-    participant X as XDG port
+    participant X as XDG mechanism
 
     R->>C: xdg-new-toplevel
     C->>C: create surface and core view identity
@@ -530,31 +444,31 @@ sequenceDiagram
 
     R->>I: pointer motion input
     I->>W: relative-pointer event
-    I->>P: map-pointer-motion(seat, pointer-state, input)
-    P-->>I: requested layout x/y
-    I->>I: validate, constrain, and store canonical position
-    I->>S: hit-test canonical position
-    S-->>I: surface-local hit
+    I->>P: behavior-pointer-motion(seat, input)
+    P->>I: constrain requested layout position
+    P->>P: store behavior-owned cursor position
+    P->>S: hit-test applied position
+    S-->>P: surface-local hit
+    P->>I: update client pointer focus
     I->>W: enter/leave/motion
-    I->>P: pointer-position-applied(seat, hit)
-    I->>I: damage old and new cursor regions
+    P->>I: schedule old and new cursor damage
 ```
 
 ### 11.3 Interactive move or resize
 
 1. The compositor validates the XDG request or server-decoration hit.
-2. The policy creates a policy-owned operation using the current world placement
-   and canonical core pointer state.
+2. The policy creates a policy-owned operation using its current world placement
+   and cursor state.
 3. The policy requests focus, resizing state, animation, and presentation
-   through ports.
-4. Pointer motion updates the core pointer first.
-5. The compositor calls the policy operation update with the applied pointer
-   state.
+   through compositor calls.
+4. Pointer motion updates behavior-owned cursor state after using core
+   constraint helpers.
+5. The behavior directly updates its active operation.
 6. The policy mutates placement. For resize, it requests a client logical size
-   through the configure port.
+   through `configure-view-size`.
 7. The compositor damages the subject's old snapshot bounds and new scene bounds.
 8. Button release or cancellation ends the policy operation and clears the core
-   resizing state through a port.
+   resizing state through `set-view-resizing`.
 
 The compositor never performs planar or spherical move mathematics. The policy
 never sends an XDG configure directly.
@@ -594,7 +508,12 @@ Supported invalidation forms are:
 - explicit output-local rectangles;
 - full damage for one output;
 - full damage for all outputs;
-- continuous presentation while a policy or animation requires another sample.
+- continued presentation only while the core animation executor has active
+  tracks requiring another sample.
+
+Behavior never owns a continuous redraw loop. It requests discrete damage or
+presentation when behavior-owned state changes and may add items or passes when
+the compositor asks it to build a frame.
 
 Surface commit damage is projected through the same presentation mapping used
 for rendering and hit testing. If a mapping cannot provide conservative damage,
@@ -671,12 +590,13 @@ placement instances. Examples include:
 - preferred output;
 - relative ordering or grouping;
 - camera intent;
+- normalized cursor position and output identity;
 - per-view animation and effect configuration;
 - agent metadata.
 
-There is no universally correct plane-to-sphere placement conversion. Migration
-dispatch may specialize on both source and destination policy classes. It may
-require explicit options or reject a migration before activation.
+There is no universally correct plane-to-sphere placement conversion. Each
+controller independently exports and imports neutral portable state; neither
+concrete controller references the other's classes.
 
 ### 14.2 State that does not migrate through policy
 
@@ -684,7 +604,6 @@ The compositor retains these directly:
 
 - native views, surfaces, outputs, seats, and devices;
 - client committed size and XDG state;
-- device/output-space pointer positions;
 - keyboard and pointer focus, subject to recalculation after the trial snapshot;
 - retained buffers and textures;
 - pending protocol obligations.
@@ -756,31 +675,29 @@ Recommended structure:
 
 ```text
 src/compositor/
-  policy-protocol.lisp       typed policy generics and value types
-  policy-ports.lisp          validated compositor side-effect ports
-  policy-replacement.lisp    migration, trial snapshots, atomic installation
-  interaction.lisp           core devices, focus, constraints, pointer state
+  behavior-protocol.lisp     typed behavior generics and portable value types
+  compositor.lisp            lifecycle, callbacks, and policy replacement
+  interaction.lisp           core devices, focus, constraints, input delivery
   presentation.lisp          snapshots, damage, frame scheduling
   graphics.lisp              direct GLES execution
+  animation.lisp             opaque timing and track execution
+  control.lisp               authorization and core actions
 
 src/behavior/
-  base-policy.lisp           shared policy tables and lifecycle defaults
-  standard-scene.lisp        background, chrome, cursor, and default composition
-  standard-interaction.lisp  shared input meanings and operation lifecycle
-  standard-animation.lisp    shared animation choices
-  planar.lisp                planar world, camera, projection, and operations
-  spherical.lisp             spherical world, camera, projection, and operations
-  effects/                   policy-selected effects and shader descriptions
+  planar-policy.lisp         planar controller state and lifecycle
+  planar.lisp                planar projection, input, scene, and operations
+  spherical.lisp             complete spherical controller implementation
+  interaction.lisp           stateless reusable algorithms only
+  scene.lisp                 stateless scene construction helpers
+  animation-bindings.lisp    behavior-owned binding types
+  animation.lisp             concrete animation meaning and definitions
+  control.lisp               behavior-specific command decoding and execution
+  effects.lisp               policy-selected shader descriptions
+  reveal.lisp                application reveal effect
 ```
 
-A small `ataxia.compositor.policy-api` package may expose the policy protocol and
-ports to implementation packages. The package is owned by `src/compositor`; it
-does not imply another runtime layer. Core implementation symbols remain
-unexported so behavior code cannot accidentally depend on them.
-
-If the project retains one Lisp package temporarily, the same dependency rule
-must be enforced by file-level symbol review until the policy API package is
-introduced.
+The current implementation uses one Lisp package, so the boundary is enforced
+by dependency direction and symbol review rather than package visibility.
 
 ## 18. Boundary Tests for New Features
 
@@ -793,7 +710,7 @@ Before assigning a feature to the compositor or policy, ask:
    If yes, it belongs to the policy.
 3. Does the operation send protocol events, mutate native objects, configure a
    client, or touch GLES resources?
-   If yes, the compositor performs it through a port.
+   If yes, the compositor performs it through a synchronous CLOS mechanism.
 4. Is it a visual choice such as a shadow, bar, grid, transition, or shader?
    If yes, the policy selects it.
 5. Must the state survive policy replacement unchanged?
@@ -809,42 +726,21 @@ Examples:
 | How scale changes the spherical camera | Policy |
 | Client cursor surface request | Compositor |
 | Cursor trail or custom cursor shader | Policy scene choice |
-| Pointer screen coordinates | Compositor interaction system |
+| Pointer screen coordinates | Behavior controller |
 | Pointer ray through a curved workspace | Policy |
-| XDG resize configure | Compositor port |
+| XDG resize configure | Compositor mechanism |
 | Resize mathematics and visual pickup | Policy |
 | Surface damage import | Compositor |
 | Projection of damage through curved geometry | Shared presentation mapping produced by policy, executed by compositor |
 | Output-wide motion corruption effect | Policy frame plan using compositor GLES resources |
 
-## 19. Migration from the Current Design
+## 19. Implemented Shape
 
-The current implementation already has the essential pieces: one active policy,
-direct CLOS dispatch, policy-owned world implementations, immutable scene items,
-direct GLES, and transactional replacement. The required correction is a
-boundary tightening rather than another rewrite.
-
-Recommended order:
-
-1. Rename the concept from `behavior-policy` to `compositor-policy` without
-   changing runtime behavior.
-2. Define and audit the allowed policy-to-compositor ports.
-3. Move canonical pointer coordinates and cursor damage ownership into a core
-   per-seat `pointer-state`; leave policy operations in policy state.
-4. Move view, output, and seat policy payloads into tables owned by the policy.
-5. Remove direct Runtime, renderer implementation, focus, hook, and native
-   configure calls from behavior implementation files; route them through ports.
-6. Move panel and titlebar dimensions into standard scene policy state.
-7. Separate authoritative client size from policy presentation extent so each
-   has one writer.
-8. Group the policy protocol by authority and remove generics that merely expose
-   core internals.
-9. Change replacement to build candidate policy state entirely side by side.
-10. Introduce the policy API package after the call graph matches the intended
-    boundary.
-
-Each step can be committed and validated independently. The compositor remains
-usable throughout the migration.
+The implementation now has one active behavior controller, direct owner-thread
+CLOS dispatch, behavior-owned cursor and viewport state, independent planar and
+spherical controllers, opaque core animation execution, immutable scene items,
+behavior-specific control dispatch, direct GLES, discrete behavior redraw
+requests, and transactional portable-state replacement.
 
 ## 20. Completion Criteria
 
@@ -854,11 +750,11 @@ The embedded policy boundary is complete when:
   layers;
 - core files contain no planar or spherical coordinate assumptions;
 - policy implementation files contain no direct Runtime or native calls;
-- the policy cannot mutate core slots or renderer resources outside ports;
-- screen pointer state survives policy replacement without policy migration;
+- behavior never calls Runtime bindings or executes GLES;
+- pointer state survives policy replacement through neutral portable state;
 - active move and resize mathematics remain entirely policy-owned;
-- view, output, and seat policy state can be constructed beside the active
-  policy;
+- replacement state uses neutral portable values and candidate installation
+  maps;
 - scene composition controls all optional chrome, shadows, backgrounds, and
   output effects;
 - rendering, hit testing, and damage share one presentation mapping;

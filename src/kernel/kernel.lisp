@@ -44,6 +44,9 @@
 (defun kernel-seats (kernel)
   (%hash-values (%kernel-seat-table kernel)))
 
+(defun kernel-applications (kernel)
+  (%hash-values (%kernel-toplevel-table kernel)))
+
 (defun find-kernel-object (kernel id)
   (gethash id (%kernel-object-table kernel)))
 

@@ -19,6 +19,7 @@
    #:canvas-window-effect
    #:canvas-window-animation-hooks
    #:find-canvas-window
+   #:set-window-position
    #:set-window-animation-hook
    #:remove-window-animation-hook
    #:run-window-animation-hook

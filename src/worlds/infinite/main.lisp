@@ -3,8 +3,10 @@
 (in-package #:ataxia.infinite-world)
 
 (defun run-infinite-compositor
-    (&key (backend :auto) (width 1280) (height 720) run-for debug-p)
-  (let ((kernel
+    (&key (backend :auto) (width 1280) (height 720) run-for debug-p
+          (sly-port 4005))
+  (let ((control nil)
+        (kernel
           (ataxia.kernel:create-kernel
            (make-infinite-world)
            :backend backend
@@ -14,12 +16,21 @@
     (unwind-protect
          (progn
            (ataxia.kernel:start-kernel kernel)
+           (when sly-port
+             (setf control
+                   (ataxia.sly-control:start-sly-control
+                    kernel :port sly-port)))
            (format t "[infinite-world] WAYLAND_DISPLAY=~A~%"
                    (ataxia.runtime:runtime-socket-name
                     (ataxia.kernel:kernel-runtime kernel)))
+           (when control
+             (format t "[infinite-world] SLYNK=localhost:~D~%"
+                     (ataxia.sly-control:sly-control-port control)))
            (finish-output)
            (ataxia.kernel:run-kernel kernel :run-for run-for)
            0)
+      (when control
+        (ataxia.sly-control:stop-sly-control control))
       (ataxia.kernel:destroy-kernel kernel :infinite-world-exit))))
 
 (defun %number-option (text integer-p name)
@@ -32,7 +43,7 @@
 
 (defun %parse-main-options (arguments)
   (let ((options (list :backend :auto :width 1280 :height 720
-                       :run-for nil :debug-p nil)))
+                       :run-for nil :debug-p nil :sly-port 4005)))
     (labels ((value-after (name)
                (or (pop arguments) (error "Missing value after ~A." name))))
       (loop while arguments
@@ -55,13 +66,20 @@
                         (%number-option (value-after option) nil option)))
                  ((string= option "--debug")
                   (setf (getf options :debug-p) t))
+                 ((string= option "--sly-port")
+                  (let ((port (%number-option (value-after option) t option)))
+                    (unless (<= port 65535)
+                      (error "Invalid ~A value: ~A" option port))
+                    (setf (getf options :sly-port) port)))
+                 ((string= option "--no-sly")
+                  (setf (getf options :sly-port) nil))
                  ((string= option "--help")
                   (return-from %parse-main-options :help))
                  (t (error "Unknown option: ~A" option)))))
     options))
 
 (defun %print-usage ()
-  (format t "Usage: run-infinite-world [--backend auto|headless] [--width N] [--height N] [--run-for SECONDS] [--debug]~%"))
+  (format t "Usage: run-infinite-world [--backend auto|headless] [--width N] [--height N] [--run-for SECONDS] [--debug] [--sly-port N|--no-sly]~%"))
 
 (defun main (&optional (arguments (uiop:command-line-arguments)))
   (handler-case

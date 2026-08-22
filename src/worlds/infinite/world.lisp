@@ -588,6 +588,21 @@
      (+ (%canvas-output-camera-y state) delta-y)
      (%canvas-output-zoom state))))
 
+(defun set-window-position (world window x y)
+  "Move WINDOW in world coordinates and schedule the affected outputs."
+  (check-type world infinite-world)
+  (check-type window canvas-window)
+  (unless (eq window
+              (find-canvas-window world (canvas-window-application window)))
+    (error "Canvas window does not belong to this World."))
+  (%damage-window world window)
+  (setf (canvas-window-x window) (coerce x 'double-float)
+        (canvas-window-y window) (coerce y 'double-float))
+  (%damage-window world window)
+  (%update-window-membership world window)
+  (%request-all-frames world)
+  window)
+
 (defun zoom-output-camera
     (world output factor &key anchor-x anchor-y)
   (let ((state (gethash output (%world-outputs world))))

@@ -231,6 +231,7 @@
    #:kernel-outputs
    #:kernel-input-devices
    #:kernel-seats
+   #:kernel-applications
    #:find-kernel-object
    #:attach-runtime
    #:detach-runtime

@@ -1,124 +1,181 @@
-;;;; Growing binary-tree rectangle packer.
+;;;; Clockwise outward rectangle packer.
 ;;;;
-;;;; The packer treats windows like texture-atlas entries. It produces one
-;;;; irregular, gap-free subdivision without assigning durable coordinates to
-;;;; any window. Repacking is deterministic for a given ordered window set.
+;;;; The first window anchors the plane. Later windows score every edge-adjacent
+;;;; opening by envelope size, shape, shared edges, and a light clockwise bias.
+;;;; This fills cavities while making compact growth sprawl in every direction.
 
 (in-package #:ataxia.atlas-world)
 
-(defstruct (%packing-node
-             (:constructor %make-packing-node (x y width height)))
-  (x 0d0 :type double-float)
-  (y 0d0 :type double-float)
-  (width 0d0 :type double-float)
-  (height 0d0 :type double-float)
-  (used-p nil :type boolean)
-  right down)
+(defparameter *packing-shape-weight* 0.22d0)
+(defparameter *packing-sprawl-weight* 0.018d0)
 
-(defun %find-packing-node (node width height)
-  (when node
-    (if (%packing-node-used-p node)
-        (or (%find-packing-node (%packing-node-right node) width height)
-            (%find-packing-node (%packing-node-down node) width height))
-        (and (<= width (%packing-node-width node))
-             (<= height (%packing-node-height node))
-             node))))
+(defun %placement-right (placement)
+  (+ (%atlas-placement-x placement) (%atlas-placement-width placement)))
 
-(defun %split-packing-node (node width height)
-  (setf (%packing-node-used-p node) t
-        (%packing-node-down node)
-        (%make-packing-node
-         (%packing-node-x node) (+ (%packing-node-y node) height)
-         (%packing-node-width node) (- (%packing-node-height node) height))
-        (%packing-node-right node)
-        (%make-packing-node
-         (+ (%packing-node-x node) width) (%packing-node-y node)
-         (- (%packing-node-width node) width) height))
-  node)
+(defun %placement-bottom (placement)
+  (+ (%atlas-placement-y placement) (%atlas-placement-height placement)))
 
-(defun %grow-packing-right (root width height)
-  (let ((grown
-          (%make-packing-node
-           0d0 0d0 (+ (%packing-node-width root) width)
-           (%packing-node-height root))))
-    (setf (%packing-node-used-p grown) t
-          (%packing-node-down grown) root
-          (%packing-node-right grown)
-          (%make-packing-node
-           (%packing-node-width root) 0d0 width
-           (%packing-node-height root)))
-    (values grown
-            (%split-packing-node
-             (%find-packing-node grown width height) width height))))
+(defun %placements-overlap-p (left right)
+  (and (< (%atlas-placement-x left) (%placement-right right))
+       (< (%atlas-placement-x right) (%placement-right left))
+       (< (%atlas-placement-y left) (%placement-bottom right))
+       (< (%atlas-placement-y right) (%placement-bottom left))))
 
-(defun %grow-packing-down (root width height)
-  (let ((grown
-          (%make-packing-node
-           0d0 0d0 (%packing-node-width root)
-           (+ (%packing-node-height root) height))))
-    (setf (%packing-node-used-p grown) t
-          (%packing-node-right grown) root
-          (%packing-node-down grown)
-          (%make-packing-node
-           0d0 (%packing-node-height root)
-           (%packing-node-width root) height))
-    (values grown
-            (%split-packing-node
-             (%find-packing-node grown width height) width height))))
+(defun %interval-overlap (left-start left-end right-start right-end)
+  (max 0d0 (- (min left-end right-end) (max left-start right-start))))
 
-(defun %grow-packing (root width height)
-  (let* ((can-grow-down (<= width (%packing-node-width root)))
-         (can-grow-right (<= height (%packing-node-height root)))
-         (prefer-right
-           (and can-grow-right
-                (>= (%packing-node-height root)
-                    (+ (%packing-node-width root) width))))
-         (prefer-down
-           (and can-grow-down
-                (>= (%packing-node-width root)
-                    (+ (%packing-node-height root) height)))))
-    (cond (prefer-right (%grow-packing-right root width height))
-          (prefer-down (%grow-packing-down root width height))
-          (can-grow-right (%grow-packing-right root width height))
-          (can-grow-down (%grow-packing-down root width height))
-          (t (error "Atlas packer cannot grow around ~Dx~D." width height)))))
+(defun %placement-contact (candidate placements)
+  (loop for placement in placements
+        sum
+        (cond
+          ((or (= (%atlas-placement-x candidate) (%placement-right placement))
+               (= (%placement-right candidate) (%atlas-placement-x placement)))
+           (%interval-overlap
+            (%atlas-placement-y candidate) (%placement-bottom candidate)
+            (%atlas-placement-y placement) (%placement-bottom placement)))
+          ((or (= (%atlas-placement-y candidate) (%placement-bottom placement))
+               (= (%placement-bottom candidate) (%atlas-placement-y placement)))
+           (%interval-overlap
+            (%atlas-placement-x candidate) (%placement-right candidate)
+            (%atlas-placement-x placement) (%placement-right placement)))
+          (t 0d0))))
 
-(defun %packing-order (windows)
-  (stable-sort
-   (copy-list windows)
-   (lambda (left right)
-     (let ((left-side (max (atlas-window-width left)
-                           (atlas-window-height left)))
-           (right-side (max (atlas-window-width right)
-                            (atlas-window-height right))))
-       (> left-side right-side)))))
+(defun %packing-alignments (placements axis size)
+  (remove-duplicates
+   (loop for placement in placements
+         append
+         (ecase axis
+           (:x (list (%atlas-placement-x placement)
+                     (- (%placement-right placement) size)))
+           (:y (list (%atlas-placement-y placement)
+                     (- (%placement-bottom placement) size)))))
+   :test #'=))
+
+(defun %packing-candidates (window placements)
+  (let* ((width (atlas-window-width window))
+         (height (atlas-window-height window))
+         (x-alignments (%packing-alignments placements :x width))
+         (y-alignments (%packing-alignments placements :y height))
+         (seen (make-hash-table :test #'equal))
+         (candidates nil))
+    (labels ((consider (direction x y)
+               (let* ((key (list direction x y))
+                      (candidate
+                        (%make-atlas-placement window x y width height)))
+                 (unless (or (gethash key seen)
+                             (some (lambda (placement)
+                                     (%placements-overlap-p candidate placement))
+                                   placements))
+                   (setf (gethash key seen) t)
+                   (when (plusp (%placement-contact candidate placements))
+                     (push (cons direction candidate) candidates))))))
+      (dolist (anchor placements)
+        (dolist (y y-alignments)
+          (when (plusp
+                 (%interval-overlap
+                  y (+ y height)
+                  (%atlas-placement-y anchor) (%placement-bottom anchor)))
+            (consider :right (%placement-right anchor) y)
+            (consider :left (- (%atlas-placement-x anchor) width) y)))
+        (dolist (x x-alignments)
+          (when (plusp
+                 (%interval-overlap
+                  x (+ x width)
+                  (%atlas-placement-x anchor) (%placement-right anchor)))
+            (consider :down x (%placement-bottom anchor))
+            (consider :up x (- (%atlas-placement-y anchor) height))))))
+    candidates))
+
+(defun %direction-distance (direction preferred)
+  (let ((directions '(:right :down :left :up)))
+    (mod (- (position direction directions)
+            (position preferred directions))
+         4)))
+
+(defun %packing-score (candidate direction preferred placements occupied-area)
+  (let* ((all (cons candidate placements))
+         (min-x (reduce #'min all :key #'%atlas-placement-x))
+         (min-y (reduce #'min all :key #'%atlas-placement-y))
+         (max-x (reduce #'max all :key #'%placement-right))
+         (max-y (reduce #'max all :key #'%placement-bottom))
+         (width (- max-x min-x))
+         (height (- max-y min-y))
+         (area (* width height))
+         (square-area (expt (max width height) 2))
+         (direction-distance (%direction-distance direction preferred))
+         (compact-cost
+           (+ area
+              (* *packing-shape-weight* (- square-area area))
+              (* *packing-sprawl-weight* area direction-distance)))
+         (unused-area
+           (- area occupied-area
+              (* (%atlas-placement-width candidate)
+                 (%atlas-placement-height candidate))))
+         (contact (%placement-contact candidate placements)))
+    (list compact-cost unused-area (- contact) area min-y min-x)))
+
+(defun %score-less-p (left right)
+  (loop for left-value in left
+        for right-value in right
+        when (< left-value right-value) return t
+        when (> left-value right-value) return nil
+        finally (return nil)))
+
+(defun %best-packing-candidate (window placements preferred occupied-area)
+  (let ((best nil)
+        (best-score nil))
+    (dolist (entry (%packing-candidates window placements))
+      (let ((score
+              (%packing-score
+               (cdr entry) (car entry) preferred placements occupied-area)))
+        (when (or (null best-score) (%score-less-p score best-score))
+          (setf best entry
+                best-score score))))
+    (or best (error "No edge-adjacent atlas placement is available."))))
+
+(defun %normalize-packed-placements (placements min-x min-y)
+  (dolist (placement placements)
+    (decf (%atlas-placement-x placement) min-x)
+    (decf (%atlas-placement-y placement) min-y))
+  placements)
 
 (defun %pack-atlas (windows)
-  "Return a placement table and the packed extent for visible WINDOWS."
-  (let ((ordered (%packing-order windows))
-        (placements (make-hash-table :test #'eq)))
-    (if (null ordered)
-        (values placements 0d0 0d0)
-        (let* ((first (first ordered))
-               (root
-                 (%make-packing-node
-                  0d0 0d0 (atlas-window-width first)
-                  (atlas-window-height first))))
-          (dolist (window ordered)
-            (let* ((width (atlas-window-width window))
-                   (height (atlas-window-height window))
-                   (node (%find-packing-node root width height)))
-              (if node
-                  (setf node (%split-packing-node node width height))
-                  (multiple-value-setq (root node)
-                    (%grow-packing root width height)))
-              (setf (gethash window placements)
-                    (%make-atlas-placement
-                     window (%packing-node-x node) (%packing-node-y node)
-                     width height))))
-          (values placements
-                  (%packing-node-width root)
-                  (%packing-node-height root))))))
+  "Pack visible WINDOWS clockwise by insertion order and return their extent."
+  (let ((table (make-hash-table :test #'eq)))
+    (if (null windows)
+        (values table 0d0 0d0)
+        (let* ((first (first windows))
+               (first-placement
+                 (%make-atlas-placement
+                  first 0d0 0d0
+                  (atlas-window-width first) (atlas-window-height first)))
+               (placed (list first-placement))
+               (occupied-area
+                 (* (%atlas-placement-width first-placement)
+                    (%atlas-placement-height first-placement)))
+               (min-x 0d0)
+               (min-y 0d0)
+               (max-x (%placement-right first-placement))
+               (max-y (%placement-bottom first-placement)))
+          (setf (gethash first table) first-placement)
+          (loop for window in (rest windows)
+                for index from 0
+                for preferred = (nth (mod index 4) '(:right :down :left :up))
+                for entry =
+                  (%best-packing-candidate
+                   window placed preferred occupied-area)
+                for placement = (cdr entry)
+                do (push placement placed)
+                   (incf occupied-area
+                         (* (%atlas-placement-width placement)
+                            (%atlas-placement-height placement)))
+                   (setf (gethash window table) placement
+                         min-x (min min-x (%atlas-placement-x placement))
+                         min-y (min min-y (%atlas-placement-y placement))
+                         max-x (max max-x (%placement-right placement))
+                         max-y (max max-y (%placement-bottom placement))))
+          (%normalize-packed-placements placed min-x min-y)
+          (values table (- max-x min-x) (- max-y min-y))))))
 
 (defun %layout-transition-progress (layout timestamp)
   (if (%atlas-layout-previous layout)

@@ -409,11 +409,55 @@
 (defun %focus-window (world seat-state window)
   (%focus-target world seat-state window))
 
+(defun %window-input-geometry (state window)
+  (multiple-value-bind (x y width height)
+      (%window-screen-geometry state window)
+    (multiple-value-bind (root-x root-y root-width root-height)
+        (ataxia.kernel:drawable-local-bounds
+         (canvas-window-application window))
+      (multiple-value-bind (surfaces revision)
+          (ataxia.kernel:drawable-surfaces
+           (canvas-window-application window))
+        (declare (ignore revision))
+        (if (or (zerop (length surfaces))
+                (not (plusp root-width))
+                (not (plusp root-height)))
+            (values x y width height)
+            (let ((left root-x)
+                  (top root-y)
+                  (right (+ root-x root-width))
+                  (bottom (+ root-y root-height)))
+              (map nil
+                   (lambda (surface)
+                     (let ((surface-x
+                             (ataxia.kernel:drawable-surface-local-x surface))
+                           (surface-y
+                             (ataxia.kernel:drawable-surface-local-y surface)))
+                       (setf left (min left surface-x)
+                             top (min top surface-y)
+                             right
+                             (max right
+                                  (+ surface-x
+                                     (ataxia.kernel:drawable-surface-width
+                                      surface)))
+                             bottom
+                             (max bottom
+                                  (+ surface-y
+                                     (ataxia.kernel:drawable-surface-height
+                                      surface))))))
+                   surfaces)
+              (let ((scale-x (/ width root-width))
+                    (scale-y (/ height root-height)))
+                (values (+ x (* (- left root-x) scale-x))
+                        (+ y (* (- top root-y) scale-y))
+                        (* (- right left) scale-x)
+                        (* (- bottom top) scale-y)))))))))
+
 (defun %window-at-screen-point (world state x y)
   (dolist (window (reverse (%world-stacking world)))
     (when (%window-visible-p window)
       (multiple-value-bind (window-x window-y width height)
-          (%window-screen-geometry state window)
+          (%window-input-geometry state window)
         (when (and (<= window-x x (+ window-x width))
                    (<= window-y y (+ window-y height)))
           (return window))))))

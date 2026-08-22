@@ -5,7 +5,7 @@
   :version "0.1.0"
   :author "Ataxia contributors"
   :license "Unspecified"
-  :depends-on ("ataxia-world" "cffi-libffi")
+  :depends-on ("ataxia-world" "cffi")
   :serial t
   :components
   ((:module "src/world/slint"

@@ -26,7 +26,7 @@
 (cffi:defcfun ("memcpy" %memcpy) :pointer
   (destination :pointer) (source :pointer) (size :size))
 
-(defconstant +rgb+ #x1907)
+(defconstant +rgba+ #x1908)
 (defconstant +unsigned-byte+ #x1401)
 (defconstant +texture-min-filter+ #x2801)
 (defconstant +texture-mag-filter+ #x2800)
@@ -49,7 +49,7 @@
   (%render-source-texture source))
 
 (defmethod ataxia.kernel:render-source-has-alpha-p ((source slint-render-source))
-  nil)
+  t)
 
 (defmethod ataxia.kernel:render-source-generation ((source slint-render-source))
   (%render-source-generation source))
@@ -98,8 +98,8 @@
   (%gl-texture-parameter ataxia.world.gles:+texture-2d+
                          +texture-wrap-t+ +clamp-to-edge+)
   (%gl-texture-image
-   ataxia.world.gles:+texture-2d+ 0 +rgb+ width height 0
-   +rgb+ +unsigned-byte+ (cffi:null-pointer))
+   ataxia.world.gles:+texture-2d+ 0 +rgba+ width height 0
+   +rgba+ +unsigned-byte+ (cffi:null-pointer))
   (setf (%component-texture-width component) width
         (%component-texture-height component) height)
   component)
@@ -162,18 +162,18 @@
 
 (defun %upload-rectangle (component pixels source-width rectangle)
   (destructuring-bind (x y width height) rectangle
-    (let* ((row-bytes (* width 3))
+    (let* ((row-bytes (* width 4))
            (bytes (* row-bytes height))
            (staging (%ensure-upload-capacity component bytes)))
       (loop for row below height
-            for source-offset = (* (+ (* (+ y row) source-width) x) 3)
+            for source-offset = (* (+ (* (+ y row) source-width) x) 4)
             for destination-offset = (* row row-bytes)
             do (%memcpy
                 (cffi:inc-pointer staging destination-offset)
                 (cffi:inc-pointer pixels source-offset) row-bytes))
       (%gl-texture-sub-image
        ataxia.world.gles:+texture-2d+ 0 x y width height
-       +rgb+ +unsigned-byte+ staging))))
+       +rgba+ +unsigned-byte+ staging))))
 
 (defun render-slint-component (component)
   "Render pending Slint scene work, upload changed pixels, and return local damage."

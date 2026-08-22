@@ -85,7 +85,7 @@ shader-deformed windows.
 
 Method redefinition is useful, but foreign resources and active frames cannot
 be mutated concurrently from an arbitrary REPL thread. Live mutations enter the
-Wayland owner thread through an idle callback or control inbox. Method-only
+Wayland owner thread through Runtime's idle-callback mechanism. Method-only
 changes can affect the installed World immediately; state-layout changes should
 replace the World transactionally.
 
@@ -104,7 +104,6 @@ flowchart TD
       IO[Seat and output mechanisms]
       FRAME[Frame lease and output transaction]
       LEASE[EGL and output frame lease]
-      CONTROL[Authorized control plane]
     end
 
     subgraph W[Replaceable World: live policy]
@@ -121,7 +120,6 @@ flowchart TD
     FRAME --> LEASE
     WORLD -->|GLES calls during lease| LEASE
     LEASE --> RT
-    CONTROL --> ROOT
 ```
 
 ### 3.1 Existing Runtime
@@ -159,7 +157,6 @@ The Kernel is stable Common Lisp mechanism above Runtime. It owns:
 - output configuration, swapchains, frame pacing, and output commit state;
 - output-buffer acquisition, EGL activation, framebuffer binding, GL baseline,
   frame-lease lifetime, and failed-frame recovery;
-- authorization, external control transport, and owner-thread ingress;
 - installation and replacement of one active World.
 
 Kernel has no planar or spherical coordinates, no default window chrome, no
@@ -215,7 +212,6 @@ definitions. Each World owns its entire state and lifecycle.
 | Animation definitions, timing, sampling, and lifecycle | No | No | Owns completely |
 | EGL activation and output submission | Supplies exact access | Owns | Uses only through lease |
 | GLES draw calls and World GL resources | Supplies context | Opens and contains lease | Owns |
-| External authorization | No | Owns | Handles authorized semantic actions |
 
 ## 5. Kernel Wayland Object Registry
 
@@ -591,9 +587,8 @@ hot path:
 ```
 
 Capability values describe supported operations; they do not grant authority.
-Kernel authenticates and authorizes external principals before forwarding a
-semantic request to World. World invokes native actions itself; Kernel invokes
-only Wayland/protocol mechanisms for accepted World requests.
+They are World-facing introspection contracts. Authentication and remote
+transport belong to a separate future agent host, not to Kernel.
 
 `drawable` and `interactable` membership may also be reported through
 `object-capabilities` for agents. Generic method dispatch remains authoritative.
@@ -633,8 +628,6 @@ These are typed generics, not a universal event structure:
     (world output frame-result-or-nil reason))
 (defgeneric world-graphics-detaching (world graphics-context reason))
 
-(defgeneric world-observe (world principal request))
-(defgeneric world-control (world principal action))
 (defgeneric world-export-state (world context))
 (defgeneric world-import-state (world portable-state context))
 ```
@@ -1115,13 +1108,13 @@ Human-equivalent input and semantic control remain separate:
 
 ```text
 agent device input -> logical seat -> normal World input path
-semantic action    -> authorized Kernel control -> World command or Kernel mechanism
+semantic action    -> authorized agent host -> World or Kernel typed API
 ```
 
-Kernel owns principals, capabilities, limits, owner-thread ingress, and the
-read-eval-disabled local transport. World exposes observations and typed
-semantic actions. `object-actions` is filtered by the principal; an advertised
-action is not permission to invoke it.
+Kernel contains no principal database, authorization policy, remote transport,
+or command dispatcher. World exposes observations and typed semantic actions.
+A separate agent host authenticates callers, applies limits, and enters the
+Runtime owner thread through its idle-callback API.
 
 The local Lisp image may expose a richer trusted REPL API, but remote control
 must not evaluate arbitrary forms. A helper such as `call-in-compositor-thread`
@@ -1198,22 +1191,17 @@ matrix operations, color transforms, and surface-tree traversal helpers.
 ## 16. Proposed Source Layout
 
 ```text
-src/compositor/
+src/kernel/
   packages.lisp
-  conditions.lisp
-  kernel.lisp                 aggregate, owner thread, safe points
-  objects.lisp                common object identities and registry
   object-protocols.lisp       ownership-neutral drawable/interactable contracts
-  wayland-application.lisp    Kernel Wayland object and protocol methods
-  world-protocol.lisp         Kernel-owned typed World API
-  output-engine.lisp          output config, pacing, swapchains, commits
-  seat-engine.lisp            devices, seats, focus, constraints, delivery
-  frame-lease.lisp            EGL, output FBO, lease and result contracts
-  world-host.lisp             install, migrate, validate, retire Worlds
-  control.lisp                principals, actions, owner-thread inbox
-  control-transport.lisp
+  world-protocol.lisp         typed callbacks every World implements
+  frames.lisp                 lease, damage, and frame-result values
+  objects.lisp                stable Wayland identities and protocol values
+  kernel.lisp                 aggregate, registry, lifecycle, World installation
+  seats.lisp                  devices, logical seats, focus, delivery
+  wayland-objects.lisp        surface trees and drawable/interactable methods
+  outputs.lisp                output config, swapchains, leases, commits
   runtime-sink.lisp           exact Runtime callback methods
-  main.lisp
 
 src/world/
   common/
@@ -1245,7 +1233,7 @@ src/world/
     rmlui/                    optional World-owned C++ adapter and Lisp wrapper
 ```
 
-The World protocol stays under `src/compositor` because it defines what the
+The World protocol stays under `src/kernel` because it defines what the
 Kernel calls and what World may ask Kernel to do. Implementations stay under
 `src/world`.
 
@@ -1339,7 +1327,8 @@ cursor interaction; multiple cursors render independently.
 
 - Implement finite and infinite planar cameras, placement, picking, stacking,
   chrome, shadows, panels, cursor scene items, maximize, and fullscreen.
-- Add semantic control and inspection.
+- Add World inspection and typed semantic actions; keep remote control outside
+  Kernel.
 
 Exit: the conventional and infinite-canvas modes require no Kernel geometry
 branch.
@@ -1447,8 +1436,8 @@ agent inspection without any Kernel registration, dispatch, or lifecycle path.
   are World-owned.
 - Kernel treats every animation-driven output-frame request as an ordinary
   World request and cannot determine whether any animation exists.
-- External agents use authenticated typed actions; local live mutation runs at
-  an owner-thread safe point.
+- External agents use a separate authenticated host calling typed World or
+  Kernel APIs; local live mutation runs at an owner-thread safe point.
 - A World can be replaced without restarting Runtime or disconnecting clients.
 
 ## 19. Decisions Requiring Confirmation

@@ -19,7 +19,7 @@ Four parts of the crude proposal need stricter boundaries:
 |---|---|---|
 | World renders objects | Correct with a frame boundary | Kernel opens a bounded frame lease by acquiring the output buffer, activating EGL, and binding the output framebuffer. World executes the actual GLES draw calls only during that lease. |
 | World owns damage control | Correct | World owns pending damage, history, local-to-output projection, old/new coverage, buffer repair, and the final output damage region. Kernel only supplies target metadata, validates the returned region, and submits it with the output transaction. |
-| `drawable` and `interactable` object interfaces | Correct | Kernel owns both protocols. Wayland applications and native components implement the same methods, so World renders and targets them without type-specific branches. |
+| `drawable` and `interactable` object interfaces | Correct | They are shared Lisp contracts. Kernel implements them only for Wayland objects; World implements and executes them for native objects without Kernel registration or dispatch. |
 | Application is one world object | Correct | Kernel must still retain every `wl_surface`, subsurface, popup, buffer, commit, transform, and committed surface-local damage fact beneath it. |
 | Each seat may have its own camera | Conditional | One physical output has one final image. Different simultaneous cameras require different outputs or explicit split-screen viewports. |
 | Runtime never changes again | Only for the baseline | The current Runtime is enough for the initial compositor. New Wayland protocol families must later be added horizontally inside Runtime, not emulated above it. |
@@ -99,7 +99,7 @@ flowchart TD
 
     subgraph K[Compositor Kernel: stable mechanism]
       ROOT[Compositor aggregate]
-      MODEL[Native object model]
+      MODEL[Wayland object registry]
       IO[Seat and output mechanisms]
       FRAME[Frame lease and output transaction]
       LEASE[EGL and output frame lease]
@@ -171,6 +171,8 @@ dispatch.
 World is one monolithic replaceable CLOS object. It owns:
 
 - application placement and world-specific metadata;
+- native component identity, lifecycle, drawable content, input handlers,
+  focus, capture, and component-local state;
 - output cameras, viewports, spatial indexes, and world topology;
 - per-seat cursor coordinates, navigation state, and active operations;
 - stacking interpretation and focus policy;
@@ -195,15 +197,16 @@ definitions. Each World owns its entire state and lifecycle.
 | Concern | Runtime | Kernel | World |
 |---|---:|---:|---:|
 | wlroots wrappers and exact callbacks | Owns | Uses | Never sees raw pointers |
-| Wayland protocol globals and native objects | Owns | Selects and operates | May request through Kernel |
-| Application and surface identity | Emits native facts | Owns stable objects | References stable objects |
+| Wayland protocol globals and wlroots objects | Owns | Selects and operates | May request through Kernel |
+| Wayland application and surface identity | Emits wlroots facts | Owns stable objects | References stable objects |
+| Native compositor component identity/lifecycle | No | No | Owns completely |
 | Surface commits, buffers, transforms, local damage | Exposes exact facts | Retains protocol state in objects | Consumes invalidation and maps local damage |
 | Application placement | No | Opaque to Kernel | Owns |
 | Camera and projection | No | Opaque to Kernel | Owns |
 | Actual `wlr_seat` focus and delivery | Executes | Owns and validates | Chooses intended target |
 | Cursor world/output position | No | Queries for delivery | Owns per seat |
 | Active move/resize/navigation operation | No | Provides validated mechanisms | Owns |
-| Scene contents and visible style | No | Retains stable objects and snapshots | Owns |
+| Scene contents and visible style | No | Retains Wayland resources and normalized frame snapshots | Owns |
 | Frame scheduling | Exposes frame events | Owns generic mechanism | Requests every needed frame |
 | Damage history and target repair | Exposes buffer acquire/commit API | Supplies stable target token and validates final region | Owns completely |
 | Projection of local damage | No | Opaque to Kernel | Owns through World mapping |
@@ -212,13 +215,14 @@ definitions. Each World owns its entire state and lifecycle.
 | GLES draw calls and World GL resources | Supplies context | Opens and contains lease | Owns |
 | External authorization | No | Owns | Handles authorized semantic actions |
 
-## 5. Kernel Object Registry
+## 5. Kernel Wayland Object Registry
 
-Kernel owns one registry containing every object exposed to World. Objects have
-stable Lisp identity and may implement either or both Kernel-owned interfaces:
+Kernel owns one registry containing the Wayland/protocol objects it exposes to
+World. Native compositor components never enter this registry. The shared
+`drawable` and `interactable` protocol classes do not imply Kernel ownership:
 
 ```lisp
-(defclass compositor-object ()
+(defclass kernel-object ()
   ((id         :reader object-id)
    (generation :reader object-generation)
    (state      :reader object-state)))
@@ -227,24 +231,24 @@ stable Lisp identity and may implement either or both Kernel-owned interfaces:
 (defclass interactable () ())
 
 (defclass wayland-application
-    (compositor-object drawable interactable)
+    (kernel-object drawable interactable)
   (...))
 
 (defclass native-component
-    (compositor-object drawable interactable)
+    (drawable interactable)
   (...))
 ```
 
 `drawable` and `interactable` are protocol marker classes with no required
-slots. Their generic functions define the actual interfaces. World receives a
-`compositor-object` and calls those interfaces; it does not branch on whether
-the object is a Wayland client, RmlUi document, cursor, panel, or other native
-component.
+slots. Their generic functions define the common interfaces. Kernel constructs
+and owns `wayland-application`; World constructs and owns `native-component`.
+World calls the same protocols without branching on whether an object is a
+Wayland client, RmlUi document, cursor, panel, or other native component.
 
 Kernel provides `kernel-objects`, `find-kernel-object`, and capability queries.
-World does not maintain authoritative object existence, but every concrete
-World maintains the required derived identity index and World-owned wrappers
-described below.
+Those functions return only Kernel-owned Wayland/protocol objects. World owns
+native-object existence and also maintains the derived wrapper/index structures
+described below for every object it presents.
 
 ### 5.1 Drawable interface
 
@@ -318,42 +322,58 @@ into object-local coordinates and chosen the target object:
 
 ```lisp
 (defgeneric interactable-pointer-motion
-    (object kernel seat local-x local-y input))
+    (object world seat local-x local-y input))
 (defgeneric interactable-pointer-button
-    (object kernel seat local-x local-y input))
+    (object world seat local-x local-y input))
 (defgeneric interactable-pointer-axis
-    (object kernel seat local-x local-y input))
+    (object world seat local-x local-y input))
 (defgeneric interactable-key-event
-    (object kernel seat input))
+    (object world seat input))
 (defgeneric interactable-focus
-    (object kernel seat focus-kind))
+    (object world seat focus-kind))
 ```
 
-These methods are notification and delivery mechanisms, not World policy.
-Kernel validates object lifetime, resolves the stable logical seat to its
-Runtime `wlr_seat`, and applies the implementation-specific action. Each method
-returns an `interaction-result` describing whether delivery occurred, the
-stable object that received it, and whether focus or capture changed. It never
-returns a Runtime surface pointer. At minimum, its status is one of
-`:delivered`, `:miss`, `:captured`, or `:rejected`.
+Related non-input operations use the same ownership split:
 
-For `wayland-application`, Kernel uses the application's private surface tree,
-subsurface offsets, popup hierarchy, input regions, and current presentation
-generation to resolve the leaf `wl_surface` and surface-local coordinates. It
-then sends the appropriate Runtime seat enter, leave, motion, button, axis,
-keyboard, or focus operation.
+```lisp
+(defgeneric request-object-configuration (object world configuration))
+(defgeneric request-object-state (object world state value))
+```
 
-For `native-component`, the same generics call its native input handler. World
-does not know which delivery path ran. If an object is not interactable, the
-capability check fails before delivery.
+These methods are synchronous notification and delivery mechanisms invoked by
+World, not a universal Kernel dispatcher. Each returns an `interaction-result`
+describing whether delivery occurred, the object that received it, and whether
+focus or capture changed. It never returns a Runtime surface pointer. At
+minimum, its status is one of `:delivered`, `:miss`, `:captured`, or
+`:rejected`.
 
-An object passed by World is an intended target, not authority to violate
-protocol state. Kernel exposes the current `seat-interaction-capture` when an
-implicit pointer grab, popup grab, drag, lock, or constraint requires a target.
-World maps the cursor against that captured object's presented instance instead
-of performing a normal pick. Kernel rejects inconsistent delivery and returns
-the resolved result. This preserves Wayland grab semantics without moving
-cursor policy or geometry into Kernel.
+The `wayland-application` specializations are implemented by the Kernel
+integration. They synchronously obtain the attached Kernel from World, validate
+the Kernel object and logical seat, resolve the Runtime `wlr_seat`, then use the
+application's private surface tree, subsurface offsets, popup hierarchy, input
+regions, and presentation generation to resolve the leaf `wl_surface` and
+surface-local coordinates. They send the appropriate Runtime seat enter, leave,
+motion, button, axis, keyboard, or focus operation before returning.
+
+Every World stores the opaque Kernel handle supplied by `world-attached` and
+exposes it through the protocol reader `world-kernel`. Only Wayland object
+specializations and explicit World-to-Kernel mechanisms may use that reader.
+Native object methods must not call it.
+
+The `native-component` specializations are implemented entirely inside World or
+its World-owned native UI package. They update native focus, capture, widget,
+and component state directly and never call Kernel or Runtime. CLOS dispatch
+selects the path, so World policy does not require a Wayland/native `typecase`.
+If an object is not interactable, World skips it before delivery.
+
+For Wayland delivery, an object passed by World is an intended target, not
+authority to violate protocol state. Kernel exposes the current
+`seat-wayland-capture` when an implicit pointer grab, popup grab, drag, lock, or
+constraint requires a Wayland target. A protocol-enforced Wayland capture takes
+precedence; only when none exists may World use its own native capture. World
+maps the cursor against the selected captured object's presented instance
+instead of performing a normal pick. Kernel rejects an inconsistent Wayland
+delivery; native capture is validated entirely by World.
 
 During an uncaptured pick, `:miss` means the object-local point does not land in
 any current surface input region. World then tries the next presentation
@@ -384,14 +404,19 @@ not a second World-visible object model.
 
 ### 5.4 Native components
 
-Kernel registers native compositor UI through the same object registry and
-notifies World through the same lifecycle endpoint. A native component may
-implement one or both interfaces. Typical UI components implement both and
-return one or more drawable surfaces plus native interactable methods.
+World creates, identifies, registers in its own collections, updates, and
+destroys every native compositor component. Kernel has no native-component
+registry entry, reverse index, lifecycle callback, capability query, input
+dispatch, or destruction responsibility. A native component may implement one
+or both shared interfaces. Typical UI components implement both and return one
+or more drawable surfaces plus World-side interactable methods.
 
 RmlUi requires a C++ adapter implementing its render and system interfaces. It
-may retain compiled geometry and textures as native drawable content. World may
-consume those resources only while `world-render` holds a live frame lease.
+is constructed and owned by World, may retain compiled geometry and textures as
+native drawable content, and processes its input entirely inside World. Its GLES
+work still occurs only while `world-render` holds a live frame lease because
+Kernel owns EGL activation and output submission, not because Kernel owns the
+native component.
 
 ### 5.5 Object lifecycle
 
@@ -404,7 +429,7 @@ sequenceDiagram
 
     R->>K: xdg-new-toplevel(toplevel)
     K->>O: construct object and attach known surface state
-    K->>K: insert object and native reverse indexes
+    K->>K: insert object and Runtime-surface reverse indexes
     K->>W: world-register-object(world, object)
     R->>K: new subsurface / popup / surface commit
     K->>O: update private surface tree and drawable snapshot
@@ -421,51 +446,55 @@ World is notified only after the object is internally coherent. On destruction,
 World is notified while stable object metadata remains readable but before
 Runtime wrappers and retained buffers are released.
 
-Native objects use the same `register-kernel-object` and
-`unregister-kernel-object` lifecycle and therefore produce the same World
-callbacks.
+Native objects do not participate in this sequence. World creates or destroys
+them through its own internal methods and updates its wrapper, stacking,
+spatial, focus, and damage state directly.
 
 ### 5.6 Interface topology
 
 ```mermaid
 flowchart LR
     RT[Runtime callbacks] --> K[Kernel]
-    K -->|register/unregister object| W[World]
+    K -->|register/unregister Wayland object| W[World]
     K -->|cursor, keyboard, client request| W
 
-    W -->|drawable-surfaces| O[Compositor object]
+    W -->|drawable-surfaces| O[Drawable object]
     O -->|ordered local surface records| W
-    W -->|present object + World mapping| K
+    W -->|surface records + World mapping| K
     K -->|frame lease + snapshot| W
     W -->|direct GLES| F[Output framebuffer]
 
     W -->|interactable notification + object-local point| O
-    O -->|Kernel-validated delivery| K
-    K -->|Wayland object: seat/protocol call| RT
-    K -->|native object: native handler| N[Native implementation]
+    O -->|Wayland specialization only| K
+    K -->|seat/protocol call| RT
+    O -->|native specialization| N[World-owned native implementation]
+    N --> W
 ```
 
 The interface directions are deliberate:
 
-- Kernel tells World which objects exist and supplies protocol-derived events.
+- Kernel tells World which Wayland objects exist and supplies protocol-derived
+  events. World independently owns native-object existence.
 - World decides placement, picking, interaction policy, and which registered
   objects appear in a presentation.
 - `drawable` lets World obtain renderable surface information without asking
   what kind of object supplied it.
-- `interactable` lets World notify an object of local input without knowing how
-  that input becomes a Wayland seat call or native UI callback.
+- `interactable` lets World notify an object of local input without a type
+  branch. Only a Wayland specialization enters Kernel; a native specialization
+  remains entirely within World.
 - Kernel remains the only authority that resolves Runtime identities, validates
   seats and serials, mutates Wayland protocol state, and commits outputs.
 
 ### 5.7 World-owned object state
 
-Kernel objects never receive a `world-data` slot. Each concrete World creates
-its own wrapper when `world-register-object` runs. For example, the planar World
-may define:
+Kernel objects never receive a `world-data` slot. Each concrete World creates a
+wrapper for a Kernel object when `world-register-object` runs and creates
+wrappers for native objects through its own internal lifecycle. For example,
+the planar World may define:
 
 ```lisp
 (defclass planar-object-state ()
-  ((object                 :initarg :object :reader state-kernel-object)
+  ((object                 :initarg :object :reader state-object)
    (placement              :accessor state-placement)
    (stack-key              :accessor state-stack-key)
    (visible-p              :accessor state-visible-p)
@@ -477,32 +506,37 @@ may define:
 
 A spherical World defines an unrelated `spherical-object-state` with spherical
 placement and policy slots. The two classes share no stateful superclass. These
-wrappers contain all World-owned facts about a Kernel object: placement,
+wrappers contain all World-owned facts about any presented object: placement,
 stacking, visibility, styling, animation, interaction policy, cached spatial
 data, and any World-specific extension state.
 
 Each World maintains three complementary structures:
 
 ```text
-object-index       Kernel object identity -> World wrapper
-object collections World wrappers used for lifecycle and enumeration
-spatial/stack data World wrappers used directly for picking and rendering
+kernel-object-index Kernel object identity -> World wrapper for callbacks
+object collections  all World wrappers used for lifecycle and enumeration
+spatial/stack data  all World wrappers used directly for picking and rendering
 ```
 
-The identity index is an `eq` hash table initially. It is only the bridge for
-callbacks such as `world-object-invalidated`; it is not the rendering data
-structure. Presentation, picking, animation, and damage traversal operate
-directly on wrappers already stored in the World's stacking and spatial
-collections. If profiling later justifies it, the callback index may become a
-generation-checked vector keyed by Kernel-assigned dense IDs without changing
-the wrapper model.
+The Kernel-object index is an `eq` hash table initially. It is only the bridge
+for callbacks such as `world-object-invalidated`; native components never enter
+it. Presentation, picking, animation, and damage traversal operate directly on
+wrappers already stored in the World's stacking and spatial collections. If
+profiling later justifies it, the callback index may become a generation-checked
+vector keyed by Kernel-assigned dense IDs without changing the wrapper model.
 
-`world-register-object` constructs the wrapper, inserts it into the identity
-index and World collections, and applies that World's initial-placement policy.
+`world-register-object` constructs the wrapper, inserts it into the
+Kernel-object index and World collections, and applies that World's
+initial-placement policy.
 `world-unregister-object` resolves the wrapper once, damages its last visible
 coverage in World state, removes it from every collection, and destroys only
 World-owned resources. Kernel remains responsible for the underlying object's
 protocol and buffer lifetime.
+
+For a native component, a World-internal creation method constructs both the
+component and wrapper and inserts the wrapper directly into World collections.
+Its destruction method removes both directly. Neither operation calls a Kernel
+registration API or produces a Kernel-to-World lifecycle callback.
 
 A wrapper represents the logical object once. Immutable presentation instances
 remain separate because one object may be projected multiple times, through
@@ -531,7 +565,9 @@ hot path:
 ```
 
 Capability values describe supported operations; they do not grant authority.
-Kernel checks the principal before invoking an action.
+Kernel authenticates and authorizes external principals before forwarding a
+semantic request to World. World invokes native actions itself; Kernel invokes
+only Wayland/protocol mechanisms for accepted World requests.
 
 `drawable` and `interactable` membership may also be reported through
 `object-capabilities` for agents. Generic method dispatch remains authoritative.
@@ -542,6 +578,7 @@ These are typed generics, not a universal event structure:
 
 ```lisp
 (defgeneric world-attached (world kernel))
+(defgeneric world-kernel (world))
 (defgeneric world-quiescing (world reason))
 
 (defgeneric world-register-object (world object))
@@ -606,14 +643,8 @@ World calls these synchronously on the owner thread:
 
 ```text
 kernel-objects / find-kernel-object
-register-native-object / unregister-native-object
-seat-interaction-capture
-interactable-focus
-clear-interaction-focus
-interactable-pointer-motion / button / axis
-interactable-key-event
-request-object-configuration
-request-object-state
+seat-wayland-capture
+clear-wayland-focus
 schedule-presentation
 current-presentation-snapshot
 pick-presentation-candidates
@@ -623,21 +654,22 @@ create-logical-seat / destroy-logical-seat
 run-hook
 ```
 
-Kernel validates lifetime, seat ownership, serials, finite values, output
-availability, resource ownership, and protocol sequencing. It has no
-World-facing damage mutation API because damage state belongs to World. Calls do
-not cross a mailbox inside the owner thread.
+Kernel validates Wayland-object lifetime, seat ownership, serials, finite
+values, output availability, resource ownership, and protocol sequencing. It
+has no native-object API and no World-facing damage mutation API. Calls do not
+cross a mailbox inside the owner thread.
 
-`request-object-configuration` and `request-object-state` dispatch on the
-object's supported capabilities. A Wayland implementation converts accepted
-requests into XDG configure/state operations; a native implementation may
-handle the same semantic request locally or reject an unsupported capability.
-World therefore does not need a Wayland/native type branch to resize, activate,
-or otherwise operate an object.
+`interactable-*`, `request-object-configuration`, and `request-object-state` are
+shared object generics invoked by World rather than entries in the Kernel
+mechanism list. Their Wayland specializations synchronously call narrowly scoped
+Kernel mechanisms that convert accepted operations into XDG/seat calls. Their
+native specializations operate entirely on World-owned state or reject an
+unsupported capability. World therefore needs no Wayland/native type branch,
+while Kernel never receives a native object.
 
-World or a trusted native-UI subsystem may construct a native component, but it
-becomes visible only after Kernel assigns its identity, registers it, and calls
-`world-register-object`. Kernel applies the same ordering on unregistration.
+World may construct or destroy a native component at an owner-thread safe point
+and updates its own wrapper collections, focus, damage, and presentation state
+directly. Kernel is neither notified nor involved.
 
 ## 7. Presentation Protocol
 
@@ -646,7 +678,8 @@ World first contributes immutable instances to a builder:
 ```lisp
 (present builder
          world-object-state
-         :object object
+         :surfaces drawable-surfaces
+         :revision drawable-revision
          :mapping mapping
          :coverage coverage
          :layer layer
@@ -655,12 +688,11 @@ World first contributes immutable instances to a builder:
          :interaction-tag tag)
 ```
 
-`present` accepts a World wrapper and its registered Kernel object implementing
-`drawable`. The wrapper remains an opaque World payload; the builder captures
-the object's current `drawable-surfaces` vector and revision in the instance.
-Kernel does not inspect whether the object is a Wayland application or native
-component, and it does not expand a Wayland surface tree at this stage; the
-object already performed that work when its drawable snapshot changed.
+World first calls `drawable-surfaces` on the object stored in its wrapper, then
+passes the resulting normalized vector and revision to `present`. The wrapper
+remains an opaque World payload. Kernel never receives a native object and never
+calls a native method. For a Wayland object, the object already performed its
+protocol-specific surface-tree work when its drawable snapshot changed.
 
 World combines each surface record with the instance mapping, clip, layer, and
 effects and supplies conservative output coverage to the builder. The resulting
@@ -692,11 +724,11 @@ precise projection, causing World to conservatively damage the item or output.
 The immutable `presentation-snapshot` contains ordered object instances,
 captured drawable-surface vectors, mappings, output coverage, interaction tags,
 opaque World render payloads, and referenced resources. `world-render` iterates
-the same object/surface representation for Wayland and native objects and issues
-the actual GLES calls. World picking, object-local cursor coordinates, output
-membership, and damage consume that exact snapshot and its mappings. Kernel
-retains referenced resources for the frame but never interprets World mappings
-to compute damage.
+the same normalized surface-record representation for Wayland and native
+objects and issues the actual GLES calls. World picking, object-local cursor
+coordinates, output membership, and damage consume that exact snapshot and its
+mappings. Kernel retains normalized frame resources but never receives a native
+object or interprets World mappings to compute damage.
 
 ## 8. Direct GLES Rendering
 
@@ -921,6 +953,7 @@ entry keyed by the stable seat identity:
 seat -> cursor position in World/output coordinates
 seat -> cursor output or viewport
 seat -> active move/resize/navigation operation
+seat -> native pointer/keyboard focus and capture
 seat -> selection and World-specific gesture state
 ```
 
@@ -931,35 +964,38 @@ Pointer flow:
    copied input data.
 3. World updates its cursor state and uses Kernel helpers for output bounds and
    pointer constraints.
-4. World queries `seat-interaction-capture`. It uses the captured object's
-   presented instance when one exists; otherwise it gets front-to-back
-   candidates from the last immutable presentation snapshot.
+4. World queries `seat-wayland-capture` first. A protocol-enforced Wayland
+   capture takes precedence; otherwise World uses its own native capture. It
+   uses the captured object's presented instance when one exists, or gets
+   front-to-back candidates from the last immutable presentation snapshot.
 5. World maps the point into each candidate's object-local coordinates.
 6. World decides whether the motion changes World state or should be delivered
    to the object.
 7. For object delivery, World calls `interactable-pointer-motion` with the
    object, logical seat, object-local coordinates, and input value. On `:miss`,
    it continues to the next candidate; on delivery or capture, it stops.
-8. Kernel validates the object, seat, and active capture. A
-   `wayland-application` method resolves its leaf surface and input region and
-   sends Runtime `wlr_seat` operations; a `native-component` method invokes its
-   native handler.
+8. CLOS dispatch selects the implementation. A `wayland-application` method
+   synchronously enters Kernel, which validates the object, seat, and Wayland
+   capture, resolves the leaf surface/input region, and sends Runtime `wlr_seat`
+   operations. A `native-component` method updates World-owned native state and
+   returns without entering Kernel.
 9. Button, axis, keyboard, and focus delivery follow the same interactable
    path. World consumes the `interaction-result` and requests old/new cursor or
    object damage when its state changes.
 
-Kernel owns actual Wayland focus and serial/grab validation. World owns target
-selection, cursor coordinates, gestures, and the decision to invoke an
-interactable endpoint. World never calls Runtime seat functions or examines a
-`wl_surface`.
+Kernel owns actual Wayland focus and Wayland serial/grab validation. World owns
+target selection, cursor coordinates, gestures, all native focus/capture, and
+the decision to invoke an interactable endpoint. World never calls Runtime seat
+functions or examines a `wl_surface`; Kernel never receives a native component.
 
 Keyboard flow is analogous but has no coordinate mapping. Kernel updates the
 logical seat's pressed/modifier state and calls `world-key-event` with stable
-key data. World may consume the key as a binding or call
-`interactable-key-event` on its selected keyboard-focus object. Kernel verifies
-that selection against actual seat focus and emits the Runtime key and modifier
-notifications. Clicking background policy may call `clear-interaction-focus`;
-it never manufactures a dummy interactable object.
+key data. World may consume the key as a binding, deliver it directly to its
+native-focus object through `interactable-key-event`, or invoke the Wayland
+specialization for its selected Wayland-focus object. Only the Wayland path asks
+Kernel to verify actual seat focus and emit Runtime key/modifier notifications.
+When focus moves to native UI or background, World may call
+`clear-wayland-focus` without passing the native target to Kernel.
 
 Multiple seats and multiple rendered cursors are fully feasible. A client can
 bind each published `wl_seat`, and wlroots maintains focus and grab state per
@@ -1032,8 +1068,10 @@ World replacement is a transaction:
 2. reject or cancel active World operations;
 3. ask the old World for neutral portable state;
 4. construct a fresh candidate World;
-5. import view, output, and seat state without referencing the old class;
-6. construct candidate wrappers and indexes for every registered Kernel object;
+5. import view, output, and seat state and reconstruct candidate-owned native
+   components without referencing the old class;
+6. construct candidate wrappers for Kernel and native objects plus the
+   Kernel-callback index;
 7. build trial snapshots and candidate-owned full-output damage state for every
    active output;
 8. validate finite geometry, inverse mappings, final damage bounds, and
@@ -1057,9 +1095,10 @@ recreate the ownership ambiguity this redesign is intended to remove.
 Use these rules instead:
 
 - frame scheduling, output acquisition/commit, client-buffer cache, actual
-  focus, and protocol seat management are Kernel mechanisms;
+  Wayland focus, and protocol seat management are Kernel mechanisms;
 - World owns one monolithic state graph including object wrappers, spatial
-  indexes, presentation policy, and output damage history;
+  indexes, presentation policy, native focus/lifecycle, and output damage
+  history;
 - any animation scheduler or timeline is private state inside that World;
 - reusable World code is a pure function, macro, numerical library, immutable
   definition, or explicitly World-private cache;
@@ -1083,7 +1122,7 @@ matrix operations, color transforms, and surface-tree traversal helpers.
 | Per-window shaders and animations | Feasible | World owns definitions, timing, sampling, resources, damage, and repeated frame requests |
 | Output-wide shader effects | Feasible | World executes them during the frame lease and supplies conservative damage rules |
 | Temporal/datamosh feedback | Feasible | History textures, explicit lifetime, usually expanded/full damage |
-| RmlUi native UI | Feasible, separate integration | C++ adapter renders only while World holds a live frame lease |
+| RmlUi native UI | Feasible, World-owned integration | World owns lifecycle and input; C++ adapter renders only during a live frame lease |
 | New Wayland protocol families | Not above current Runtime alone | Add exact horizontal Runtime modules first |
 
 ## 16. Proposed Source Layout
@@ -1094,8 +1133,8 @@ src/compositor/
   conditions.lisp
   kernel.lisp                 aggregate, owner thread, safe points
   objects.lisp                common object identities and registry
-  object-protocols.lisp       drawable and interactable contracts
-  wayland-application.lisp    surface tree, textures, input translation
+  object-protocols.lisp       ownership-neutral drawable/interactable contracts
+  wayland-application.lisp    Kernel Wayland object and protocol methods
   world-protocol.lisp         Kernel-owned typed World API
   presentation-types.lisp     mapping, instances, surface records, snapshots
   presentation.lisp           captures object drawable snapshots
@@ -1133,10 +1172,9 @@ src/world/
     graphics.lisp             spherical GLES resources and draw execution
     animation.lisp
     control.lisp
-
-src/native-ui/
-  component.lisp              native drawable/interactable implementation
-  rmlui/                      optional later C++ adapter and Lisp wrapper
+  native-ui/
+    component.lisp            World-owned drawable/interactable implementation
+    rmlui/                    optional World-owned C++ adapter and Lisp wrapper
 ```
 
 The World protocol stays under `src/compositor` because it defines what the
@@ -1160,13 +1198,14 @@ Exit: Runtime-only launcher still starts and reports outputs and inputs.
 
 - Create the compositor aggregate and exact Runtime sink.
 - Add owner-thread safe points and shutdown ordering.
-- Define `compositor-object`, `drawable`, and `interactable` protocols.
-- Create the authoritative object registry plus output, input, and seat
-  identities.
-- Require World registration and unregistration endpoints.
+- Define `kernel-object`, `drawable`, and `interactable` protocols.
+- Create the authoritative Wayland-object registry plus output, input, and seat
+  identities; add no native-component registry.
+- Require World registration and unregistration endpoints for Kernel-created
+  Wayland objects only.
 
-Exit: Wayland and native objects follow one inspectable lifecycle without
-placement policy.
+Exit: Kernel-created Wayland objects follow one inspectable lifecycle without
+placement policy; Kernel has no native-object API.
 
 ### Phase 2: Wayland application objects and resource retention
 
@@ -1268,12 +1307,14 @@ same Kernel contracts in both Worlds.
 
 ### Phase 10: Native UI and protocol expansion
 
-- Add native objects implementing the same `drawable` and `interactable`
-  protocols, then the RmlUi adapter if selected.
+- Add World-created native objects implementing the same `drawable` and
+  `interactable` protocols, direct World lifecycle/input handling, and wrapper
+  insertion without Kernel calls.
+- Add the World-owned RmlUi adapter if selected.
 - Add missing Wayland protocols horizontally to Runtime based on product needs.
 
-Exit: native UI participates in the same snapshot, mapping, damage, input, and
-agent inspection model as applications.
+Exit: native UI participates in World snapshot, mapping, damage, input, and
+agent inspection without any Kernel registration, dispatch, or lifecycle path.
 
 ## 18. Completion Criteria
 
@@ -1302,6 +1343,9 @@ agent inspection model as applications.
   surface/input state, and registers or unregisters it with World.
 - Wayland applications and native components implement the same `drawable` and
   `interactable` protocols; World contains no object-type branch for either.
+- World exclusively creates, identifies, stores, focuses, captures, dispatches,
+  observes, and destroys native components. Kernel never receives a native
+  object or calls a native method.
 - Kernel objects contain no injected World slots. Every World owns independent
   per-object wrappers, a callback identity index, and wrapper-based spatial and
   stacking collections.
@@ -1309,11 +1353,13 @@ agent inspection model as applications.
   the identity index is used only to resolve Kernel callbacks.
 - Every presented object supplies an immutable ordered drawable-surface snapshot
   captured into the presentation snapshot.
-- World delivers object-local pointer, keyboard, and focus actions only through
-  interactable methods; Kernel resolves Wayland leaf surfaces, seats, serials,
-  and Runtime calls.
-- Kernel-enforced grabs, locks, drags, and pointer constraints override normal
-  World picking through a stable object capture, never through leaked surfaces.
+- World delivers object-local pointer, keyboard, and focus actions through
+  shared interactable methods. Wayland specializations synchronously enter
+  Kernel for leaf surfaces, seats, serials, and Runtime calls; native
+  specializations stay entirely inside World.
+- Kernel-enforced Wayland grabs, locks, drags, and pointer constraints and
+  World-owned native capture override normal picking without leaking surfaces or
+  passing native targets to Kernel.
 - Every rendered client surface is picked and damaged through its rendered
   mapping.
 - Planar and spherical Worlds share no stateful superclass or controller.
@@ -1332,7 +1378,7 @@ agent inspection model as applications.
 1. Does "reuse Runtime directly" mean freeze it permanently, or may missing
    protocol families be added later as isolated Runtime modules? Recommended:
    freeze it for the initial rebuild, allow additive protocol modules later.
-2. Is RmlUi required in the first usable compositor, or should the native
+2. Is RmlUi required in the first usable World, or should the World-owned native
    object implementation land first and RmlUi follow? Recommended: native
    object first, RmlUi after planar and spherical Worlds prove the contract.
 3. Must two seats see different cameras simultaneously on the same physical

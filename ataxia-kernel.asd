@@ -8,7 +8,7 @@
   :version "0.1.0"
   :author "Ataxia contributors"
   :license "Unspecified"
-  :depends-on ("ataxia-runtime")
+  :depends-on ("ataxia-runtime" "cffi")
   :serial t
   :components
   ((:module "src/kernel"
@@ -18,4 +18,8 @@
      (:file "world-protocol")
      (:file "frames")
      (:file "objects")
-     (:file "kernel")))))
+     (:file "kernel")
+     (:file "seats")
+     (:file "wayland-objects")
+     (:file "outputs")
+     (:file "runtime-sink")))))

@@ -140,8 +140,24 @@
   (ataxia.runtime:request-runtime-stop (kernel-runtime kernel) reason)
   kernel)
 
+(defun %detach-world-graphics (kernel reason)
+  (when (%kernel-graphics-attached-p kernel)
+    (ataxia.runtime:call-with-egl-context
+     (ataxia.runtime:runtime-egl (kernel-runtime kernel))
+     (lambda ()
+       (world-graphics-detaching
+        (kernel-world kernel)
+        (ataxia.runtime:runtime-egl (kernel-runtime kernel))
+        reason)))
+    (setf (%kernel-graphics-attached-p kernel) nil))
+  kernel)
+
 (defun destroy-kernel (kernel &optional (reason :shutdown))
   (when (and kernel (kernel-runtime kernel))
+    (%detach-world-graphics kernel reason)
+    (unless (eq (kernel-state kernel) :stopping)
+      (world-quiescing (kernel-world kernel) reason)
+      (setf (kernel-state kernel) :stopping))
     (ataxia.runtime:destroy-runtime (kernel-runtime kernel) reason)
     (setf (kernel-runtime kernel) nil))
   (setf (kernel-state kernel) :destroyed)

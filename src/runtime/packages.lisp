@@ -190,6 +190,8 @@
    #:%seat-cursor-serial
    #:%seat-cursor-hotspot-x
    #:%seat-cursor-hotspot-y
+   #:%seat-cursor-request-authorized
+   #:%seat-validate-current-pointer-grab-serial
    #:%seat-drag-request-drag
    #:%seat-drag-request-origin
    #:%seat-drag-request-serial
@@ -503,6 +505,7 @@
    #:seat-cursor-request-serial
    #:seat-cursor-request-hotspot-x
    #:seat-cursor-request-hotspot-y
+   #:seat-cursor-request-authorized-p
    #:seat-drag-request
    #:seat-drag-request-seat
    #:seat-drag-request-drag
@@ -687,6 +690,7 @@
    #:seat-pointer-notify-axis
    #:seat-pointer-notify-frame
    #:seat-validate-pointer-grab-serial
+   #:seat-validate-current-pointer-grab-serial
    #:seat-pointer-drag-active-p
    #:seat-pointer-button-press-count
    #:seat-start-pointer-drag

@@ -317,6 +317,12 @@ Pending damage is not discarded by `world-render`.
 
 The tracker never commits an output and never schedules frames itself.
 
+Concrete Worlds expose `ataxia.world:set-damage-debug-mode`. In this mode the
+renderer clears the acquired buffer to a solid diagnostic color before drawing
+only the current repair region. Pixels outside that region disappear, making
+accidental full-window or full-output damage immediately visible. The infinite,
+atlas, and tiling launchers enable it with `--damage-debug`.
+
 ## 7. Rendering Flow
 
 `world-render` remains the sole normal rendering entry point:

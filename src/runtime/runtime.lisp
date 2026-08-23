@@ -642,63 +642,63 @@
                  (ataxia.runtime.raw:%wlr-headless-backend-create
                   event-loop-pointer)))
               :wlr-backend-create (runtime-backend-kind runtime)))
-           (backend (%wrap-pointer 'wlr-backend backend-pointer runtime))
-           (renderer-pointer
-             (%require-pointer
-              (ataxia.runtime.raw:%wlr-renderer-autocreate backend-pointer)
-              :wlr-renderer-autocreate))
-           (renderer (%wrap-pointer 'wlr-renderer renderer-pointer runtime)))
-      (unless (ataxia.runtime.raw:%wlr-renderer-is-gles2 renderer-pointer)
-        (error 'native-call-failed
-               :name :wlr-renderer-autocreate
-               :detail "direct GLES2 renderer required"))
-      (let* ((egl-pointer
+           (backend (%wrap-pointer 'wlr-backend backend-pointer runtime)))
+      (setf (%runtime-backend runtime) backend)
+      (let* ((renderer-pointer
                (%require-pointer
-                (ataxia.runtime.raw:%wlr-gles2-renderer-get-egl
-                 renderer-pointer)
-                :wlr-gles2-renderer-get-egl))
-             (egl (%wrap-pointer 'wlr-egl egl-pointer runtime))
-             (allocator-pointer
-               (%require-pointer
-                (ataxia.runtime.raw:%wlr-allocator-autocreate
-                 backend-pointer renderer-pointer)
-                :wlr-allocator-autocreate))
-             (allocator
-               (%wrap-pointer 'wlr-allocator allocator-pointer runtime)))
-        (unless (ataxia.runtime.raw:%wlr-renderer-init-wl-display
-                 renderer-pointer display-pointer)
-          (error 'native-call-failed :name :wlr-renderer-init-wl-display))
-        (let* ((compositor-pointer
+                (ataxia.runtime.raw:%wlr-renderer-autocreate backend-pointer)
+                :wlr-renderer-autocreate))
+             (renderer (%wrap-pointer 'wlr-renderer renderer-pointer runtime)))
+        (setf (%runtime-renderer runtime) renderer)
+        (unless (ataxia.runtime.raw:%wlr-renderer-is-gles2 renderer-pointer)
+          (error 'native-call-failed
+                 :name :wlr-renderer-autocreate
+                 :detail "direct GLES2 renderer required"))
+        (let* ((egl-pointer
                  (%require-pointer
-                  (ataxia.runtime.raw:%wlr-compositor-create
-                   display-pointer +wl-compositor-version+ renderer-pointer)
-                  :wlr-compositor-create))
-               (subcompositor-pointer
-                 (%require-pointer
-                  (ataxia.runtime.raw:%wlr-subcompositor-create display-pointer)
-                  :wlr-subcompositor-create)))
-          (setf (%runtime-backend runtime) backend
-                (%runtime-renderer runtime) renderer
-                (%runtime-egl runtime) egl
-                (%runtime-allocator runtime) allocator
-                (%runtime-compositor-global runtime)
-                (%wrap-pointer 'wlr-compositor compositor-pointer runtime)
-                (%runtime-subcompositor-global runtime)
-                (%wrap-pointer 'wlr-subcompositor
-                               subcompositor-pointer runtime))
-          (%install-runtime-signals runtime)
-          (when (eq (runtime-backend-kind runtime) :headless)
-            (%require-pointer
-             (ataxia.runtime.raw:%wlr-headless-add-output
-              backend-pointer
-              (%runtime-headless-width runtime)
-              (%runtime-headless-height runtime))
-             :wlr-headless-add-output))
-          (%run-safe-point-actions runtime)
-          (when (runtime-last-fault runtime)
-            (error (runtime-last-fault runtime)))))))
-  (setf (%runtime-state runtime) :ready)
-  runtime)
+                  (ataxia.runtime.raw:%wlr-gles2-renderer-get-egl renderer-pointer)
+                  :wlr-gles2-renderer-get-egl))
+               (egl (%wrap-pointer 'wlr-egl egl-pointer runtime)))
+          (setf (%runtime-egl runtime) egl)
+          (let* ((allocator-pointer
+                   (%require-pointer
+                    (ataxia.runtime.raw:%wlr-allocator-autocreate
+                     backend-pointer renderer-pointer)
+                    :wlr-allocator-autocreate))
+                 (allocator
+                   (%wrap-pointer 'wlr-allocator allocator-pointer runtime)))
+            (setf (%runtime-allocator runtime) allocator)
+            (unless (ataxia.runtime.raw:%wlr-renderer-init-wl-display
+                     renderer-pointer display-pointer)
+              (error 'native-call-failed :name :wlr-renderer-init-wl-display))
+            (let* ((compositor-pointer
+                     (%require-pointer
+                      (ataxia.runtime.raw:%wlr-compositor-create
+                       display-pointer +wl-compositor-version+ renderer-pointer)
+                      :wlr-compositor-create))
+                   (subcompositor-pointer
+                     (%require-pointer
+                      (ataxia.runtime.raw:%wlr-subcompositor-create
+                       display-pointer)
+                      :wlr-subcompositor-create)))
+              (setf (%runtime-compositor-global runtime)
+                    (%wrap-pointer 'wlr-compositor compositor-pointer runtime)
+                    (%runtime-subcompositor-global runtime)
+                    (%wrap-pointer 'wlr-subcompositor
+                                   subcompositor-pointer runtime))
+              (%install-runtime-signals runtime)
+              (when (eq (runtime-backend-kind runtime) :headless)
+                (%require-pointer
+                 (ataxia.runtime.raw:%wlr-headless-add-output
+                  backend-pointer
+                  (%runtime-headless-width runtime)
+                  (%runtime-headless-height runtime))
+                 :wlr-headless-add-output))
+              (%run-safe-point-actions runtime)
+              (when (runtime-last-fault runtime)
+                (error (runtime-last-fault runtime))))))))
+    (setf (%runtime-state runtime) :ready)
+    runtime))
 
 (defun create-runtime
     (&key (sink (make-instance 'diagnostic-sink))
@@ -965,6 +965,9 @@
            (unless (ataxia.runtime.raw:null-pointer-p surface-pointer)
              (%adopt-core-surface runtime surface-pointer))
            :serial (ataxia.runtime.raw:%seat-cursor-serial event-pointer)
+           :authorized-p
+           (ataxia.runtime.raw:%seat-cursor-request-authorized
+            pointer event-pointer)
            :hotspot-x
            (ataxia.runtime.raw:%seat-cursor-hotspot-x event-pointer)
            :hotspot-y
@@ -1152,6 +1155,13 @@
                             :seat-validate-pointer-grab-serial)
     (ataxia.runtime.raw:%wlr-seat-validate-pointer-grab-serial
      (%object-pointer seat) (%object-pointer origin) serial)))
+
+(defun seat-validate-current-pointer-grab-serial (seat serial)
+  (check-type serial (unsigned-byte 32))
+  (let ((runtime (%native-runtime seat)))
+    (%assert-runtime-live runtime :seat-validate-current-pointer-grab-serial)
+    (ataxia.runtime.raw:%seat-validate-current-pointer-grab-serial
+     (%object-pointer seat) serial)))
 
 (defun seat-pointer-drag-active-p (seat)
   (let ((runtime (%native-runtime seat)))

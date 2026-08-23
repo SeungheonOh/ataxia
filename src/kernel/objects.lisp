@@ -28,7 +28,10 @@
    (frame-requested-p :initform nil :accessor %output-frame-requested-p)
    (frame-active-p :initform nil :accessor %output-frame-active-p)
    (next-frame-requested-p :initform nil
-                           :accessor %output-next-frame-requested-p))
+                           :accessor %output-next-frame-requested-p)
+   (retry-timer :initform nil :accessor %output-retry-timer)
+   (consecutive-frame-failures :initform 0
+                               :accessor %output-consecutive-frame-failures))
   (:documentation "Configured output identity backed by one Runtime wlr-output."))
 
 (defclass kernel-input-device (kernel-object)
@@ -44,7 +47,8 @@
    (capabilities :initarg :capabilities :initform 0 :accessor seat-capabilities)
    (input-devices :initform (make-hash-table :test #'eq)
                   :reader seat-input-devices)
-   (keyboard :initform nil :accessor %seat-keyboard))
+   (keyboard :initform nil :accessor %seat-keyboard)
+   (cursor-request :initform nil :accessor %seat-cursor-request))
   (:documentation "Stable seat identity owning one real Runtime wlr-seat."))
 
 (defclass surface-node (kernel-object drawable)
@@ -66,6 +70,7 @@
    (protocol-token :initform nil :accessor %surface-protocol-token)
    (output-membership :initform (make-hash-table :test #'eq)
                       :reader %surface-output-membership)
+   (preferred-scale :initform nil :accessor %surface-preferred-scale)
    (externally-exposed-p :initform nil :accessor %surface-externally-exposed-p))
   (:documentation "Kernel-private committed state for one wl_surface in an application tree."))
 

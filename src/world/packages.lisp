@@ -44,7 +44,11 @@
    #:damage-begin-frame
    #:damage-commit-frame
    #:damage-fail-frame
-   #:damage-frame-region))
+   #:damage-frame-region
+   #:damage-debug-mode-p
+   #:set-damage-debug-mode
+   #:refresh-world
+   #:interaction-delivered-p))
 
 (defpackage #:ataxia.world.gles
   (:use #:cl)

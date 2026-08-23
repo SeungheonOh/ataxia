@@ -101,6 +101,7 @@
    #:modifiers-input-locked
    #:modifiers-input-group
    #:interactable-pointer-motion
+   #:interactable-hit-test
    #:interactable-pointer-button
    #:interactable-pointer-axis
    #:interactable-pointer-leave
@@ -176,6 +177,7 @@
    #:world-attached
    #:world-kernel
    #:world-quiescing
+   #:world-detached
    #:world-register-object
    #:world-unregister-object
    #:world-object-changed
@@ -183,6 +185,7 @@
    #:world-output-added
    #:world-output-changed
    #:world-output-removing
+   #:world-output-presented
    #:world-seat-added
    #:world-seat-removing
    #:world-cursor-motion
@@ -221,6 +224,14 @@
    #:frame-result-protocol-tokens
    #:frame-result-complete-p
    #:frame-result-world-cookie
+   #:output-presentation
+   #:output-presentation-commit-sequence
+   #:output-presentation-presented-p
+   #:output-presentation-seconds
+   #:output-presentation-nanoseconds
+   #:output-presentation-sequence
+   #:output-presentation-refresh-nanoseconds
+   #:output-presentation-flags
 
    ;; Kernel aggregate and mechanisms.
    #:kernel

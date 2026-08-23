@@ -20,6 +20,7 @@
   function
   values
   condition
+  (cancelled-p nil)
   (completion (sb-thread:make-semaphore :count 0)))
 
 (defclass sly-control ()
@@ -54,12 +55,13 @@
             (%sly-control-wakeup-pending-p control) nil))))
 
 (defun %complete-control-request (request)
-  (handler-case
-      (setf (%control-request-values request)
-            (multiple-value-list
-             (funcall (%control-request-function request))))
-    (serious-condition (condition)
-      (setf (%control-request-condition request) condition)))
+  (unless (%control-request-cancelled-p request)
+    (handler-case
+        (setf (%control-request-values request)
+              (multiple-value-list
+               (funcall (%control-request-function request))))
+      (serious-condition (condition)
+        (setf (%control-request-condition request) condition))))
   (sb-thread:signal-semaphore (%control-request-completion request)))
 
 (defun %drain-control-requests (control)
@@ -86,9 +88,11 @@
     (unless (= 1 (%posix-write (%sly-control-write-fd control) byte 1))
       (error "Failed to wake the Ataxia compositor owner thread."))))
 
-(defun call-in-kernel-thread (function &optional (control (current-sly-control)))
+(defun call-in-kernel-thread
+    (function &key (control (current-sly-control)) timeout)
   "Run arbitrary Lisp on the compositor owner thread and return its values."
   (check-type function function)
+  (when timeout (check-type timeout (real 0 *)))
   (unless (eq (sly-control-state control) :running)
     (error "The Ataxia SLY control plane is not accepting work."))
   (if (eq sb-thread:*current-thread* (%sly-control-owner-thread control))
@@ -104,7 +108,19 @@
                     wake-p t)))
           (when wake-p
             (%signal-control control)))
-        (sb-thread:wait-on-semaphore (%control-request-completion request))
+        (unless (sb-thread:wait-on-semaphore
+                 (%control-request-completion request) :timeout timeout)
+          (let ((cancelled-p nil))
+            (sb-thread:with-mutex ((%sly-control-queue-lock control))
+              (when (member request (%sly-control-queue control) :test #'eq)
+                (setf (%sly-control-queue control)
+                      (delete request (%sly-control-queue control) :test #'eq)
+                      (%control-request-cancelled-p request) t
+                      cancelled-p t)))
+            (if cancelled-p
+                (error "Timed out before the compositor owner thread began the request.")
+                (sb-thread:wait-on-semaphore
+                 (%control-request-completion request)))))
         (when (%control-request-condition request)
           (error (%control-request-condition request)))
         (values-list (%control-request-values request)))))

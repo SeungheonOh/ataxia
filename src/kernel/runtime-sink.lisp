@@ -54,9 +54,16 @@
 
 (defmethod ataxia.runtime:renderer-lost
     ((kernel kernel) runtime renderer)
-  (declare (ignore runtime renderer))
+  (declare (ignore renderer))
   (world-quiescing (kernel-world kernel) :renderer-lost)
+  (handler-case
+      (%detach-world-graphics kernel :renderer-lost)
+    (serious-condition (cause)
+      (format *error-output*
+              "[kernel] graphics teardown after renderer loss failed: ~A~%"
+              cause)))
   (setf (kernel-state kernel) :renderer-lost)
+  (ataxia.runtime:request-runtime-stop runtime :renderer-lost)
   kernel)
 
 (defmethod ataxia.runtime:backend-new-output
@@ -91,7 +98,22 @@
 
 (defmethod ataxia.runtime:output-present
     ((kernel kernel) event)
-  (declare (ignore kernel event)))
+  (let ((output
+          (gethash (ataxia.runtime:output-present-output event)
+                   (%kernel-output-table kernel))))
+    (when output
+      (world-output-presented
+       (kernel-world kernel) output
+       (make-output-presentation
+        :commit-sequence
+        (ataxia.runtime:output-present-commit-sequence event)
+        :presented-p (ataxia.runtime:output-present-presented-p event)
+        :seconds (ataxia.runtime:output-present-seconds event)
+        :nanoseconds (ataxia.runtime:output-present-nanoseconds event)
+        :sequence (ataxia.runtime:output-present-sequence event)
+        :refresh-nanoseconds
+        (ataxia.runtime:output-present-refresh-nanoseconds event)
+        :flags (ataxia.runtime:output-present-flags event))))))
 
 (defmethod ataxia.runtime:output-request-state
     ((kernel kernel) runtime-output state)
@@ -145,6 +167,17 @@
          (input-device (%event-input-device kernel runtime-input))
          (seat (and input-device (input-seat input-device))))
     (when seat
+      (let ((manager
+              (ataxia.runtime:runtime-relative-pointer-manager
+               (kernel-runtime kernel))))
+        (when manager
+          (ataxia.runtime:relative-pointer-send-motion
+           manager (seat-runtime-object seat)
+           (* 1000 (ataxia.runtime:pointer-motion-time-msec event))
+           (ataxia.runtime:pointer-motion-delta-x event)
+           (ataxia.runtime:pointer-motion-delta-y event)
+           (ataxia.runtime:pointer-motion-unaccelerated-delta-x event)
+           (ataxia.runtime:pointer-motion-unaccelerated-delta-y event))))
       (world-cursor-motion
        (kernel-world kernel) seat
        (make-cursor-motion-input
@@ -269,6 +302,8 @@
 
 (defmethod ataxia.runtime:seat-request-set-cursor
     ((kernel kernel) request)
+  (unless (ataxia.runtime:seat-cursor-request-authorized-p request)
+    (return-from ataxia.runtime:seat-request-set-cursor request))
   (let* ((seat
            (gethash (ataxia.runtime:seat-cursor-request-seat request)
                     (%kernel-seat-table kernel)))
@@ -280,16 +315,18 @@
     (when seat
       (when surface
         (setf (%surface-externally-exposed-p surface) t))
-      (world-seat-cursor-request
-       (kernel-world kernel) seat
-       (make-instance
-        'cursor-surface-request
-        :seat seat
-        :surface surface
-        :serial (ataxia.runtime:seat-cursor-request-serial request)
-        :hotspot-x (ataxia.runtime:seat-cursor-request-hotspot-x request)
-        :hotspot-y
-        (ataxia.runtime:seat-cursor-request-hotspot-y request))))))
+      (let ((stable-request
+              (make-instance
+               'cursor-surface-request
+               :seat seat
+               :surface surface
+               :serial (ataxia.runtime:seat-cursor-request-serial request)
+               :hotspot-x (ataxia.runtime:seat-cursor-request-hotspot-x request)
+               :hotspot-y
+               (ataxia.runtime:seat-cursor-request-hotspot-y request))))
+        (setf (%seat-cursor-request seat) stable-request)
+        (world-seat-cursor-request
+         (kernel-world kernel) seat stable-request)))))
 
 (defmethod ataxia.runtime:seat-request-start-drag
     ((kernel kernel) request)
@@ -343,6 +380,11 @@
     ((kernel kernel) runtime-surface)
   (let ((surface (gethash runtime-surface (%kernel-surface-table kernel))))
     (when surface
+      (dolist (seat (kernel-seats kernel))
+        (let ((request (%seat-cursor-request seat)))
+          (when (and request
+                     (eq surface (cursor-surface-request-surface request)))
+            (setf (%seat-cursor-request seat) nil))))
       (when (%surface-externally-exposed-p surface)
         (world-object-changed
          (kernel-world kernel) surface
@@ -437,27 +479,32 @@
 
 (defmethod ataxia.runtime:xdg-toplevel-request-move
     ((kernel kernel) event)
-  (let ((application
-          (%request-application kernel (ataxia.runtime:xdg-move-toplevel event))))
-    (world-client-request
-     (kernel-world kernel) application
-     (make-instance
-      'move-client-request
-      :seat (%request-seat-object kernel (ataxia.runtime:xdg-move-seat event))
-      :serial (ataxia.runtime:xdg-move-serial event)))))
+  (let ((runtime-seat (ataxia.runtime:xdg-move-seat event))
+        (serial (ataxia.runtime:xdg-move-serial event)))
+    (when (ataxia.runtime:seat-validate-current-pointer-grab-serial
+           runtime-seat serial)
+      (world-client-request
+       (kernel-world kernel)
+       (%request-application kernel (ataxia.runtime:xdg-move-toplevel event))
+       (make-instance
+        'move-client-request
+        :seat (%request-seat-object kernel runtime-seat)
+        :serial serial)))))
 
 (defmethod ataxia.runtime:xdg-toplevel-request-resize
     ((kernel kernel) event)
-  (let ((application
-          (%request-application
-           kernel (ataxia.runtime:xdg-resize-toplevel event))))
-    (world-client-request
-     (kernel-world kernel) application
-     (make-instance
-      'resize-client-request
-      :seat (%request-seat-object kernel (ataxia.runtime:xdg-resize-seat event))
-      :serial (ataxia.runtime:xdg-resize-serial event)
-      :edges (ataxia.runtime:xdg-resize-edges event)))))
+  (let ((runtime-seat (ataxia.runtime:xdg-resize-seat event))
+        (serial (ataxia.runtime:xdg-resize-serial event)))
+    (when (ataxia.runtime:seat-validate-current-pointer-grab-serial
+           runtime-seat serial)
+      (world-client-request
+       (kernel-world kernel)
+       (%request-application kernel (ataxia.runtime:xdg-resize-toplevel event))
+       (make-instance
+        'resize-client-request
+        :seat (%request-seat-object kernel runtime-seat)
+        :serial serial
+        :edges (ataxia.runtime:xdg-resize-edges event))))))
 
 (defun %send-state-client-request (kernel toplevel name value)
   (let ((application (%request-application kernel toplevel)))
@@ -511,6 +558,41 @@
     (world-object-changed
      (kernel-world kernel) application
      (make-object-change :parent nil))))
+
+(defmethod ataxia.runtime:xdg-new-toplevel-decoration
+    ((kernel kernel) runtime decoration)
+  (declare (ignore kernel runtime))
+  (ataxia.runtime:xdg-toplevel-decoration-set-mode
+   decoration :client-side))
+
+(defmethod ataxia.runtime:xdg-toplevel-decoration-request-mode
+    ((kernel kernel) decoration)
+  (declare (ignore kernel))
+  (ataxia.runtime:xdg-toplevel-decoration-set-mode
+   decoration :client-side))
+
+(defmethod ataxia.runtime:xdg-toplevel-decoration-destroying
+    ((kernel kernel) decoration)
+  (declare (ignore kernel decoration))
+  nil)
+
+(defmethod ataxia.runtime:xdg-activation-requested
+    ((kernel kernel) runtime request)
+  (declare (ignore runtime))
+  (let* ((runtime-surface
+           (ataxia.runtime:xdg-activation-request-target-surface request))
+         (surface
+           (and runtime-surface
+                (gethash runtime-surface (%kernel-surface-table kernel))))
+         (application (and surface (%surface-tree-application surface)))
+         (runtime-seat (ataxia.runtime:xdg-activation-request-seat request))
+         (seat (and runtime-seat
+                    (gethash runtime-seat (%kernel-seat-table kernel)))))
+    (when application
+      (world-client-request
+       (kernel-world kernel) application
+       (make-instance 'state-client-request
+                      :name :activation :value t :seat seat)))))
 
 (defmethod ataxia.runtime:xdg-toplevel-title-changed
     ((kernel kernel) toplevel title)

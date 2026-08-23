@@ -15,7 +15,7 @@
               (merge-pathnames "common-lisp/"
                                (uiop:ensure-directory-pathname
                                 (or (uiop:getenv "ATAXIA_DEPS")
-                                    (merge-pathnames "ataxia-deps/"
+                                    (merge-pathnames "fun/ataxia-deps/"
                                                      (user-homedir-pathname)))))))))
   (asdf:initialize-source-registry
    `(:source-registry

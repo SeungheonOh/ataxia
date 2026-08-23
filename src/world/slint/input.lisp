@@ -17,6 +17,11 @@
     (276 5)
     (otherwise 0)))
 
+(defun %delivered (component)
+  (%notify-change component)
+  (ataxia.kernel:make-interaction-result
+   :status :delivered :object component))
+
 (defmethod ataxia.kernel:interactable-pointer-motion
     ((component slint-component) world seat local-x local-y input)
   (declare (ignore world seat input))
@@ -25,7 +30,7 @@
     (%live-native component) (%single local-x) (%single local-y))
    :pointer-motion)
   (poll-slint-callbacks component)
-  (%notify-change component))
+  (%delivered component))
 
 (defmethod ataxia.kernel:interactable-pointer-button
     ((component slint-component) world seat local-x local-y input)
@@ -37,7 +42,7 @@
     (eq (ataxia.kernel:cursor-button-input-state input) :pressed))
    :pointer-button)
   (poll-slint-callbacks component)
-  (%notify-change component))
+  (%delivered component))
 
 (defmethod ataxia.kernel:interactable-pointer-axis
     ((component slint-component) world seat local-x local-y input)
@@ -56,7 +61,7 @@
       (%single (if horizontal-p 0d0 delta)))
      :pointer-scroll))
   (poll-slint-callbacks component)
-  (%notify-change component))
+  (%delivered component))
 
 (defmethod ataxia.kernel:interactable-pointer-leave
     ((component slint-component) world seat)
@@ -65,7 +70,7 @@
    (ataxia.world.slint.raw::%pointer-exit (%live-native component))
    :pointer-exit)
   (poll-slint-callbacks component)
-  (%notify-change component))
+  (%delivered component))
 
 (defmethod ataxia.kernel:interactable-key-event
     ((component slint-component) world seat input)
@@ -92,7 +97,7 @@
        (ataxia.kernel:modifiers-input-group input))
       :modifiers)))
   (poll-slint-callbacks component)
-  (%notify-change component))
+  (%delivered component))
 
 (defmethod ataxia.kernel:interactable-focus
     ((component slint-component) world seat focus-kind)
@@ -104,7 +109,7 @@
     (%live-native component) (eq focus-kind :keyboard))
    :focus)
   (poll-slint-callbacks component)
-  (%notify-change component))
+  (%delivered component))
 
 (defmethod ataxia.kernel:request-object-configuration
     ((component slint-component) world configuration)

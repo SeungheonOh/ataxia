@@ -283,6 +283,11 @@
        surface-x surface-y)
       (values surface surface-x surface-y))))
 
+(defmethod interactable-hit-test
+    ((application wayland-application) world local-x local-y)
+  (declare (ignore world))
+  (not (null (%application-surface-at application local-x local-y))))
+
 (defmethod interactable-pointer-motion
     ((application wayland-application) world (seat logical-seat)
      local-x local-y input)

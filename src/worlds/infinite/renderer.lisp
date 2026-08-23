@@ -367,9 +367,11 @@ void main() {
     tokens))
 
 (defun %render-canvas
-    (renderer output-state windows overlays seats damage-region)
+    (renderer output-state windows overlays seats damage-region damage-debug-p)
   (let ((tokens nil))
     (ataxia.world.gles:gles-reset-state)
+    (when damage-debug-p
+      (ataxia.world.gles:gles-clear 0.55d0 0.015d0 0.08d0 1d0))
     (ataxia.world.gles:gles-set-scissor-enabled t)
     (dolist (damage damage-region)
       (let ((x (max 0 (floor (ataxia.world:rectangle-x damage))))

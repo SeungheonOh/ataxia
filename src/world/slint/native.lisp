@@ -5,7 +5,7 @@
 
 (in-package #:ataxia.world.slint.raw)
 
-(defconstant +expected-abi+ 2)
+(defconstant +expected-abi+ 3)
 
 (defcstruct damage-rectangle
   (x :int32)
@@ -81,6 +81,8 @@
 (defcfun ("ataxia_slint_component_set_boolean" %set-boolean) :boolean
   (component :pointer) (name :string) (value :boolean))
 (defcfun ("ataxia_slint_component_register_callback" %register-callback) :boolean
+  (component :pointer) (name :string))
+(defcfun ("ataxia_slint_component_unregister_callback" %unregister-callback) :boolean
   (component :pointer) (name :string))
 (defcfun ("ataxia_slint_component_callback_count" %callback-count) :size
   (component :pointer))

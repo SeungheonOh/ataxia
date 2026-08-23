@@ -6,8 +6,15 @@
 
 (in-package #:ataxia.atlas-world)
 
-(defun make-atlas-world ()
-  (make-instance 'atlas-world))
+(defun make-atlas-world (&key damage-debug-p)
+  (make-instance 'atlas-world :damage-debug-p damage-debug-p))
+
+(defmethod ataxia.world:damage-debug-mode-p ((world atlas-world))
+  (%world-damage-debug-p world))
+
+(defmethod (setf ataxia.world:damage-debug-mode-p)
+    (enabled (world atlas-world))
+  (setf (%world-damage-debug-p world) enabled))
 
 (defun %now ()
   (/ (get-internal-real-time)
@@ -33,6 +40,10 @@
   (dolist (state (%output-states world))
     (%full-damage world state))
   world)
+
+(defmethod ataxia.world:refresh-world ((world atlas-world))
+  (%full-damage-all world)
+  (%request-all-frames world))
 
 (defun %damage-object (world object &optional (timestamp (%now)))
   (when (%object-visible-p object)
@@ -193,6 +204,7 @@
       (if (< (%layout-transition-progress layout timestamp) 1d0)
           (progn
             (%full-damage-all world)
+            (%update-all-membership world)
             (%revalidate-all-pointers world))
           (progn
             (setf (%atlas-layout-previous layout) nil)
@@ -240,17 +252,20 @@
     (let ((replacement (%top-visible-object world removed-object)))
       (when replacement (%focus-target world seat-state replacement)))))
 
-(defun %object-at-screen-point (world state x y &optional (timestamp (%now)))
+(defun %objects-at-screen-point (world state x y &optional (timestamp (%now)))
   (when state
-    (dolist (object (reverse (%scene-object-sequence world)))
-      (when (%object-visible-p object)
-        (multiple-value-bind (object-x object-y width height)
-            (%object-screen-geometry
-             state (%world-layout world) object timestamp)
-          (when (and object-x
-                     (<= object-x x (+ object-x width))
-                     (<= object-y y (+ object-y height)))
-            (return object)))))))
+    (loop for object in (reverse (%scene-object-sequence world))
+          when (and (%object-visible-p object)
+                    (multiple-value-bind (object-x object-y width height)
+                        (%object-screen-geometry
+                         state (%world-layout world) object timestamp)
+                      (and object-x
+                           (<= object-x x (+ object-x width))
+                           (<= object-y y (+ object-y height)))))
+            collect object)))
+
+(defun %object-at-screen-point (world state x y &optional (timestamp (%now)))
+  (first (%objects-at-screen-point world state x y timestamp)))
 
 (defun %target-at-screen-point (world state x y)
   (%object-at-screen-point world state x y))
@@ -271,25 +286,40 @@
 (defun %deliver-motion (world seat-state input)
   (let* ((state (%atlas-seat-output seat-state))
          (old (%atlas-seat-hovered seat-state))
+         (captured (%captured-pointer-target seat-state))
          (target
-           (or (%captured-pointer-target seat-state)
-               (%target-at-screen-point
-                world state
-                (%atlas-seat-x seat-state) (%atlas-seat-y seat-state)))))
+           (and state
+                (or captured
+                    (find-if
+                     (lambda (candidate)
+                       (multiple-value-bind (local-x local-y)
+                           (%target-local-position
+                            world state candidate
+                            (%atlas-seat-x seat-state) (%atlas-seat-y seat-state))
+                         (ataxia.kernel:interactable-hit-test
+                          (atlas-object-component candidate) world
+                          local-x local-y)))
+                     (%objects-at-screen-point
+                      world state
+                      (%atlas-seat-x seat-state)
+                      (%atlas-seat-y seat-state)))))))
     (when (and old (not (eq old target)))
       (ataxia.kernel:interactable-pointer-leave
        (atlas-object-component old) world (%atlas-seat-seat seat-state)))
     (setf (%atlas-seat-hovered seat-state) target)
-    (if target
-        (multiple-value-bind (local-x local-y)
-            (%target-local-position
-             world state target
-             (%atlas-seat-x seat-state) (%atlas-seat-y seat-state))
-          (ataxia.kernel:interactable-pointer-motion
-           (atlas-object-component target) world
-           (%atlas-seat-seat seat-state) local-x local-y input))
-        (ataxia.kernel:clear-wayland-focus
-         (%atlas-seat-seat seat-state) :pointer t))))
+    (unless target
+      (ataxia.kernel:clear-wayland-focus
+       (%atlas-seat-seat seat-state) :pointer t))
+    (when target
+      (multiple-value-bind (local-x local-y)
+          (%target-local-position
+           world state target
+           (%atlas-seat-x seat-state) (%atlas-seat-y seat-state))
+        (ataxia.world:interaction-delivered-p
+         (ataxia.kernel:interactable-pointer-motion
+          (atlas-object-component target) world
+          (%atlas-seat-seat seat-state) local-x local-y input))))
+    target))
 
 (defun %revalidate-seat-pointer (world seat-state &optional input)
   (unless (or (%atlas-seat-operation seat-state)
@@ -418,20 +448,30 @@
                         (%atlas-operation-cursor-y operation)) zoom))
          (edges (%atlas-operation-edges operation))
          (width (%atlas-operation-object-width operation))
-         (height (%atlas-operation-object-height operation)))
+         (height (%atlas-operation-object-height operation))
+         (layout (%world-layout world))
+         (placement (gethash object (%atlas-layout-placements layout))))
     (when (logtest +resize-left+ edges) (decf width delta-x))
     (when (logtest +resize-right+ edges) (incf width delta-x))
     (when (logtest +resize-top+ edges) (decf height delta-y))
     (when (logtest +resize-bottom+ edges) (incf height delta-y))
+    (%damage-object world object)
     (setf (atlas-object-width object) (max 96d0 width)
           (atlas-object-height object) (max 64d0 height))
+    (when placement
+      (setf (%atlas-placement-width placement) (atlas-object-width object)
+            (%atlas-placement-height placement) (atlas-object-height object)))
+    (incf (%atlas-layout-revision layout))
     (ataxia.kernel:request-object-configuration
      (atlas-object-component object) world
      (make-instance 'ataxia.kernel:toplevel-configuration
                     :width (round (atlas-object-width object))
                     :height (round (atlas-object-height object))
                     :resizing t))
-    (%repack-world world :animate-p nil)))
+    (%damage-object world object)
+    (%update-object-membership world object)
+    (%revalidate-all-pointers world)
+    (%request-all-frames world)))
 
 (defun %apply-operation (world seat-state)
   (let ((operation (%atlas-seat-operation seat-state)))
@@ -449,7 +489,8 @@
            world seat-state object input :clamp-p t))
         (when (and object (eq (%atlas-operation-kind operation) :resize))
           (ataxia.kernel:request-object-state
-           (atlas-object-component object) world :resizing nil)))
+           (atlas-object-component object) world :resizing nil)
+          (%repack-world world)))
       (setf (%atlas-seat-operation seat-state) nil)
       (%revalidate-seat-pointer world seat-state input))))
 
@@ -577,8 +618,19 @@
   (declare (ignore reason))
   (setf (%world-quiescing-p world) t)
   (%remove-component-timer world)
-  (unless (%world-renderer world)
-    (%destroy-output-components world))
+  world)
+
+(defmethod ataxia.kernel:world-detached ((world atlas-world) kernel)
+  (when (eq kernel (ataxia.kernel:world-kernel world))
+    (%destroy-output-components world)
+    (dolist (state (%output-states world))
+      (ataxia.world:damage-forget-output
+       (%world-damage world) (%atlas-output-output state)))
+    (setf (%scene-root-children (%world-scene world)) nil)
+    (clrhash (%world-kernel-object-index world))
+    (clrhash (%world-outputs world))
+    (clrhash (%world-seats world))
+    (setf (ataxia.kernel:world-kernel world) nil))
   world)
 
 (defmethod ataxia.kernel:world-register-object
@@ -663,16 +715,26 @@
     (ataxia.kernel:wayland-application
      (let ((scene-object (find-atlas-object world object)))
        (when scene-object
-         (%damage-object world scene-object)
-         (let ((size-changed-p
-                 (and (not (%object-resize-active-p world scene-object))
-                      (%sync-object-size scene-object))))
+         (let ((size-changed-p nil))
+           (unless (%object-resize-active-p world scene-object)
+             (multiple-value-bind (x y width height)
+                 (ataxia.kernel:drawable-local-bounds object)
+               (declare (ignore x y))
+               (setf size-changed-p
+                     (and (plusp width) (plusp height)
+                          (or (/= width (atlas-object-width scene-object))
+                              (/= height (atlas-object-height scene-object)))))
+               (when size-changed-p
+                 (%damage-object world scene-object)
+                 (%sync-object-size scene-object))))
            (setf (%atlas-object-drawable-revision scene-object)
                  (ataxia.kernel:drawable-invalidation-revision invalidation))
            (if size-changed-p
                (%repack-world world)
                (progn
-                 (%damage-object world scene-object)
+                 (%damage-object-region
+                  world scene-object
+                  (ataxia.kernel:drawable-invalidation-damage invalidation))
                  (%update-object-membership world scene-object)
                  (%request-all-frames world)))))))
     (ataxia.kernel:surface-node
@@ -814,9 +876,10 @@
              (buttons (%atlas-seat-buttons seat-state)))
         (if pressed-p
             (let ((target
-                    (%target-at-screen-point
-                     world (%atlas-seat-output seat-state)
-                     (%atlas-seat-x seat-state) (%atlas-seat-y seat-state))))
+                    (or (%atlas-seat-hovered seat-state)
+                        (%target-at-screen-point
+                         world (%atlas-seat-output seat-state)
+                         (%atlas-seat-x seat-state) (%atlas-seat-y seat-state)))))
               (when target (%focus-target world seat-state target))
               (if (= code +button-middle+)
                   (progn
@@ -847,9 +910,10 @@
       (let* ((state (%atlas-seat-output seat-state))
              (operation (%atlas-seat-operation seat-state))
              (target
-               (%target-at-screen-point
-                world state (%atlas-seat-x seat-state)
-                (%atlas-seat-y seat-state)))
+               (or (%atlas-seat-hovered seat-state)
+                   (%target-at-screen-point
+                    world state (%atlas-seat-x seat-state)
+                    (%atlas-seat-y seat-state))))
              (zoom-p
                (and (eq (ataxia.kernel:cursor-axis-input-orientation input)
                         :vertical)
@@ -932,6 +996,13 @@
                 (%first-output-state world)))))
         (ataxia.kernel:state-client-request
          (case (ataxia.kernel:state-client-request-name request)
+           (:activation
+            (let ((seat-state
+                    (or (gethash (ataxia.kernel:client-request-seat request)
+                                 (%world-seats world))
+                        (first (%seat-states world)))))
+              (when (and seat-state (%atlas-object-mapped-p object))
+                (%focus-target world seat-state object))))
            (:maximized
             (when (%atlas-object-mapped-p object)
               (%set-object-expanded
@@ -994,7 +1065,6 @@
             (%request-object-frames world object timestamp)))))
     (%schedule-component-timer world)
     (%advance-visual-state world timestamp)
-    (%update-all-membership world)
     (multiple-value-bind (region damage-frame)
         (ataxia.world:damage-begin-frame
          (%world-damage world) output
@@ -1007,7 +1077,8 @@
                   (%render-atlas
                    (%world-renderer world) state (%world-layout world)
                    (%scene-object-sequence world)
-                   (%seat-states world) region timestamp)
+                   (%seat-states world) region timestamp
+                   (%world-damage-debug-p world))
                   #())))
         (make-instance
          'ataxia.kernel:world-frame-result
@@ -1030,14 +1101,12 @@
 
 (defmethod ataxia.kernel:world-frame-failed
     ((world atlas-world) output frame-result reason)
-  (declare (ignore reason))
+  (declare (ignore output reason))
   (when frame-result
     (let ((cookie (ataxia.kernel:frame-result-world-cookie frame-result)))
       (when cookie
         (ataxia.world:damage-fail-frame
          (%world-damage world) (%world-frame-cookie-damage-frame cookie)))))
-  (when (and output (eq (ataxia.kernel:object-state output) :live))
-    (ataxia.kernel:request-output-frame output))
   frame-result)
 
 (defmethod ataxia.kernel:world-graphics-detaching
@@ -1050,6 +1119,4 @@
   (when (%world-renderer world)
     (%destroy-atlas-renderer (%world-renderer world))
     (setf (%world-renderer world) nil))
-  (when (%world-quiescing-p world)
-    (%destroy-output-components world))
   world)

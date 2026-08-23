@@ -153,13 +153,14 @@
 
 (defstruct (seat-cursor-request
              (:constructor %make-seat-cursor-request
-                 (&key seat surface serial hotspot-x hotspot-y))
+                 (&key seat surface serial hotspot-x hotspot-y authorized-p))
              (:conc-name seat-cursor-request-))
   (seat nil :type wlr-seat :read-only t)
   (surface nil :type (or null wlr-surface) :read-only t)
   (serial 0 :type (unsigned-byte 32) :read-only t)
   (hotspot-x 0 :type (signed-byte 32) :read-only t)
-  (hotspot-y 0 :type (signed-byte 32) :read-only t))
+  (hotspot-y 0 :type (signed-byte 32) :read-only t)
+  (authorized-p nil :type boolean :read-only t))
 
 (defstruct (seat-drag-request
              (:constructor %make-seat-drag-request

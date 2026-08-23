@@ -261,6 +261,11 @@ ATAXIA_WLR_GLUE_API int32_t ataxia_seat_cursor_hotspot_x(
 	const struct wlr_seat_pointer_request_set_cursor_event *event);
 ATAXIA_WLR_GLUE_API int32_t ataxia_seat_cursor_hotspot_y(
 	const struct wlr_seat_pointer_request_set_cursor_event *event);
+ATAXIA_WLR_GLUE_API bool ataxia_seat_cursor_request_authorized(
+	const struct wlr_seat *seat,
+	const struct wlr_seat_pointer_request_set_cursor_event *event);
+ATAXIA_WLR_GLUE_API bool ataxia_seat_validate_current_pointer_grab_serial(
+	struct wlr_seat *seat, uint32_t serial);
 ATAXIA_WLR_GLUE_API void ataxia_seat_keyboard_notify_modifiers_current(
 	struct wlr_seat *seat, struct wlr_keyboard *keyboard);
 ATAXIA_WLR_GLUE_API void ataxia_seat_keyboard_notify_enter_current(

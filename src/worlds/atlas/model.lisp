@@ -150,6 +150,8 @@
    (retired-components :initform nil :accessor %world-retired-components)
    (seats :initform (make-hash-table :test #'eq) :reader %world-seats)
    (damage :initform (ataxia.world:make-damage-tracker) :reader %world-damage)
+   (damage-debug-p :initarg :damage-debug-p :initform nil
+                   :accessor %world-damage-debug-p)
    (renderer :initform nil :accessor %world-renderer)
    (component-timer :initform nil :accessor %world-component-timer)
    (quiescing-p :initform nil :accessor %world-quiescing-p))

@@ -503,6 +503,19 @@ int32_t ataxia_seat_cursor_hotspot_y(
 	return event == NULL ? 0 : event->hotspot_y;
 }
 
+bool ataxia_seat_cursor_request_authorized(const struct wlr_seat *seat,
+		const struct wlr_seat_pointer_request_set_cursor_event *event) {
+	return seat != NULL && event != NULL && event->seat_client != NULL &&
+		event->seat_client == seat->pointer_state.focused_client;
+}
+
+bool ataxia_seat_validate_current_pointer_grab_serial(struct wlr_seat *seat,
+		uint32_t serial) {
+	return seat != NULL && seat->pointer_state.focused_surface != NULL &&
+		wlr_seat_validate_pointer_grab_serial(
+			seat, seat->pointer_state.focused_surface, serial);
+}
+
 bool ataxia_seat_pointer_drag_active(const struct wlr_seat *seat) {
 	return seat != NULL && seat->drag != NULL &&
 		seat->drag->grab_type == WLR_DRAG_GRAB_KEYBOARD_POINTER;

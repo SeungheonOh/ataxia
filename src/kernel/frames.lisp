@@ -37,3 +37,15 @@
    (world-cookie :initarg :world-cookie :reader frame-result-world-cookie))
   (:documentation
    "World result containing final damage, opaque World state, and Kernel-owned Wayland tokens."))
+
+(defstruct (output-presentation
+             (:constructor make-output-presentation
+                 (&key commit-sequence presented-p seconds nanoseconds sequence
+                       refresh-nanoseconds flags)))
+  (commit-sequence 0 :type (unsigned-byte 32) :read-only t)
+  (presented-p nil :type boolean :read-only t)
+  (seconds 0 :type (signed-byte 64) :read-only t)
+  (nanoseconds 0 :type (signed-byte 64) :read-only t)
+  (sequence 0 :type (unsigned-byte 32) :read-only t)
+  (refresh-nanoseconds 0 :type (signed-byte 32) :read-only t)
+  (flags 0 :type (unsigned-byte 32) :read-only t))

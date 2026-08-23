@@ -18,6 +18,9 @@
 (defgeneric world-quiescing (world reason)
   (:documentation "Stop accepting new policy operations before detachment."))
 
+(defgeneric world-detached (world kernel)
+  (:documentation "Release WORLD's final reference to KERNEL after graphics detachment."))
+
 (defgeneric world-register-object (world object)
   (:documentation "Register a coherent Kernel-created Wayland object with WORLD."))
 
@@ -38,6 +41,13 @@
 
 (defgeneric world-output-removing (world output)
   (:documentation "Remove OUTPUT before Kernel invalidates its Runtime object."))
+
+(defgeneric world-output-presented (world output presentation)
+  (:documentation "Report copied presentation feedback for OUTPUT."))
+
+(defmethod world-output-presented ((world world) output presentation)
+  (declare (ignore output presentation))
+  nil)
 
 (defgeneric world-seat-added (world seat)
   (:documentation "Add a logical Wayland seat to WORLD."))

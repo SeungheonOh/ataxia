@@ -88,10 +88,39 @@
   (clrhash (%output-target-tokens output))
   output)
 
+(defun %cancel-output-retry (output)
+  (when (%output-retry-timer output)
+    (ataxia.runtime:remove-event-loop-source (%output-retry-timer output))
+    (setf (%output-retry-timer output) nil))
+  output)
+
+(defun %schedule-output-retry (output)
+  (let* ((failures (incf (%output-consecutive-frame-failures output)))
+         (delay (min 1000 (* 16 (ash 1 (min 6 (1- failures)))))))
+    (if (> failures 8)
+        (when (= failures 9)
+          (format *error-output*
+                  "[kernel] pausing automatic frame retries for output ~A.~%"
+                  (output-name output)))
+        (progn
+          (unless (%output-retry-timer output)
+            (setf (%output-retry-timer output)
+                  (ataxia.runtime:add-event-loop-timer
+                   (kernel-runtime (object-kernel output))
+                   (lambda (source)
+                     (declare (ignore source))
+                     (when (eq (object-state output) :live)
+                       (request-output-frame output))
+                     0))))
+          (ataxia.runtime:update-event-loop-timer
+           (%output-retry-timer output) delay))))
+  output)
+
 (defun %retire-output (output &key (protocol-active-p t))
   (when (eq (object-state output) :live)
     (let ((kernel (object-kernel output)))
       (world-output-removing (kernel-world kernel) output)
+      (%cancel-output-retry output)
       (%reset-output-swapchain output)
       (dolist (surface (%hash-values (%kernel-surface-table kernel)))
         (when (gethash output (%surface-output-membership surface))
@@ -139,9 +168,14 @@
                :generation (%output-swapchain-generation output)
                :native-address address)))))
 
-(defun %frame-timestamp ()
-  (/ (get-internal-real-time)
-     (coerce internal-time-units-per-second 'double-float)))
+(defun %frame-timestamp (kernel)
+  (let* ((now (/ (get-internal-real-time)
+                 (coerce internal-time-units-per-second 'double-float)))
+         (sampled-at (%kernel-frame-clock-sampled-at kernel)))
+    (when (or (minusp sampled-at) (> (- now sampled-at) 0.002d0))
+      (setf (%kernel-frame-clock-time kernel) now
+            (%kernel-frame-clock-sampled-at kernel) now))
+    (%kernel-frame-clock-time kernel)))
 
 (defun %valid-damage-rectangle-p (rectangle width height)
   (and (typep rectangle 'frame-damage-rectangle)
@@ -222,7 +256,7 @@
             :height buffer-height
             :scale (output-scale output)
             :transform (output-transform output)
-            :timestamp (%frame-timestamp)
+            :timestamp (%frame-timestamp kernel)
             :generation (%output-swapchain-generation output))))
     (unwind-protect
          (ataxia.runtime:call-with-egl-context
@@ -260,7 +294,8 @@
 (defun %render-output-frame (output)
   (let ((kernel (object-kernel output))
         (buffer nil)
-        (result nil))
+        (result nil)
+        (committed-p nil))
     (setf (%output-frame-requested-p output) nil
           (%output-frame-active-p output) t)
     (unwind-protect
@@ -286,13 +321,21 @@
                 (kernel-world kernel) output result cause)
                (setf result nil)))
            (when result
-             (%commit-world-frame output buffer result)))
+             (setf committed-p (%commit-world-frame output buffer result))))
       (when buffer
         (ataxia.runtime:release-buffer buffer))
       (setf (%output-frame-active-p output) nil)
-      (when (%output-next-frame-requested-p output)
-        (setf (%output-next-frame-requested-p output) nil)
-        (request-output-frame output)))))
+      (if committed-p
+          (progn
+            (setf (%output-consecutive-frame-failures output) 0)
+            (%cancel-output-retry output)
+            (when (%output-next-frame-requested-p output)
+              (setf (%output-next-frame-requested-p output) nil)
+              (request-output-frame output)))
+          (progn
+            (setf (%output-next-frame-requested-p output) nil)
+            (when (eq (object-state output) :live)
+              (%schedule-output-retry output)))))))
 
 (defun set-wayland-surface-output-membership (token outputs)
   "Apply World-computed output membership for one opaque Wayland surface token."
@@ -328,8 +371,11 @@
        (declare (ignore present-p))
        (setf (gethash output current) t))
      desired)
-    (when outputs
-      (ataxia.runtime:notify-surface-preferred-scale
-       (surface-runtime-object surface)
-       (reduce #'max outputs :key #'output-scale)))
+    (let ((preferred-scale
+            (and outputs (reduce #'max outputs :key #'output-scale))))
+      (unless (eql preferred-scale (%surface-preferred-scale surface))
+        (setf (%surface-preferred-scale surface) preferred-scale)
+        (when preferred-scale
+          (ataxia.runtime:notify-surface-preferred-scale
+           (surface-runtime-object surface) preferred-scale))))
     token))

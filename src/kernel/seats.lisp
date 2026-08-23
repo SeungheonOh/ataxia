@@ -10,7 +10,7 @@
   (case (input-type input-device)
     (:pointer ataxia.runtime:+seat-capability-pointer+)
     (:keyboard ataxia.runtime:+seat-capability-keyboard+)
-    (:touch ataxia.runtime:+seat-capability-touch+)
+    (:touch 0)
     (otherwise 0)))
 
 (defun %refresh-seat-capabilities (seat)

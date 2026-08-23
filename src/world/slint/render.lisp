@@ -72,7 +72,6 @@
   (detach-slint-component-graphics component))
 
 (defmethod ataxia.kernel:drawable-prepare-frame ((component slint-component))
-  (update-slint-timers)
   (unless (slint-component-graphics-attached-p component)
     (attach-slint-component-graphics component))
   (render-slint-component component))

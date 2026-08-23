@@ -4,11 +4,11 @@
 
 (defun run-tiling-compositor
     (&key (backend :auto) (width 1280) (height 720) run-for debug-p
-          (sly-port 4005))
+          damage-debug-p (sly-port 4005))
   (let ((control nil)
         (kernel
           (ataxia.kernel:create-kernel
-           (make-tiling-world)
+           (make-tiling-world :damage-debug-p damage-debug-p)
            :backend backend
            :headless-width width
            :headless-height height
@@ -41,7 +41,8 @@
 
 (defun %parse-main-options (arguments)
   (let ((options (list :backend :auto :width 1280 :height 720
-                       :run-for nil :debug-p nil :sly-port 4005)))
+                       :run-for nil :debug-p nil :damage-debug-p nil
+                       :sly-port 4005)))
     (labels ((value-after (name)
                (or (pop arguments) (error "Missing value after ~A." name))))
       (loop while arguments
@@ -64,6 +65,8 @@
                         (%number-option (value-after option) nil option)))
                  ((string= option "--debug")
                   (setf (getf options :debug-p) t))
+                 ((string= option "--damage-debug")
+                  (setf (getf options :damage-debug-p) t))
                  ((string= option "--sly-port")
                   (let ((port (%number-option (value-after option) t option)))
                     (unless (<= port 65535)
@@ -77,7 +80,7 @@
     options))
 
 (defun %print-usage ()
-  (format t "Usage: run-tiling-world [--backend auto|headless] [--width N] [--height N] [--run-for SECONDS] [--debug] [--sly-port N|--no-sly]~%"))
+  (format t "Usage: run-tiling-world [--backend auto|headless] [--width N] [--height N] [--run-for SECONDS] [--debug] [--damage-debug] [--sly-port N|--no-sly]~%"))
 
 (defun main (&optional (arguments (uiop:command-line-arguments)))
   (handler-case

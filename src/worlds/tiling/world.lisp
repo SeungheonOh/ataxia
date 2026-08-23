@@ -17,6 +17,10 @@
     (%full-damage world state))
   world)
 
+(defmethod ataxia.world:refresh-world ((world tiling-world))
+  (%full-damage-all world)
+  (%request-all-frames world))
+
 (defun %damage-node (world node &optional (timestamp (%now)))
   (let ((state (%tile-output-state node)))
     (when state
@@ -26,6 +30,36 @@
            (%world-damage world) (%tiling-output-output state)
            (list coverage))
           (%request-output-frame world state)))))
+  node)
+
+(defun %damage-node-region (world node rectangles &optional (timestamp (%now)))
+  (let ((state (%tile-output-state node)))
+    (when (and state rectangles)
+      (multiple-value-bind (screen-x screen-y screen-width screen-height)
+          (%tile-geometry world node timestamp)
+        (multiple-value-bind (local-x local-y local-width local-height)
+            (ataxia.kernel:drawable-local-bounds (tile-node-component node))
+          (when (and screen-x (plusp local-width) (plusp local-height))
+            (ataxia.world:damage-add-region
+             (%world-damage world) (%tiling-output-output state)
+             (mapcar
+              (lambda (rectangle)
+                (%screen-rectangle-to-buffer
+                 state
+                 (+ screen-x
+                    (* screen-width
+                       (/ (- (ataxia.world:rectangle-x rectangle) local-x)
+                          local-width)))
+                 (+ screen-y
+                    (* screen-height
+                       (/ (- (ataxia.world:rectangle-y rectangle) local-y)
+                          local-height)))
+                 (* screen-width
+                    (/ (ataxia.world:rectangle-width rectangle) local-width))
+                 (* screen-height
+                    (/ (ataxia.world:rectangle-height rectangle) local-height))))
+              rectangles))
+            (%request-output-frame world state))))))
   node)
 
 (defun %damage-cursor (world seat-state)
@@ -180,15 +214,18 @@
   (loop for node being the hash-values of (%tiling-seat-buttons seat-state)
         when node return node))
 
-(defun %node-at-point (world state x y &optional (timestamp (%now)))
+(defun %nodes-at-point (world state x y &optional (timestamp (%now)))
   (when state
-    (dolist (node (reverse (%presented-output-nodes world state)))
-      (multiple-value-bind (node-x node-y width height)
-          (%tile-geometry world node timestamp)
-        (when (and node-x
-                   (<= node-x x (+ node-x width))
-                   (<= node-y y (+ node-y height)))
-          (return node))))))
+    (loop for node in (reverse (%presented-output-nodes world state))
+          when (multiple-value-bind (node-x node-y width height)
+                   (%tile-geometry world node timestamp)
+                 (and node-x
+                      (<= node-x x (+ node-x width))
+                      (<= node-y y (+ node-y height))))
+            collect node)))
+
+(defun %node-at-point (world state x y &optional (timestamp (%now)))
+  (first (%nodes-at-point world state x y timestamp)))
 
 (defun %node-local-position (world node x y)
   (multiple-value-bind (node-x node-y width height)
@@ -200,24 +237,36 @@
 
 (defun %deliver-motion (world seat-state input)
   (let* ((old (%tiling-seat-hovered seat-state))
+         (captured (%captured-pointer-node seat-state))
          (target
-           (or (%captured-pointer-node seat-state)
-               (%node-at-point
-                world (%tiling-seat-output seat-state)
-                (%tiling-seat-x seat-state) (%tiling-seat-y seat-state)))))
+           (or captured
+               (find-if
+                (lambda (candidate)
+                  (multiple-value-bind (local-x local-y)
+                      (%node-local-position
+                       world candidate
+                       (%tiling-seat-x seat-state) (%tiling-seat-y seat-state))
+                    (ataxia.kernel:interactable-hit-test
+                     (tile-node-component candidate) world local-x local-y)))
+                (%nodes-at-point
+                 world (%tiling-seat-output seat-state)
+                 (%tiling-seat-x seat-state) (%tiling-seat-y seat-state))))))
     (when (and old (not (eq old target)))
       (ataxia.kernel:interactable-pointer-leave
        (tile-node-component old) world (%tiling-seat-seat seat-state)))
     (setf (%tiling-seat-hovered seat-state) target)
-    (if target
-        (multiple-value-bind (local-x local-y)
-            (%node-local-position
-             world target (%tiling-seat-x seat-state) (%tiling-seat-y seat-state))
-          (ataxia.kernel:interactable-pointer-motion
-           (tile-node-component target) world (%tiling-seat-seat seat-state)
-           local-x local-y input))
-        (ataxia.kernel:clear-wayland-focus
-         (%tiling-seat-seat seat-state) :pointer t))))
+    (unless target
+      (ataxia.kernel:clear-wayland-focus
+       (%tiling-seat-seat seat-state) :pointer t))
+    (when target
+      (multiple-value-bind (local-x local-y)
+          (%node-local-position
+           world target (%tiling-seat-x seat-state) (%tiling-seat-y seat-state))
+        (ataxia.world:interaction-delivered-p
+         (ataxia.kernel:interactable-pointer-motion
+          (tile-node-component target) world (%tiling-seat-seat seat-state)
+          local-x local-y input))))
+    target))
 
 (defun %revalidate-seat-pointer (world seat-state &optional input)
   (unless (plusp (hash-table-count (%tiling-seat-buttons seat-state)))
@@ -435,6 +484,20 @@
   (setf (%world-quiescing-p world) t)
   world)
 
+(defmethod ataxia.kernel:world-detached ((world tiling-world) kernel)
+  (when (eq kernel (ataxia.kernel:world-kernel world))
+    (dolist (node (%world-nodes world))
+      (ataxia.world:cancel-subject-animations (%world-animator world) node))
+    (dolist (state (%output-states world))
+      (ataxia.world:damage-forget-output
+       (%world-damage world) (%tiling-output-output state)))
+    (clrhash (%world-kernel-index world))
+    (clrhash (%world-outputs world))
+    (clrhash (%world-seats world))
+    (setf (%world-nodes world) nil)
+    (setf (ataxia.kernel:world-kernel world) nil))
+  world)
+
 (defmethod ataxia.kernel:world-register-object
     ((world tiling-world) (application ataxia.kernel:wayland-application))
   (unless (find-tile-node world application)
@@ -527,7 +590,8 @@
        (when node
          (setf (%tile-drawable-revision node)
                (ataxia.kernel:drawable-invalidation-revision invalidation))
-         (%damage-node world node)
+         (%damage-node-region
+          world node (ataxia.kernel:drawable-invalidation-damage invalidation))
          (%update-node-membership node))))
     (ataxia.kernel:surface-node
      (dolist (seat-state (%seat-states world))
@@ -645,9 +709,10 @@
              (buttons (%tiling-seat-buttons seat-state)))
         (if pressed-p
             (let ((target
-                    (%node-at-point
-                     world (%tiling-seat-output seat-state)
-                     (%tiling-seat-x seat-state) (%tiling-seat-y seat-state))))
+                    (or (%tiling-seat-hovered seat-state)
+                        (%node-at-point
+                         world (%tiling-seat-output seat-state)
+                         (%tiling-seat-x seat-state) (%tiling-seat-y seat-state)))))
               (when target (%focus-node world seat-state target))
               (when target (setf (gethash code buttons) target))
               (%deliver-button world seat-state target input))
@@ -667,9 +732,10 @@
     (when seat-state
       (%deliver-axis
        world seat-state
-       (%node-at-point
-        world (%tiling-seat-output seat-state)
-        (%tiling-seat-x seat-state) (%tiling-seat-y seat-state))
+       (or (%tiling-seat-hovered seat-state)
+           (%node-at-point
+            world (%tiling-seat-output seat-state)
+            (%tiling-seat-x seat-state) (%tiling-seat-y seat-state)))
        input)))
   input)
 
@@ -736,6 +802,12 @@
           world node (ataxia.kernel:state-client-request-value request)))
         (ataxia.kernel:state-client-request
          (case (ataxia.kernel:state-client-request-name request)
+           (:activation
+            (let ((seat-state
+                    (or (gethash (ataxia.kernel:client-request-seat request)
+                                 (%world-seats world))
+                        (first (%seat-states world)))))
+              (when seat-state (%focus-node world seat-state node))))
            (:maximized
             (ataxia.kernel:request-object-state
              application world :maximized
@@ -783,7 +855,7 @@
     (dolist (node (%presented-output-nodes world state))
       (multiple-value-bind (damage active-p)
           (ataxia.kernel:drawable-prepare-frame (tile-node-component node))
-        (when damage (%damage-node world node timestamp))
+        (when damage (%damage-node-region world node damage timestamp))
         (when active-p (%request-output-frame world state))))
     (%advance-node-animations world timestamp)
     (%advance-layout-animation world timestamp)
@@ -798,7 +870,7 @@
               (if region
                   (%render-tiling
                    (%world-renderer world) world state (%seat-states world)
-                   region timestamp)
+                   region timestamp (%world-damage-debug-p world))
                   #())))
         (make-instance
          'ataxia.kernel:world-frame-result
@@ -821,14 +893,12 @@
 
 (defmethod ataxia.kernel:world-frame-failed
     ((world tiling-world) output frame-result reason)
-  (declare (ignore reason))
+  (declare (ignore output reason))
   (when frame-result
     (let ((cookie (ataxia.kernel:frame-result-world-cookie frame-result)))
       (when cookie
         (ataxia.world:damage-fail-frame
          (%world-damage world) (%world-frame-cookie-damage-frame cookie)))))
-  (when (and output (eq (ataxia.kernel:object-state output) :live))
-    (ataxia.kernel:request-output-frame output))
   frame-result)
 
 (defmethod ataxia.kernel:world-graphics-detaching

@@ -28,7 +28,9 @@
    (popups :initform (make-hash-table :test #'eq)
            :reader %kernel-popup-table)
    (default-seat :initform nil :accessor %kernel-default-seat)
-   (graphics-attached-p :initform nil :accessor %kernel-graphics-attached-p))
+   (graphics-attached-p :initform nil :accessor %kernel-graphics-attached-p)
+   (frame-clock-time :initform -1d0 :accessor %kernel-frame-clock-time)
+   (frame-clock-sampled-at :initform -1d0 :accessor %kernel-frame-clock-sampled-at))
   (:documentation
    "Stable mechanism joining one Runtime to one replaceable World on one owner thread."))
 
@@ -157,17 +159,59 @@
   nil)
 
 (defun install-world (kernel world)
-  "Replace the active World and replay only live Kernel-owned public objects."
+  "Replace the active World at an owner-thread safe point."
   (check-type world world)
   (let ((old-world (kernel-world kernel)))
     (unless (eq old-world world)
-      (world-quiescing old-world :world-replaced)
-      (setf (kernel-world kernel) world)
-      (world-attached world kernel)
-      (dolist (output (kernel-outputs kernel))
-        (world-output-added world output))
-      (dolist (seat (kernel-seats kernel))
-        (world-seat-added world seat))
-      (dolist (application (%hash-values (%kernel-toplevel-table kernel)))
-        (world-register-object world application))))
+      (let* ((runtime (kernel-runtime kernel))
+             (graphics-p (%kernel-graphics-attached-p kernel))
+             (egl (and runtime (ataxia.runtime:runtime-egl runtime))))
+        (labels ((detach-graphics (target reason)
+                   (when graphics-p
+                     (world-graphics-detaching target egl reason)))
+                 (attach-graphics (target)
+                   (when graphics-p
+                     (world-graphics-attached target egl)))
+                 (replay (target)
+                   (dolist (output (kernel-outputs kernel))
+                     (world-output-added target output))
+                   (dolist (seat (kernel-seats kernel))
+                     (world-seat-added target seat)
+                     (when (%seat-cursor-request seat)
+                       (world-seat-cursor-request
+                        target seat (%seat-cursor-request seat))))
+                   (dolist (application
+                            (%hash-values (%kernel-toplevel-table kernel)))
+                     (world-register-object target application))))
+          (world-quiescing old-world :world-replaced)
+          (if graphics-p
+              (ataxia.runtime:call-with-egl-context
+               egl (lambda () (detach-graphics old-world :world-replaced)))
+              (detach-graphics old-world :world-replaced))
+          (handler-case
+              (progn
+                (setf (kernel-world kernel) world)
+                (world-attached world kernel)
+                (replay world)
+                (if graphics-p
+                    (ataxia.runtime:call-with-egl-context
+                     egl (lambda () (attach-graphics world)))
+                    (attach-graphics world))
+                (world-detached old-world kernel))
+            (serious-condition (cause)
+              (ignore-errors (world-quiescing world :installation-failed))
+              (when graphics-p
+                (ignore-errors
+                  (ataxia.runtime:call-with-egl-context
+                   egl
+                   (lambda ()
+                     (world-graphics-detaching
+                      world egl :installation-failed)))))
+              (ignore-errors (world-detached world kernel))
+              (setf (kernel-world kernel) old-world)
+              (world-attached old-world kernel)
+              (when graphics-p
+                (ataxia.runtime:call-with-egl-context
+                 egl (lambda () (attach-graphics old-world))))
+              (error cause)))))))
   world)

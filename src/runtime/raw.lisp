@@ -239,6 +239,16 @@
   (event :pointer))
 (defcfun ("ataxia_seat_cursor_hotspot_y" %seat-cursor-hotspot-y) :int32
   (event :pointer))
+
+(defcfun ("ataxia_seat_cursor_request_authorized"
+           %seat-cursor-request-authorized) :boolean
+  (seat :pointer)
+  (event :pointer))
+
+(defcfun ("ataxia_seat_validate_current_pointer_grab_serial"
+           %seat-validate-current-pointer-grab-serial) :boolean
+  (seat :pointer)
+  (serial :uint32))
 (defcfun ("ataxia_seat_drag_request_drag" %seat-drag-request-drag) :pointer
   (event :pointer))
 (defcfun ("ataxia_seat_drag_request_origin" %seat-drag-request-origin) :pointer

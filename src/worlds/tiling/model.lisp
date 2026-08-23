@@ -84,13 +84,22 @@
    (seats :initform (make-hash-table :test #'eq) :reader %world-seats)
    (animator :initform (ataxia.world:make-animator) :reader %world-animator)
    (damage :initform (ataxia.world:make-damage-tracker) :reader %world-damage)
+   (damage-debug-p :initarg :damage-debug-p :initform nil
+                   :accessor %world-damage-debug-p)
    (renderer :initform nil :accessor %world-renderer)
    (last-animation-time :initform -1d0 :accessor %world-last-animation-time)
    (quiescing-p :initform nil :accessor %world-quiescing-p))
   (:documentation "Per-output master-stack tiling policy and direct GLES renderer."))
 
-(defun make-tiling-world ()
-  (make-instance 'tiling-world))
+(defun make-tiling-world (&key damage-debug-p)
+  (make-instance 'tiling-world :damage-debug-p damage-debug-p))
+
+(defmethod ataxia.world:damage-debug-mode-p ((world tiling-world))
+  (%world-damage-debug-p world))
+
+(defmethod (setf ataxia.world:damage-debug-mode-p)
+    (enabled (world tiling-world))
+  (setf (%world-damage-debug-p world) enabled))
 
 (defun find-tile-node (world component)
   (gethash component (%world-kernel-index world)))

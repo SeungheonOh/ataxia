@@ -24,8 +24,8 @@
 
 (defstruct (%damage-frame
              (:constructor %make-damage-frame
-                 (output state target pending full-p region)))
-  output state target pending full-p region)
+                 (output state target pending full-p new-region region)))
+  output state target pending full-p new-region region)
 
 (defun make-damage-tracker (&key (history-limit 24))
   (make-instance 'damage-tracker :history-limit history-limit))
@@ -96,14 +96,16 @@
       (error "Damage frame already staged for output ~S." output))
     (let* ((pending (%damage-output-pending state))
            (full-p (%damage-output-full-p state))
+           (new-region
+             (clip-region (if full-p full-region pending) width height))
            (repair
              (clip-region
-              (if full-p
-                  full-region
-                  (append pending (%history-repair state target full-region)))
+              (append new-region
+                      (unless full-p
+                        (%history-repair state target full-region)))
               width height))
            (frame (%make-damage-frame
-                   output state target pending full-p repair)))
+                   output state target pending full-p new-region repair)))
       (setf (%damage-output-staged state) frame)
       (values repair frame))))
 
@@ -124,7 +126,7 @@
       (setf (gethash (%damage-frame-target frame)
                      (%damage-output-targets state))
             serial)
-      (push (%make-damage-record serial (%damage-frame-region frame))
+      (push (%make-damage-record serial (%damage-frame-new-region frame))
             (%damage-output-history state))
       (setf (%damage-output-history state)
             (subseq (%damage-output-history state)

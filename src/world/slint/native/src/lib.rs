@@ -222,7 +222,7 @@ fn pointer_button(value: u32) -> PointerEventButton {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn ataxia_slint_abi_version() -> u32 {
-    2
+    3
 }
 
 #[unsafe(no_mangle)]
@@ -680,6 +680,26 @@ pub unsafe extern "C" fn ataxia_slint_component_register_callback(
                 Value::Void
             })
             .map_err(|error| error.to_string())?;
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ataxia_slint_component_unregister_callback(
+    component: *mut NativeComponent,
+    name: *const c_char,
+) -> bool {
+    ffi_bool(|| {
+        let component = unsafe { component_mut(component) }?;
+        let name = unsafe { required_string(name, "callback name") }?;
+        component
+            ._instance
+            .set_callback(&name, |_| Value::Void)
+            .map_err(|error| error.to_string())?;
+        component
+            .callbacks
+            .borrow_mut()
+            .retain(|event| event.name.to_bytes() != name.as_bytes());
         Ok(())
     })
 }

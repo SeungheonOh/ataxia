@@ -42,17 +42,24 @@
 
 (defun normalize-region (rectangles)
   "Return a conservative region with touching rectangles coalesced."
-  (let ((result nil))
-    (dolist (rectangle rectangles)
-      (unless (rectangle-empty-p rectangle)
-        (let ((merged rectangle)
-              (remaining nil))
-          (dolist (candidate result)
-            (if (%rectangles-touch-p merged candidate)
-                (setf merged (rectangle-union merged candidate))
-                (push candidate remaining)))
-          (setf result (cons merged remaining)))))
-    (nreverse result)))
+  (labels ((insert-rectangle (rectangle region)
+             (let ((touching
+                     (find-if
+                      (lambda (candidate)
+                        (%rectangles-touch-p rectangle candidate))
+                      region)))
+               (if touching
+                   (insert-rectangle
+                    (rectangle-union rectangle touching)
+                    (delete touching region :test #'eq :count 1))
+                   (cons rectangle region)))))
+    (nreverse
+     (reduce (lambda (region rectangle)
+               (if (rectangle-empty-p rectangle)
+                   region
+                   (insert-rectangle rectangle region)))
+             rectangles
+             :initial-value nil))))
 
 (defun clip-region (rectangles width height)
   (let ((bounds (make-rectangle 0 0 width height)))

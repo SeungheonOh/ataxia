@@ -17,14 +17,23 @@
    (component-timer :initform nil :accessor %world-component-timer)
    (animator :initform (ataxia.world:make-animator) :reader %world-animator)
    (damage :initform (ataxia.world:make-damage-tracker) :reader %world-damage)
+   (damage-debug-p :initarg :damage-debug-p :initform nil
+                   :accessor %world-damage-debug-p)
    (renderer :initform nil :accessor %world-renderer)
    (last-animation-time :initform -1d0 :accessor %world-last-animation-time)
    (quiescing-p :initform nil :accessor %world-quiescing-p))
   (:documentation
    "One unbounded planar workspace with independent output cameras and World-owned animation, damage, interaction, and GLES state."))
 
-(defun make-infinite-world ()
-  (make-instance 'infinite-world))
+(defun make-infinite-world (&key damage-debug-p)
+  (make-instance 'infinite-world :damage-debug-p damage-debug-p))
+
+(defmethod ataxia.world:damage-debug-mode-p ((world infinite-world))
+  (%world-damage-debug-p world))
+
+(defmethod (setf ataxia.world:damage-debug-mode-p)
+    (enabled (world infinite-world))
+  (setf (%world-damage-debug-p world) enabled))
 
 (defun %now ()
   (/ (get-internal-real-time)
@@ -125,7 +134,7 @@
   world)
 
 (defun %request-output-state-frame (world state)
-  (unless (%world-quiescing-p world)
+  (when (and state (not (%world-quiescing-p world)))
     (ataxia.kernel:request-output-frame (%canvas-output-output state)))
   world)
 
@@ -180,6 +189,36 @@
     (ataxia.world:damage-add-region
      (%world-damage world) (%canvas-output-output state)
      (list (%window-buffer-coverage state window))))
+  window)
+
+(defun %damage-window-region (world window rectangles)
+  (when (and rectangles (%window-visible-p window))
+    (multiple-value-bind (local-x local-y local-width local-height)
+        (ataxia.kernel:drawable-local-bounds
+         (canvas-window-application window))
+      (when (and (plusp local-width) (plusp local-height))
+        (dolist (state (%output-states world))
+          (multiple-value-bind (screen-x screen-y screen-width screen-height)
+              (%window-screen-geometry state window)
+            (ataxia.world:damage-add-region
+             (%world-damage world) (%canvas-output-output state)
+             (mapcar
+              (lambda (rectangle)
+                (%screen-rectangle-to-buffer
+                 state
+                 (+ screen-x
+                    (* screen-width
+                       (/ (- (ataxia.world:rectangle-x rectangle) local-x)
+                          local-width)))
+                 (+ screen-y
+                    (* screen-height
+                       (/ (- (ataxia.world:rectangle-y rectangle) local-y)
+                          local-height)))
+                 (* screen-width
+                    (/ (ataxia.world:rectangle-width rectangle) local-width))
+                 (* screen-height
+                    (/ (ataxia.world:rectangle-height rectangle) local-height))))
+              rectangles)))))))
   window)
 
 (defun %damage-overlay (world overlay)
@@ -327,6 +366,11 @@
    (%world-damage world) (%canvas-output-output state))
   (%request-output-state-frame world state))
 
+(defmethod ataxia.world:refresh-world ((world infinite-world))
+  (dolist (state (%output-states world))
+    (%full-damage world state))
+  world)
+
 (defun %capture-window-coverage (world)
   (let ((coverage (make-hash-table :test #'eq)))
     (dolist (window (%world-stacking world))
@@ -351,7 +395,8 @@
                  (ataxia.world:damage-add-region
                   (%world-damage world) (%canvas-output-output state)
                   (list (gethash state before)
-                        (%window-buffer-coverage state subject))))))
+                        (%window-buffer-coverage state subject)))))
+             (%update-window-membership world subject))
             (%canvas-output (%full-damage world subject))))
         (when active-p
           (%request-all-frames world))))))
@@ -453,17 +498,17 @@
                         (* (- right left) scale-x)
                         (* (- bottom top) scale-y)))))))))
 
-(defun %window-at-screen-point (world state x y)
-  (dolist (window (reverse (%world-stacking world)))
-    (when (%window-visible-p window)
-      (multiple-value-bind (window-x window-y width height)
-          (%window-input-geometry state window)
-        (when (and (<= window-x x (+ window-x width))
-                   (<= window-y y (+ window-y height)))
-          (return window))))))
+(defun %windows-at-screen-point (world state x y)
+  (loop for window in (reverse (%world-stacking world))
+        when (and (%window-visible-p window)
+                  (multiple-value-bind (window-x window-y width height)
+                      (%window-input-geometry state window)
+                    (and (<= window-x x (+ window-x width))
+                         (<= window-y y (+ window-y height)))))
+          collect window))
 
-(defun %overlay-at-screen-point (world state x y)
-  (find-if
+(defun %overlays-at-screen-point (world state x y)
+  (remove-if-not
    (lambda (overlay)
      (and (typep (canvas-overlay-component overlay)
                  'ataxia.kernel:interactable)
@@ -474,9 +519,12 @@
               (+ (canvas-overlay-y overlay) (canvas-overlay-height overlay)))))
    (reverse (world-overlays world))))
 
+(defun %targets-at-screen-point (world state x y)
+  (append (%overlays-at-screen-point world state x y)
+          (%windows-at-screen-point world state x y)))
+
 (defun %target-at-screen-point (world state x y)
-  (or (%overlay-at-screen-point world state x y)
-      (%window-at-screen-point world state x y)))
+  (first (%targets-at-screen-point world state x y)))
 
 (defun %top-visible-window (world &optional excluded)
   (find-if (lambda (window)
@@ -507,27 +555,52 @@
       (values (+ local-x (* (/ (- x target-x) width) local-width))
               (+ local-y (* (/ (- y target-y) height) local-height))))))
 
+(defun %captured-pointer-target (seat-state)
+  (loop for target being the hash-values of (%canvas-seat-buttons seat-state)
+        when (and target (not (eq target :world))) return target))
+
+(defun %target-accepts-position-p (world seat-state state target)
+  (multiple-value-bind (local-x local-y)
+      (%target-local-position
+       state target (%canvas-seat-x seat-state) (%canvas-seat-y seat-state))
+    (ataxia.kernel:interactable-hit-test
+     (%target-component target) world local-x local-y)))
+
 (defun %deliver-motion (world seat-state input)
   (let* ((state (%canvas-seat-output seat-state))
+         (captured (%captured-pointer-target seat-state))
+         (candidates
+           (cond
+             (captured (list captured))
+             (state
+              (%targets-at-screen-point
+               world state (%canvas-seat-x seat-state) (%canvas-seat-y seat-state)))))
          (target
            (and state
-                (%target-at-screen-point
-                 world state (%canvas-seat-x seat-state) (%canvas-seat-y seat-state)))))
+                (or captured
+                    (find-if
+                     (lambda (candidate)
+                       (%target-accepts-position-p
+                        world seat-state state candidate))
+                     candidates)))))
     (unless (eq target (%canvas-seat-hovered seat-state))
       (when (%canvas-seat-hovered seat-state)
         (ataxia.kernel:interactable-pointer-leave
          (%target-component (%canvas-seat-hovered seat-state)) world
          (%canvas-seat-seat seat-state)))
       (setf (%canvas-seat-hovered seat-state) target))
-    (if target
-        (multiple-value-bind (local-x local-y)
-            (%target-local-position
-             state target (%canvas-seat-x seat-state) (%canvas-seat-y seat-state))
-          (ataxia.kernel:interactable-pointer-motion
-           (%target-component target) world
-           (%canvas-seat-seat seat-state) local-x local-y input))
-        (ataxia.kernel:clear-wayland-focus
-         (%canvas-seat-seat seat-state) :pointer t))))
+    (unless target
+      (ataxia.kernel:clear-wayland-focus
+       (%canvas-seat-seat seat-state) :pointer t))
+    (when target
+      (multiple-value-bind (local-x local-y)
+          (%target-local-position
+           state target (%canvas-seat-x seat-state) (%canvas-seat-y seat-state))
+        (ataxia.world:interaction-delivered-p
+         (ataxia.kernel:interactable-pointer-motion
+          (%target-component target) world
+          (%canvas-seat-seat seat-state) local-x local-y input))))
+    target))
 
 (defun %deliver-button-to-target (world seat-state target input &key clamp-p)
   (when target
@@ -896,6 +969,24 @@
   (%remove-component-timer world)
   world)
 
+(defmethod ataxia.kernel:world-detached ((world infinite-world) kernel)
+  (when (eq kernel (ataxia.kernel:world-kernel world))
+    (dolist (window (%world-stacking world))
+      (ataxia.world:cancel-subject-animations (%world-animator world) window))
+    (dolist (state (%output-states world))
+      (ataxia.world:damage-forget-output
+       (%world-damage world) (%canvas-output-output state)))
+    (dolist (overlay (world-overlays world))
+      (%destroy-overlay overlay))
+    (clrhash (%world-windows world))
+    (clrhash (%world-outputs world))
+    (clrhash (%world-seats world))
+    (setf (world-overlays world) nil
+          (%world-retired-overlays world) nil
+          (%world-stacking world) nil
+          (ataxia.kernel:world-kernel world) nil))
+  world)
+
 (defmethod ataxia.kernel:world-register-object
     ((world infinite-world) (application ataxia.kernel:wayland-application))
   (unless (find-canvas-window world application)
@@ -979,12 +1070,25 @@
     (ataxia.kernel:wayland-application
      (let ((window (find-canvas-window world object)))
        (when window
-         (%damage-window world window)
-         (unless (%window-resize-active-p world window)
-           (%sync-window-size window))
-         (setf (%canvas-window-drawable-revision window)
-               (ataxia.kernel:drawable-invalidation-revision invalidation))
-         (%damage-window world window)
+         (let ((size-changed-p nil))
+           (unless (%window-resize-active-p world window)
+             (multiple-value-bind (x y width height)
+                 (ataxia.kernel:drawable-local-bounds object)
+               (declare (ignore x y))
+               (setf size-changed-p
+                     (and (plusp width) (plusp height)
+                          (or (/= width (canvas-window-width window))
+                              (/= height (canvas-window-height window)))))
+               (when size-changed-p
+                 (%damage-window world window)
+                 (%sync-window-size window))))
+           (setf (%canvas-window-drawable-revision window)
+                 (ataxia.kernel:drawable-invalidation-revision invalidation))
+           (if size-changed-p
+               (%damage-window world window)
+               (%damage-window-region
+                world window
+                (ataxia.kernel:drawable-invalidation-damage invalidation))))
          (%update-window-membership world window)
          (%request-all-frames world))))
     (ataxia.kernel:surface-node
@@ -1118,9 +1222,10 @@
              (buttons (%canvas-seat-buttons seat-state)))
         (if pressed-p
             (let ((target
-                    (%target-at-screen-point
-                     world (%canvas-seat-output seat-state)
-                     (%canvas-seat-x seat-state) (%canvas-seat-y seat-state))))
+                    (or (%canvas-seat-hovered seat-state)
+                        (%target-at-screen-point
+                         world (%canvas-seat-output seat-state)
+                         (%canvas-seat-x seat-state) (%canvas-seat-y seat-state)))))
               (when target (%focus-target world seat-state target))
               (if (and (= code +button-middle+)
                        (not (typep target 'canvas-overlay)))
@@ -1154,9 +1259,10 @@
   (let ((seat-state (gethash seat (%world-seats world))))
     (when seat-state
       (let ((target
-              (%target-at-screen-point
-               world (%canvas-seat-output seat-state)
-               (%canvas-seat-x seat-state) (%canvas-seat-y seat-state))))
+              (or (%canvas-seat-hovered seat-state)
+                  (%target-at-screen-point
+                   world (%canvas-seat-output seat-state)
+                   (%canvas-seat-x seat-state) (%canvas-seat-y seat-state)))))
         (if target
             (%deliver-axis-to-target world seat-state target input)
             (when (eq (ataxia.kernel:cursor-axis-input-orientation input)
@@ -1257,6 +1363,14 @@
                 (%first-output-state world)))))
         (ataxia.kernel:state-client-request
          (case (ataxia.kernel:state-client-request-name request)
+           (:activation
+            (let ((seat-state
+                    (or (gethash (ataxia.kernel:client-request-seat request)
+                                 (%world-seats world))
+                        (first (%seat-states world)))))
+              (when (and seat-state (%canvas-window-mapped-p window))
+                (%raise-window world window)
+                (%focus-target world seat-state window))))
            (:maximized
             (when (%canvas-window-mapped-p window)
               (%damage-window world window)
@@ -1323,7 +1437,6 @@
           (when active-p
             (%request-output-state-frame world state)))))
     (%schedule-component-timer world)
-    (%update-all-membership world)
     (multiple-value-bind (region damage-frame)
         (ataxia.world:damage-begin-frame
          (%world-damage world) output
@@ -1336,7 +1449,8 @@
                   (%render-canvas
                    (%world-renderer world) state
                    (%world-stacking world) (world-overlays world)
-                   (%seat-states world) region)
+                   (%seat-states world) region
+                   (%world-damage-debug-p world))
                   #())))
         (make-instance
          'ataxia.kernel:world-frame-result
@@ -1360,14 +1474,12 @@
 
 (defmethod ataxia.kernel:world-frame-failed
     ((world infinite-world) output frame-result reason)
-  (declare (ignore reason))
+  (declare (ignore output reason))
   (when frame-result
     (let ((cookie (ataxia.kernel:frame-result-world-cookie frame-result)))
       (when cookie
         (ataxia.world:damage-fail-frame
          (%world-damage world) (%world-frame-cookie-damage-frame cookie)))))
-  (when (and output (eq (ataxia.kernel:object-state output) :live))
-    (ataxia.kernel:request-output-frame output))
   frame-result)
 
 (defmethod ataxia.kernel:world-graphics-detaching
@@ -1381,8 +1493,4 @@
   (when (%world-renderer world)
     (%destroy-canvas-renderer (%world-renderer world))
     (setf (%world-renderer world) nil))
-  (when (%world-quiescing-p world)
-    (dolist (overlay (world-overlays world))
-      (%destroy-overlay overlay))
-    (setf (world-overlays world) nil))
   world)

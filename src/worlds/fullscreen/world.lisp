@@ -127,6 +127,14 @@
   (setf (%world-active-p world) nil)
   world)
 
+(defmethod ataxia.kernel:world-detached ((world fullscreen-world) kernel)
+  (when (eq kernel (%world-kernel world))
+    (setf (%world-kernel world) nil
+          (%world-application world) nil
+          (%world-outputs world) nil)
+    (clrhash (%world-seats world)))
+  world)
+
 (defmethod ataxia.kernel:world-register-object
     ((world fullscreen-world) (application ataxia.kernel:wayland-application))
   (if (%world-application world)
@@ -134,6 +142,7 @@
       (progn
         (setf (%world-application world) application)
         (%configure-application world)
+        (%set-drawable-membership application (%world-outputs world))
         (%request-all-frames world)))
   application)
 
@@ -169,8 +178,10 @@
     ((world fullscreen-world) object invalidation)
   (declare (ignore invalidation))
   (when (eq object (%world-application world))
+    (%set-drawable-membership object (%world-outputs world))
     (%request-all-frames world))
   (when (%cursor-surface-p world object)
+    (%set-drawable-membership object (%world-outputs world))
     (%request-all-frames world))
   object)
 
@@ -178,6 +189,9 @@
     ((world fullscreen-world) output)
   (setf (%world-outputs world)
         (append (%world-outputs world) (list output)))
+  (when (%world-application world)
+    (%set-drawable-membership
+     (%world-application world) (%world-outputs world)))
   (%configure-application world)
   (multiple-value-bind (width height) (%output-logical-size output)
     (maphash
@@ -333,6 +347,8 @@
               (ataxia.kernel:cursor-surface-request-hotspot-x request)
               (%seat-state-hotspot-y state)
               (ataxia.kernel:cursor-surface-request-hotspot-y request))
+        (when new-surface
+          (%set-drawable-membership new-surface (%world-outputs world)))
         (%request-all-frames world))))
   request)
 
@@ -379,8 +395,6 @@
                              (ataxia.kernel:drawable-surface-protocol-token
                               surface)))
                        (when token
-                         (ataxia.kernel:set-wayland-surface-output-membership
-                          token (%world-outputs world))
                          (push token tokens))))))))
     tokens))
 
@@ -418,8 +432,6 @@
                                 (ataxia.kernel:drawable-surface-protocol-token
                                  surface)))
                           (when token
-                            (ataxia.kernel:set-wayland-surface-output-membership
-                             token (%world-outputs world))
                             (push token tokens))))))))
        (%world-seats world))
       tokens)))

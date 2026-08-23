@@ -338,9 +338,11 @@ void main() {
      '(0.018d0 0.021d0 0.029d0 1d0))))
 
 (defun %render-atlas
-    (renderer state layout objects seats damage-region timestamp)
+    (renderer state layout objects seats damage-region timestamp damage-debug-p)
   (let ((tokens nil))
     (ataxia.world.gles:gles-reset-state)
+    (when damage-debug-p
+      (ataxia.world.gles:gles-clear 0.55d0 0.015d0 0.08d0 1d0))
     (ataxia.world.gles:gles-set-scissor-enabled t)
     (dolist (damage damage-region)
       (let ((x (max 0 (floor (ataxia.world:rectangle-x damage))))

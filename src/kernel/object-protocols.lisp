@@ -161,6 +161,13 @@
     (object world seat local-x local-y input)
   (:documentation "Deliver resolved pointer motion synchronously."))
 
+(defgeneric interactable-hit-test (object world local-x local-y)
+  (:documentation "Return true when OBJECT accepts input at its local coordinate."))
+
+(defmethod interactable-hit-test ((object interactable) world local-x local-y)
+  (declare (ignore object world local-x local-y))
+  t)
+
 (defgeneric interactable-pointer-button
     (object world seat local-x local-y input)
   (:documentation "Deliver a resolved pointer button event synchronously."))

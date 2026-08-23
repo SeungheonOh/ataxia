@@ -7,6 +7,10 @@
 
 (defparameter *packing-shape-weight* 0.22d0)
 (defparameter *packing-sprawl-weight* 0.018d0)
+(defparameter *packing-contact-epsilon* 1d-7)
+
+(defun %packing-coordinate= (left right)
+  (<= (abs (- left right)) *packing-contact-epsilon*))
 
 (defun %placement-right (placement)
   (+ (%atlas-placement-x placement) (%atlas-placement-width placement)))
@@ -27,13 +31,17 @@
   (loop for placement in placements
         sum
         (cond
-          ((or (= (%atlas-placement-x candidate) (%placement-right placement))
-               (= (%placement-right candidate) (%atlas-placement-x placement)))
+          ((or (%packing-coordinate=
+                (%atlas-placement-x candidate) (%placement-right placement))
+               (%packing-coordinate=
+                (%placement-right candidate) (%atlas-placement-x placement)))
            (%interval-overlap
             (%atlas-placement-y candidate) (%placement-bottom candidate)
             (%atlas-placement-y placement) (%placement-bottom placement)))
-          ((or (= (%atlas-placement-y candidate) (%placement-bottom placement))
-               (= (%placement-bottom candidate) (%atlas-placement-y placement)))
+          ((or (%packing-coordinate=
+                (%atlas-placement-y candidate) (%placement-bottom placement))
+               (%packing-coordinate=
+                (%placement-bottom candidate) (%atlas-placement-y placement)))
            (%interval-overlap
             (%atlas-placement-x candidate) (%placement-right candidate)
             (%atlas-placement-x placement) (%placement-right placement)))

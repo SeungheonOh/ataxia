@@ -127,6 +127,10 @@
   component)
 
 (defun remove-slint-callback (component name)
+  (ataxia.world.slint.raw::check-result
+   (ataxia.world.slint.raw::%unregister-callback
+    (%live-native component) name)
+   :unregister-callback)
   (remhash name (%component-callbacks component))
   component)
 

@@ -1,0 +1,188 @@
+#!/usr/bin/env python3
+"""Evaluate Common Lisp through a running Ataxia SLY control plane."""
+
+import argparse
+import socket
+import sys
+from pathlib import Path
+
+
+def lisp_string(value):
+    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def read_exact(connection, length):
+    chunks = []
+    remaining = length
+    while remaining:
+        chunk = connection.recv(remaining)
+        if not chunk:
+            raise ConnectionError("SLY closed the connection unexpectedly")
+        chunks.append(chunk)
+        remaining -= len(chunk)
+    return b"".join(chunks)
+
+
+def parse_sexp(text, start=0):
+    length = len(text)
+
+    def skip_space(index):
+        while index < length and text[index].isspace():
+            index += 1
+        return index
+
+    def parse(index):
+        index = skip_space(index)
+        if index >= length:
+            raise ValueError("unexpected end of S-expression")
+        if text[index] == "(":
+            values = []
+            index += 1
+            while True:
+                index = skip_space(index)
+                if index >= length:
+                    raise ValueError("unterminated S-expression list")
+                if text[index] == ")":
+                    return values, index + 1
+                value, index = parse(index)
+                values.append(value)
+        if text[index] == '"':
+            characters = []
+            index += 1
+            while index < length:
+                character = text[index]
+                index += 1
+                if character == '"':
+                    return "".join(characters), index
+                if character == "\\":
+                    if index >= length:
+                        raise ValueError("unterminated S-expression escape")
+                    character = text[index]
+                    index += 1
+                characters.append(character)
+            raise ValueError("unterminated S-expression string")
+        end = index
+        while end < length and not text[end].isspace() and text[end] not in "()":
+            end += 1
+        if end == index:
+            raise ValueError(f"unexpected character {text[index]!r}")
+        return text[index:end], end
+
+    return parse(start)
+
+
+def evaluation_wrapper(source):
+    return f"""
+(handler-case
+    (let ((source {lisp_string(source)})
+          (position 0)
+          (eof (gensym))
+          (result-values nil))
+      (loop
+        (multiple-value-bind (form next-position)
+            (read-from-string source nil eof :start position)
+          (when (eq form eof)
+            (return
+              (list :ataxia-eval-ok
+                    (mapcar #'prin1-to-string result-values))))
+          (setf position next-position
+                result-values (multiple-value-list (eval form))))))
+  (serious-condition (condition)
+    (list :ataxia-eval-error (princ-to-string condition))))
+""".strip()
+
+
+def evaluate(host, port, package, source, timeout):
+    wrapper = evaluation_wrapper(source)
+    request = (
+        "(:emacs-rex "
+        f"(slynk:eval-and-grab-output {lisp_string(wrapper)}) "
+        f"{lisp_string(package)} t 1)"
+    )
+    encoded_request = request.encode("utf-8")
+    if len(encoded_request) > 0xFFFFFF:
+        raise ValueError("SLY request is too large")
+
+    with socket.create_connection((host, port), timeout or None) as connection:
+        if timeout:
+            connection.settimeout(timeout)
+        connection.sendall(f"{len(encoded_request):06x}".encode("ascii"))
+        connection.sendall(encoded_request)
+        while True:
+            frame_length = int(read_exact(connection, 6), 16)
+            frame = read_exact(connection, frame_length).decode("utf-8")
+            message, _ = parse_sexp(frame)
+            if not message:
+                continue
+            kind = str(message[0]).lower()
+            if kind == ":debug":
+                raise RuntimeError(f"SLY entered the debugger: {frame}")
+            if kind != ":return":
+                continue
+            response = message[1]
+            if not response or str(response[0]).lower() != ":ok":
+                raise RuntimeError(f"SLY evaluation aborted: {frame}")
+            output, printed_result = response[1]
+            result, _ = parse_sexp(printed_result)
+            return output, result
+
+
+def load_source(arguments):
+    if arguments.file:
+        return Path(arguments.file).read_text(encoding="utf-8")
+    if arguments.form is not None:
+        return arguments.form
+    if sys.stdin.isatty():
+        raise ValueError("pass a Lisp form, use --file, or pipe forms on stdin")
+    return sys.stdin.read()
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Evaluate Lisp in the running Ataxia compositor"
+    )
+    parser.add_argument("form", nargs="?", help="Lisp form or forms to evaluate")
+    parser.add_argument("-f", "--file", help="read Lisp forms from a file")
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=4005)
+    parser.add_argument("--package", default="COMMON-LISP-USER")
+    parser.add_argument("--timeout", type=float, default=30.0)
+    arguments = parser.parse_args()
+
+    if arguments.file and arguments.form is not None:
+        parser.error("FORM and --file are mutually exclusive")
+
+    try:
+        source = load_source(arguments)
+        output, result = evaluate(
+            arguments.host,
+            arguments.port,
+            arguments.package,
+            source,
+            arguments.timeout,
+        )
+        values = (
+            result[1]
+            if result and str(result[0]).upper() == ":ATAXIA-EVAL-OK"
+            else None
+        )
+        if values is None:
+            message = result[1] if len(result) > 1 else "unknown evaluation failure"
+            if output:
+                sys.stdout.write(output)
+            print(message, file=sys.stderr)
+            return 1
+        if output:
+            sys.stdout.write(output)
+            if values and not output.endswith("\n"):
+                sys.stdout.write("\n")
+        for value in values:
+            print(value)
+        return 0
+    except (ConnectionError, OSError, RuntimeError, ValueError) as condition:
+        print(f"ataxia-eval: {condition}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

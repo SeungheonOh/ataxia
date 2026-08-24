@@ -1465,7 +1465,12 @@
          'ataxia.kernel:world-frame-result
          :target-token (ataxia.kernel:frame-target-token lease)
          :damage (ataxia.world:region-to-frame-damage
-                  region
+                  (if (%world-damage-debug-p world)
+                      (list (ataxia.world:make-rectangle
+                             0 0
+                             (ataxia.kernel:frame-width lease)
+                             (ataxia.kernel:frame-height lease)))
+                      region)
                   (ataxia.kernel:frame-width lease)
                   (ataxia.kernel:frame-height lease))
          :protocol-tokens tokens

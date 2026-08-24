@@ -14,6 +14,14 @@
 (defun rectangle-bottom (rectangle)
   (+ (rectangle-y rectangle) (rectangle-height rectangle)))
 
+(defun rectangle-pixel-bounds (rectangle width height)
+  "Return conservative integer pixel bounds clipped to WIDTH and HEIGHT."
+  (let* ((x (max 0 (floor (rectangle-x rectangle))))
+         (y (max 0 (floor (rectangle-y rectangle))))
+         (right (min width (ceiling (rectangle-right rectangle))))
+         (bottom (min height (ceiling (rectangle-bottom rectangle)))))
+    (values x y (max 0 (- right x)) (max 0 (- bottom y)))))
+
 (defun rectangle-empty-p (rectangle)
   (or (<= (rectangle-width rectangle) 0)
       (<= (rectangle-height rectangle) 0)))
@@ -76,12 +84,10 @@
 (defun region-to-frame-damage (region width height)
   (mapcar
    (lambda (rectangle)
-     (let* ((x (max 0 (floor (rectangle-x rectangle))))
-            (y (max 0 (floor (rectangle-y rectangle))))
-            (right (min width (ceiling (rectangle-right rectangle))))
-            (bottom (min height (ceiling (rectangle-bottom rectangle)))))
+     (multiple-value-bind (x y pixel-width pixel-height)
+         (rectangle-pixel-bounds rectangle width height)
        (ataxia.kernel:make-frame-damage-rectangle
-        x y (- right x) (- bottom y))))
+        x y pixel-width pixel-height)))
    (clip-region region width height)))
 
 (defun frame-damage-to-region (damage)

@@ -374,10 +374,11 @@ void main() {
       (ataxia.world.gles:gles-clear 0.55d0 0.015d0 0.08d0 1d0))
     (ataxia.world.gles:gles-set-scissor-enabled t)
     (dolist (damage damage-region)
-      (let ((x (max 0 (floor (ataxia.world:rectangle-x damage))))
-            (y (max 0 (floor (ataxia.world:rectangle-y damage))))
-            (width (ceiling (ataxia.world:rectangle-width damage)))
-            (damage-height (ceiling (ataxia.world:rectangle-height damage))))
+      (multiple-value-bind (x y width damage-height)
+          (ataxia.world:rectangle-pixel-bounds
+           damage
+           (%canvas-output-buffer-width output-state)
+           (%canvas-output-buffer-height output-state))
         (ataxia.world.gles:gles-set-scissor x y width damage-height)
         (ataxia.world.gles:gles-clear 0.03d0 0.036d0 0.05d0 1d0)
         (%draw-grid renderer output-state)

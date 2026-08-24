@@ -14,6 +14,7 @@
    #:rectangle-height
    #:rectangle-right
    #:rectangle-bottom
+   #:rectangle-pixel-bounds
    #:rectangle-empty-p
    #:rectangle-intersection
    #:rectangle-union

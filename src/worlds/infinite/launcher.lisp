@@ -9,16 +9,7 @@
 (defconstant +launcher-result-limit+ 6)
 
 (defparameter +launcher-source+
-  "component RasterBand inherits Rectangle {
-    height: 7px;
-    background: #d6d3c8;
-    Rectangle { y: 0px; width: parent.width; height: 1px; background: #171717; }
-    Rectangle { y: 2px; width: parent.width; height: 1px; background: #17171755; }
-    Rectangle { y: 4px; width: parent.width; height: 1px; background: #17171733; }
-    Rectangle { y: 6px; width: parent.width; height: 1px; background: #171717; }
-}
-
-component LauncherRow inherits Rectangle {
+  "component LauncherRow inherits Rectangle {
     in property <string> title;
     in property <string> detail;
     in property <string> kind;
@@ -31,14 +22,14 @@ component LauncherRow inherits Rectangle {
     visible: root.enabled;
     border-width: 1px;
     border-color: root.selected ? #171717 : #b5b1a6;
-    background: touch.pressed ? #d5c76e : root.selected ? #171717 : touch.has-hover ? #eee6b6 : #f3f1e9;
+    background: touch.pressed ? #bdbdb8 : root.selected ? #171717 : touch.has-hover ? #deded9 : #f1f1ed;
 
     Rectangle {
         x: 0px;
         y: 0px;
-        width: 5px;
+        width: 4px;
         height: parent.height;
-        background: root.kind == \"OPEN\" ? #187f83 : #dfb72a;
+        background: root.selected ? #f1f1ed : #171717;
     }
     Text {
         x: 12px;
@@ -85,8 +76,8 @@ component LauncherRow inherits Rectangle {
         width: 92px;
         height: 24px;
         border-width: 1px;
-        border-color: root.selected ? #f3c832 : #171717;
-        background: root.selected ? #f3c832 : transparent;
+        border-color: root.selected ? #f1f1ed : #171717;
+        background: root.selected ? #f1f1ed : transparent;
         Text {
             text: root.kind;
             color: #171717;
@@ -129,21 +120,14 @@ export component AtaxiaLauncher inherits Window {
 
     changed shown => { if root.shown { editor.focus(); } }
 
-    Rectangle {
-        x: 8px;
-        y: 8px;
-        width: parent.width - 8px;
-        height: parent.height - 8px;
-        background: #17171788;
-    }
     panel := Rectangle {
         x: 0px;
         y: 0px;
-        width: parent.width - 10px;
-        height: parent.height - 10px;
+        width: parent.width;
+        height: parent.height;
         border-width: 1px;
         border-color: #171717;
-        background: #e8e6dc;
+        background: #e6e6e1;
 
         Rectangle {
             x: 0px;
@@ -166,20 +150,14 @@ export component AtaxiaLauncher inherits Window {
                 width: 138px;
                 height: parent.height;
                 text: \"LOCAL : LIVE\";
-                color: #f3c832;
+                color: #f7f7f3;
                 font-size: 9px;
                 font-weight: 700;
                 horizontal-alignment: right;
                 vertical-alignment: center;
             }
         }
-        Rectangle { x: 0px; y: 31px; width: parent.width / 7; height: 5px; background: #d44332; }
-        Rectangle { x: parent.width / 7; y: 31px; width: parent.width / 7; height: 5px; background: #e0b62a; }
-        Rectangle { x: parent.width * 2 / 7; y: 31px; width: parent.width / 7; height: 5px; background: #4e8c53; }
-        Rectangle { x: parent.width * 3 / 7; y: 31px; width: parent.width / 7; height: 5px; background: #258b91; }
-        Rectangle { x: parent.width * 4 / 7; y: 31px; width: parent.width / 7; height: 5px; background: #37659b; }
-        Rectangle { x: parent.width * 5 / 7; y: 31px; width: parent.width / 7; height: 5px; background: #7c5b84; }
-        Rectangle { x: parent.width * 6 / 7; y: 31px; width: parent.width / 7; height: 5px; background: #171717; }
+        Rectangle { x: 0px; y: 31px; width: parent.width; height: 5px; background: #8d8d88; }
 
         Rectangle {
             x: 0px;
@@ -188,7 +166,7 @@ export component AtaxiaLauncher inherits Window {
             height: 25px;
             border-width: 1px;
             border-color: #8f8c83;
-            background: #d5d2c7;
+            background: #d1d1cc;
             Text { x: 12px; width: 160px; height: parent.height; text: \"CLASS  APPLICATION\"; color: #34332f; font-size: 9px; font-weight: 700; vertical-alignment: center; }
             Text { x: 184px; width: 200px; height: parent.height; text: \"SOURCE  WORLD / OPEN+EXEC\"; color: #34332f; font-size: 9px; vertical-alignment: center; }
             Text { x: parent.width - 116px; width: 104px; height: parent.height; text: \"MAX  06\"; color: #34332f; font-size: 9px; horizontal-alignment: right; vertical-alignment: center; }
@@ -226,7 +204,7 @@ export component AtaxiaLauncher inherits Window {
                 height: parent.height - 12px;
                 text <=> root.query;
                 color: #171717;
-                selection-background-color: #e0c443;
+                selection-background-color: #a8a8a3;
                 font-size: 17px;
                 single-line: true;
                 edited => { root.search(self.text); }
@@ -274,7 +252,7 @@ export component AtaxiaLauncher inherits Window {
             LauncherRow { title: root.result-title-5; detail: root.result-detail-5; kind: root.result-kind-5; index: 5; enabled: root.result-count > 5; selected: root.selected-index == 5; activate(index) => { root.activate(index); } }
         }
 
-        RasterBand { x: 12px; y: parent.height - 51px; width: parent.width - 24px; }
+        Rectangle { x: 12px; y: parent.height - 45px; width: parent.width - 24px; height: 1px; background: #171717; }
         Rectangle {
             x: 12px;
             y: parent.height - 39px;
@@ -282,7 +260,7 @@ export component AtaxiaLauncher inherits Window {
             height: 27px;
             border-width: 1px;
             border-color: #77746c;
-            background: #d5d2c7;
+            background: #d1d1cc;
             Text {
                 x: 10px;
                 width: parent.width - 180px;

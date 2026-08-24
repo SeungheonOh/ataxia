@@ -468,8 +468,9 @@ export component AtaxiaLauncher inherits Window {
        (lambda (ignored)
          (declare (ignore ignored))
          (unless (%world-quiescing-p world)
-           (%damage-overlay world overlay)
-           (%request-output-state-frame world state)
+           (when (canvas-overlay-visible-p overlay)
+             (%damage-overlay world overlay)
+             (%request-output-state-frame world state))
            (%schedule-component-timer world))))
       (ataxia.world.slint:set-slint-callback
        component "search"

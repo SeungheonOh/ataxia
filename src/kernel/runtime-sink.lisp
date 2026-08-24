@@ -74,7 +74,9 @@
 (defmethod ataxia.runtime:output-frame
     ((kernel kernel) runtime-output)
   (let ((output (gethash runtime-output (%kernel-output-table kernel))))
-    (when (and output (output-enabled-p output))
+    (when (and output
+               (output-enabled-p output)
+               (%output-frame-requested-p output))
       (%render-output-frame output))))
 
 (defmethod ataxia.runtime:output-needs-frame

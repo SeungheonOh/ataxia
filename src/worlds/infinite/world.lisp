@@ -145,12 +145,16 @@
                 (canvas-overlay-component overlay))))
         (world-overlays world)))
 
+(defun %visible-component-p (world)
+  (some #'canvas-overlay-visible-p (world-overlays world)))
+
 (defun %schedule-component-timer (world)
   (let ((timer (%world-component-timer world)))
     (when timer
       (let* ((deadline (ataxia.world.slint:slint-next-timer-milliseconds))
              (delay
                (cond
+                 ((not (%visible-component-p world)) 86400000)
                  ((%component-animation-active-p world)
                   (if (zerop deadline) 16 (max 1 (min 16 deadline))))
                  ((= deadline #xffffffffffffffff) 86400000)
@@ -270,7 +274,8 @@
     (%damage-overlay world overlay)
     (let ((state (gethash (canvas-overlay-output overlay)
                           (%world-outputs world))))
-      (when state (%request-output-state-frame world state))))
+      (when state (%request-output-state-frame world state)))
+    (%schedule-component-timer world))
   overlay)
 
 (defun remove-overlay (world overlay)
@@ -296,7 +301,8 @@
     (pushnew overlay (%world-retired-overlays world) :test #'eq)
     (let ((state (gethash (canvas-overlay-output overlay)
                           (%world-outputs world))))
-      (when state (%request-output-state-frame world state))))
+      (when state (%request-output-state-frame world state)))
+    (%schedule-component-timer world))
   overlay)
 
 (defun show-overlay (world overlay)
@@ -309,7 +315,8 @@
     (%damage-overlay world overlay)
     (let ((state (gethash (canvas-overlay-output overlay)
                           (%world-outputs world))))
-      (when state (%request-output-state-frame world state))))
+      (when state (%request-output-state-frame world state)))
+    (%schedule-component-timer world))
   overlay)
 
 (defun hide-overlay (world overlay)
@@ -318,6 +325,7 @@
     (%damage-overlay world overlay)
     (setf (canvas-overlay-visible-p overlay) nil)
     (%overlay-visibility-changed overlay nil)
+    (%schedule-component-timer world)
     (dolist (seat-state (%seat-states world))
       (when (eq overlay (%canvas-seat-hovered seat-state))
         (ataxia.kernel:interactable-pointer-leave

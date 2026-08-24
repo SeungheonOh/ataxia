@@ -28,15 +28,32 @@ uniform vec2 u_camera;
 uniform vec2 u_viewport;
 uniform float u_zoom;
 varying vec2 v_uv;
+float grid_line(vec2 world, float spacing, float width) {
+  vec2 offset = abs(fract(world / spacing + 0.5) - 0.5) * spacing * u_zoom;
+  float distance = min(offset.x, offset.y);
+  return 1.0 - smoothstep(width, width + 1.0, distance);
+}
+float grid_dot(vec2 world, float spacing, float radius) {
+  vec2 offset = abs(fract(world / spacing + 0.5) - 0.5) * spacing * u_zoom;
+  return 1.0 - smoothstep(radius, radius + 1.0, length(offset));
+}
 void main() {
   vec2 world = u_camera + (v_uv * u_viewport) / u_zoom;
-  vec2 minor_cell = abs(fract(world / 32.0) - 0.5);
-  vec2 major_cell = abs(fract(world / 160.0) - 0.5);
-  float minor_line = 1.0 - step(0.035 * u_zoom, min(minor_cell.x, minor_cell.y));
-  float major_line = 1.0 - step(0.018 * u_zoom, min(major_cell.x, major_cell.y));
-  vec3 base = vec3(0.030, 0.036, 0.050);
-  vec3 color = mix(base, vec3(0.065, 0.080, 0.110), minor_line);
-  color = mix(color, vec3(0.115, 0.145, 0.200), major_line);
+  float fine_visibility = smoothstep(0.35, 0.8, u_zoom);
+  float fine_dot = grid_dot(world, 24.0, 0.65) * fine_visibility;
+  float working_line = grid_line(world, 120.0, 0.45);
+  float register_line = grid_line(world, 600.0, 0.85);
+  float register_dot = grid_dot(world, 600.0, 2.0);
+  float horizontal_axis = 1.0 - smoothstep(0.7, 1.7, abs(world.y) * u_zoom);
+  float vertical_axis = 1.0 - smoothstep(0.7, 1.7, abs(world.x) * u_zoom);
+  float raster = mod(floor(gl_FragCoord.x) + floor(gl_FragCoord.y), 2.0);
+  vec3 color = vec3(0.790, 0.782, 0.748) + (raster - 0.5) * 0.010;
+  color = mix(color, vec3(0.315, 0.310, 0.292), fine_dot * 0.38);
+  color = mix(color, vec3(0.355, 0.350, 0.328), working_line * 0.34);
+  color = mix(color, vec3(0.120, 0.118, 0.110), register_line * 0.58);
+  color = mix(color, vec3(0.100, 0.098, 0.090), register_dot * 0.82);
+  color = mix(color, vec3(0.655, 0.170, 0.115), horizontal_axis * 0.72);
+  color = mix(color, vec3(0.055, 0.390, 0.410), vertical_axis * 0.72);
   gl_FragColor = vec4(color, 1.0);
 }")
 

@@ -9,7 +9,16 @@
 (defconstant +launcher-result-limit+ 6)
 
 (defparameter +launcher-source+
-  "component LauncherRow inherits Rectangle {
+  "component RasterBand inherits Rectangle {
+    height: 7px;
+    background: #d6d3c8;
+    Rectangle { y: 0px; width: parent.width; height: 1px; background: #171717; }
+    Rectangle { y: 2px; width: parent.width; height: 1px; background: #17171755; }
+    Rectangle { y: 4px; width: parent.width; height: 1px; background: #17171733; }
+    Rectangle { y: 6px; width: parent.width; height: 1px; background: #171717; }
+}
+
+component LauncherRow inherits Rectangle {
     in property <string> title;
     in property <string> detail;
     in property <string> kind;
@@ -18,62 +27,74 @@
     in property <bool> selected;
     callback activate(int);
 
-    height: 54px;
+    height: 44px;
     visible: root.enabled;
-    border-radius: 10px;
-    border-width: root.selected ? 1px : 0px;
-    border-color: #67e8f9;
-    background: touch.pressed ? #164e63 : root.selected ? #172554 : touch.has-hover ? #172033 : #0f172acc;
-    animate background { duration: 100ms; easing: ease-out; }
+    border-width: 1px;
+    border-color: root.selected ? #171717 : #b5b1a6;
+    background: touch.pressed ? #d5c76e : root.selected ? #171717 : touch.has-hover ? #eee6b6 : #f3f1e9;
 
     Rectangle {
+        x: 0px;
+        y: 0px;
+        width: 5px;
+        height: parent.height;
+        background: root.kind == \"OPEN\" ? #187f83 : #dfb72a;
+    }
+    Text {
         x: 12px;
-        y: 13px;
-        width: 28px;
-        height: 28px;
-        border-radius: 8px;
-        background: root.kind == \"OPEN\" ? #0891b2 : #7c3aed;
+        y: 0px;
+        width: 26px;
+        height: parent.height;
+        text: root.index == 0 ? \"01\" : root.index == 1 ? \"02\" : root.index == 2 ? \"03\" : root.index == 3 ? \"04\" : root.index == 4 ? \"05\" : \"06\";
+        color: root.selected ? #f7f5ed : #353535;
+        font-size: 10px;
+        font-weight: 700;
+        vertical-alignment: center;
+    }
+    Rectangle {
+        x: 40px;
+        y: 7px;
+        width: 1px;
+        height: parent.height - 14px;
+        background: root.selected ? #f7f5ed55 : #b5b1a6;
+    }
+    Text {
+        x: 50px;
+        y: 5px;
+        width: parent.width - 166px;
+        height: 18px;
+        text: root.title;
+        color: root.selected ? #ffffff : #171717;
+        font-size: 13px;
+        font-weight: 700;
+        overflow: elide;
+    }
+    Text {
+        x: 50px;
+        y: 23px;
+        width: parent.width - 166px;
+        height: 14px;
+        text: root.detail;
+        color: root.selected ? #c8c8c8 : #66635c;
+        font-size: 9px;
+        overflow: elide;
+    }
+    Rectangle {
+        x: parent.width - 104px;
+        y: 10px;
+        width: 92px;
+        height: 24px;
+        border-width: 1px;
+        border-color: root.selected ? #f3c832 : #171717;
+        background: root.selected ? #f3c832 : transparent;
         Text {
-            text: root.kind == \"OPEN\" ? \"O\" : \"+\";
-            color: white;
-            font-size: 13px;
+            text: root.kind;
+            color: #171717;
+            font-size: 9px;
             font-weight: 700;
             horizontal-alignment: center;
             vertical-alignment: center;
         }
-    }
-
-    Text {
-        x: 52px;
-        y: 8px;
-        width: parent.width - 136px;
-        height: 22px;
-        text: root.title;
-        color: #f8fafc;
-        font-size: 15px;
-        font-weight: 600;
-        overflow: elide;
-    }
-    Text {
-        x: 52px;
-        y: 30px;
-        width: parent.width - 136px;
-        height: 16px;
-        text: root.detail;
-        color: #94a3b8;
-        font-size: 10px;
-        overflow: elide;
-    }
-    Text {
-        x: parent.width - 72px;
-        y: 18px;
-        width: 58px;
-        height: 18px;
-        text: root.kind;
-        color: root.kind == \"OPEN\" ? #67e8f9 : #c4b5fd;
-        font-size: 9px;
-        font-weight: 700;
-        horizontal-alignment: right;
     }
     touch := TouchArea { clicked => { root.activate(root.index); } }
 }
@@ -110,77 +131,103 @@ export component AtaxiaLauncher inherits Window {
 
     Rectangle {
         x: 8px;
-        y: 10px;
-        width: parent.width - 16px;
-        height: parent.height - 12px;
-        border-radius: 18px;
-        background: #02061799;
+        y: 8px;
+        width: parent.width - 8px;
+        height: parent.height - 8px;
+        background: #17171788;
     }
     panel := Rectangle {
         x: 0px;
         y: 0px;
-        width: parent.width - 16px;
-        height: parent.height - 16px;
-        border-radius: 18px;
+        width: parent.width - 10px;
+        height: parent.height - 10px;
         border-width: 1px;
-        border-color: #334155;
-        background: #090e1bee;
+        border-color: #171717;
+        background: #e8e6dc;
 
         Rectangle {
             x: 0px;
             y: 0px;
             width: parent.width;
-            height: 4px;
-            border-radius: 18px;
-            background: @linear-gradient(90deg, #22d3ee, #8b5cf6, #f472b6);
+            height: 31px;
+            background: #171717;
+            Text {
+                x: 12px;
+                width: parent.width - 170px;
+                height: parent.height;
+                text: \"ATAXIA / OBJECT INDEX\";
+                color: #f7f5ed;
+                font-size: 11px;
+                font-weight: 700;
+                vertical-alignment: center;
+            }
+            Text {
+                x: parent.width - 150px;
+                width: 138px;
+                height: parent.height;
+                text: \"LOCAL : LIVE\";
+                color: #f3c832;
+                font-size: 9px;
+                font-weight: 700;
+                horizontal-alignment: right;
+                vertical-alignment: center;
+            }
         }
-        Text {
-            x: 24px;
-            y: 20px;
-            text: \"ATAXIA COMMAND DECK\";
-            color: #e2e8f0;
-            font-size: 11px;
-            font-weight: 700;
-        }
-        Text {
-            x: parent.width - 174px;
-            y: 20px;
-            width: 150px;
-            text: \"SUPER + SPACE\";
-            color: #64748b;
-            font-size: 9px;
-            horizontal-alignment: right;
+        Rectangle { x: 0px; y: 31px; width: parent.width / 7; height: 5px; background: #d44332; }
+        Rectangle { x: parent.width / 7; y: 31px; width: parent.width / 7; height: 5px; background: #e0b62a; }
+        Rectangle { x: parent.width * 2 / 7; y: 31px; width: parent.width / 7; height: 5px; background: #4e8c53; }
+        Rectangle { x: parent.width * 3 / 7; y: 31px; width: parent.width / 7; height: 5px; background: #258b91; }
+        Rectangle { x: parent.width * 4 / 7; y: 31px; width: parent.width / 7; height: 5px; background: #37659b; }
+        Rectangle { x: parent.width * 5 / 7; y: 31px; width: parent.width / 7; height: 5px; background: #7c5b84; }
+        Rectangle { x: parent.width * 6 / 7; y: 31px; width: parent.width / 7; height: 5px; background: #171717; }
+
+        Rectangle {
+            x: 0px;
+            y: 36px;
+            width: parent.width;
+            height: 25px;
+            border-width: 1px;
+            border-color: #8f8c83;
+            background: #d5d2c7;
+            Text { x: 12px; width: 160px; height: parent.height; text: \"CLASS  APPLICATION\"; color: #34332f; font-size: 9px; font-weight: 700; vertical-alignment: center; }
+            Text { x: 184px; width: 200px; height: parent.height; text: \"SOURCE  WORLD / OPEN+EXEC\"; color: #34332f; font-size: 9px; vertical-alignment: center; }
+            Text { x: parent.width - 116px; width: 104px; height: parent.height; text: \"MAX  06\"; color: #34332f; font-size: 9px; horizontal-alignment: right; vertical-alignment: center; }
         }
 
         search-box := Rectangle {
-            x: 24px;
-            y: 48px;
-            width: parent.width - 48px;
-            height: 58px;
-            border-radius: 13px;
+            x: 12px;
+            y: 70px;
+            width: parent.width - 24px;
+            height: 43px;
             border-width: editor.has-focus ? 2px : 1px;
-            border-color: editor.has-focus ? #22d3ee : #334155;
-            background: #020617;
-            animate border-color { duration: 120ms; }
-            Text {
-                x: 16px;
+            border-color: editor.has-focus ? #171717 : #77746c;
+            background: #f7f5ed;
+            Rectangle {
+                x: 0px;
                 y: 0px;
-                width: 28px;
+                width: 78px;
                 height: parent.height;
-                text: \"/\";
-                color: #67e8f9;
-                font-size: 22px;
-                vertical-alignment: center;
+                background: #171717;
+                Text {
+                    width: parent.width;
+                    height: parent.height;
+                    text: \"FILTER\";
+                    color: #f7f5ed;
+                    font-size: 9px;
+                    font-weight: 700;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
             }
             editor := TextInput {
-                x: 48px;
-                y: 8px;
-                width: parent.width - 62px;
-                height: parent.height - 16px;
+                x: 91px;
+                y: 6px;
+                width: parent.width - 103px;
+                height: parent.height - 12px;
                 text <=> root.query;
-                color: #f8fafc;
-                selection-background-color: #155e75;
-                font-size: 20px;
+                color: #171717;
+                selection-background-color: #e0c443;
+                font-size: 17px;
                 single-line: true;
                 edited => { root.search(self.text); }
                 accepted => { if root.result-count > 0 { root.activate(root.selected-index); } }
@@ -202,12 +249,23 @@ export component AtaxiaLauncher inherits Window {
             }
         }
 
+        Rectangle {
+            x: 12px;
+            y: 122px;
+            width: parent.width - 24px;
+            height: 25px;
+            background: #595750;
+            Text { x: 12px; width: 28px; height: parent.height; text: \"NO\"; color: white; font-size: 8px; font-weight: 700; vertical-alignment: center; }
+            Text { x: 50px; width: 260px; height: parent.height; text: \"OBJECT / DESCRIPTION\"; color: white; font-size: 8px; font-weight: 700; vertical-alignment: center; }
+            Text { x: parent.width - 104px; width: 92px; height: parent.height; text: \"OPERATION\"; color: white; font-size: 8px; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; }
+        }
+
         VerticalLayout {
-            x: 24px;
-            y: 120px;
-            width: parent.width - 48px;
-            height: 348px;
-            spacing: 4px;
+            x: 12px;
+            y: 148px;
+            width: parent.width - 24px;
+            height: 269px;
+            spacing: 1px;
             LauncherRow { title: root.result-title-0; detail: root.result-detail-0; kind: root.result-kind-0; index: 0; enabled: root.result-count > 0; selected: root.selected-index == 0; activate(index) => { root.activate(index); } }
             LauncherRow { title: root.result-title-1; detail: root.result-detail-1; kind: root.result-kind-1; index: 1; enabled: root.result-count > 1; selected: root.selected-index == 1; activate(index) => { root.activate(index); } }
             LauncherRow { title: root.result-title-2; detail: root.result-detail-2; kind: root.result-kind-2; index: 2; enabled: root.result-count > 2; selected: root.selected-index == 2; activate(index) => { root.activate(index); } }
@@ -216,14 +274,35 @@ export component AtaxiaLauncher inherits Window {
             LauncherRow { title: root.result-title-5; detail: root.result-detail-5; kind: root.result-kind-5; index: 5; enabled: root.result-count > 5; selected: root.selected-index == 5; activate(index) => { root.activate(index); } }
         }
 
-        Text {
-            x: 24px;
-            y: parent.height - 28px;
-            width: parent.width - 48px;
-            text: root.result-count == 0 ? \"No matching windows or applications\" : \"UP/DOWN select    ENTER activate    ESC close\";
-            color: #64748b;
-            font-size: 9px;
-            horizontal-alignment: center;
+        RasterBand { x: 12px; y: parent.height - 51px; width: parent.width - 24px; }
+        Rectangle {
+            x: 12px;
+            y: parent.height - 39px;
+            width: parent.width - 24px;
+            height: 27px;
+            border-width: 1px;
+            border-color: #77746c;
+            background: #d5d2c7;
+            Text {
+                x: 10px;
+                width: parent.width - 180px;
+                height: parent.height;
+                text: root.result-count == 0 ? \"STATUS  NO MATCHING OBJECT\" : \"UP/DOWN  SELECT     ENTER  EXECUTE     ESC  CLOSE\";
+                color: #34332f;
+                font-size: 8px;
+                font-weight: 700;
+                vertical-alignment: center;
+            }
+            Text {
+                x: parent.width - 160px;
+                width: 150px;
+                height: parent.height;
+                text: \"SUPER + SPACE\";
+                color: #34332f;
+                font-size: 8px;
+                horizontal-alignment: right;
+                vertical-alignment: center;
+            }
         }
     }
 }")

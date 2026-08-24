@@ -416,24 +416,27 @@
     coverage))
 
 (defun %advance-world-animations (world timestamp)
-  (when (> timestamp (%world-last-animation-time world))
-    (let ((old-coverage (%capture-window-coverage world)))
-      (multiple-value-bind (changed active-p)
-          (ataxia.world:advance-animations (%world-animator world) timestamp)
-        (setf (%world-last-animation-time world) timestamp)
-        (dolist (subject changed)
-          (typecase subject
-            (canvas-window
-             (let ((before (gethash subject old-coverage)))
-               (dolist (state (%output-states world))
-                 (ataxia.world:damage-add-region
-                  (%world-damage world) (%canvas-output-output state)
-                  (list (gethash state before)
-                        (%window-buffer-coverage state subject)))))
-             (%update-window-membership world subject))
-            (%canvas-output (%full-damage world subject))))
-        (when active-p
-          (%request-all-frames world))))))
+  (let ((animator (%world-animator world)))
+    (when (> timestamp (%world-last-animation-time world))
+      (let ((old-coverage (%capture-window-coverage world)))
+        (multiple-value-bind (changed active-p)
+            (ataxia.world:advance-animations animator timestamp)
+          (declare (ignore active-p))
+          (setf (%world-last-animation-time world) timestamp)
+          (dolist (subject changed)
+            (typecase subject
+              (canvas-window
+               (let ((before (gethash subject old-coverage)))
+                 (dolist (state (%output-states world))
+                   (ataxia.world:damage-add-region
+                    (%world-damage world) (%canvas-output-output state)
+                    (list (gethash state before)
+                          (%window-buffer-coverage state subject)))))
+               (%update-window-membership world subject))
+              (%canvas-output (%full-damage world subject)))))))
+    (when (ataxia.world:animations-active-p animator)
+      (%request-all-frames world)))
+  world)
 
 (defun %raise-window (world window)
   (let ((old-coverage (%capture-window-coverage world)))

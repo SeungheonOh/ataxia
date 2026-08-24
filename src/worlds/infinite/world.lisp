@@ -1096,7 +1096,8 @@
                (%damage-window world window)
                (%damage-window-region
                 world window
-                (ataxia.kernel:drawable-invalidation-damage invalidation))))
+                (ataxia.world:frame-damage-to-region
+                 (ataxia.kernel:drawable-invalidation-damage invalidation)))))
          (%update-window-membership world window)
          (%request-all-frames world))))
     (ataxia.kernel:surface-node

@@ -518,6 +518,7 @@
    #:xdg-toplevel-title
    #:xdg-toplevel-app-id
    #:xdg-toplevel-surface
+   #:xdg-toplevel-initialized-p
    #:xdg-popup-surface
    #:xdg-popup-parent-surface
    #:xdg-move-event

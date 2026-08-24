@@ -561,17 +561,21 @@
      (kernel-world kernel) application
      (make-object-change :parent nil))))
 
+(defun %apply-toplevel-decoration-policy (decoration)
+  (when (ataxia.runtime:xdg-toplevel-initialized-p
+         (ataxia.runtime:xdg-decoration-toplevel decoration))
+    (ataxia.runtime:xdg-toplevel-decoration-set-mode
+     decoration :client-side)))
+
 (defmethod ataxia.runtime:xdg-new-toplevel-decoration
     ((kernel kernel) runtime decoration)
   (declare (ignore kernel runtime))
-  (ataxia.runtime:xdg-toplevel-decoration-set-mode
-   decoration :client-side))
+  (%apply-toplevel-decoration-policy decoration))
 
 (defmethod ataxia.runtime:xdg-toplevel-decoration-request-mode
     ((kernel kernel) decoration)
   (declare (ignore kernel))
-  (ataxia.runtime:xdg-toplevel-decoration-set-mode
-   decoration :client-side))
+  (%apply-toplevel-decoration-policy decoration))
 
 (defmethod ataxia.runtime:xdg-toplevel-decoration-destroying
     ((kernel kernel) decoration)

@@ -591,7 +591,9 @@
          (setf (%tile-drawable-revision node)
                (ataxia.kernel:drawable-invalidation-revision invalidation))
          (%damage-node-region
-          world node (ataxia.kernel:drawable-invalidation-damage invalidation))
+          world node
+          (ataxia.world:frame-damage-to-region
+           (ataxia.kernel:drawable-invalidation-damage invalidation)))
          (%update-node-membership node))))
     (ataxia.kernel:surface-node
      (dolist (seat-state (%seat-states world))

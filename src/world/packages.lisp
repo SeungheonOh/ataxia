@@ -21,6 +21,7 @@
    #:clip-region
    #:region-intersects-p
    #:region-to-frame-damage
+   #:frame-damage-to-region
    #:application-binding
    #:binding-application
    #:animator

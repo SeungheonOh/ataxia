@@ -186,6 +186,7 @@
 (defclass wlr-xdg-toplevel (native-object)
   ((base :initarg :base :reader %xdg-toplevel-base-object)
    (surface :initarg :surface :reader xdg-toplevel-surface)
+   (initialized-p :initform nil :accessor xdg-toplevel-initialized-p)
    (title :initform nil :accessor xdg-toplevel-title)
    (app-id :initform nil :accessor xdg-toplevel-app-id)))
 
@@ -434,6 +435,8 @@
          (lambda () (xdg-toplevel-mapped sink toplevel))
          (lambda () (xdg-toplevel-unmapped sink toplevel))
          (lambda (commit initial-commit-p configured-p)
+           (when initial-commit-p
+             (setf (xdg-toplevel-initialized-p toplevel) t))
            (xdg-toplevel-committed sink toplevel commit
                                     initial-commit-p configured-p)))
         (%attach-object-signal

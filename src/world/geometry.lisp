@@ -83,3 +83,13 @@
        (ataxia.kernel:make-frame-damage-rectangle
         x y (- right x) (- bottom y))))
    (clip-region region width height)))
+
+(defun frame-damage-to-region (damage)
+  (mapcar
+   (lambda (rectangle)
+     (make-rectangle
+      (ataxia.kernel:frame-damage-rectangle-x rectangle)
+      (ataxia.kernel:frame-damage-rectangle-y rectangle)
+      (ataxia.kernel:frame-damage-rectangle-width rectangle)
+      (ataxia.kernel:frame-damage-rectangle-height rectangle)))
+   damage))

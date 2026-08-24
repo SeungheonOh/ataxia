@@ -734,7 +734,8 @@
                (progn
                  (%damage-object-region
                   world scene-object
-                  (ataxia.kernel:drawable-invalidation-damage invalidation))
+                  (ataxia.world:frame-damage-to-region
+                   (ataxia.kernel:drawable-invalidation-damage invalidation)))
                  (%update-object-membership world scene-object)
                  (%request-all-frames world)))))))
     (ataxia.kernel:surface-node

@@ -1,42 +1,224 @@
 //! Slint interpreter host for World-owned native components.
 //!
-//! This library owns Slint's platform objects and software scene buffers. It
-//! never creates a window-system connection or touches the compositor's GLES
-//! context; Common Lisp uploads the changed pixels during a World frame lease.
+//! Each component renders through FemtoVG directly into a World-owned GLES
+//! framebuffer. The compositor activates the context before entering here;
+//! this bridge never creates a display, EGL context, or output surface.
 
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, VecDeque};
-use std::ffi::{CStr, CString};
+use std::ffi::{CStr, CString, c_void};
+use std::num::NonZeroU32;
 use std::os::raw::c_char;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::PathBuf;
 use std::ptr;
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 
-use slint::platform::software_renderer::{
-    MinimalSoftwareWindow, PremultipliedRgbaColor, RepaintBufferType,
+use i_slint_renderer_femtovg::{
+    FemtoVGOpenGLRenderer, FemtoVGOpenGLRendererExt, FemtoVGRendererExt,
 };
+use slint::Window;
+use slint::platform::femtovg_renderer::OpenGLInterface;
 use slint::platform::{
-    Key, Platform, PlatformError, PointerEventButton, WindowAdapter, WindowEvent,
+    Key, Platform, PlatformError, PointerEventButton, Renderer, WindowAdapter, WindowEvent,
 };
-use slint::{ComponentHandle, LogicalPosition, PhysicalSize, SharedString};
+use slint::{ComponentHandle, LogicalPosition, PhysicalSize, SharedString, WindowSize};
 use slint_interpreter::{Compiler, ComponentInstance, Value};
 use xkbcommon::xkb;
 
-#[repr(C)]
-#[derive(Clone, Copy, Default)]
-pub struct DamageRectangle {
-    pub x: i32,
-    pub y: i32,
-    pub width: u32,
-    pub height: u32,
+const GL_FRAMEBUFFER: u32 = 0x8D40;
+const GL_FRAMEBUFFER_BINDING: u32 = 0x8CA6;
+const GL_VIEWPORT: u32 = 0x0BA2;
+
+thread_local! {
+    static CURRENT_COMPONENT_FRAMEBUFFER: Cell<u32> = const { Cell::new(0) };
+}
+
+#[link(name = "GLESv2")]
+unsafe extern "C" {
+    fn glBindFramebuffer(target: u32, framebuffer: u32);
+    fn glGetIntegerv(name: u32, value: *mut i32);
+    fn glViewport(x: i32, y: i32, width: i32, height: i32);
+}
+
+unsafe extern "system" fn bind_component_framebuffer(target: u32, framebuffer: u32) {
+    // FemtoVG targets framebuffer zero for a window; map that surfaceless target
+    // to the component FBO while leaving its private layer FBOs untouched.
+    let framebuffer = if framebuffer == 0 {
+        CURRENT_COMPONENT_FRAMEBUFFER.with(Cell::get)
+    } else {
+        framebuffer
+    };
+    unsafe { glBindFramebuffer(target, framebuffer) };
+}
+
+#[link(name = "EGL")]
+unsafe extern "C" {
+    fn eglGetProcAddress(name: *const c_char) -> *const c_void;
+}
+
+#[link(name = "dl")]
+unsafe extern "C" {
+    fn dlsym(handle: *mut c_void, name: *const c_char) -> *mut c_void;
+}
+
+struct RenderTargetState {
+    framebuffer: u32,
+    width: Cell<u32>,
+    height: Cell<u32>,
+}
+
+struct ComponentOpenGLTarget {
+    state: Rc<RenderTargetState>,
+}
+
+unsafe impl OpenGLInterface for ComponentOpenGLTarget {
+    fn ensure_current(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        CURRENT_COMPONENT_FRAMEBUFFER.with(|framebuffer| {
+            framebuffer.set(self.state.framebuffer)
+        });
+        unsafe {
+            glBindFramebuffer(GL_FRAMEBUFFER, self.state.framebuffer);
+            glViewport(
+                0,
+                0,
+                self.state.width.get() as i32,
+                self.state.height.get() as i32,
+            );
+        }
+        Ok(())
+    }
+
+    fn swap_buffers(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        CURRENT_COMPONENT_FRAMEBUFFER.with(|framebuffer| framebuffer.set(0));
+        Ok(())
+    }
+
+    fn resize(
+        &self,
+        width: NonZeroU32,
+        height: NonZeroU32,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        self.state.width.set(width.get());
+        self.state.height.set(height.get());
+        Ok(())
+    }
+
+    fn get_proc_address(&self, name: &CStr) -> *const c_void {
+        if name.to_bytes() == b"glBindFramebuffer" {
+            return bind_component_framebuffer as *const () as *const c_void;
+        }
+        let address = unsafe { dlsym(ptr::null_mut(), name.as_ptr()) };
+        if address.is_null() {
+            unsafe { eglGetProcAddress(name.as_ptr()) }
+        } else {
+            address.cast_const()
+        }
+    }
+}
+
+struct SavedGlTarget {
+    framebuffer: i32,
+    viewport: [i32; 4],
+}
+
+impl SavedGlTarget {
+    fn capture() -> Self {
+        let mut state = Self { framebuffer: 0, viewport: [0; 4] };
+        unsafe {
+            glGetIntegerv(GL_FRAMEBUFFER_BINDING, &mut state.framebuffer);
+            glGetIntegerv(GL_VIEWPORT, state.viewport.as_mut_ptr());
+        }
+        state
+    }
+}
+
+impl Drop for SavedGlTarget {
+    fn drop(&mut self) {
+        unsafe {
+            glBindFramebuffer(GL_FRAMEBUFFER, self.framebuffer as u32);
+            glViewport(
+                self.viewport[0],
+                self.viewport[1],
+                self.viewport[2],
+                self.viewport[3],
+            );
+        }
+    }
+}
+
+struct AtaxiaWindow {
+    window: Window,
+    renderer: FemtoVGOpenGLRenderer,
+    needs_redraw: Cell<bool>,
+    size: Cell<PhysicalSize>,
+}
+
+impl AtaxiaWindow {
+    fn new() -> Rc<Self> {
+        Rc::new_cyclic(|weak: &Weak<Self>| Self {
+            window: Window::new(weak.clone()),
+            renderer: FemtoVGOpenGLRenderer::new_suspended(),
+            needs_redraw: Cell::new(false),
+            size: Cell::new(PhysicalSize::default()),
+        })
+    }
+
+    fn render_if_needed(&self) -> Result<bool, PlatformError> {
+        if !self.needs_redraw.replace(false) {
+            return Ok(false);
+        }
+        if let Err(error) = self.renderer.render() {
+            self.needs_redraw.set(true);
+            return Err(error);
+        }
+        Ok(true)
+    }
+
+    fn set_size(&self, size: impl Into<WindowSize>) {
+        self.window.set_size(size);
+    }
+}
+
+impl WindowAdapter for AtaxiaWindow {
+    fn window(&self) -> &Window {
+        &self.window
+    }
+
+    fn renderer(&self) -> &dyn Renderer {
+        &self.renderer
+    }
+
+    fn size(&self) -> PhysicalSize {
+        self.size.get()
+    }
+
+    fn set_size(&self, size: WindowSize) {
+        let scale = self.window.scale_factor();
+        self.size.set(size.to_physical(scale));
+        self.window.dispatch_event(WindowEvent::Resized {
+            size: size.to_logical(scale),
+        });
+    }
+
+    fn request_redraw(&self) {
+        self.needs_redraw.set(true);
+    }
+}
+
+impl std::ops::Deref for AtaxiaWindow {
+    type Target = Window;
+
+    fn deref(&self) -> &Self::Target {
+        &self.window
+    }
 }
 
 struct AtaxiaPlatform;
 
 impl Platform for AtaxiaPlatform {
     fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, PlatformError> {
-        let window = MinimalSoftwareWindow::new(RepaintBufferType::ReusedBuffer);
+        let window = AtaxiaWindow::new();
         PENDING_WINDOWS.with(|windows| windows.borrow_mut().push_back(window.clone()));
         Ok(window)
     }
@@ -44,10 +226,9 @@ impl Platform for AtaxiaPlatform {
 
 pub struct NativeComponent {
     _instance: ComponentInstance,
-    window: Rc<MinimalSoftwareWindow>,
+    window: Rc<AtaxiaWindow>,
     callbacks: Rc<RefCell<VecDeque<CallbackEvent>>>,
-    pixels: Vec<PremultipliedRgbaColor>,
-    damage: Vec<DamageRectangle>,
+    render_target: Option<Rc<RenderTargetState>>,
     width: u32,
     height: u32,
     scale: f32,
@@ -63,7 +244,7 @@ struct CallbackEvent {
 
 thread_local! {
     static PLATFORM_INSTALLED: Cell<bool> = const { Cell::new(false) };
-    static PENDING_WINDOWS: RefCell<VecDeque<Rc<MinimalSoftwareWindow>>> = const { RefCell::new(VecDeque::new()) };
+    static PENDING_WINDOWS: RefCell<VecDeque<Rc<AtaxiaWindow>>> = const { RefCell::new(VecDeque::new()) };
     static LAST_ERROR: RefCell<CString> = RefCell::new(CString::new("").unwrap());
 }
 
@@ -222,7 +403,7 @@ fn pointer_button(value: u32) -> PointerEventButton {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn ataxia_slint_abi_version() -> u32 {
-    3
+    4
 }
 
 #[unsafe(no_mangle)]
@@ -291,8 +472,7 @@ pub unsafe extern "C" fn ataxia_slint_component_create(
             _instance: instance,
             window,
             callbacks: Rc::new(RefCell::new(VecDeque::new())),
-            pixels: vec![PremultipliedRgbaColor::default(); (width as usize) * (height as usize)],
-            damage: Vec::new(),
+            render_target: None,
             width,
             height,
             scale,
@@ -342,10 +522,10 @@ pub unsafe extern "C" fn ataxia_slint_component_resize(
         component.width = width;
         component.height = height;
         component.scale = scale;
-        component.pixels.resize(
-            (width as usize) * (height as usize),
-            PremultipliedRgbaColor::default(),
-        );
+        if let Some(target) = &component.render_target {
+            target.width.set(width);
+            target.height.set(height);
+        }
         component
             .window
             .dispatch_event(WindowEvent::ScaleFactorChanged {
@@ -358,39 +538,75 @@ pub unsafe extern "C" fn ataxia_slint_component_resize(
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn ataxia_slint_component_render(component: *mut NativeComponent) -> bool {
+pub unsafe extern "C" fn ataxia_slint_component_attach_graphics(
+    component: *mut NativeComponent,
+    framebuffer: u32,
+) -> bool {
     ffi_bool(|| {
         let component = unsafe { component_mut(component) }?;
-        component.damage.clear();
-        let mut region = None;
-        let redrawn = component.window.draw_if_needed(|renderer| {
-            region = Some(renderer.render(&mut component.pixels, component.width as usize));
+        if framebuffer == 0 {
+            return Err("Slint framebuffer is zero".to_owned());
+        }
+        if component.render_target.is_some() {
+            return Err("Slint component graphics are already attached".to_owned());
+        }
+        let target = Rc::new(RenderTargetState {
+            framebuffer,
+            width: Cell::new(component.width),
+            height: Cell::new(component.height),
         });
-        if redrawn {
-            component.revision = component.revision.wrapping_add(1);
-            if let Some(region) = region {
-                component
-                    .damage
-                    .extend(region.iter().map(|(origin, size)| DamageRectangle {
-                        x: origin.x,
-                        y: origin.y,
-                        width: size.width,
-                        height: size.height,
-                    }));
-            }
+        component
+            .window
+            .renderer
+            .set_opengl_context(ComponentOpenGLTarget {
+                state: target.clone(),
+            })
+            .map_err(|error| error.to_string())?;
+        component.render_target = Some(target);
+        component.window.request_redraw();
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ataxia_slint_component_detach_graphics(
+    component: *mut NativeComponent,
+) -> bool {
+    ffi_bool(|| {
+        let component = unsafe { component_mut(component) }?;
+        if component.render_target.is_some() {
+            let _saved_target = SavedGlTarget::capture();
+            let result = component
+                .window
+                .renderer
+                .clear_graphics_context()
+                .map_err(|error| error.to_string());
+            CURRENT_COMPONENT_FRAMEBUFFER.with(|framebuffer| framebuffer.set(0));
+            result?;
+            component.render_target = None;
         }
         Ok(())
     })
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn ataxia_slint_component_pixels(
-    component: *mut NativeComponent,
-) -> *const u8 {
-    match unsafe { component.as_ref() } {
-        Some(component) => component.pixels.as_ptr().cast(),
-        None => ptr::null(),
-    }
+pub unsafe extern "C" fn ataxia_slint_component_render(component: *mut NativeComponent) -> bool {
+    ffi_bool(|| {
+        let component = unsafe { component_mut(component) }?;
+        if component.render_target.is_none() {
+            return Err("Slint component graphics are not attached".to_owned());
+        }
+        let _saved_target = SavedGlTarget::capture();
+        let result = component
+            .window
+            .render_if_needed()
+            .map_err(|error| error.to_string());
+        CURRENT_COMPONENT_FRAMEBUFFER.with(|framebuffer| framebuffer.set(0));
+        if result? {
+            component.revision = component.revision.wrapping_add(1);
+        }
+        Ok(())
+    })
 }
 
 #[unsafe(no_mangle)]
@@ -409,35 +625,11 @@ pub unsafe extern "C" fn ataxia_slint_component_revision(component: *mut NativeC
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn ataxia_slint_component_damage_count(
-    component: *mut NativeComponent,
-) -> usize {
-    unsafe { component.as_ref() }.map_or(0, |component| component.damage.len())
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ataxia_slint_component_damage_rectangle(
-    component: *mut NativeComponent,
-    index: usize,
-    rectangle: *mut DamageRectangle,
-) -> bool {
-    if rectangle.is_null() {
-        return false;
-    }
-    match unsafe { component.as_ref() }.and_then(|component| component.damage.get(index)) {
-        Some(value) => {
-            unsafe { *rectangle = *value };
-            true
-        }
-        None => false,
-    }
-}
-
-#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ataxia_slint_component_has_active_animations(
     component: *mut NativeComponent,
 ) -> bool {
-    unsafe { component.as_ref() }.is_some_and(|component| component.window.has_active_animations())
+    unsafe { component.as_ref() }
+        .is_some_and(|component| component.window.window.has_active_animations())
 }
 
 #[unsafe(no_mangle)]

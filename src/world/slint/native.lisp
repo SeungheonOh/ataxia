@@ -1,17 +1,11 @@
 ;;;; CFFI boundary to the World-owned Slint interpreter host.
 ;;;;
-;;;; Rust retains Slint scene objects and CPU pixel buffers. Every returned
-;;;; pointer is consumed synchronously by Lisp and is never retained by Kernel.
+;;;; Rust retains Slint scene objects and renders into a World-owned GLES
+;;;; framebuffer only while the compositor has granted an active frame scope.
 
 (in-package #:ataxia.world.slint.raw)
 
-(defconstant +expected-abi+ 3)
-
-(defcstruct damage-rectangle
-  (x :int32)
-  (y :int32)
-  (width :uint32)
-  (height :uint32))
+(defconstant +expected-abi+ 4)
 
 (defun library-path ()
   (or (uiop:getenv "ATAXIA_SLINT_NATIVE")
@@ -37,9 +31,13 @@
   (component :pointer))
 (defcfun ("ataxia_slint_component_resize" %component-resize) :boolean
   (component :pointer) (width :uint32) (height :uint32) (scale :float))
-(defcfun ("ataxia_slint_component_render" %component-render) :boolean
+(defcfun ("ataxia_slint_component_attach_graphics"
+          %component-attach-graphics) :boolean
+  (component :pointer) (framebuffer :uint32))
+(defcfun ("ataxia_slint_component_detach_graphics"
+          %component-detach-graphics) :boolean
   (component :pointer))
-(defcfun ("ataxia_slint_component_pixels" %component-pixels) :pointer
+(defcfun ("ataxia_slint_component_render" %component-render) :boolean
   (component :pointer))
 (defcfun ("ataxia_slint_component_width" %component-width) :uint32
   (component :pointer))
@@ -47,11 +45,6 @@
   (component :pointer))
 (defcfun ("ataxia_slint_component_revision" %component-revision) :uint64
   (component :pointer))
-(defcfun ("ataxia_slint_component_damage_count" %component-damage-count) :size
-  (component :pointer))
-(defcfun ("ataxia_slint_component_damage_rectangle"
-          %component-damage-rectangle) :boolean
-  (component :pointer) (index :size) (rectangle (:pointer (:struct damage-rectangle))))
 (defcfun ("ataxia_slint_component_has_active_animations"
           %component-active-p) :boolean
   (component :pointer))

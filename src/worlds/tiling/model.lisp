@@ -68,7 +68,8 @@
   (consumed-keys (make-hash-table :test #'eql))
   cursor-surface
   (cursor-hotspot-x 0 :type integer)
-  (cursor-hotspot-y 0 :type integer))
+  (cursor-hotspot-y 0 :type integer)
+  cursor-coverage cursor-coverage-output)
 
 (defstruct (%world-frame-cookie
              (:constructor %make-world-frame-cookie (damage-frame)))

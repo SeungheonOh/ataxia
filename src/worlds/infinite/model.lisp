@@ -104,7 +104,8 @@
   (launcher-shortcut-p nil :type boolean)
   cursor-surface
   (cursor-hotspot-x 0 :type integer)
-  (cursor-hotspot-y 0 :type integer))
+  (cursor-hotspot-y 0 :type integer)
+  cursor-coverage cursor-coverage-output)
 
 (defstruct (%canvas-operation
              (:constructor %make-canvas-operation

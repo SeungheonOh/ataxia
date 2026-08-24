@@ -62,15 +62,43 @@
             (%request-output-frame world state))))))
   node)
 
+(defun %cursor-buffer-coverage (state seat-state)
+  (let ((cursor (%tiling-seat-cursor-surface seat-state))
+        (x (%tiling-seat-x seat-state))
+        (y (%tiling-seat-y seat-state)))
+    (if (and cursor (eq (ataxia.kernel:object-state cursor) :live))
+        (multiple-value-bind (surfaces revision)
+            (ataxia.kernel:drawable-surfaces cursor)
+          (declare (ignore revision))
+          (loop for surface across surfaces
+                collect
+                (%screen-rectangle-to-buffer
+                 state
+                 (+ (- x (%tiling-seat-cursor-hotspot-x seat-state))
+                    (ataxia.kernel:drawable-surface-local-x surface))
+                 (+ (- y (%tiling-seat-cursor-hotspot-y seat-state))
+                    (ataxia.kernel:drawable-surface-local-y surface))
+                 (ataxia.kernel:drawable-surface-width surface)
+                 (ataxia.kernel:drawable-surface-height surface)
+                 2d0)))
+        (list (%screen-rectangle-to-buffer
+               state (- x 4d0) (- y 4d0) 9d0 33d0)))))
+
 (defun %damage-cursor (world seat-state)
-  (let ((state (%tiling-seat-output seat-state)))
+  (let* ((state (%tiling-seat-output seat-state))
+         (coverage (and state (%cursor-buffer-coverage state seat-state)))
+         (previous-output (%tiling-seat-cursor-coverage-output seat-state)))
+    (when (and previous-output (%tiling-seat-cursor-coverage seat-state))
+      (ataxia.world:damage-add-region
+       (%world-damage world) previous-output
+       (%tiling-seat-cursor-coverage seat-state)))
     (when state
       (ataxia.world:damage-add-region
-       (%world-damage world) (%tiling-output-output state)
-       (list (%screen-rectangle-to-buffer
-              state (- (%tiling-seat-x seat-state) 4d0)
-              (- (%tiling-seat-y seat-state) 4d0) 52d0 52d0)))
-      (%request-output-frame world state)))
+       (%world-damage world) (%tiling-output-output state) coverage)
+      (%request-output-frame world state))
+    (setf (%tiling-seat-cursor-coverage seat-state) coverage
+          (%tiling-seat-cursor-coverage-output seat-state)
+          (and state (%tiling-output-output state))))
   world)
 
 (defun %ease-out-back (progress)
@@ -579,7 +607,8 @@
        (dolist (seat-state (%seat-states world))
          (when (eq object (%tiling-seat-cursor-surface seat-state))
            (%damage-cursor world seat-state)
-           (setf (%tiling-seat-cursor-surface seat-state) nil))))))
+           (setf (%tiling-seat-cursor-surface seat-state) nil)
+           (%damage-cursor world seat-state))))))
   object)
 
 (defmethod ataxia.kernel:world-object-invalidated

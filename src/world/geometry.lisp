@@ -42,19 +42,36 @@
      (- (max (rectangle-right left) (rectangle-right right)) x)
      (- (max (rectangle-bottom left) (rectangle-bottom right)) y))))
 
-(defun %rectangles-touch-p (left right)
-  (and (<= (rectangle-x left) (rectangle-right right))
-       (<= (rectangle-x right) (rectangle-right left))
-       (<= (rectangle-y left) (rectangle-bottom right))
-       (<= (rectangle-y right) (rectangle-bottom left))))
+(defun %intervals-touch-p (left-start left-end right-start right-end)
+  (and (<= left-start right-end) (<= right-start left-end)))
+
+(defun %rectangle-contains-p (outer inner)
+  (and (<= (rectangle-x outer) (rectangle-x inner))
+       (<= (rectangle-y outer) (rectangle-y inner))
+       (>= (rectangle-right outer) (rectangle-right inner))
+       (>= (rectangle-bottom outer) (rectangle-bottom inner))))
+
+(defun %rectangles-mergeable-p (left right)
+  (or (%rectangle-contains-p left right)
+      (%rectangle-contains-p right left)
+      (and (= (rectangle-y left) (rectangle-y right))
+           (= (rectangle-bottom left) (rectangle-bottom right))
+           (%intervals-touch-p
+            (rectangle-x left) (rectangle-right left)
+            (rectangle-x right) (rectangle-right right)))
+      (and (= (rectangle-x left) (rectangle-x right))
+           (= (rectangle-right left) (rectangle-right right))
+           (%intervals-touch-p
+            (rectangle-y left) (rectangle-bottom left)
+            (rectangle-y right) (rectangle-bottom right)))))
 
 (defun normalize-region (rectangles)
-  "Return a conservative region with touching rectangles coalesced."
+  "Return a region with only exactly rectangular unions coalesced."
   (labels ((insert-rectangle (rectangle region)
              (let ((touching
                      (find-if
                       (lambda (candidate)
-                        (%rectangles-touch-p rectangle candidate))
+                        (%rectangles-mergeable-p rectangle candidate))
                       region)))
                (if touching
                    (insert-rectangle

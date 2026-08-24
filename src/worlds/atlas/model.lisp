@@ -124,7 +124,8 @@
   focused hovered operation last-pointer-input
   cursor-surface
   (cursor-hotspot-x 0 :type integer)
-  (cursor-hotspot-y 0 :type integer))
+  (cursor-hotspot-y 0 :type integer)
+  cursor-coverage cursor-coverage-output)
 
 (defstruct (%atlas-operation
              (:constructor %make-atlas-operation

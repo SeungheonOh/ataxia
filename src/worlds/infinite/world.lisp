@@ -357,16 +357,42 @@
   (setf (%world-retired-overlays world) nil)
   world)
 
+(defun %cursor-buffer-coverage (state seat-state)
+  (let ((cursor (%canvas-seat-cursor-surface seat-state))
+        (x (%canvas-seat-x seat-state))
+        (y (%canvas-seat-y seat-state)))
+    (if (and cursor (eq (ataxia.kernel:object-state cursor) :live))
+        (multiple-value-bind (surfaces revision)
+            (ataxia.kernel:drawable-surfaces cursor)
+          (declare (ignore revision))
+          (loop for surface across surfaces
+                collect
+                (%screen-rectangle-to-buffer
+                 state
+                 (+ (- x (%canvas-seat-cursor-hotspot-x seat-state))
+                    (ataxia.kernel:drawable-surface-local-x surface))
+                 (+ (- y (%canvas-seat-cursor-hotspot-y seat-state))
+                    (ataxia.kernel:drawable-surface-local-y surface))
+                 (ataxia.kernel:drawable-surface-width surface)
+                 (ataxia.kernel:drawable-surface-height surface)
+                 2d0)))
+        (list (%screen-rectangle-to-buffer
+               state (- x 4d0) (- y 4d0) 26d0 34d0)))))
+
 (defun %damage-cursor (world seat-state)
-  (let ((state (%canvas-seat-output seat-state)))
+  (let* ((state (%canvas-seat-output seat-state))
+         (coverage (and state (%cursor-buffer-coverage state seat-state)))
+         (previous-output (%canvas-seat-cursor-coverage-output seat-state)))
+    (when (and previous-output (%canvas-seat-cursor-coverage seat-state))
+      (ataxia.world:damage-add-region
+       (%world-damage world) previous-output
+       (%canvas-seat-cursor-coverage seat-state)))
     (when state
       (ataxia.world:damage-add-region
-       (%world-damage world) (%canvas-output-output state)
-       (list (%screen-rectangle-to-buffer
-              state
-              (- (%canvas-seat-x seat-state) 4d0)
-              (- (%canvas-seat-y seat-state) 4d0)
-              52d0 52d0)))))
+       (%world-damage world) (%canvas-output-output state) coverage))
+    (setf (%canvas-seat-cursor-coverage seat-state) coverage
+          (%canvas-seat-cursor-coverage-output seat-state)
+          (and state (%canvas-output-output state))))
   world)
 
 (defun %full-damage (world state)
@@ -1069,6 +1095,7 @@
          (when (eq object (%canvas-seat-cursor-surface seat-state))
            (%damage-cursor world seat-state)
            (setf (%canvas-seat-cursor-surface seat-state) nil)
+           (%damage-cursor world seat-state)
            (%request-output-state-frame world (%canvas-seat-output seat-state)))))))
   object)
 

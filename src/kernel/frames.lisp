@@ -29,14 +29,14 @@
 (defclass world-frame-result ()
   ((target-token :initarg :target-token :reader frame-result-target-token)
    (damage :initarg :damage :reader frame-result-damage)
-   (protocol-tokens
-    :initarg :protocol-tokens
+   (presentation-tokens
+    :initarg :presentation-tokens
     :initform #()
-    :reader frame-result-protocol-tokens)
+    :reader frame-result-presentation-tokens)
    (complete-p :initarg :complete-p :reader frame-result-complete-p)
    (world-cookie :initarg :world-cookie :reader frame-result-world-cookie))
   (:documentation
-   "World result containing final damage, opaque World state, and Kernel-owned Wayland tokens."))
+   "World result containing final damage, opaque World state, and presented Kernel tokens."))
 
 (defstruct (output-presentation
              (:constructor make-output-presentation

@@ -97,6 +97,13 @@
   (:documentation
    "Ref-counted view of a Runtime-retained client buffer and its GLES texture."))
 
+(defclass wayland-drawable-surface (drawable-surface)
+  ((presentation-token
+    :initarg :presentation-token
+    :reader drawable-surface-presentation-token))
+  (:documentation
+   "Drawable quad carrying the opaque token needed after presenting a wl_surface."))
+
 (defclass surface-protocol-token ()
   ((surface :initarg :surface :reader %protocol-token-surface)
    (generation :initarg :generation :reader %protocol-token-generation))

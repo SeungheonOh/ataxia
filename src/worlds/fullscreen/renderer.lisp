@@ -322,50 +322,16 @@ void main() {
       (setf (%fullscreen-renderer-vertex-buffer renderer) 0)))
   nil)
 
-(defun %multiply-affine (left right)
-  (%make-affine
-   :xx (+ (* (%affine-xx left) (%affine-xx right))
-          (* (%affine-xy left) (%affine-yx right)))
-   :yx (+ (* (%affine-yx left) (%affine-xx right))
-          (* (%affine-yy left) (%affine-yx right)))
-   :xy (+ (* (%affine-xx left) (%affine-xy right))
-          (* (%affine-xy left) (%affine-yy right)))
-   :yy (+ (* (%affine-yx left) (%affine-xy right))
-          (* (%affine-yy left) (%affine-yy right)))
-   :x0 (+ (* (%affine-xx left) (%affine-x0 right))
-          (* (%affine-xy left) (%affine-y0 right))
-          (%affine-x0 left))
-   :y0 (+ (* (%affine-yx left) (%affine-x0 right))
-          (* (%affine-yy left) (%affine-y0 right))
-          (%affine-y0 left))))
-
-(defun %wayland-texture-affine (transform)
-  (ecase transform
-    (0 (%make-affine))
-    (1 (%make-affine :xx 0d0 :yx 1d0 :xy -1d0 :yy 0d0 :x0 1d0))
-    (2 (%make-affine :xx -1d0 :yy -1d0 :x0 1d0 :y0 1d0))
-    (3 (%make-affine :xx 0d0 :yx -1d0 :xy 1d0 :yy 0d0 :y0 1d0))
-    (4 (%make-affine :xx -1d0 :yy 1d0 :x0 1d0))
-    (5 (%make-affine :xx 0d0 :yx 1d0 :xy 1d0 :yy 0d0))
-    (6 (%make-affine :xx 1d0 :yy -1d0 :y0 1d0))
-    (7 (%make-affine :xx 0d0 :yx -1d0 :xy -1d0 :yy 0d0
-                     :x0 1d0 :y0 1d0))))
-
-(defun %inverse-wayland-transform (transform)
-  (case transform
-    (1 3)
-    (3 1)
-    (otherwise transform)))
-
 (defun %texture-affine (surface)
-  (let ((box (ataxia.kernel:drawable-surface-source-box surface)))
-    (%multiply-affine
-     (%make-affine
-      :xx (aref box 2) :yy (aref box 3)
-      :x0 (aref box 0) :y0 (aref box 1))
-     (%wayland-texture-affine
-      (%inverse-wayland-transform
-       (ataxia.kernel:drawable-surface-buffer-transform surface))))))
+  (let ((coordinates
+          (ataxia.kernel:drawable-surface-texture-coordinates surface)))
+    (%make-affine
+     :xx (- (aref coordinates 2) (aref coordinates 0))
+     :yx (- (aref coordinates 3) (aref coordinates 1))
+     :xy (- (aref coordinates 4) (aref coordinates 0))
+     :yy (- (aref coordinates 5) (aref coordinates 1))
+     :x0 (aref coordinates 0)
+     :y0 (aref coordinates 1))))
 
 (defun %affine-matrix (transform)
   (vector

@@ -82,7 +82,7 @@
 (defun slint-component-graphics-attached-p (component)
   (plusp (%component-texture component)))
 
-(defun %refresh-surface (component damage)
+(defun %refresh-surface (component)
   (let* ((source
            (make-instance
             'slint-render-source
@@ -93,12 +93,12 @@
          (surface
            (make-instance
             'ataxia.kernel:drawable-surface
-            :id component :local-x 0d0 :local-y 0d0
+            :local-x 0d0 :local-y 0d0
             :width (slint-component-width component)
             :height (slint-component-height component)
-            :order 0 :source-box #(0d0 0d0 1d0 1d0)
-            :buffer-transform 0 :render-source source
-            :damage damage :generation (%component-revision component))))
+            :texture-coordinates
+            #(0d0 0d0 1d0 0d0 0d0 1d0 1d0 1d0)
+            :render-source source)))
     (setf (%component-surfaces component) (vector surface))))
 
 (defun %allocate-texture (component width height)
@@ -130,7 +130,7 @@
      component
      (ataxia.world.slint.raw::%component-width (%live-native component))
      (ataxia.world.slint.raw::%component-height (%live-native component)))
-    (%refresh-surface component nil))
+    (%refresh-surface component))
   component)
 
 (defun detach-slint-component-graphics (component)
@@ -221,6 +221,6 @@
             (%upload-rectangle component pixels width rectangle))))
       (when (/= revision (%component-revision component))
         (setf (%component-revision component) revision)
-        (%refresh-surface component logical-damage))
+        (%refresh-surface component))
       (poll-slint-callbacks component)
       (values logical-damage (slint-component-active-p component)))))

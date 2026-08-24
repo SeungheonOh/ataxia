@@ -215,7 +215,7 @@
        (lambda (token)
          (unless (%validate-protocol-token kernel token)
            (error "World returned an invalid Wayland protocol token.")))
-       (frame-result-protocol-tokens result))
+       (frame-result-presentation-tokens result))
   result)
 
 (defun %runtime-damage (rectangles)
@@ -240,7 +240,7 @@
                 (surface-runtime-object surface) runtime-output)
                (ataxia.runtime:surface-send-frame-done
                 (surface-runtime-object surface)))))
-         (frame-result-protocol-tokens result))))
+         (frame-result-presentation-tokens result))))
 
 (defun %execute-world-frame
     (output framebuffer target-token buffer-width buffer-height)

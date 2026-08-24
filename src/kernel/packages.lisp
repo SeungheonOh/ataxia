@@ -18,18 +18,13 @@
    #:render-source-has-alpha-p
    #:render-source-generation
    #:drawable-surface
-   #:drawable-surface-id
    #:drawable-surface-local-x
    #:drawable-surface-local-y
    #:drawable-surface-width
    #:drawable-surface-height
-   #:drawable-surface-order
-   #:drawable-surface-source-box
-   #:drawable-surface-buffer-transform
+   #:drawable-surface-texture-coordinates
    #:drawable-surface-render-source
-   #:drawable-surface-protocol-token
-   #:drawable-surface-damage
-   #:drawable-surface-generation
+   #:drawable-surface-presentation-token
    #:drawable-surfaces
    #:drawable-local-bounds
    #:drawable-attach-graphics
@@ -221,7 +216,7 @@
    #:world-frame-result
    #:frame-result-target-token
    #:frame-result-damage
-   #:frame-result-protocol-tokens
+   #:frame-result-presentation-tokens
    #:frame-result-complete-p
    #:frame-result-world-cookie
    #:output-presentation

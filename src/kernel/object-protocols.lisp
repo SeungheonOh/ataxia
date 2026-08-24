@@ -23,25 +23,23 @@
 (defgeneric render-source-generation (render-source))
 
 (defclass drawable-surface ()
-  ((id :initarg :id :reader drawable-surface-id)
-   (local-x :initarg :local-x :reader drawable-surface-local-x)
+  ((local-x :initarg :local-x :reader drawable-surface-local-x)
    (local-y :initarg :local-y :reader drawable-surface-local-y)
    (width :initarg :width :reader drawable-surface-width)
    (height :initarg :height :reader drawable-surface-height)
-   (order :initarg :order :reader drawable-surface-order)
-   (source-box :initarg :source-box :reader drawable-surface-source-box)
-   (buffer-transform
-    :initarg :buffer-transform
-    :reader drawable-surface-buffer-transform)
-   (render-source :initarg :render-source :reader drawable-surface-render-source)
-   (protocol-token
-    :initarg :protocol-token
-    :initform nil
-    :reader drawable-surface-protocol-token)
-   (damage :initarg :damage :reader drawable-surface-damage)
-   (generation :initarg :generation :reader drawable-surface-generation))
+   (texture-coordinates
+    :initarg :texture-coordinates
+    :reader drawable-surface-texture-coordinates)
+   (render-source :initarg :render-source :reader drawable-surface-render-source))
   (:documentation
-   "Immutable object-local render record. Only protocol-token may identify a Kernel resource."))
+   "Immutable origin-neutral textured quad. Texture coordinates are normalized U/V pairs in top-left, top-right, bottom-left, bottom-right order."))
+
+(defgeneric drawable-surface-presentation-token (surface)
+  (:documentation
+   "Return an opaque Kernel presentation token, or NIL for a World-native surface.")
+  (:method ((surface drawable-surface))
+    (declare (ignore surface))
+    nil))
 
 (defgeneric drawable-surfaces (drawable)
   (:documentation

@@ -208,21 +208,11 @@ void main() {
     (ataxia.world.gles:gles-draw-triangles 6)))
 
 (defun %source-uv (surface)
-  (let* ((box (ataxia.kernel:drawable-surface-source-box surface))
-         (left (aref box 0))
-         (top (aref box 1))
-         (width (aref box 2))
-         (height (aref box 3))
-         (transform (ataxia.kernel:drawable-surface-buffer-transform surface)))
-    (mapcar
-     (lambda (point)
-       (multiple-value-bind (u v)
-           (%transform-normalized-point
-            (case transform (1 3) (3 1) (otherwise transform))
-            (car point) (cdr point))
-         (cons (+ left (* u width)) (+ top (* v height)))))
-     (list (cons 0d0 0d0) (cons 1d0 0d0)
-           (cons 0d0 1d0) (cons 1d0 1d0)))))
+  (let ((coordinates
+          (ataxia.kernel:drawable-surface-texture-coordinates surface)))
+    (loop for index from 0 below 8 by 2
+          collect (cons (aref coordinates index)
+                        (aref coordinates (1+ index))))))
 
 (defun %draw-surface (renderer state surface x y width height opacity)
   (let* ((source (ataxia.kernel:drawable-surface-render-source surface))
@@ -292,7 +282,7 @@ void main() {
                         surface-width surface-height
                         (%object-opacity object timestamp))
                        (let ((token
-                               (ataxia.kernel:drawable-surface-protocol-token
+                               (ataxia.kernel:drawable-surface-presentation-token
                                 surface)))
                          (when token (pushnew token tokens :test #'eq)))))
                    surfaces)))))))
@@ -323,7 +313,7 @@ void main() {
                   (ataxia.kernel:drawable-surface-height surface)
                   1d0)
                  (let ((token
-                         (ataxia.kernel:drawable-surface-protocol-token surface)))
+                         (ataxia.kernel:drawable-surface-presentation-token surface)))
                    (when token (pushnew token tokens :test #'eq))))
                surfaces))
         (%draw-solid-cursor renderer state x y))

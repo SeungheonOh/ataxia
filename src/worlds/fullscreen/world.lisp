@@ -93,7 +93,7 @@
     (declare (ignore revision))
     (loop for surface across surfaces
           for token =
-            (ataxia.kernel:drawable-surface-protocol-token surface)
+            (ataxia.kernel:drawable-surface-presentation-token surface)
           when token collect token)))
 
 (defun %set-drawable-membership (drawable outputs)
@@ -392,7 +392,7 @@
                          scale-y)
                       target-width target-height)
                      (let ((token
-                             (ataxia.kernel:drawable-surface-protocol-token
+                             (ataxia.kernel:drawable-surface-presentation-token
                               surface)))
                        (when token
                          (push token tokens))))))))
@@ -429,7 +429,7 @@
                             scale-y)
                          target-width target-height)
                         (let ((token
-                                (ataxia.kernel:drawable-surface-protocol-token
+                                (ataxia.kernel:drawable-surface-presentation-token
                                  surface)))
                           (when token
                             (push token tokens))))))))
@@ -455,7 +455,7 @@
      :damage
      (vector
       (ataxia.kernel:make-frame-damage-rectangle 0 0 width height))
-     :protocol-tokens (coerce (remove-duplicates tokens :test #'eq) 'vector)
+     :presentation-tokens (coerce (remove-duplicates tokens :test #'eq) 'vector)
      :complete-p t
      :world-cookie nil)))
 

@@ -103,10 +103,46 @@
     (dolist (child (surface-children surface))
       (%walk-surface-tree child function x y))))
 
+(defun %inverse-buffer-transform (transform)
+  (case transform
+    (1 3)
+    (3 1)
+    (otherwise transform)))
+
+(defun %transform-texture-point (transform x y)
+  (case transform
+    (0 (values x y))
+    (1 (values (- 1d0 y) x))
+    (2 (values (- 1d0 x) (- 1d0 y)))
+    (3 (values y (- 1d0 x)))
+    (4 (values (- 1d0 x) y))
+    (5 (values (- 1d0 y) (- 1d0 x)))
+    (6 (values x (- 1d0 y)))
+    (7 (values y x))
+    (otherwise (values x y))))
+
+(defun %surface-texture-coordinates (surface)
+  (let* ((box (%surface-source-box surface))
+         (left (aref box 0))
+         (top (aref box 1))
+         (width (aref box 2))
+         (height (aref box 3))
+         (transform (%inverse-buffer-transform
+                     (%surface-buffer-transform surface)))
+         (coordinates (make-array 8 :element-type 'double-float)))
+    (loop for (x y) in '((0d0 0d0) (1d0 0d0) (0d0 1d0) (1d0 1d0))
+          for index from 0 by 2
+          do (multiple-value-bind (u v)
+                 (%transform-texture-point transform x y)
+               (setf (aref coordinates index)
+                     (coerce (+ left (* u width)) 'double-float)
+                     (aref coordinates (1+ index))
+                     (coerce (+ top (* v height)) 'double-float))))
+    coordinates))
+
 (defun %rebuild-application-drawables (application)
   (let ((records nil)
-        (damage nil)
-        (order 0))
+        (damage nil))
     (%walk-surface-tree
      (application-root-surface application)
      (lambda (surface x y)
@@ -116,21 +152,15 @@
                   (plusp (surface-height surface)))
          (push
           (make-instance
-           'drawable-surface
-           :id (object-id surface)
+           'wayland-drawable-surface
            :local-x x
            :local-y y
            :width (surface-width surface)
            :height (surface-height surface)
-           :order order
-           :source-box (%surface-source-box surface)
-           :buffer-transform (%surface-buffer-transform surface)
+           :texture-coordinates (%surface-texture-coordinates surface)
            :render-source (%surface-render-source surface)
-           :protocol-token (%surface-protocol-token surface)
-           :damage (%surface-damage surface)
-           :generation (surface-commit-sequence surface))
+           :presentation-token (%surface-protocol-token surface))
           records)
-         (incf order)
          (dolist (rectangle (%surface-damage surface))
            (push
             (make-frame-damage-rectangle
@@ -150,19 +180,14 @@
      (if (and source (surface-mapped-p surface))
          (vector
           (make-instance
-           'drawable-surface
-           :id (object-id surface)
+           'wayland-drawable-surface
            :local-x 0
            :local-y 0
            :width (surface-width surface)
            :height (surface-height surface)
-           :order 0
-           :source-box (%surface-source-box surface)
-           :buffer-transform (%surface-buffer-transform surface)
+           :texture-coordinates (%surface-texture-coordinates surface)
            :render-source source
-           :protocol-token (%surface-protocol-token surface)
-           :damage (%surface-damage surface)
-           :generation (surface-commit-sequence surface)))
+           :presentation-token (%surface-protocol-token surface)))
          #())
      (surface-commit-sequence surface))))
 

@@ -176,7 +176,7 @@
     (map nil
          (lambda (surface)
            (let ((token
-                   (ataxia.kernel:drawable-surface-protocol-token surface)))
+                   (ataxia.kernel:drawable-surface-presentation-token surface)))
              (when token
                (ataxia.kernel:set-wayland-surface-output-membership
                 token outputs))))
@@ -918,7 +918,7 @@
                       region)
                   (ataxia.kernel:frame-width lease)
                   (ataxia.kernel:frame-height lease))
-         :protocol-tokens tokens
+         :presentation-tokens tokens
          :complete-p t
          :world-cookie (%make-world-frame-cookie damage-frame))))))
 

@@ -139,21 +139,25 @@
 
 (defstruct (key-input
              (:constructor make-key-input
-                 (&key device time-msec keycode state update-state-p)))
+                 (&key device time-msec keycode keysyms modifiers
+                       state update-state-p)))
   (device nil :read-only t)
   (time-msec 0 :type (unsigned-byte 32) :read-only t)
   (keycode 0 :type (unsigned-byte 32) :read-only t)
+  (keysyms #() :type vector :read-only t)
+  (modifiers nil :type list :read-only t)
   (state :released :type keyword :read-only t)
   (update-state-p nil :type boolean :read-only t))
 
 (defstruct (modifiers-input
              (:constructor make-modifiers-input
-                 (&key device depressed latched locked group)))
+                 (&key device depressed latched locked group names)))
   (device nil :read-only t)
   (depressed 0 :type (unsigned-byte 32) :read-only t)
   (latched 0 :type (unsigned-byte 32) :read-only t)
   (locked 0 :type (unsigned-byte 32) :read-only t)
-  (group 0 :type (unsigned-byte 32) :read-only t))
+  (group 0 :type (unsigned-byte 32) :read-only t)
+  (names nil :type list :read-only t))
 
 (defgeneric interactable-pointer-motion
     (object world seat local-x local-y input)

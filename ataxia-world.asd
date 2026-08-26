@@ -13,6 +13,7 @@
     ((:file "packages")
      (:file "geometry")
      (:file "application")
+     (:file "shortcuts")
      (:file "animation")
      (:file "damage")
      (:file "gles")))))

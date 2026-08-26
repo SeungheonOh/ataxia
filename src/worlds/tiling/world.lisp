@@ -469,41 +469,92 @@
       (format *error-output* "[tiling-world] cannot launch foot: ~A~%" cause)
       (finish-output *error-output*))))
 
-(defun %shortcut-pressed-p (seat-state input)
-  (and (eq (ataxia.kernel:key-input-state input) :pressed)
-       (logtest +modifier-logo+ (%tiling-seat-modifiers seat-state))))
+(defun %tiling-command-seat-state (world seat)
+  (gethash seat (%world-seats world)))
 
-(defun %handle-shortcut (world seat-state input)
-  (when (%shortcut-pressed-p seat-state input)
-    (let ((key (ataxia.kernel:key-input-keycode input))
-          (shift-p (logtest +modifier-shift+
-                            (%tiling-seat-modifiers seat-state))))
-      (cond
-        ((= key +key-enter+) (%launch-terminal) t)
-        ((= key +key-q+)
-         (when (%tiling-seat-focused seat-state)
-           (ataxia.kernel:request-object-state
-            (tile-node-component (%tiling-seat-focused seat-state))
-            world :close t))
-         t)
-        ((= key +key-f+)
-         (let ((node (%tiling-seat-focused seat-state)))
-           (when node (%set-fullscreen world node (not (%tile-fullscreen-p node)))))
-         t)
-        ((= key +key-space+) (%move-focused-to-master world seat-state) t)
-        ((= key +key-h+) (%adjust-master-ratio world seat-state -0.05d0) t)
-        ((= key +key-l+) (%adjust-master-ratio world seat-state 0.05d0) t)
-        ((= key +key-j+)
-         (if shift-p
-             (%swap-relative world seat-state 1)
-             (%focus-relative world seat-state 1))
-         t)
-        ((= key +key-k+)
-         (if shift-p
-             (%swap-relative world seat-state -1)
-             (%focus-relative world seat-state -1))
-         t)
-        (t nil)))))
+(defmethod ataxia.world:invoke-shortcut-command
+    ((world tiling-world) (command (eql :tiling-launch-terminal))
+     seat binding input)
+  (declare (ignore seat binding input))
+  (%launch-terminal)
+  t)
+
+(defmethod ataxia.world:invoke-shortcut-command
+    ((world tiling-world) (command (eql :tiling-close-focused))
+     seat binding input)
+  (declare (ignore binding input))
+  (let ((seat-state (%tiling-command-seat-state world seat)))
+    (when (and seat-state (%tiling-seat-focused seat-state))
+      (ataxia.kernel:request-object-state
+       (tile-node-component (%tiling-seat-focused seat-state))
+       world :close t)))
+  t)
+
+(defmethod ataxia.world:invoke-shortcut-command
+    ((world tiling-world) (command (eql :tiling-toggle-fullscreen))
+     seat binding input)
+  (declare (ignore binding input))
+  (let* ((seat-state (%tiling-command-seat-state world seat))
+         (node (and seat-state (%tiling-seat-focused seat-state))))
+    (when node
+      (%set-fullscreen world node (not (%tile-fullscreen-p node)))))
+  t)
+
+(defmethod ataxia.world:invoke-shortcut-command
+    ((world tiling-world) (command (eql :tiling-move-to-master))
+     seat binding input)
+  (declare (ignore binding input))
+  (let ((seat-state (%tiling-command-seat-state world seat)))
+    (when seat-state (%move-focused-to-master world seat-state)))
+  t)
+
+(defmethod ataxia.world:invoke-shortcut-command
+    ((world tiling-world) (command (eql :tiling-shrink-master))
+     seat binding input)
+  (declare (ignore binding input))
+  (let ((seat-state (%tiling-command-seat-state world seat)))
+    (when seat-state (%adjust-master-ratio world seat-state -0.05d0)))
+  t)
+
+(defmethod ataxia.world:invoke-shortcut-command
+    ((world tiling-world) (command (eql :tiling-grow-master))
+     seat binding input)
+  (declare (ignore binding input))
+  (let ((seat-state (%tiling-command-seat-state world seat)))
+    (when seat-state (%adjust-master-ratio world seat-state 0.05d0)))
+  t)
+
+(defmethod ataxia.world:invoke-shortcut-command
+    ((world tiling-world) (command (eql :tiling-focus-next))
+     seat binding input)
+  (declare (ignore binding input))
+  (let ((seat-state (%tiling-command-seat-state world seat)))
+    (when seat-state (%focus-relative world seat-state 1)))
+  t)
+
+(defmethod ataxia.world:invoke-shortcut-command
+    ((world tiling-world) (command (eql :tiling-focus-previous))
+     seat binding input)
+  (declare (ignore binding input))
+  (let ((seat-state (%tiling-command-seat-state world seat)))
+    (when seat-state (%focus-relative world seat-state -1)))
+  t)
+
+(defmethod ataxia.world:invoke-shortcut-command
+    ((world tiling-world) (command (eql :tiling-swap-next))
+     seat binding input)
+  (declare (ignore binding input))
+  (let ((seat-state (%tiling-command-seat-state world seat)))
+    (when seat-state (%swap-relative world seat-state 1)))
+  t)
+
+(defmethod ataxia.world:invoke-shortcut-command
+    ((world tiling-world) (command (eql :tiling-swap-previous))
+     seat binding input)
+  (declare (ignore binding input))
+  (let ((seat-state (%tiling-command-seat-state world seat)))
+    (when seat-state (%swap-relative world seat-state -1)))
+  t)
 
 (defmethod ataxia.kernel:world-attached ((world tiling-world) kernel)
   (setf (ataxia.kernel:world-kernel world) kernel
@@ -717,7 +768,9 @@
         (ataxia.kernel:interactable-pointer-leave
          (tile-node-component (%tiling-seat-hovered seat-state)) world seat))
       (%focus-node world seat-state nil))
-    (remhash seat (%world-seats world)))
+    (remhash seat (%world-seats world))
+    (ataxia.world:forget-shortcut-seat
+     (ataxia.world:world-shortcut-controller world) seat))
   seat)
 
 (defmethod ataxia.kernel:world-cursor-motion
@@ -776,30 +829,14 @@
 (defmethod ataxia.kernel:world-key-event ((world tiling-world) seat input)
   (let* ((seat-state (gethash seat (%world-seats world)))
          (focused (and seat-state (%tiling-seat-focused seat-state))))
-    (when seat-state
-      (etypecase input
-        (ataxia.kernel:modifiers-input
-         (setf (%tiling-seat-modifiers seat-state)
-               (logior (ataxia.kernel:modifiers-input-depressed input)
-                       (ataxia.kernel:modifiers-input-latched input)
-                       (ataxia.kernel:modifiers-input-locked input)))
-         (when focused
-           (ataxia.kernel:interactable-key-event
-            (tile-node-component focused) world seat input)))
-        (ataxia.kernel:key-input
-         (let* ((key (ataxia.kernel:key-input-keycode input))
-                (released-p
-                  (eq (ataxia.kernel:key-input-state input) :released))
-                (consumed-p
-                  (gethash key (%tiling-seat-consumed-keys seat-state))))
-           (cond
-             ((and released-p consumed-p)
-              (remhash key (%tiling-seat-consumed-keys seat-state)))
-             ((%handle-shortcut world seat-state input)
-              (setf (gethash key (%tiling-seat-consumed-keys seat-state)) t))
-             (focused
-              (ataxia.kernel:interactable-key-event
-               (tile-node-component focused) world seat input))))))))
+    (when (and seat-state
+               (eq :forward
+                   (ataxia.world:handle-shortcut-input
+                    (ataxia.world:world-shortcut-controller world)
+                    world seat input))
+               focused)
+      (ataxia.kernel:interactable-key-event
+       (tile-node-component focused) world seat input)))
   input)
 
 (defmethod ataxia.kernel:world-seat-cursor-request

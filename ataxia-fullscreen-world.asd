@@ -5,7 +5,7 @@
   :version "0.1.0"
   :author "Ataxia contributors"
   :license "Unspecified"
-  :depends-on ("ataxia-kernel" "cffi")
+  :depends-on ("ataxia-world" "cffi")
   :serial t
   :components
   ((:module "src/worlds/fullscreen"

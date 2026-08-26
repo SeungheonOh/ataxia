@@ -8,8 +8,6 @@
 
 (defconstant +button-left+ 272)
 (defconstant +button-middle+ 274)
-(defconstant +modifier-logo+ #x40)
-(defconstant +key-space+ 57)
 (defconstant +resize-top+ 1)
 (defconstant +resize-bottom+ 2)
 (defconstant +resize-left+ 4)
@@ -100,8 +98,6 @@
   (y 0d0 :type double-float)
   (buttons (make-hash-table :test #'eql))
   focused hovered operation previous-focus
-  (modifiers 0 :type integer)
-  (launcher-shortcut-p nil :type boolean)
   cursor-surface
   (cursor-hotspot-x 0 :type integer)
   (cursor-hotspot-y 0 :type integer)

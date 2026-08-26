@@ -10,6 +10,7 @@
 #include <stdlib.h>
 
 #include <wayland-server-core.h>
+#include <xkbcommon/xkbcommon.h>
 #include <wlr/backend.h>
 #include <wlr/render/allocator.h>
 #include <wlr/render/gles2.h>
@@ -458,6 +459,60 @@ uint32_t ataxia_keyboard_modifiers_locked(
 uint32_t ataxia_keyboard_modifiers_group(
 		const struct wlr_keyboard *keyboard) {
 	return keyboard == NULL ? 0 : keyboard->modifiers.group;
+}
+
+size_t ataxia_keyboard_keysyms(const struct wlr_keyboard *keyboard,
+		uint32_t keycode, uint32_t *keysyms, size_t capacity) {
+	if (keyboard == NULL || keyboard->xkb_state == NULL ||
+			keycode > UINT32_MAX - 8) {
+		return 0;
+	}
+
+	const xkb_keysym_t *resolved = NULL;
+	int count = xkb_state_key_get_syms(
+		keyboard->xkb_state, keycode + 8, &resolved);
+	if (count <= 0) {
+		return 0;
+	}
+
+	size_t total = (size_t)count;
+	if (keysyms != NULL) {
+		size_t copied = total < capacity ? total : capacity;
+		for (size_t index = 0; index < copied; index++) {
+			keysyms[index] = resolved[index];
+		}
+	}
+	return total;
+}
+
+uint32_t ataxia_keyboard_named_modifiers(
+		const struct wlr_keyboard *keyboard) {
+	if (keyboard == NULL || keyboard->xkb_state == NULL) {
+		return 0;
+	}
+
+	struct named_modifier {
+		const char *name;
+		uint32_t flag;
+	};
+	static const struct named_modifier modifiers[] = {
+		{ XKB_MOD_NAME_SHIFT, 1u << 0 },
+		{ XKB_MOD_NAME_CTRL, 1u << 1 },
+		{ XKB_MOD_NAME_ALT, 1u << 2 },
+		{ XKB_MOD_NAME_LOGO, 1u << 3 },
+		{ XKB_MOD_NAME_CAPS, 1u << 4 },
+		{ XKB_MOD_NAME_NUM, 1u << 5 },
+	};
+	uint32_t flags = 0;
+	for (size_t index = 0; index < sizeof(modifiers) / sizeof(modifiers[0]);
+			index++) {
+		if (xkb_state_mod_name_is_active(
+				keyboard->xkb_state, modifiers[index].name,
+				XKB_STATE_MODS_EFFECTIVE) > 0) {
+			flags |= modifiers[index].flag;
+		}
+	}
+	return flags;
 }
 
 int32_t ataxia_keyboard_repeat_rate(const struct wlr_keyboard *keyboard) {

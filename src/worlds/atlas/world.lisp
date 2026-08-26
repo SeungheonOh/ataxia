@@ -879,6 +879,8 @@
          (atlas-object-component (%atlas-seat-hovered seat-state))
          world seat)))
     (remhash seat (%world-seats world))
+    (ataxia.world:forget-shortcut-seat
+     (ataxia.world:world-shortcut-controller world) seat)
     (%request-all-frames world))
   seat)
 
@@ -965,7 +967,13 @@
 (defmethod ataxia.kernel:world-key-event ((world atlas-world) seat input)
   (let* ((seat-state (gethash seat (%world-seats world)))
          (target (and seat-state (%atlas-seat-focused seat-state))))
-    (when (and target (%object-visible-p target))
+    (when (and seat-state
+               (eq :forward
+                   (ataxia.world:handle-shortcut-input
+                    (ataxia.world:world-shortcut-controller world)
+                    world seat input))
+               target
+               (%object-visible-p target))
       (ataxia.kernel:interactable-key-event
        (atlas-object-component target) world seat input)))
   input)

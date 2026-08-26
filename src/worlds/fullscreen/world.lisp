@@ -18,6 +18,8 @@
    (application :initform nil :accessor %world-application)
    (outputs :initform nil :accessor %world-outputs)
    (seats :initform (make-hash-table :test #'eq) :reader %world-seats)
+   (shortcuts :initform (ataxia.world:make-shortcut-controller)
+              :reader ataxia.world:world-shortcut-controller)
    (renderer :initform nil :accessor %world-renderer)
    (active-p :initform t :accessor %world-active-p))
   (:documentation
@@ -245,6 +247,8 @@
 (defmethod ataxia.kernel:world-seat-removing
     ((world fullscreen-world) seat)
   (remhash seat (%world-seats world))
+  (ataxia.world:forget-shortcut-seat
+   (ataxia.world:world-shortcut-controller world) seat)
   seat)
 
 (defun %clamp-coordinate (value extent)
@@ -328,7 +332,12 @@
 (defmethod ataxia.kernel:world-key-event
     ((world fullscreen-world) seat input)
   (let ((application (%world-application world)))
-    (when (and application (ataxia.kernel:application-mapped-p application))
+    (when (and (eq :forward
+                   (ataxia.world:handle-shortcut-input
+                    (ataxia.world:world-shortcut-controller world)
+                    world seat input))
+               application
+               (ataxia.kernel:application-mapped-p application))
       (ataxia.kernel:interactable-key-event
        application world seat input)))
   input)

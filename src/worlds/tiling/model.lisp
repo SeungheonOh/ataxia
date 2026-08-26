@@ -2,21 +2,48 @@
 ;;;;
 ;;;; TILE-NODE attaches tiling policy to a component without modifying the
 ;;;; Kernel object. Outputs own independent master-stack parameters and seats
-;;;; own focus, pointer capture, cursor, and shortcut state.
+;;;; own focus, pointer capture, and cursor state. The World owns one reusable
+;;;; shortcut controller shared by its seats.
 
 (in-package #:ataxia.tiling-world)
 
 (defconstant +button-left+ 272)
-(defconstant +modifier-shift+ #x01)
-(defconstant +modifier-logo+ #x40)
-(defconstant +key-q+ 16)
-(defconstant +key-enter+ 28)
-(defconstant +key-h+ 35)
-(defconstant +key-j+ 36)
-(defconstant +key-k+ 37)
-(defconstant +key-l+ 38)
-(defconstant +key-f+ 33)
-(defconstant +key-space+ 57)
+
+(defun %make-tiling-shortcut-controller ()
+  (ataxia.world:make-shortcut-controller
+   :maps
+   (list
+    (ataxia.world:make-shortcut-map
+     (ataxia.world:make-shortcut-binding
+      :id :terminal :key '(:keysym :return) :modifiers '(:logo)
+      :press-command :tiling-launch-terminal)
+     (ataxia.world:make-shortcut-binding
+      :id :close :key '(:keysym :q) :modifiers '(:logo)
+      :press-command :tiling-close-focused)
+     (ataxia.world:make-shortcut-binding
+      :id :fullscreen :key '(:keysym :f) :modifiers '(:logo)
+      :press-command :tiling-toggle-fullscreen)
+     (ataxia.world:make-shortcut-binding
+      :id :master :key '(:keysym :space) :modifiers '(:logo)
+      :press-command :tiling-move-to-master)
+     (ataxia.world:make-shortcut-binding
+      :id :shrink-master :key '(:keysym :h) :modifiers '(:logo)
+      :press-command :tiling-shrink-master)
+     (ataxia.world:make-shortcut-binding
+      :id :grow-master :key '(:keysym :l) :modifiers '(:logo)
+      :press-command :tiling-grow-master)
+     (ataxia.world:make-shortcut-binding
+      :id :focus-next :key '(:keysym :j) :modifiers '(:logo)
+      :press-command :tiling-focus-next)
+     (ataxia.world:make-shortcut-binding
+      :id :focus-previous :key '(:keysym :k) :modifiers '(:logo)
+      :press-command :tiling-focus-previous)
+     (ataxia.world:make-shortcut-binding
+      :id :swap-next :key '(:keysym :j) :modifiers '(:logo :shift)
+      :press-command :tiling-swap-next)
+     (ataxia.world:make-shortcut-binding
+      :id :swap-previous :key '(:keysym :k) :modifiers '(:logo :shift)
+      :press-command :tiling-swap-previous)))))
 
 (defclass tile-node ()
   ((component :initarg :component :reader tile-node-component)
@@ -64,8 +91,6 @@
   (y 0d0 :type double-float)
   focused hovered last-pointer-input drag-node
   (buttons (make-hash-table :test #'eql))
-  (modifiers 0 :type integer)
-  (consumed-keys (make-hash-table :test #'eql))
   cursor-surface
   (cursor-hotspot-x 0 :type integer)
   (cursor-hotspot-y 0 :type integer)
@@ -83,6 +108,8 @@
    (layout :initform (%make-tiling-layout) :reader %world-layout)
    (outputs :initform (make-hash-table :test #'eq) :reader %world-outputs)
    (seats :initform (make-hash-table :test #'eq) :reader %world-seats)
+   (shortcuts :initform (%make-tiling-shortcut-controller)
+              :reader ataxia.world:world-shortcut-controller)
    (animator :initform (ataxia.world:make-animator) :reader %world-animator)
    (damage :initform (ataxia.world:make-damage-tracker) :reader %world-damage)
    (damage-debug-p :initarg :damage-debug-p :initform nil

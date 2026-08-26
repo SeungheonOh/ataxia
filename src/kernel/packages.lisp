@@ -86,6 +86,8 @@
    #:key-input-device
    #:key-input-time-msec
    #:key-input-keycode
+   #:key-input-keysyms
+   #:key-input-modifiers
    #:key-input-state
    #:key-input-update-state-p
    #:modifiers-input
@@ -95,6 +97,7 @@
    #:modifiers-input-latched
    #:modifiers-input-locked
    #:modifiers-input-group
+   #:modifiers-input-names
    #:interactable-pointer-motion
    #:interactable-hit-test
    #:interactable-pointer-button

@@ -150,6 +150,8 @@
                       :reader %world-output-components)
    (retired-components :initform nil :accessor %world-retired-components)
    (seats :initform (make-hash-table :test #'eq) :reader %world-seats)
+   (shortcuts :initform (ataxia.world:make-shortcut-controller)
+              :reader ataxia.world:world-shortcut-controller)
    (damage :initform (ataxia.world:make-damage-tracker) :reader %world-damage)
    (damage-debug-p :initarg :damage-debug-p :initform nil
                    :accessor %world-damage-debug-p)

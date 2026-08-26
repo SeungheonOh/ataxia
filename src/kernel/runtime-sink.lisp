@@ -264,7 +264,8 @@
 (defmethod ataxia.runtime:keyboard-key ((kernel kernel) event)
   (let* ((runtime-input (ataxia.runtime:keyboard-key-keyboard event))
          (input-device (%event-input-device kernel runtime-input))
-         (seat (and input-device (input-seat input-device))))
+         (seat (and input-device (input-seat input-device)))
+         (keycode (ataxia.runtime:keyboard-key-keycode event)))
     (when seat
       (ataxia.runtime:set-seat-keyboard
        (seat-runtime-object seat) runtime-input)
@@ -274,7 +275,11 @@
        (make-key-input
         :device input-device
         :time-msec (ataxia.runtime:keyboard-key-time-msec event)
-        :keycode (ataxia.runtime:keyboard-key-keycode event)
+        :keycode keycode
+        :keysyms
+        (map 'vector #'ataxia.runtime:keysym-name
+             (ataxia.runtime:keyboard-keysyms runtime-input keycode))
+        :modifiers (ataxia.runtime:keyboard-modifier-names runtime-input)
         :state (ataxia.runtime:keyboard-key-state event)
         :update-state-p
         (ataxia.runtime:keyboard-key-update-state-p event))))))
@@ -294,7 +299,8 @@
         :depressed (ataxia.runtime:keyboard-modifiers-depressed event)
         :latched (ataxia.runtime:keyboard-modifiers-latched event)
         :locked (ataxia.runtime:keyboard-modifiers-locked event)
-        :group (ataxia.runtime:keyboard-modifiers-group event))))))
+        :group (ataxia.runtime:keyboard-modifiers-group event)
+        :names (ataxia.runtime:keyboard-modifier-names runtime-input))))))
 
 (defmethod ataxia.runtime:seat-destroying
     ((kernel kernel) runtime-seat)

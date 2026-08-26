@@ -6,12 +6,25 @@
 
 (in-package #:ataxia.infinite-world)
 
+(defun %make-infinite-shortcut-controller ()
+  (ataxia.world:make-shortcut-controller
+   :maps
+   (list
+    (ataxia.world:make-shortcut-map
+     (ataxia.world:make-shortcut-binding
+      :id :application-launcher
+      :key '(:keysym :space)
+      :modifiers '(:logo)
+      :press-command :infinite-toggle-launcher)))))
+
 (defclass infinite-world (ataxia.kernel:world)
   ((kernel :initform nil :accessor ataxia.kernel:world-kernel)
    (windows :initform (make-hash-table :test #'eq) :reader %world-windows)
    (stacking :initform nil :accessor %world-stacking)
    (outputs :initform (make-hash-table :test #'eq) :reader %world-outputs)
    (seats :initform (make-hash-table :test #'eq) :reader %world-seats)
+   (shortcuts :initform (%make-infinite-shortcut-controller)
+              :reader ataxia.world:world-shortcut-controller)
    (overlays :initform nil :accessor world-overlays)
    (retired-overlays :initform nil :accessor %world-retired-overlays)
    (component-timer :initform nil :accessor %world-component-timer)
@@ -1232,6 +1245,8 @@
          (%target-component (%canvas-seat-focused seat-state))
          world seat :clear-keyboard)))
     (remhash seat (%world-seats world))
+    (ataxia.world:forget-shortcut-seat
+     (ataxia.world:world-shortcut-controller world) seat)
     (%request-all-frames world))
   seat)
 
@@ -1316,30 +1331,14 @@
     ((world infinite-world) seat input)
   (let* ((seat-state (gethash seat (%world-seats world)))
          (target (and seat-state (%canvas-seat-focused seat-state))))
-    (when seat-state
-      (typecase input
-        (ataxia.kernel:modifiers-input
-         (setf (%canvas-seat-modifiers seat-state)
-               (logior (ataxia.kernel:modifiers-input-depressed input)
-                       (ataxia.kernel:modifiers-input-latched input)
-                       (ataxia.kernel:modifiers-input-locked input)))
-         (when (%target-visible-p target)
-           (ataxia.kernel:interactable-key-event
-            (%target-component target) world seat input)))
-        (ataxia.kernel:key-input
-         (let ((keycode (ataxia.kernel:key-input-keycode input))
-               (pressed-p (eq (ataxia.kernel:key-input-state input) :pressed)))
-           (cond
-             ((and pressed-p (= keycode +key-space+)
-                   (logtest +modifier-logo+ (%canvas-seat-modifiers seat-state)))
-              (setf (%canvas-seat-launcher-shortcut-p seat-state) t)
-              (toggle-application-launcher world seat))
-             ((and (not pressed-p) (= keycode +key-space+)
-                   (%canvas-seat-launcher-shortcut-p seat-state))
-              (setf (%canvas-seat-launcher-shortcut-p seat-state) nil))
-             ((%target-visible-p target)
-              (ataxia.kernel:interactable-key-event
-               (%target-component target) world seat input))))))))
+    (when (and seat-state
+               (eq :forward
+                   (ataxia.world:handle-shortcut-input
+                    (ataxia.world:world-shortcut-controller world)
+                    world seat input))
+               (%target-visible-p target))
+      (ataxia.kernel:interactable-key-event
+       (%target-component target) world seat input)))
   input)
 
 (defmethod ataxia.kernel:world-seat-cursor-request

@@ -436,6 +436,9 @@
    #:set-keyboard-keymap
    #:set-keyboard-keymap-from-names
    #:set-keyboard-repeat-info
+   #:keyboard-keysyms
+   #:keysym-name
+   #:keyboard-modifier-names
    #:destroy-xkb-keymap
    #:destroy-xkb-context
    #:keyboard-key-event

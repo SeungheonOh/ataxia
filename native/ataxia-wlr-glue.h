@@ -9,10 +9,11 @@
 #define ATAXIA_WLR_GLUE_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #define ATAXIA_WLR_GLUE_API __attribute__((visibility("default")))
-#define ATAXIA_WLR_GLUE_ABI_VERSION 11u
+#define ATAXIA_WLR_GLUE_ABI_VERSION 12u
 
 struct wl_signal;
 struct wlr_allocator;
@@ -229,6 +230,11 @@ ATAXIA_WLR_GLUE_API uint32_t ataxia_keyboard_modifiers_latched(
 ATAXIA_WLR_GLUE_API uint32_t ataxia_keyboard_modifiers_locked(
 	const struct wlr_keyboard *keyboard);
 ATAXIA_WLR_GLUE_API uint32_t ataxia_keyboard_modifiers_group(
+	const struct wlr_keyboard *keyboard);
+ATAXIA_WLR_GLUE_API size_t ataxia_keyboard_keysyms(
+	const struct wlr_keyboard *keyboard, uint32_t keycode,
+	uint32_t *keysyms, size_t capacity);
+ATAXIA_WLR_GLUE_API uint32_t ataxia_keyboard_named_modifiers(
 	const struct wlr_keyboard *keyboard);
 ATAXIA_WLR_GLUE_API int32_t ataxia_keyboard_repeat_rate(
 	const struct wlr_keyboard *keyboard);

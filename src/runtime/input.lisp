@@ -30,6 +30,17 @@
   (keyboard :pointer)
   (rate-hertz :int32)
   (delay-milliseconds :int32))
+(defcfun ("ataxia_keyboard_keysyms" %keyboard-keysyms) :size
+  (keyboard :pointer)
+  (keycode :uint32)
+  (keysyms :pointer)
+  (capacity :size))
+(defcfun ("ataxia_keyboard_named_modifiers" %keyboard-named-modifiers) :uint32
+  (keyboard :pointer))
+(defcfun ("xkb_keysym_get_name" %xkb-keysym-get-name) :int
+  (keysym :uint32)
+  (buffer :pointer)
+  (size :size))
 
 (in-package #:ataxia.runtime)
 
@@ -37,6 +48,59 @@
 
 (defclass wlr-xkb-keymap (native-object)
   ((context :initarg :context :reader %xkb-keymap-context)))
+
+(defconstant +keyboard-modifier-shift+ #x01)
+(defconstant +keyboard-modifier-control+ #x02)
+(defconstant +keyboard-modifier-alt+ #x04)
+(defconstant +keyboard-modifier-logo+ #x08)
+(defconstant +keyboard-modifier-caps-lock+ #x10)
+(defconstant +keyboard-modifier-num-lock+ #x20)
+(defparameter +keyboard-modifier-flags+
+  `((:shift . ,+keyboard-modifier-shift+)
+    (:control . ,+keyboard-modifier-control+)
+    (:alt . ,+keyboard-modifier-alt+)
+    (:logo . ,+keyboard-modifier-logo+)
+    (:caps-lock . ,+keyboard-modifier-caps-lock+)
+    (:num-lock . ,+keyboard-modifier-num-lock+)))
+
+(defun keyboard-keysyms (keyboard keycode)
+  (check-type keyboard wlr-keyboard)
+  (check-type keycode (unsigned-byte 32))
+  (%assert-runtime-live (%native-runtime keyboard) :keyboard-keysyms)
+  (let* ((pointer (%object-pointer keyboard))
+         (count (ataxia.runtime.raw::%keyboard-keysyms
+                 pointer keycode (cffi:null-pointer) 0)))
+    (if (zerop count)
+        #()
+        (cffi:with-foreign-object (keysyms :uint32 count)
+          (let ((actual
+                  (min count
+                       (ataxia.runtime.raw::%keyboard-keysyms
+                        pointer keycode keysyms count))))
+            (let ((result
+                    (make-array actual :element-type '(unsigned-byte 32))))
+              (dotimes (index actual result)
+                (setf (aref result index)
+                      (cffi:mem-aref keysyms :uint32 index)))))))))
+
+(defun keysym-name (keysym)
+  (check-type keysym (unsigned-byte 32))
+  (cffi:with-foreign-object (buffer :char 128)
+    (let ((length
+            (ataxia.runtime.raw::%xkb-keysym-get-name keysym buffer 128)))
+      (if (plusp length)
+          (cffi:foreign-string-to-lisp buffer :count length)
+          (format nil "0x~8,'0X" keysym)))))
+
+(defun keyboard-modifier-names (keyboard)
+  (check-type keyboard wlr-keyboard)
+  (%assert-runtime-live (%native-runtime keyboard) :keyboard-modifier-names)
+  (let ((flags
+          (ataxia.runtime.raw::%keyboard-named-modifiers
+           (%object-pointer keyboard))))
+    (loop for (name . flag) in +keyboard-modifier-flags+
+          when (logtest flag flags)
+            collect name)))
 
 (defun create-xkb-context (runtime)
   (%assert-runtime-live runtime :create-xkb-context)

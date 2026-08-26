@@ -25,6 +25,30 @@
    #:frame-damage-to-region
    #:application-binding
    #:binding-application
+   #:shortcut-binding
+   #:make-shortcut-binding
+   #:shortcut-binding-id
+   #:shortcut-binding-key-kind
+   #:shortcut-binding-key
+   #:shortcut-binding-modifiers
+   #:shortcut-binding-exact-modifiers-p
+   #:shortcut-binding-press-command
+   #:shortcut-binding-release-command
+   #:shortcut-binding-repeat-p
+   #:shortcut-binding-predicate
+   #:shortcut-binding-consume-p
+   #:shortcut-map
+   #:make-shortcut-map
+   #:shortcut-map-bindings
+   #:bind-shortcut
+   #:unbind-shortcut
+   #:shortcut-controller
+   #:make-shortcut-controller
+   #:shortcut-controller-maps
+   #:world-shortcut-controller
+   #:invoke-shortcut-command
+   #:handle-shortcut-input
+   #:forget-shortcut-seat
    #:animator
    #:make-animator
    #:start-animation

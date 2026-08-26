@@ -6,13 +6,6 @@
 
 (in-package #:ataxia.infinite-world)
 
-(defmethod ataxia.world:invoke-shortcut-command
-    ((world infinite-world) (command (eql :infinite-toggle-launcher))
-     seat binding input)
-  (declare (ignore command binding input))
-  (toggle-application-launcher world seat)
-  t)
-
 (defconstant +launcher-result-limit+ 6)
 
 (defparameter +launcher-source+

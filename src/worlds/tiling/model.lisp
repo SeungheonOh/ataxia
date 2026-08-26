@@ -9,42 +9,6 @@
 
 (defconstant +button-left+ 272)
 
-(defun %make-tiling-shortcut-controller ()
-  (ataxia.world:make-shortcut-controller
-   :maps
-   (list
-    (ataxia.world:make-shortcut-map
-     (ataxia.world:make-shortcut-binding
-      :id :terminal :key '(:keysym :return) :modifiers '(:logo)
-      :press-command :tiling-launch-terminal)
-     (ataxia.world:make-shortcut-binding
-      :id :close :key '(:keysym :q) :modifiers '(:logo)
-      :press-command :tiling-close-focused)
-     (ataxia.world:make-shortcut-binding
-      :id :fullscreen :key '(:keysym :f) :modifiers '(:logo)
-      :press-command :tiling-toggle-fullscreen)
-     (ataxia.world:make-shortcut-binding
-      :id :master :key '(:keysym :space) :modifiers '(:logo)
-      :press-command :tiling-move-to-master)
-     (ataxia.world:make-shortcut-binding
-      :id :shrink-master :key '(:keysym :h) :modifiers '(:logo)
-      :press-command :tiling-shrink-master)
-     (ataxia.world:make-shortcut-binding
-      :id :grow-master :key '(:keysym :l) :modifiers '(:logo)
-      :press-command :tiling-grow-master)
-     (ataxia.world:make-shortcut-binding
-      :id :focus-next :key '(:keysym :j) :modifiers '(:logo)
-      :press-command :tiling-focus-next)
-     (ataxia.world:make-shortcut-binding
-      :id :focus-previous :key '(:keysym :k) :modifiers '(:logo)
-      :press-command :tiling-focus-previous)
-     (ataxia.world:make-shortcut-binding
-      :id :swap-next :key '(:keysym :j) :modifiers '(:logo :shift)
-      :press-command :tiling-swap-next)
-     (ataxia.world:make-shortcut-binding
-      :id :swap-previous :key '(:keysym :k) :modifiers '(:logo :shift)
-      :press-command :tiling-swap-previous)))))
-
 (defclass tile-node ()
   ((component :initarg :component :reader tile-node-component)
    (output-state :initarg :output-state :accessor %tile-output-state)
@@ -99,6 +63,72 @@
 (defstruct (%world-frame-cookie
              (:constructor %make-world-frame-cookie (damage-frame)))
   damage-frame)
+
+(ataxia.world:define-shortcuts %make-tiling-shortcut-controller
+  (:terminal
+   (:key (:keysym :return) :modifiers (:logo))
+   (:press (world seat input)
+     (declare (ignore world seat input))
+     (%launch-terminal)))
+  (:close
+   (:key (:keysym :q) :modifiers (:logo))
+   (:press (world seat input)
+     (declare (ignore input))
+     (let ((seat-state (%tiling-command-seat-state world seat)))
+       (when (and seat-state (%tiling-seat-focused seat-state))
+         (ataxia.kernel:request-object-state
+          (tile-node-component (%tiling-seat-focused seat-state))
+          world :close t)))))
+  (:fullscreen
+   (:key (:keysym :f) :modifiers (:logo))
+   (:press (world seat input)
+     (declare (ignore input))
+     (let* ((seat-state (%tiling-command-seat-state world seat))
+            (node (and seat-state (%tiling-seat-focused seat-state))))
+       (when node
+         (%set-fullscreen world node (not (%tile-fullscreen-p node)))))))
+  (:master
+   (:key (:keysym :space) :modifiers (:logo))
+   (:press (world seat input)
+     (declare (ignore input))
+     (let ((seat-state (%tiling-command-seat-state world seat)))
+       (when seat-state (%move-focused-to-master world seat-state)))))
+  (:shrink-master
+   (:key (:keysym :h) :modifiers (:logo))
+   (:press (world seat input)
+     (declare (ignore input))
+     (let ((seat-state (%tiling-command-seat-state world seat)))
+       (when seat-state (%adjust-master-ratio world seat-state -0.05d0)))))
+  (:grow-master
+   (:key (:keysym :l) :modifiers (:logo))
+   (:press (world seat input)
+     (declare (ignore input))
+     (let ((seat-state (%tiling-command-seat-state world seat)))
+       (when seat-state (%adjust-master-ratio world seat-state 0.05d0)))))
+  (:focus-next
+   (:key (:keysym :j) :modifiers (:logo))
+   (:press (world seat input)
+     (declare (ignore input))
+     (let ((seat-state (%tiling-command-seat-state world seat)))
+       (when seat-state (%focus-relative world seat-state 1)))))
+  (:focus-previous
+   (:key (:keysym :k) :modifiers (:logo))
+   (:press (world seat input)
+     (declare (ignore input))
+     (let ((seat-state (%tiling-command-seat-state world seat)))
+       (when seat-state (%focus-relative world seat-state -1)))))
+  (:swap-next
+   (:key (:keysym :j) :modifiers (:logo :shift))
+   (:press (world seat input)
+     (declare (ignore input))
+     (let ((seat-state (%tiling-command-seat-state world seat)))
+       (when seat-state (%swap-relative world seat-state 1)))))
+  (:swap-previous
+   (:key (:keysym :k) :modifiers (:logo :shift))
+   (:press (world seat input)
+     (declare (ignore input))
+     (let ((seat-state (%tiling-command-seat-state world seat)))
+       (when seat-state (%swap-relative world seat-state -1))))))
 
 (defclass tiling-world (ataxia.kernel:world)
   ((kernel :initform nil :accessor ataxia.kernel:world-kernel)

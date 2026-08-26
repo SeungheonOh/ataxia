@@ -6,16 +6,12 @@
 
 (in-package #:ataxia.infinite-world)
 
-(defun %make-infinite-shortcut-controller ()
-  (ataxia.world:make-shortcut-controller
-   :maps
-   (list
-    (ataxia.world:make-shortcut-map
-     (ataxia.world:make-shortcut-binding
-      :id :application-launcher
-      :key '(:keysym :space)
-      :modifiers '(:logo)
-      :press-command :infinite-toggle-launcher)))))
+(ataxia.world:define-shortcuts %make-infinite-shortcut-controller
+  (:application-launcher
+   (:key (:keysym :space) :modifiers (:logo))
+   (:press (world seat input)
+     (declare (ignore input))
+     (toggle-application-launcher world seat))))
 
 (defclass infinite-world (ataxia.kernel:world)
   ((kernel :initform nil :accessor ataxia.kernel:world-kernel)

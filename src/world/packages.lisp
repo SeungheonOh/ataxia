@@ -32,21 +32,31 @@
    #:shortcut-binding-key
    #:shortcut-binding-modifiers
    #:shortcut-binding-exact-modifiers-p
-   #:shortcut-binding-press-command
-   #:shortcut-binding-release-command
+   #:shortcut-binding-priority
+   #:shortcut-binding-press-handler
+   #:shortcut-binding-release-handler
    #:shortcut-binding-repeat-p
    #:shortcut-binding-predicate
    #:shortcut-binding-consume-p
-   #:shortcut-map
-   #:make-shortcut-map
-   #:shortcut-map-bindings
-   #:bind-shortcut
-   #:unbind-shortcut
+   #:shortcut-binding-enabled-p
    #:shortcut-controller
    #:make-shortcut-controller
-   #:shortcut-controller-maps
+   #:shortcut-controller-revision
+   #:add-shortcut
+   #:remove-shortcut
+   #:replace-shortcut
+   #:replace-shortcuts
+   #:find-shortcut
+   #:list-shortcuts
+   #:enable-shortcut
+   #:disable-shortcut
+   #:clear-shortcuts
+   #:update-shortcuts
+   #:define-shortcuts
+   #:shortcut-ambiguity
+   #:shortcut-ambiguity-bindings
+   #:shortcut-ambiguity-input
    #:world-shortcut-controller
-   #:invoke-shortcut-command
    #:handle-shortcut-input
    #:forget-shortcut-seat
    #:animator

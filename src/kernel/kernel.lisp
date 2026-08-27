@@ -9,6 +9,31 @@
 (defclass kernel (ataxia.runtime:runtime-sink)
   ((runtime :initform nil :accessor kernel-runtime)
    (world :initarg :world :accessor kernel-world)
+   (world-factory :initarg :world-factory :initform nil
+                  :reader %kernel-world-factory)
+   (recovery-world-factory :initarg :recovery-world-factory :initform nil
+                           :reader %kernel-recovery-world-factory)
+   (world-status :initform :starting :accessor kernel-world-status)
+   (world-generation :initform 0 :accessor kernel-world-generation)
+   (world-last-fault :initform nil :accessor kernel-world-last-fault)
+   (world-timeout :initarg :world-timeout :initform 1d0
+                  :reader kernel-world-timeout)
+   (watchdog-lock
+    :initform #+sb-thread
+              (sb-thread:make-mutex :name "Ataxia World watchdog")
+              #-sb-thread nil
+    :reader %kernel-watchdog-lock)
+   (watchdog-waitqueue
+    :initform #+sb-thread
+              (sb-thread:make-waitqueue :name "Ataxia World watchdog")
+              #-sb-thread nil
+    :reader %kernel-watchdog-waitqueue)
+   (watchdog-thread :initform nil :accessor %kernel-watchdog-thread)
+   (watchdog-owner-thread :initform nil :accessor %kernel-watchdog-owner-thread)
+   (watchdog-stopping-p :initform nil :accessor %kernel-watchdog-stopping-p)
+   (active-world-call :initform nil :accessor %kernel-active-world-call)
+   (recovery-pending :initform nil :accessor %kernel-recovery-pending)
+   (recovery-source :initform nil :accessor %kernel-recovery-source)
    (state :initform :constructing :accessor kernel-state)
    (next-object-id :initform 0 :accessor %kernel-next-object-id)
    (objects :initform (make-hash-table :test #'eql)
@@ -72,9 +97,18 @@
 (defun %find-runtime-object (kernel runtime-object)
   (gethash runtime-object (%kernel-runtime-index kernel)))
 
-(defun make-kernel (world)
+(defun make-kernel
+    (world &key world-factory recovery-world-factory (world-timeout 1d0))
   (check-type world world)
-  (make-instance 'kernel :world world))
+  (when world-factory (check-type world-factory function))
+  (when recovery-world-factory (check-type recovery-world-factory function))
+  (check-type world-timeout (real 0 *))
+  (make-instance
+   'kernel
+   :world world
+   :world-factory world-factory
+   :recovery-world-factory recovery-world-factory
+   :world-timeout (coerce world-timeout 'double-float)))
 
 (defun attach-runtime (kernel runtime)
   (check-type kernel kernel)
@@ -83,22 +117,32 @@
     (error "Kernel already has a Runtime."))
   (setf (kernel-runtime kernel) runtime
         (kernel-state kernel) :ready)
-  (world-attached (kernel-world kernel) kernel)
+  (%start-world-watchdog kernel)
+  (%call-world kernel world-attached kernel)
+  (unless (eq (kernel-world-status kernel) :recovery-pending)
+    (setf (kernel-world-status kernel) :running))
   kernel)
 
 (defun detach-runtime (kernel)
   (when (kernel-runtime kernel)
-    (world-quiescing (kernel-world kernel) :runtime-detaching)
+    (%call-world kernel world-quiescing :runtime-detaching)
+    (%stop-world-watchdog kernel)
     (setf (kernel-runtime kernel) nil
           (kernel-state kernel) :detached))
   kernel)
 
 (defun create-kernel
-    (world &key (backend :auto) (headless-width 1280)
+    (world &key world-factory recovery-world-factory (world-timeout 1d0)
+                (backend :auto) (headless-width 1280)
                 (headless-height 720) (socket-p t) debug-p
                 (default-seat-name "seat0"))
   "Construct Runtime protocol globals, attach WORLD, and create an optional seat."
-  (let* ((kernel (make-kernel world))
+  (let* ((kernel
+           (make-kernel
+            world
+            :world-factory world-factory
+            :recovery-world-factory recovery-world-factory
+            :world-timeout world-timeout))
          (runtime
            (ataxia.runtime:create-runtime
             :sink kernel
@@ -120,6 +164,7 @@
                   (create-logical-seat kernel default-seat-name)))
           kernel)
       (serious-condition (cause)
+        (ignore-errors (%stop-world-watchdog kernel))
         (ignore-errors (ataxia.runtime:destroy-runtime runtime :kernel-construction))
         (error cause)))))
 
@@ -140,20 +185,21 @@
     (ataxia.runtime:call-with-egl-context
      (ataxia.runtime:runtime-egl (kernel-runtime kernel))
      (lambda ()
-       (world-graphics-detaching
-        (kernel-world kernel)
-        (ataxia.runtime:runtime-egl (kernel-runtime kernel))
-        reason)))
+       (%call-world
+        kernel world-graphics-detaching
+        (ataxia.runtime:runtime-egl (kernel-runtime kernel)) reason)))
     (setf (%kernel-graphics-attached-p kernel) nil))
   kernel)
 
 (defun destroy-kernel (kernel &optional (reason :shutdown))
   (when (and kernel (kernel-runtime kernel))
+    (setf (kernel-world-status kernel) :stopping)
     (%detach-world-graphics kernel reason)
     (unless (eq (kernel-state kernel) :stopping)
-      (world-quiescing (kernel-world kernel) reason)
+      (%call-world kernel world-quiescing reason)
       (setf (kernel-state kernel) :stopping))
     (ataxia.runtime:destroy-runtime (kernel-runtime kernel) reason)
+    (%stop-world-watchdog kernel)
     (setf (kernel-runtime kernel) nil))
   (setf (kernel-state kernel) :destroyed)
   nil)
@@ -161,57 +207,83 @@
 (defun install-world (kernel world)
   "Replace the active World at an owner-thread safe point."
   (check-type world world)
-  (let ((old-world (kernel-world kernel)))
-    (unless (eq old-world world)
-      (let* ((runtime (kernel-runtime kernel))
-             (graphics-p (%kernel-graphics-attached-p kernel))
-             (egl (and runtime (ataxia.runtime:runtime-egl runtime))))
-        (labels ((detach-graphics (target reason)
-                   (when graphics-p
-                     (world-graphics-detaching target egl reason)))
-                 (attach-graphics (target)
-                   (when graphics-p
-                     (world-graphics-attached target egl)))
-                 (replay (target)
-                   (dolist (output (kernel-outputs kernel))
-                     (world-output-added target output))
-                   (dolist (seat (kernel-seats kernel))
-                     (world-seat-added target seat)
-                     (when (%seat-cursor-request seat)
-                       (world-seat-cursor-request
-                        target seat (%seat-cursor-request seat))))
-                   (dolist (application
-                            (%hash-values (%kernel-toplevel-table kernel)))
-                     (world-register-object target application))))
-          (world-quiescing old-world :world-replaced)
-          (if graphics-p
-              (ataxia.runtime:call-with-egl-context
-               egl (lambda () (detach-graphics old-world :world-replaced)))
-              (detach-graphics old-world :world-replaced))
-          (handler-case
-              (progn
-                (setf (kernel-world kernel) world)
-                (world-attached world kernel)
-                (replay world)
-                (if graphics-p
-                    (ataxia.runtime:call-with-egl-context
-                     egl (lambda () (attach-graphics world)))
-                    (attach-graphics world))
-                (world-detached old-world kernel))
-            (serious-condition (cause)
-              (ignore-errors (world-quiescing world :installation-failed))
-              (when graphics-p
-                (ignore-errors
-                  (ataxia.runtime:call-with-egl-context
-                   egl
-                   (lambda ()
-                     (world-graphics-detaching
-                      world egl :installation-failed)))))
-              (ignore-errors (world-detached world kernel))
-              (setf (kernel-world kernel) old-world)
-              (world-attached old-world kernel)
-              (when graphics-p
+  (let ((*world-call-failure-mode* :signal))
+    (let ((old-world (kernel-world kernel)))
+      (unless (eq old-world world)
+        (let* ((runtime (kernel-runtime kernel))
+               (graphics-p (%kernel-graphics-attached-p kernel))
+               (egl (and runtime (ataxia.runtime:runtime-egl runtime))))
+          (labels ((detach-graphics (target reason)
+                     (when graphics-p
+                       (%call-world-on
+                        kernel target world-graphics-detaching egl reason)))
+                   (attach-graphics (target)
+                     (when graphics-p
+                       (%call-world-on
+                        kernel target world-graphics-attached egl)))
+                   (replay (target)
+                     (dolist (output (kernel-outputs kernel))
+                       (%call-world-on
+                        kernel target world-output-added output))
+                     (dolist (seat (kernel-seats kernel))
+                       (%call-world-on kernel target world-seat-added seat)
+                       (when (%seat-cursor-request seat)
+                         (%call-world-on
+                          kernel target world-seat-cursor-request
+                          seat (%seat-cursor-request seat))))
+                     (dolist (application
+                              (%hash-values (%kernel-toplevel-table kernel)))
+                       (%call-world-on
+                        kernel target world-register-object application))))
+            (%call-world-on
+             kernel old-world world-quiescing :world-replaced)
+            (if graphics-p
                 (ataxia.runtime:call-with-egl-context
-                 egl (lambda () (attach-graphics old-world))))
-              (error cause)))))))
+                 egl (lambda () (detach-graphics old-world :world-replaced)))
+                (detach-graphics old-world :world-replaced))
+            (handler-case
+                (progn
+                  (incf (kernel-world-generation kernel))
+                  (setf (kernel-world kernel) world)
+                  (%call-world-on kernel world world-attached kernel)
+                  (replay world)
+                  (if graphics-p
+                      (ataxia.runtime:call-with-egl-context
+                       egl (lambda () (attach-graphics world)))
+                      (attach-graphics world))
+                  (let ((*allow-inactive-world-calls-p* t))
+                    (%call-world-on
+                     kernel old-world world-detached kernel))
+                  (setf (kernel-world-status kernel) :running))
+              (serious-condition (cause)
+                (ignore-errors
+                  (%call-world-on
+                   kernel world world-quiescing :installation-failed))
+                (when graphics-p
+                  (ignore-errors
+                    (ataxia.runtime:call-with-egl-context
+                     egl
+                     (lambda ()
+                       (%call-world-on
+                        kernel world world-graphics-detaching
+                        egl :installation-failed)))))
+                (ignore-errors
+                  (%call-world-on kernel world world-detached kernel))
+                (setf (kernel-world kernel) old-world)
+                (%call-world-on kernel old-world world-attached kernel)
+                (when graphics-p
+                  (ataxia.runtime:call-with-egl-context
+                   egl (lambda () (attach-graphics old-world))))
+                (error cause))))))))
   world)
+
+(defun restart-world (kernel)
+  "Construct and install a fresh normal World after repairing its definition."
+  (let ((factory (%kernel-world-factory kernel)))
+    (unless factory
+      (error "Kernel has no normal World factory."))
+    (let ((*world-call-failure-mode* :signal))
+      (install-world
+       kernel
+       (%guard-kernel-operation
+        kernel nil :world-construction factory)))))

@@ -84,7 +84,9 @@
    #:damage-debug-mode-p
    #:set-damage-debug-mode
    #:refresh-world
-   #:interaction-delivered-p))
+   #:interaction-delivered-p
+   #:rescue-world
+   #:make-rescue-world))
 
 (defpackage #:ataxia.world.gles
   (:use #:cl)

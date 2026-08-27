@@ -12,6 +12,8 @@
          (kernel
            (ataxia.kernel:create-kernel
             world
+            :world-factory #'make-fullscreen-world
+            :recovery-world-factory #'ataxia.world:make-rescue-world
             :backend backend
             :headless-width headless-width
             :headless-height headless-height

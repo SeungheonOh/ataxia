@@ -241,6 +241,10 @@
    #:destroy-kernel
    #:kernel-runtime
    #:kernel-world
+   #:kernel-world-status
+   #:kernel-world-generation
+   #:kernel-world-last-fault
+   #:kernel-world-timeout
    #:kernel-state
    #:kernel-outputs
    #:kernel-input-devices
@@ -250,6 +254,7 @@
    #:attach-runtime
    #:detach-runtime
    #:install-world
+   #:restart-world
    #:create-logical-seat
    #:destroy-logical-seat
    #:assign-input-device

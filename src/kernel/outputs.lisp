@@ -78,7 +78,7 @@
              :enabled-p (ataxia.runtime:output-enabled-p runtime-output))))
       (%register-object kernel output :runtime-object runtime-output)
       (setf (gethash runtime-output (%kernel-output-table kernel)) output)
-      (world-output-added (kernel-world kernel) output)
+      (%call-world kernel world-output-added output)
       output)))
 
 (defun %reset-output-swapchain (output)
@@ -119,7 +119,7 @@
 (defun %retire-output (output &key (protocol-active-p t))
   (when (eq (object-state output) :live)
     (let ((kernel (object-kernel output)))
-      (world-output-removing (kernel-world kernel) output)
+      (%call-world kernel world-output-removing output)
       (%cancel-output-retry output)
       (%reset-output-swapchain output)
       (dolist (surface (%hash-values (%kernel-surface-table kernel)))
@@ -264,7 +264,9 @@
           (lambda ()
             (%gl-bind-framebuffer +gl-framebuffer+ framebuffer)
             (%gl-viewport 0 0 buffer-width buffer-height)
-            (%validate-frame-result kernel lease (world-render world lease))))
+            (%validate-frame-result
+             kernel lease
+             (%call-world-on kernel world world-render lease))))
       (setf (frame-lease-valid-p lease) nil))))
 
 (defun %commit-world-frame (output buffer result)
@@ -277,16 +279,18 @@
            (ataxia.runtime:output-state-set-damage
             state (%runtime-damage (frame-result-damage result)))
            (unless (ataxia.runtime:output-test-state runtime-output state)
-             (world-frame-failed
-              (kernel-world kernel) output result :output-test-failed)
+             (%call-world
+              kernel world-frame-failed
+              output result :output-test-failed)
              (return-from %commit-world-frame nil))
            (unless (ataxia.runtime:output-commit-state runtime-output state)
-             (world-frame-failed
-              (kernel-world kernel) output result :output-commit-failed)
+             (%call-world
+              kernel world-frame-failed
+              output result :output-commit-failed)
              (return-from %commit-world-frame nil))
            (%refresh-output-object output)
-           (world-frame-committed
-            (kernel-world kernel) output result :committed)
+           (%call-world
+            kernel world-frame-committed output result :committed)
            (%notify-presented-surfaces output result)
            t)
       (ataxia.runtime:destroy-output-state state))))
@@ -317,8 +321,8 @@
                           (ataxia.runtime:buffer-width buffer)
                           (ataxia.runtime:buffer-height buffer)))))
              (serious-condition (cause)
-               (world-frame-failed
-                (kernel-world kernel) output result cause)
+               (%call-world
+                kernel world-frame-failed output result cause)
                (setf result nil)))
            (when result
              (setf committed-p (%commit-world-frame output buffer result))))

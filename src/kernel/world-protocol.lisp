@@ -6,8 +6,29 @@
 
 (in-package #:ataxia.kernel)
 
+(defvar *world-call-failure-mode* :return)
+(defvar *allow-inactive-world-calls-p* nil)
+
 (defclass world () ()
   (:documentation "Base class for one complete, replaceable compositor policy and renderer."))
+
+(defmacro %call-world (kernel operation &rest arguments)
+  (let ((kernel-value (gensym "KERNEL-"))
+        (world-value (gensym "WORLD-")))
+    `(let* ((,kernel-value ,kernel)
+            (,world-value (kernel-world ,kernel-value)))
+       (%guard-kernel-operation
+        ,kernel-value ,world-value ',operation
+        (lambda () (,operation ,world-value ,@arguments))))))
+
+(defmacro %call-world-on (kernel world operation &rest arguments)
+  (let ((kernel-value (gensym "KERNEL-"))
+        (world-value (gensym "WORLD-")))
+    `(let ((,kernel-value ,kernel)
+           (,world-value ,world))
+       (%guard-kernel-operation
+        ,kernel-value ,world-value ',operation
+        (lambda () (,operation ,world-value ,@arguments))))))
 
 (defgeneric world-attached (world kernel)
   (:documentation "Attach WORLD to KERNEL at an owner-thread safe point."))

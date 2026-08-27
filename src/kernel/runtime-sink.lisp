@@ -38,8 +38,8 @@
   (ataxia.runtime:call-with-egl-context
    (ataxia.runtime:runtime-egl runtime)
    (lambda ()
-     (world-graphics-attached
-      (kernel-world kernel) (ataxia.runtime:runtime-egl runtime))))
+     (%call-world
+      kernel world-graphics-attached (ataxia.runtime:runtime-egl runtime))))
   (setf (%kernel-graphics-attached-p kernel) t)
   kernel)
 
@@ -47,7 +47,7 @@
     ((kernel kernel) runtime reason)
   (declare (ignore runtime))
   (unless (eq (kernel-state kernel) :stopping)
-    (world-quiescing (kernel-world kernel) reason))
+    (%call-world kernel world-quiescing reason))
   (setf (kernel-state kernel) :stopping)
   (%retire-kernel-runtime-state kernel)
   kernel)
@@ -55,7 +55,7 @@
 (defmethod ataxia.runtime:renderer-lost
     ((kernel kernel) runtime renderer)
   (declare (ignore renderer))
-  (world-quiescing (kernel-world kernel) :renderer-lost)
+  (%call-world kernel world-quiescing :renderer-lost)
   (handler-case
       (%detach-world-graphics kernel :renderer-lost)
     (serious-condition (cause)
@@ -90,9 +90,8 @@
   (let* ((runtime-output (ataxia.runtime:output-damage-output event))
          (output (gethash runtime-output (%kernel-output-table kernel))))
     (when output
-      (world-output-changed
-       (kernel-world kernel)
-       output
+      (%call-world
+       kernel world-output-changed output
        (make-object-change
         :backend-damage
         (%runtime-damage-rectangles
@@ -104,8 +103,8 @@
           (gethash (ataxia.runtime:output-present-output event)
                    (%kernel-output-table kernel))))
     (when output
-      (world-output-presented
-       (kernel-world kernel) output
+      (%call-world
+       kernel world-output-presented output
        (make-output-presentation
         :commit-sequence
         (ataxia.runtime:output-present-commit-sequence event)
@@ -127,8 +126,8 @@
       (when (logtest +output-state-buffer-configuration-fields+ fields)
         (%reset-output-swapchain output))
       (%refresh-output-object output)
-      (world-output-changed
-       (kernel-world kernel) output
+      (%call-world
+       kernel world-output-changed output
        (make-object-change :configuration nil)))))
 
 (defmethod ataxia.runtime:output-destroying
@@ -180,8 +179,8 @@
            (ataxia.runtime:pointer-motion-delta-y event)
            (ataxia.runtime:pointer-motion-unaccelerated-delta-x event)
            (ataxia.runtime:pointer-motion-unaccelerated-delta-y event))))
-      (world-cursor-motion
-       (kernel-world kernel) seat
+      (%call-world
+       kernel world-cursor-motion seat
        (make-cursor-motion-input
         :device input-device
         :time-msec (ataxia.runtime:pointer-motion-time-msec event)
@@ -199,8 +198,8 @@
          (input-device (%event-input-device kernel runtime-input))
          (seat (and input-device (input-seat input-device))))
     (when seat
-      (world-cursor-motion
-       (kernel-world kernel) seat
+      (%call-world
+       kernel world-cursor-motion seat
        (make-cursor-motion-input
         :device input-device
         :time-msec (ataxia.runtime:pointer-motion-absolute-time-msec event)
@@ -219,8 +218,8 @@
              (press-count
                (ataxia.runtime:seat-pointer-button-press-count
                 runtime-seat button)))
-        (world-cursor-button
-         (kernel-world kernel) seat
+        (%call-world
+         kernel world-cursor-button seat
          (make-cursor-button-input
           :device input-device
           :time-msec (ataxia.runtime:pointer-button-time-msec event)
@@ -242,8 +241,8 @@
          (input-device (%event-input-device kernel runtime-input))
          (seat (and input-device (input-seat input-device))))
     (when seat
-      (world-cursor-axis
-       (kernel-world kernel) seat
+      (%call-world
+       kernel world-cursor-axis seat
        (make-cursor-axis-input
         :device input-device
         :time-msec (ataxia.runtime:pointer-axis-time-msec event)
@@ -270,8 +269,8 @@
       (ataxia.runtime:set-seat-keyboard
        (seat-runtime-object seat) runtime-input)
       (setf (%seat-keyboard seat) runtime-input)
-      (world-key-event
-       (kernel-world kernel) seat
+      (%call-world
+       kernel world-key-event seat
        (make-key-input
         :device input-device
         :time-msec (ataxia.runtime:keyboard-key-time-msec event)
@@ -292,8 +291,8 @@
       (ataxia.runtime:set-seat-keyboard
        (seat-runtime-object seat) runtime-input)
       (setf (%seat-keyboard seat) runtime-input)
-      (world-key-event
-       (kernel-world kernel) seat
+      (%call-world
+       kernel world-key-event seat
        (make-modifiers-input
         :device input-device
         :depressed (ataxia.runtime:keyboard-modifiers-depressed event)
@@ -333,8 +332,8 @@
                :hotspot-y
                (ataxia.runtime:seat-cursor-request-hotspot-y request))))
         (setf (%seat-cursor-request seat) stable-request)
-        (world-seat-cursor-request
-         (kernel-world kernel) seat stable-request)))))
+        (%call-world
+         kernel world-seat-cursor-request seat stable-request)))))
 
 (defmethod ataxia.runtime:seat-request-start-drag
     ((kernel kernel) request)
@@ -362,8 +361,8 @@
       ((and application (eq (object-state application) :live))
        (%invalidate-application application))
       ((%surface-externally-exposed-p surface)
-       (world-object-invalidated
-        (kernel-world kernel) surface
+       (%call-world
+        kernel world-object-invalidated surface
         (make-drawable-invalidation
          (surface-commit-sequence surface) (%surface-damage surface)))))))
 
@@ -394,8 +393,8 @@
                      (eq surface (cursor-surface-request-surface request)))
             (setf (%seat-cursor-request seat) nil))))
       (when (%surface-externally-exposed-p surface)
-        (world-object-changed
-         (kernel-world kernel) surface
+        (%call-world
+         kernel world-object-changed surface
          (make-object-change :destroying nil)))
       (%retire-surface-node surface))))
 
@@ -443,8 +442,8 @@
   (let ((application (gethash toplevel (%kernel-toplevel-table kernel))))
     (when application
       (setf (application-mapped-p application) t)
-      (world-object-changed
-       (kernel-world kernel) application
+      (%call-world
+       kernel world-object-changed application
        (make-object-change :mapped t))
       (%invalidate-application application))))
 
@@ -453,8 +452,8 @@
   (let ((application (gethash toplevel (%kernel-toplevel-table kernel))))
     (when application
       (setf (application-mapped-p application) nil)
-      (world-object-changed
-       (kernel-world kernel) application
+      (%call-world
+       kernel world-object-changed application
        (make-object-change :mapped nil))
       (%invalidate-application application))))
 
@@ -491,8 +490,8 @@
         (serial (ataxia.runtime:xdg-move-serial event)))
     (when (ataxia.runtime:seat-validate-current-pointer-grab-serial
            runtime-seat serial)
-      (world-client-request
-       (kernel-world kernel)
+      (%call-world
+       kernel world-client-request
        (%request-application kernel (ataxia.runtime:xdg-move-toplevel event))
        (make-instance
         'move-client-request
@@ -505,8 +504,8 @@
         (serial (ataxia.runtime:xdg-resize-serial event)))
     (when (ataxia.runtime:seat-validate-current-pointer-grab-serial
            runtime-seat serial)
-      (world-client-request
-       (kernel-world kernel)
+      (%call-world
+       kernel world-client-request
        (%request-application kernel (ataxia.runtime:xdg-resize-toplevel event))
        (make-instance
         'resize-client-request
@@ -516,8 +515,8 @@
 
 (defun %send-state-client-request (kernel toplevel name value)
   (let ((application (%request-application kernel toplevel)))
-    (world-client-request
-     (kernel-world kernel) application
+    (%call-world
+     kernel world-client-request application
      (make-instance 'state-client-request :name name :value value))))
 
 (defmethod ataxia.runtime:xdg-toplevel-request-maximize
@@ -537,8 +536,8 @@
          (output
            (and runtime-output
                 (gethash runtime-output (%kernel-output-table kernel)))))
-    (world-client-request
-     (kernel-world kernel) application
+    (%call-world
+     kernel world-client-request application
      (make-instance
       'fullscreen-client-request
       :name :fullscreen
@@ -550,8 +549,8 @@
   (let ((application
           (%request-application
            kernel (ataxia.runtime:xdg-window-menu-toplevel event))))
-    (world-client-request
-     (kernel-world kernel) application
+    (%call-world
+     kernel world-client-request application
      (make-instance
       'window-menu-client-request
       :seat
@@ -563,8 +562,8 @@
 (defmethod ataxia.runtime:xdg-toplevel-parent-changed
     ((kernel kernel) toplevel)
   (let ((application (%request-application kernel toplevel)))
-    (world-object-changed
-     (kernel-world kernel) application
+    (%call-world
+     kernel world-object-changed application
      (make-object-change :parent nil))))
 
 (defun %apply-toplevel-decoration-policy (decoration)
@@ -601,8 +600,8 @@
          (seat (and runtime-seat
                     (gethash runtime-seat (%kernel-seat-table kernel)))))
     (when application
-      (world-client-request
-       (kernel-world kernel) application
+      (%call-world
+       kernel world-client-request application
        (make-instance 'state-client-request
                       :name :activation :value t :seat seat)))))
 
@@ -610,16 +609,16 @@
     ((kernel kernel) toplevel title)
   (let ((application (%request-application kernel toplevel)))
     (setf (application-title application) title)
-    (world-object-changed
-     (kernel-world kernel) application
+    (%call-world
+     kernel world-object-changed application
      (make-object-change :title title))))
 
 (defmethod ataxia.runtime:xdg-toplevel-app-id-changed
     ((kernel kernel) toplevel app-id)
   (let ((application (%request-application kernel toplevel)))
     (setf (application-app-id application) app-id)
-    (world-object-changed
-     (kernel-world kernel) application
+    (%call-world
+     kernel world-object-changed application
      (make-object-change :app-id app-id))))
 
 (defun %popup-surface-node (kernel popup)

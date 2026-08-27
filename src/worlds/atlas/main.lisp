@@ -9,6 +9,10 @@
         (kernel
           (ataxia.kernel:create-kernel
            (make-atlas-world :damage-debug-p damage-debug-p)
+           :world-factory
+           (lambda ()
+             (make-atlas-world :damage-debug-p damage-debug-p))
+           :recovery-world-factory #'ataxia.world:make-rescue-world
            :backend backend
            :headless-width width
            :headless-height height

@@ -16,4 +16,5 @@
      (:file "shortcuts")
      (:file "animation")
      (:file "damage")
-     (:file "gles")))))
+     (:file "gles")
+     (:file "rescue")))))

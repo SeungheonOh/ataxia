@@ -196,9 +196,8 @@
 
 (defun %invalidate-application (application)
   (let ((damage (%rebuild-application-drawables application)))
-    (world-object-invalidated
-     (kernel-world (object-kernel application))
-     application
+    (%call-world
+     (object-kernel application) world-object-invalidated application
      (make-drawable-invalidation
       (%application-drawable-revision application) damage)))
   application)
@@ -272,14 +271,14 @@
     (setf (%surface-application root) application)
     (%register-object kernel application :runtime-object toplevel)
     (setf (gethash toplevel (%kernel-toplevel-table kernel)) application)
-    (world-register-object (kernel-world kernel) application)
+    (%call-world kernel world-register-object application)
     application))
 
 (defun %retire-wayland-application (application reason)
   (when (eq (object-state application) :live)
     (let ((kernel (object-kernel application)))
-      (world-unregister-object
-       (kernel-world kernel) application reason)
+      (%call-world
+       kernel world-unregister-object application reason)
       (remhash (application-toplevel application)
                (%kernel-toplevel-table kernel))
       (%retire-object

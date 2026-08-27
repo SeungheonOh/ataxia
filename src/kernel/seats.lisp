@@ -44,7 +44,7 @@
     (%register-object kernel seat :runtime-object runtime-seat)
     (setf (gethash runtime-seat (%kernel-seat-table kernel)) seat)
     (ataxia.runtime:set-seat-capabilities runtime-seat 0)
-    (world-seat-added (kernel-world kernel) seat)
+    (%call-world kernel world-seat-added seat)
     seat))
 
 (defun %unassign-input-device (input-device)
@@ -77,7 +77,7 @@
 (defun %retire-logical-seat (seat &key protocol-active-p)
   (when (eq (object-state seat) :live)
     (let ((kernel (object-kernel seat)))
-      (world-seat-removing (kernel-world kernel) seat)
+      (%call-world kernel world-seat-removing seat)
       (dolist (input-device
                 (loop for input-device being the hash-keys
                         of (seat-input-devices seat)

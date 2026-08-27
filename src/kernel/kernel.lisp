@@ -9,31 +9,7 @@
 (defclass kernel (ataxia.runtime:runtime-sink)
   ((runtime :initform nil :accessor kernel-runtime)
    (world :initarg :world :accessor kernel-world)
-   (world-factory :initarg :world-factory :initform nil
-                  :reader %kernel-world-factory)
-   (recovery-world-factory :initarg :recovery-world-factory :initform nil
-                           :reader %kernel-recovery-world-factory)
-   (world-status :initform :starting :accessor kernel-world-status)
-   (world-generation :initform 0 :accessor kernel-world-generation)
-   (world-last-fault :initform nil :accessor kernel-world-last-fault)
-   (world-timeout :initarg :world-timeout :initform 1d0
-                  :reader kernel-world-timeout)
-   (watchdog-lock
-    :initform #+sb-thread
-              (sb-thread:make-mutex :name "Ataxia World watchdog")
-              #-sb-thread nil
-    :reader %kernel-watchdog-lock)
-   (watchdog-waitqueue
-    :initform #+sb-thread
-              (sb-thread:make-waitqueue :name "Ataxia World watchdog")
-              #-sb-thread nil
-    :reader %kernel-watchdog-waitqueue)
-   (watchdog-thread :initform nil :accessor %kernel-watchdog-thread)
-   (watchdog-owner-thread :initform nil :accessor %kernel-watchdog-owner-thread)
-   (watchdog-stopping-p :initform nil :accessor %kernel-watchdog-stopping-p)
-   (active-world-call :initform nil :accessor %kernel-active-world-call)
-   (recovery-pending :initform nil :accessor %kernel-recovery-pending)
-   (recovery-source :initform nil :accessor %kernel-recovery-source)
+   (world-watchdog :initarg :world-watchdog :reader %kernel-world-watchdog)
    (state :initform :constructing :accessor kernel-state)
    (next-object-id :initform 0 :accessor %kernel-next-object-id)
    (objects :initform (make-hash-table :test #'eql)
@@ -100,15 +76,14 @@
 (defun make-kernel
     (world &key world-factory recovery-world-factory (world-timeout 1d0))
   (check-type world world)
-  (when world-factory (check-type world-factory function))
-  (when recovery-world-factory (check-type recovery-world-factory function))
-  (check-type world-timeout (real 0 *))
   (make-instance
    'kernel
    :world world
-   :world-factory world-factory
-   :recovery-world-factory recovery-world-factory
-   :world-timeout (coerce world-timeout 'double-float)))
+   :world-watchdog
+   (make-world-watchdog
+    :world-factory world-factory
+    :recovery-world-factory recovery-world-factory
+    :timeout world-timeout)))
 
 (defun attach-runtime (kernel runtime)
   (check-type kernel kernel)

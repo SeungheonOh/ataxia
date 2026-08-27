@@ -10,5 +10,7 @@
    #:current-kernel
    #:call-in-kernel-thread
    #:with-kernel-thread
+   #:agent-inspect
+   #:agent-apply
    #:sly-control-port
    #:sly-control-state))

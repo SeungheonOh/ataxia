@@ -76,6 +76,15 @@
 (defun kernel-world-timeout (kernel)
   (%watchdog-timeout (%kernel-world-watchdog kernel)))
 
+(define-condition world-generation-mismatch (error)
+  ((expected :initarg :expected :reader world-generation-mismatch-expected)
+   (actual :initarg :actual :reader world-generation-mismatch-actual))
+  (:report
+   (lambda (condition stream)
+     (format stream "Expected World generation ~D, but generation ~D is active."
+             (world-generation-mismatch-expected condition)
+             (world-generation-mismatch-actual condition)))))
+
 (define-condition world-operation-failed (error)
   ((operation :initarg :operation :reader %world-failure-operation)
    (cause :initarg :cause :reader %world-failure-cause))
@@ -299,10 +308,21 @@
       (error 'world-operation-failed :operation operation :cause cause)
       nil))
 
-(defun %guard-kernel-operation (kernel world operation function)
+(defun %handle-guarded-operation-failure
+    (kernel operation cause failure-policy)
+  (ecase failure-policy
+    (:recover (%handle-world-call-failure kernel operation cause))
+    (:signal (error cause))))
+
+(defun %guard-kernel-operation
+    (kernel world operation function &key timeout (failure-policy :recover))
   (check-type function function)
+  (when timeout (check-type timeout (real 0 *)))
+  (check-type failure-policy (member :recover :signal))
   #+sb-thread
-  (let ((watchdog (%kernel-world-watchdog kernel)))
+  (let* ((watchdog (%kernel-world-watchdog kernel))
+         (seconds
+           (coerce (or timeout (kernel-world-timeout kernel)) 'double-float)))
     (cond
       ((and world
             (not *allow-inactive-world-calls-p*)
@@ -324,8 +344,7 @@
                  :operation operation
                  :world world
                  :tag tag
-                 :deadline (+ (%monotonic-time)
-                              (kernel-world-timeout kernel))))
+                 :deadline (+ (%monotonic-time) seconds)))
               (outcome nil))
          (unwind-protect
               (progn
@@ -350,20 +369,53 @@
            ((and (consp outcome) (eq (first outcome) :returned))
             (values-list (second outcome)))
            ((and (consp outcome) (eq (first outcome) :failed))
-            (%handle-world-call-failure kernel operation (second outcome)))
+            (%handle-guarded-operation-failure
+             kernel operation (second outcome) failure-policy))
            ((eq outcome :watchdog-timeout)
-            (%handle-world-call-failure
+            (%handle-guarded-operation-failure
              kernel operation
              (make-condition
               'world-operation-timeout
               :operation operation
-              :seconds (kernel-world-timeout kernel))))
+              :seconds seconds)
+             failure-policy))
            (t
-            (%handle-world-call-failure
+            (%handle-guarded-operation-failure
              kernel operation
              (make-condition
               'simple-error
               :format-control "Invalid watchdog outcome ~S."
-              :format-arguments (list outcome)))))))))
+              :format-arguments (list outcome))
+             failure-policy)))))))
   #-sb-thread
   (funcall function))
+
+(defun call-with-current-world
+    (kernel function
+     &key (expected-generation nil expected-generation-p)
+       timeout (recover-on-failure-p t)
+       (operation :external-world-operation))
+  "Run FUNCTION with the active World under its owner-thread watchdog."
+  (check-type kernel kernel)
+  (check-type function function)
+  (when expected-generation-p
+    (check-type expected-generation (integer 0 *)))
+  (when timeout (check-type timeout (real 0 *)))
+  (check-type recover-on-failure-p boolean)
+  (let ((actual-generation (kernel-world-generation kernel)))
+    (when (and expected-generation-p
+               (/= expected-generation actual-generation))
+      (error 'world-generation-mismatch
+             :expected expected-generation
+             :actual actual-generation)))
+  (unless (member (kernel-world-status kernel) '(:running :rescue))
+    (error "Cannot enter World generation ~D while its status is ~S."
+           (kernel-world-generation kernel)
+           (kernel-world-status kernel)))
+  (let ((world (kernel-world kernel))
+        (*world-call-failure-mode* :signal))
+    (%guard-kernel-operation
+     kernel world operation
+     (lambda () (funcall function world))
+     :timeout timeout
+     :failure-policy (if recover-on-failure-p :recover :signal))))

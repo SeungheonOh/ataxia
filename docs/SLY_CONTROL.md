@@ -28,17 +28,33 @@ Captured output and every returned value are printed directly. Lisp conditions
 are written to standard error and produce a nonzero exit status. Use `--host`,
 `--port`, `--package`, and `--timeout` when the defaults are unsuitable.
 
-SLY worker threads must not mutate World or wlroots state directly. Execute
-such work on the compositor owner thread:
+SLY worker threads must not mutate World or wlroots state directly. Use
+`agent-inspect` for bounded reads and `agent-apply` for guarded mutations:
 
 ```lisp
-(ataxia.sly-control:with-kernel-thread (kernel)
-  (let* ((world (ataxia.kernel:kernel-world kernel))
-         (application (first (ataxia.kernel:kernel-applications kernel)))
-         (window
-           (ataxia.infinite-world:find-canvas-window world application)))
-    (ataxia.infinite-world:set-window-position world window 40d0 40d0)))
+(ataxia.sly-control:agent-inspect
+ (lambda (kernel world)
+   (list (type-of world)
+         (ataxia.kernel:kernel-world-generation kernel)
+         (length (ataxia.kernel:kernel-applications kernel)))))
+
+(ataxia.sly-control:agent-apply
+ (lambda (kernel world)
+   (let* ((application (first (ataxia.kernel:kernel-applications kernel)))
+          (window
+            (ataxia.infinite-world:find-canvas-window world application)))
+     (ataxia.infinite-world:set-window-position world window 40d0 40d0))))
 ```
+
+Both operations capture the current World generation before entering the
+owner-thread queue and reject stale work after World replacement. Inspection
+errors are returned without recovery. Mutation errors and timeouts revoke the
+possibly inconsistent World and install the rescue World. `agent-apply`
+defaults to a full World refresh; pass `:refresh :world-managed` when the called
+World helper already records exact damage.
+
+`call-in-kernel-thread` and `with-kernel-thread` remain available for raw live
+experimentation, but started operations through them are not watchdog guarded.
 
 Connect SLY to port `4005`, or forward the VM-local endpoint first:
 

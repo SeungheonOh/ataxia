@@ -131,6 +131,63 @@
       (let ((,kernel (current-kernel)))
         ,@body))))
 
+(defun %control-kernel (control)
+  (check-type control sly-control)
+  (unless (eq (sly-control-state control) :running)
+    (error "The Ataxia SLY control plane is not accepting work."))
+  (%sly-control-kernel control))
+
+(defun agent-inspect
+    (function &key (control (current-sly-control)) timeout
+      (expected-generation
+        (ataxia.kernel:kernel-world-generation (%control-kernel control))))
+  "Run a bounded read operation as FUNCTION with KERNEL and its active WORLD."
+  (check-type function function)
+  (check-type expected-generation (integer 0 *))
+  (when timeout (check-type timeout (real 0 *)))
+  (let ((kernel (%control-kernel control)))
+    (call-in-kernel-thread
+     (lambda ()
+       (ataxia.kernel:call-with-current-world
+        kernel
+        (lambda (world) (funcall function kernel world))
+        :expected-generation expected-generation
+        :timeout timeout
+        :recover-on-failure-p nil
+        :operation :agent-inspection))
+     :control control
+     :timeout timeout)))
+
+(defun agent-apply
+    (function &key (control (current-sly-control)) timeout
+      (expected-generation
+        (ataxia.kernel:kernel-world-generation (%control-kernel control)))
+      (refresh :full))
+  "Run a guarded World mutation and optionally force complete World damage."
+  (check-type function function)
+  (check-type expected-generation (integer 0 *))
+  (check-type refresh (member :full :world-managed))
+  (when timeout (check-type timeout (real 0 *)))
+  (let ((kernel (%control-kernel control)))
+    (call-in-kernel-thread
+     (lambda ()
+       (ataxia.kernel:call-with-current-world
+        kernel
+        (lambda (world)
+          (multiple-value-call
+              (lambda (&rest values)
+                (when (eq refresh :full)
+                  (ataxia.world:refresh-world
+                   (ataxia.kernel:kernel-world kernel)))
+                (values-list values))
+            (funcall function kernel world)))
+        :expected-generation expected-generation
+        :timeout timeout
+        :recover-on-failure-p t
+        :operation :agent-mutation))
+     :control control
+     :timeout timeout)))
+
 (defun %reject-pending-requests (control)
   (dolist (request (%take-control-requests control))
     (setf (%control-request-condition request)

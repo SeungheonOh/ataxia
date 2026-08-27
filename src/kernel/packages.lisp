@@ -245,6 +245,10 @@
    #:kernel-world-generation
    #:kernel-world-last-fault
    #:kernel-world-timeout
+   #:world-generation-mismatch
+   #:world-generation-mismatch-expected
+   #:world-generation-mismatch-actual
+   #:call-with-current-world
    #:kernel-state
    #:kernel-outputs
    #:kernel-input-devices

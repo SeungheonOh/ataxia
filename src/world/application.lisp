@@ -14,6 +14,13 @@
 (defgeneric refresh-world (world)
   (:documentation "Damage all outputs and request presentation after World policy changes."))
 
+(defmethod refresh-world ((world ataxia.kernel:world))
+  (let ((kernel (ataxia.kernel:world-kernel world)))
+    (when kernel
+      (dolist (output (ataxia.kernel:kernel-outputs kernel))
+        (ataxia.kernel:request-output-frame output))))
+  world)
+
 (defun set-damage-debug-mode (world enabled)
   "Toggle damage visualization and force one complete frame to establish its baseline."
   (setf (damage-debug-mode-p world) (not (null enabled)))

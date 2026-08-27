@@ -5,7 +5,7 @@
   :version "0.1.0"
   :author "Ataxia contributors"
   :license "Unspecified"
-  :depends-on ("ataxia-kernel" "slynk" "cffi" "sb-posix")
+  :depends-on ("ataxia-world" "slynk" "cffi" "sb-posix")
   :serial t
   :components
   ((:module "src/control"

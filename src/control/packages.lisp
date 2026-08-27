@@ -12,5 +12,6 @@
    #:with-kernel-thread
    #:agent-inspect
    #:agent-apply
+   #:wait-for-agent-events
    #:sly-control-port
    #:sly-control-state))

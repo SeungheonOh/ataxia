@@ -118,6 +118,9 @@
       (setf (%agent-widget-events widget)
             (subseq (%agent-widget-events widget)
                     0 +agent-widget-event-limit+)))
+    (ataxia.world:publish-agent-event
+     (ataxia.world:world-agent-event-stream (%agent-widget-world widget))
+     (agent-widget-id widget) name value :timestamp (%now))
     event))
 
 (defun agent-widget-events (widget &key (after 0))

@@ -24,6 +24,8 @@
    (overlays :initform nil :accessor world-overlays)
    (retired-overlays :initform nil :accessor %world-retired-overlays)
    (next-agent-widget-id :initform 0 :accessor %world-next-agent-widget-id)
+   (agent-events :initform (ataxia.world:make-agent-event-stream)
+                 :reader ataxia.world:world-agent-event-stream)
    (component-timer :initform nil :accessor %world-component-timer)
    (animator :initform (ataxia.world:make-animator) :reader %world-animator)
    (damage :initform (ataxia.world:make-damage-tracker) :reader %world-damage)
@@ -1015,6 +1017,8 @@
 
 (defmethod ataxia.kernel:world-detached ((world infinite-world) kernel)
   (when (eq kernel (ataxia.kernel:world-kernel world))
+    (ataxia.world:close-agent-event-stream
+     (ataxia.world:world-agent-event-stream world) :world-replaced)
     (dolist (window (%world-stacking world))
       (ataxia.world:cancel-subject-animations (%world-animator world) window))
     (dolist (state (%output-states world))

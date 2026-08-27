@@ -195,6 +195,40 @@
      :control control
      :timeout timeout)))
 
+(defun %external-agent-event (event)
+  (list :sequence (ataxia.world:agent-event-sequence event)
+        :source (ataxia.world:agent-event-source event)
+        :name (ataxia.world:agent-event-name event)
+        :value (ataxia.world:agent-event-value event)
+        :timestamp (ataxia.world:agent-event-timestamp event)))
+
+(defun wait-for-agent-events
+    (&key (after 0) timeout (control (current-sly-control))
+      (expected-generation
+        (ataxia.kernel:kernel-world-generation (%control-kernel control))))
+  "Wait on a SLY worker for external agent events from the active World."
+  (check-type after (integer 0 *))
+  (check-type expected-generation (integer 0 *))
+  (when timeout (check-type timeout (real 0 *)))
+  (when (eq sb-thread:*current-thread* (%sly-control-owner-thread control))
+    (error "WAIT-FOR-AGENT-EVENTS cannot block the compositor owner thread."))
+  (multiple-value-bind (stream generation)
+      (agent-inspect
+       (lambda (kernel world)
+         (let ((stream (ataxia.world:world-agent-event-stream world)))
+           (unless stream
+             (error "The active World does not expose agent events."))
+           (values stream (ataxia.kernel:kernel-world-generation kernel))))
+       :control control
+       :expected-generation expected-generation)
+    (let ((batch
+            (ataxia.world:wait-agent-events
+             stream :after after :timeout timeout)))
+      (setf (getf batch :generation) generation
+            (getf batch :events)
+            (mapcar #'%external-agent-event (getf batch :events)))
+      batch)))
+
 (defun %reject-pending-requests (control)
   (dolist (request (%take-control-requests control))
     (setf (%control-request-condition request)

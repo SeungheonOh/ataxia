@@ -69,9 +69,19 @@ the same guarded mutation path:
 
 `make-agent-widget` accepts Slint source, geometry, callback names, and an
 optional output. `bind-agent-widget-event` records callback values in a bounded
-per-widget history readable through `agent-widget-events`; callback handlers
-must remain short and synchronous. Widgets are ordinary World overlays, so the
-Kernel and Runtime remain unaware of their origin.
+per-widget history readable through `agent-widget-events`. It also publishes to
+a bounded World event stream. An agent can wait without blocking the compositor:
+
+```lisp
+(ataxia.sly-control:wait-for-agent-events :after 0 :timeout 30)
+```
+
+The result contains the World generation, global sequence range, overflow flag,
+and events represented as plain property lists. Pass the last received sequence
+as `:after` for the next wait. `:closed` means the World was replaced and the
+agent must start again with the new generation. Callback handlers remain short
+and synchronous. Widgets are ordinary World overlays, so the Kernel and Runtime
+remain unaware of their origin.
 
 Connect SLY to port `4005`, or forward the VM-local endpoint first:
 

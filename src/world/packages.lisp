@@ -86,6 +86,18 @@
    #:refresh-world
    #:world-operation-rejected
    #:world-operation-rejected-cause
+   #:agent-event
+   #:agent-event-sequence
+   #:agent-event-source
+   #:agent-event-name
+   #:agent-event-value
+   #:agent-event-timestamp
+   #:agent-event-stream
+   #:make-agent-event-stream
+   #:world-agent-event-stream
+   #:publish-agent-event
+   #:wait-agent-events
+   #:close-agent-event-stream
    #:interaction-delivered-p
    #:rescue-world
    #:make-rescue-world))

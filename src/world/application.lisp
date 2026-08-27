@@ -21,6 +21,13 @@
         (ataxia.kernel:request-output-frame output))))
   world)
 
+(define-condition world-operation-rejected (error)
+  ((cause :initarg :cause :reader world-operation-rejected-cause))
+  (:report
+   (lambda (condition stream)
+     (format stream "World operation was rejected before installation: ~A"
+             (world-operation-rejected-cause condition)))))
+
 (defun set-damage-debug-mode (world enabled)
   "Toggle damage visualization and force one complete frame to establish its baseline."
   (setf (damage-debug-mode-p world) (not (null enabled)))

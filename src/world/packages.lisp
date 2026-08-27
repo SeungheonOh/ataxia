@@ -84,6 +84,8 @@
    #:damage-debug-mode-p
    #:set-damage-debug-mode
    #:refresh-world
+   #:world-operation-rejected
+   #:world-operation-rejected-cause
    #:interaction-delivered-p
    #:rescue-world
    #:make-rescue-world))

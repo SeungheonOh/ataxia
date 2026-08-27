@@ -23,6 +23,7 @@
               :reader ataxia.world:world-shortcut-controller)
    (overlays :initform nil :accessor world-overlays)
    (retired-overlays :initform nil :accessor %world-retired-overlays)
+   (next-agent-widget-id :initform 0 :accessor %world-next-agent-widget-id)
    (component-timer :initform nil :accessor %world-component-timer)
    (animator :initform (ataxia.world:make-animator) :reader %world-animator)
    (damage :initform (ataxia.world:make-damage-tracker) :reader %world-damage)

@@ -56,6 +56,23 @@ World helper already records exact damage.
 `call-in-kernel-thread` and `with-kernel-thread` remain available for raw live
 experimentation, but started operations through them are not watchdog guarded.
 
+The Infinite World accepts arbitrary Slint widgets and notifications through
+the same guarded mutation path:
+
+```lisp
+(ataxia.sly-control:agent-apply
+ (lambda (kernel world)
+   (declare (ignore kernel))
+   (ataxia.infinite-world:show-notification
+    world "Layout cleanup completed" :title "AGENT" :duration 5d0)))
+```
+
+`make-agent-widget` accepts Slint source, geometry, callback names, and an
+optional output. `bind-agent-widget-event` records callback values in a bounded
+per-widget history readable through `agent-widget-events`; callback handlers
+must remain short and synchronous. Widgets are ordinary World overlays, so the
+Kernel and Runtime remain unaware of their origin.
+
 Connect SLY to port `4005`, or forward the VM-local endpoint first:
 
 ```sh

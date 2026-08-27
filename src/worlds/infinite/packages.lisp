@@ -29,11 +29,27 @@
    #:canvas-overlay-layer
    #:canvas-overlay-visible-p
    #:canvas-overlay-opacity
+   #:agent-widget
+   #:agent-widget-id
+   #:agent-widget-event
+   #:agent-widget-event-sequence
+   #:agent-widget-event-name
+   #:agent-widget-event-value
+   #:agent-widget-event-timestamp
    #:world-overlays
    #:add-overlay
    #:remove-overlay
    #:show-overlay
    #:hide-overlay
+   #:make-agent-widget
+   #:find-agent-widget
+   #:list-agent-widgets
+   #:remove-agent-widget
+   #:configure-agent-widget
+   #:set-agent-widget-property
+   #:bind-agent-widget-event
+   #:agent-widget-events
+   #:show-notification
    #:toggle-application-launcher
    #:find-canvas-window
    #:set-window-position

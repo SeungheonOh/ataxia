@@ -14,5 +14,6 @@
      (:file "model")
      (:file "renderer")
      (:file "world")
+     (:file "agent-ui")
      (:file "launcher")
      (:file "main")))))

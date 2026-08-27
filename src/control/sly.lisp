@@ -171,20 +171,27 @@
   (let ((kernel (%control-kernel control)))
     (call-in-kernel-thread
      (lambda ()
-       (ataxia.kernel:call-with-current-world
-        kernel
-        (lambda (world)
-          (multiple-value-call
-              (lambda (&rest values)
-                (when (eq refresh :full)
-                  (ataxia.world:refresh-world
-                   (ataxia.kernel:kernel-world kernel)))
-                (values-list values))
-            (funcall function kernel world)))
-        :expected-generation expected-generation
-        :timeout timeout
-        :recover-on-failure-p t
-        :operation :agent-mutation))
+       (let ((outcome
+               (ataxia.kernel:call-with-current-world
+                kernel
+                (lambda (world)
+                  (handler-case
+                      (multiple-value-call
+                          (lambda (&rest values)
+                            (when (eq refresh :full)
+                              (ataxia.world:refresh-world
+                               (ataxia.kernel:kernel-world kernel)))
+                            (list :returned values))
+                        (funcall function kernel world))
+                    (ataxia.world:world-operation-rejected (condition)
+                      (list :rejected condition))))
+                :expected-generation expected-generation
+                :timeout timeout
+                :recover-on-failure-p t
+                :operation :agent-mutation)))
+         (ecase (first outcome)
+           (:returned (values-list (second outcome)))
+           (:rejected (error (second outcome))))))
      :control control
      :timeout timeout)))
 

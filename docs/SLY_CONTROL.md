@@ -1,5 +1,8 @@
 # SLY Control
 
+Fresh agents should begin with `AGENT_OPERATIONS.md` for the complete
+inspect/create/wait/react workflow.
+
 The infinite World starts SLYNK on `localhost:4005`. SLY receives full access
 to the live Lisp image and the current Kernel through:
 

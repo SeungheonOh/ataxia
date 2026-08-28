@@ -14,6 +14,7 @@
      (:file "model")
      (:file "renderer")
      (:file "world")
+     (:file "view-shift")
      (:file "agent-ui")
      (:file "launcher")
      (:file "main")))))

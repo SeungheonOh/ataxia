@@ -6,6 +6,15 @@
 
 (in-package #:ataxia.infinite-world)
 
+(declaim (ftype function
+                %view-shift-for-seat
+                %sync-view-shift-overlay
+                %update-view-shift-modifiers
+                %advance-view-shifts
+                %end-view-shift
+                %end-view-shifts-for-output
+                %end-all-view-shifts))
+
 (ataxia.world:define-shortcuts %make-infinite-shortcut-controller
   (:application-launcher
    (:key (:keysym :space) :modifiers (:logo))
@@ -19,6 +28,8 @@
    (stacking :initform nil :accessor %world-stacking)
    (outputs :initform (make-hash-table :test #'eq) :reader %world-outputs)
    (seats :initform (make-hash-table :test #'eq) :reader %world-seats)
+   (view-shifts :initform (make-hash-table :test #'eq)
+                :reader %world-view-shifts)
    (shortcuts :initform (%make-infinite-shortcut-controller)
               :reader ataxia.world:world-shortcut-controller)
    (overlays :initform nil :accessor world-overlays)
@@ -1012,6 +1023,7 @@
 (defmethod ataxia.kernel:world-quiescing ((world infinite-world) reason)
   (declare (ignore reason))
   (setf (%world-quiescing-p world) t)
+  (%end-all-view-shifts world)
   (%remove-component-timer world)
   world)
 
@@ -1029,6 +1041,7 @@
     (clrhash (%world-windows world))
     (clrhash (%world-outputs world))
     (clrhash (%world-seats world))
+    (clrhash (%world-view-shifts world))
     (setf (world-overlays world) nil
           (%world-retired-overlays world) nil
           (%world-stacking world) nil
@@ -1206,6 +1219,7 @@
     ((world infinite-world) output)
   (let ((state (gethash output (%world-outputs world))))
     (when state
+      (%end-view-shifts-for-output world state)
       (dolist (overlay
                 (remove-if-not
                  (lambda (candidate)
@@ -1237,6 +1251,7 @@
     ((world infinite-world) seat)
   (let ((seat-state (gethash seat (%world-seats world))))
     (when seat-state
+      (%end-view-shift world seat)
       (%damage-cursor world seat-state)
       (when (%canvas-seat-hovered seat-state)
         (ataxia.kernel:interactable-pointer-leave
@@ -1257,9 +1272,12 @@
     (when seat-state
       (%damage-cursor world seat-state)
       (%update-seat-position seat-state input)
-      (if (%canvas-seat-operation seat-state)
-          (%apply-operation world seat-state)
-          (%deliver-motion world seat-state input))
+      (let ((shift (%view-shift-for-seat world seat)))
+        (cond
+          (shift (%sync-view-shift-overlay world seat-state shift))
+          ((%canvas-seat-operation seat-state)
+           (%apply-operation world seat-state))
+          (t (%deliver-motion world seat-state input))))
       (%damage-cursor world seat-state)
       (%request-output-state-frame world (%canvas-seat-output seat-state))))
   input)
@@ -1332,6 +1350,8 @@
     ((world infinite-world) seat input)
   (let* ((seat-state (gethash seat (%world-seats world)))
          (target (and seat-state (%canvas-seat-focused seat-state))))
+    (when seat-state
+      (%update-view-shift-modifiers world seat seat-state input))
     (when (and seat-state
                (eq :forward
                    (ataxia.world:handle-shortcut-input
@@ -1462,6 +1482,7 @@
       (when geometry-changed-p
         (ataxia.world:damage-reset-output (%world-damage world) output)))
     (%advance-world-animations world (ataxia.kernel:frame-timestamp lease))
+    (%advance-view-shifts world (ataxia.kernel:frame-timestamp lease))
     (%reap-retired-overlays world)
     (dolist (overlay (world-overlays world))
       (when (%overlay-visible-on-state-p overlay state)

@@ -38,6 +38,7 @@
    (agent-events :initform (ataxia.world:make-agent-event-stream)
                  :reader ataxia.world:world-agent-event-stream)
    (component-timer :initform nil :accessor %world-component-timer)
+   (imu-controller :initform nil :accessor %world-imu-controller)
    (animator :initform (ataxia.world:make-animator) :reader %world-animator)
    (damage :initform (ataxia.world:make-damage-tracker) :reader %world-damage)
    (damage-debug-p :initarg :damage-debug-p :initform nil
@@ -223,12 +224,12 @@
       (when (and (plusp local-width) (plusp local-height))
         (dolist (state (%output-states world))
           (multiple-value-bind (screen-x screen-y screen-width screen-height)
-              (%window-screen-geometry state window)
+              (%window-canvas-geometry state window)
             (ataxia.world:damage-add-region
              (%world-damage world) (%canvas-output-output state)
              (mapcar
               (lambda (rectangle)
-                (%screen-rectangle-to-buffer
+                (%canvas-rectangle-to-buffer
                  state
                  (+ screen-x
                     (* screen-width
@@ -387,8 +388,8 @@
           (declare (ignore revision))
           (loop for surface across surfaces
                 collect
-                (%screen-rectangle-to-buffer
-                 state
+                (%oriented-screen-rectangle-to-buffer
+                 state x y
                  (+ (- x (%canvas-seat-cursor-hotspot-x seat-state))
                     (ataxia.kernel:drawable-surface-local-x surface))
                  (+ (- y (%canvas-seat-cursor-hotspot-y seat-state))
@@ -396,8 +397,8 @@
                  (ataxia.kernel:drawable-surface-width surface)
                  (ataxia.kernel:drawable-surface-height surface)
                  2d0)))
-        (list (%screen-rectangle-to-buffer
-               state (- x 4d0) (- y 4d0) 26d0 34d0)))))
+        (list (%oriented-screen-rectangle-to-buffer
+               state x y (- x 4d0) (- y 4d0) 26d0 34d0)))))
 
 (defun %damage-cursor (world seat-state)
   (let* ((state (%canvas-seat-output seat-state))
@@ -513,7 +514,7 @@
 
 (defun %window-input-geometry (state window)
   (multiple-value-bind (x y width height)
-      (%window-screen-geometry state window)
+      (%window-canvas-geometry state window)
     (multiple-value-bind (root-x root-y root-width root-height)
         (ataxia.kernel:drawable-local-bounds
          (canvas-window-application window))
@@ -556,13 +557,14 @@
                         (* (- bottom top) scale-y)))))))))
 
 (defun %windows-at-screen-point (world state x y)
-  (loop for window in (reverse (%world-stacking world))
-        when (and (%window-visible-p window)
-                  (multiple-value-bind (window-x window-y width height)
-                      (%window-input-geometry state window)
-                    (and (<= window-x x (+ window-x width))
-                         (<= window-y y (+ window-y height)))))
-          collect window))
+  (multiple-value-bind (canvas-x canvas-y) (%screen-to-canvas state x y)
+    (loop for window in (reverse (%world-stacking world))
+          when (and (%window-visible-p window)
+                    (multiple-value-bind (window-x window-y width height)
+                        (%window-input-geometry state window)
+                      (and (<= window-x canvas-x (+ window-x width))
+                           (<= window-y canvas-y (+ window-y height)))))
+            collect window)))
 
 (defun %overlays-at-screen-point (world state x y)
   (remove-if-not
@@ -598,19 +600,24 @@
 
 (defun %target-screen-geometry (state target)
   (etypecase target
-    (canvas-window (%window-screen-geometry state target))
+    (canvas-window (%window-canvas-geometry state target))
     (canvas-overlay
      (values (canvas-overlay-x target) (canvas-overlay-y target)
              (canvas-overlay-width target) (canvas-overlay-height target)))))
 
 (defun %target-local-position (state target x y)
-  (multiple-value-bind (target-x target-y width height)
-      (%target-screen-geometry state target)
-    (multiple-value-bind (local-x local-y local-width local-height)
-        (ataxia.kernel:drawable-local-bounds
-         (%target-component target))
-      (values (+ local-x (* (/ (- x target-x) width) local-width))
-              (+ local-y (* (/ (- y target-y) height) local-height))))))
+  (multiple-value-bind (position-x position-y)
+      (etypecase target
+        (canvas-window (%screen-to-canvas state x y))
+        (canvas-overlay (values x y)))
+    (multiple-value-bind (target-x target-y width height)
+        (%target-screen-geometry state target)
+      (multiple-value-bind (local-x local-y local-width local-height)
+          (ataxia.kernel:drawable-local-bounds
+           (%target-component target))
+        (values
+         (+ local-x (* (/ (- position-x target-x) width) local-width))
+         (+ local-y (* (/ (- position-y target-y) height) local-height)))))))
 
 (defun %captured-pointer-target (seat-state)
   (loop for target being the hash-values of (%canvas-seat-buttons seat-state)
@@ -700,12 +707,13 @@
                   (* (ataxia.kernel:cursor-motion-input-x input) width)
                   (%canvas-seat-y seat-state)
                   (* (ataxia.kernel:cursor-motion-input-y input) height))
-            (setf (%canvas-seat-x seat-state)
-                  (+ (%canvas-seat-x seat-state)
-                     (ataxia.kernel:cursor-motion-input-delta-x input))
-                  (%canvas-seat-y seat-state)
-                  (+ (%canvas-seat-y seat-state)
-                     (ataxia.kernel:cursor-motion-input-delta-y input))))
+            (multiple-value-bind (delta-x delta-y)
+                (%canvas-vector-to-screen
+                 state
+                 (ataxia.kernel:cursor-motion-input-delta-x input)
+                 (ataxia.kernel:cursor-motion-input-delta-y input))
+              (incf (%canvas-seat-x seat-state) delta-x)
+              (incf (%canvas-seat-y seat-state) delta-y)))
         (setf (%canvas-seat-x seat-state)
               (max 0d0 (min (- width least-positive-double-float)
                             (%canvas-seat-x seat-state)))
@@ -727,57 +735,61 @@
   (let* ((state (%canvas-seat-output seat-state))
          (window (%canvas-operation-window operation))
          (zoom (%canvas-output-zoom state))
-         (delta-x (/ (- (%canvas-seat-x seat-state)
-                        (%canvas-operation-cursor-x operation)) zoom))
-         (delta-y (/ (- (%canvas-seat-y seat-state)
-                        (%canvas-operation-cursor-y operation)) zoom))
          (edges (%canvas-operation-edges operation))
          (x (%canvas-operation-window-x operation))
          (y (%canvas-operation-window-y operation))
          (width (%canvas-operation-window-width operation))
          (height (%canvas-operation-window-height operation)))
-    (%damage-window world window)
-    (when (logtest +resize-left+ edges)
-      (incf x delta-x)
-      (decf width delta-x))
-    (when (logtest +resize-right+ edges)
-      (incf width delta-x))
-    (when (logtest +resize-top+ edges)
-      (incf y delta-y)
-      (decf height delta-y))
-    (when (logtest +resize-bottom+ edges)
-      (incf height delta-y))
-    (when (< width 96d0)
-      (when (logtest +resize-left+ edges)
-        (decf x (- 96d0 width)))
-      (setf width 96d0))
-    (when (< height 64d0)
-      (when (logtest +resize-top+ edges)
-        (decf y (- 64d0 height)))
-      (setf height 64d0))
-    (setf (canvas-window-x window) x
-          (canvas-window-y window) y
-          (canvas-window-width window) width
-          (canvas-window-height window) height)
-    (ataxia.kernel:request-object-configuration
-     (canvas-window-application window) world
-     (make-instance 'ataxia.kernel:toplevel-configuration
-                    :width (max 1 (round width))
-                    :height (max 1 (round height))
-                    :resizing t))
-    (%damage-window world window)))
+    (multiple-value-bind (screen-delta-x screen-delta-y)
+        (%screen-vector-to-canvas
+         state
+         (- (%canvas-seat-x seat-state) (%canvas-operation-cursor-x operation))
+         (- (%canvas-seat-y seat-state) (%canvas-operation-cursor-y operation)))
+      (let ((delta-x (/ screen-delta-x zoom))
+            (delta-y (/ screen-delta-y zoom)))
+        (%damage-window world window)
+        (when (logtest +resize-left+ edges)
+          (incf x delta-x)
+          (decf width delta-x))
+        (when (logtest +resize-right+ edges)
+          (incf width delta-x))
+        (when (logtest +resize-top+ edges)
+          (incf y delta-y)
+          (decf height delta-y))
+        (when (logtest +resize-bottom+ edges)
+          (incf height delta-y))
+        (when (< width 96d0)
+          (when (logtest +resize-left+ edges)
+            (decf x (- 96d0 width)))
+          (setf width 96d0))
+        (when (< height 64d0)
+          (when (logtest +resize-top+ edges)
+            (decf y (- 64d0 height)))
+          (setf height 64d0))
+        (setf (canvas-window-x window) x
+              (canvas-window-y window) y
+              (canvas-window-width window) width
+              (canvas-window-height window) height)
+        (ataxia.kernel:request-object-configuration
+         (canvas-window-application window) world
+         (make-instance 'ataxia.kernel:toplevel-configuration
+                        :width (max 1 (round width))
+                        :height (max 1 (round height))
+                        :resizing t))
+        (%damage-window world window)))))
 
 (defun %pan-operation (world seat-state operation)
   (let* ((state (%canvas-seat-output seat-state))
          (zoom (%canvas-output-zoom state)))
-    (setf (%canvas-output-camera-x state)
-          (- (%canvas-operation-camera-x operation)
-             (/ (- (%canvas-seat-x seat-state)
-                   (%canvas-operation-cursor-x operation)) zoom))
-          (%canvas-output-camera-y state)
-          (- (%canvas-operation-camera-y operation)
-             (/ (- (%canvas-seat-y seat-state)
-                   (%canvas-operation-cursor-y operation)) zoom)))
+    (multiple-value-bind (delta-x delta-y)
+        (%screen-vector-to-canvas
+         state
+         (- (%canvas-seat-x seat-state) (%canvas-operation-cursor-x operation))
+         (- (%canvas-seat-y seat-state) (%canvas-operation-cursor-y operation)))
+      (setf (%canvas-output-camera-x state)
+            (- (%canvas-operation-camera-x operation) (/ delta-x zoom))
+            (%canvas-output-camera-y state)
+            (- (%canvas-operation-camera-y operation) (/ delta-y zoom))))
     (%full-damage world state)
     (%update-all-membership world)))
 
@@ -1006,13 +1018,15 @@
              (screen-y (coerce (or anchor-y (/ logical-height 2d0)) 'double-float)))
         (multiple-value-bind (world-x world-y)
             (%screen-to-world state screen-x screen-y)
-          (let ((zoom (max 0.08d0
-                           (min 8d0 (* (%canvas-output-zoom state) factor)))))
-            (set-output-camera
-             world output
-             (- world-x (/ screen-x zoom))
-             (- world-y (/ screen-y zoom))
-             zoom))))))
+          (multiple-value-bind (canvas-x canvas-y)
+              (%screen-to-canvas state screen-x screen-y)
+            (let ((zoom (max 0.08d0
+                             (min 8d0 (* (%canvas-output-zoom state) factor)))))
+              (set-output-camera
+               world output
+               (- world-x (/ canvas-x zoom))
+               (- world-y (/ canvas-y zoom))
+               zoom)))))))
   output)
 
 (defmethod ataxia.kernel:world-attached ((world infinite-world) kernel)

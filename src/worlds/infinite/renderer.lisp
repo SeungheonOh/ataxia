@@ -27,13 +27,19 @@ void main() {
 uniform vec2 u_camera;
 uniform vec2 u_viewport;
 uniform float u_zoom;
+uniform float u_rotation;
 varying vec2 v_uv;
 float grid_dot(vec2 world, float spacing, float radius) {
   vec2 offset = abs(fract(world / spacing + 0.5) - 0.5) * spacing * u_zoom;
   return 1.0 - step(radius, length(offset));
 }
 void main() {
-  vec2 world = u_camera + (v_uv * u_viewport) / u_zoom;
+  vec2 delta = v_uv * u_viewport - u_viewport * 0.5;
+  float cosine = cos(u_rotation);
+  float sine = sin(u_rotation);
+  vec2 canvas = vec2(cosine * delta.x + sine * delta.y,
+                     -sine * delta.x + cosine * delta.y) + u_viewport * 0.5;
+  vec2 world = u_camera + canvas / u_zoom;
   float fine_dot = grid_dot(world, 24.0, 0.75) * step(0.4, u_zoom);
   float major_dot = grid_dot(world, 120.0, 1.35);
   vec3 color = vec3(0.800);
@@ -131,6 +137,33 @@ void main() {
    (list (cons x y) (cons (+ x width) y)
          (cons x (+ y height)) (cons (+ x width) (+ y height)))))
 
+(defun %canvas-quad (state x y width height)
+  (mapcar
+   (lambda (point)
+     (multiple-value-bind (screen-x screen-y)
+         (%canvas-to-screen state (car point) (cdr point))
+       (multiple-value-bind (buffer-x buffer-y)
+           (%screen-point-to-buffer state screen-x screen-y)
+         (multiple-value-bind (ndc-x ndc-y)
+             (%ndc-point state buffer-x buffer-y)
+           (cons ndc-x ndc-y)))))
+   (list (cons x y) (cons (+ x width) y)
+         (cons x (+ y height)) (cons (+ x width) (+ y height)))))
+
+(defun %oriented-screen-quad (state anchor-x anchor-y x y width height)
+  (mapcar
+   (lambda (point)
+     (multiple-value-bind (screen-x screen-y)
+         (%oriented-screen-point
+          state anchor-x anchor-y (car point) (cdr point))
+       (multiple-value-bind (buffer-x buffer-y)
+           (%screen-point-to-buffer state screen-x screen-y)
+         (multiple-value-bind (ndc-x ndc-y)
+             (%ndc-point state buffer-x buffer-y)
+           (cons ndc-x ndc-y)))))
+   (list (cons x y) (cons (+ x width) y)
+         (cons x (+ y height)) (cons (+ x width) (+ y height)))))
+
 (defun %quad-vertices (positions texture-coordinates)
   (flet ((vertex (index)
            (list (car (nth index positions)) (cdr (nth index positions))
@@ -149,7 +182,7 @@ void main() {
      1 2 stride (* 2 (cffi:foreign-type-size :float)))))
 
 (defun %draw-solid (renderer state x y width height color)
-  (let* ((positions (%screen-quad state x y width height))
+  (let* ((positions (%canvas-quad state x y width height))
          (uv (list (cons 0d0 0d0) (cons 1d0 0d0)
                    (cons 0d0 1d0) (cons 1d0 1d0)))
          (program (%canvas-renderer-solid-program renderer)))
@@ -174,6 +207,8 @@ void main() {
       (ataxia.world.gles:gles-uniform-2f program "u_viewport" width height)
       (ataxia.world.gles:gles-uniform-1f
        program "u_zoom" (%canvas-output-zoom state))
+      (ataxia.world.gles:gles-uniform-1f
+       program "u_rotation" (%canvas-output-rotation state))
       (ataxia.world.gles:gles-draw-triangles 6))))
 
 (defun %source-uv (surface)
@@ -183,15 +218,22 @@ void main() {
           collect (cons (aref coordinates index)
                         (aref coordinates (1+ index))))))
 
-(defun %draw-solid-triangle (renderer state points color)
+(defun %draw-solid-triangle (renderer state points color &optional anchor)
   (let ((vertices
           (coerce
            (mapcan
             (lambda (point)
-              (multiple-value-bind (buffer-x buffer-y)
-                  (%screen-point-to-buffer state (car point) (cdr point))
-                (multiple-value-bind (x y) (%ndc-point state buffer-x buffer-y)
-                  (list x y 0d0 0d0))))
+              (multiple-value-bind (screen-x screen-y)
+                  (if anchor
+                      (%oriented-screen-point
+                       state (car anchor) (cdr anchor)
+                       (car point) (cdr point))
+                      (values (car point) (cdr point)))
+                (multiple-value-bind (buffer-x buffer-y)
+                    (%screen-point-to-buffer state screen-x screen-y)
+                  (multiple-value-bind (x y)
+                      (%ndc-point state buffer-x buffer-y)
+                    (list x y 0d0 0d0)))))
             points)
            'vector))
         (program (%canvas-renderer-solid-program renderer)))
@@ -201,7 +243,8 @@ void main() {
     (ataxia.world.gles:gles-draw-triangles 3)))
 
 (defun %draw-surface
-    (renderer state surface x y width height opacity effect seed)
+    (renderer state surface x y width height opacity effect seed
+     &optional canvas-p orientation-anchor)
   (let* ((source (ataxia.kernel:drawable-surface-render-source surface))
          (target (ataxia.kernel:render-source-gles-target source))
          (external-p (= target ataxia.world.gles:+texture-external-oes+))
@@ -213,7 +256,13 @@ void main() {
       (error "The GLES renderer cannot sample texture target 0x~X." target))
     (%bind-vertices
      renderer
-     (%quad-vertices (%screen-quad state x y width height)
+     (%quad-vertices (cond
+                       (orientation-anchor
+                        (%oriented-screen-quad
+                         state (car orientation-anchor) (cdr orientation-anchor)
+                         x y width height))
+                       (canvas-p (%canvas-quad state x y width height))
+                       (t (%screen-quad state x y width height)))
                      (%source-uv surface)))
     (ataxia.world.gles:gles-use-program program)
     (ataxia.world.gles:gles-bind-texture
@@ -230,7 +279,7 @@ void main() {
 
 (defun %draw-window-shadow (renderer state window)
   (multiple-value-bind (x y width height)
-      (%window-screen-geometry state window)
+      (%window-canvas-geometry state window)
     (let ((lift (canvas-window-elevation window)))
       (loop for layer from 4 downto 1
             for spread = (+ (* layer 4d0) (* lift 8d0))
@@ -247,7 +296,7 @@ void main() {
         (ataxia.kernel:drawable-local-bounds application)
       (when (and (plusp root-width) (plusp root-height))
         (multiple-value-bind (x y width height)
-            (%window-screen-geometry state window)
+            (%window-canvas-geometry state window)
           (%draw-window-shadow renderer state window)
           (multiple-value-bind (surfaces revision)
               (ataxia.kernel:drawable-surfaces application)
@@ -280,7 +329,8 @@ void main() {
                       (canvas-window-opacity window)
                       (canvas-window-effect window)
                       (coerce (mod (ataxia.kernel:object-id application) 997)
-                              'double-float))
+                              'double-float)
+                      t)
                      (when token (pushnew token tokens :test #'eq))))
                  surfaces))))))
   tokens)
@@ -338,7 +388,7 @@ void main() {
                      (ataxia.kernel:drawable-surface-local-y surface))
                   (ataxia.kernel:drawable-surface-width surface)
                   (ataxia.kernel:drawable-surface-height surface)
-                  1d0 0d0 0d0)
+                  1d0 0d0 0d0 nil (cons x y))
                  (let ((token
                          (ataxia.kernel:drawable-surface-presentation-token surface)))
                    (when token (pushnew token tokens :test #'eq))))
@@ -349,12 +399,12 @@ void main() {
            (list (cons (- x 2d0) (- y 2d0))
                  (cons (- x 2d0) (+ y 28d0))
                  (cons (+ x 20d0) (+ y 18d0)))
-           '(0.02d0 0.025d0 0.04d0 0.95d0))
+           '(0.02d0 0.025d0 0.04d0 0.95d0) (cons x y))
           (%draw-solid-triangle
            renderer state
            (list (cons x y) (cons x (+ y 24d0))
                  (cons (+ x 17d0) (+ y 16d0)))
-           '(0.96d0 0.98d0 1d0 1d0))))
+           '(0.96d0 0.98d0 1d0 1d0) (cons x y))))
     tokens))
 
 (defun %render-canvas

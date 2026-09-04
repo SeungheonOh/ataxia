@@ -292,13 +292,15 @@
                           (speed
                             (* +view-shift-max-speed+
                                (expt strength 1.35d0)))
-                          (world-distance
+                     (world-distance
                             (/ (* speed elapsed)
                                (%canvas-output-zoom state))))
-                     (incf (%canvas-output-camera-x state)
-                           (* world-distance (/ delta-x distance)))
-                     (incf (%canvas-output-camera-y state)
-                           (* world-distance (/ delta-y distance)))
+                     (multiple-value-bind (canvas-x canvas-y)
+                         (%screen-vector-to-canvas state delta-x delta-y)
+                       (incf (%canvas-output-camera-x state)
+                             (* world-distance (/ canvas-x distance)))
+                       (incf (%canvas-output-camera-y state)
+                             (* world-distance (/ canvas-y distance))))
                      (%full-damage world state)
                      (%update-all-membership world))
                    (%request-output-state-frame world state))))))

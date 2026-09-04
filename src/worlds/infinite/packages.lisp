@@ -59,4 +59,7 @@
    #:animate-window
    #:set-output-camera
    #:pan-output-camera
-   #:zoom-output-camera))
+   #:zoom-output-camera
+   #:attach-imu
+   #:detach-imu
+   #:imu-status))

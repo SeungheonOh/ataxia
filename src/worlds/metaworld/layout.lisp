@@ -121,6 +121,13 @@
                                 (+ left master-width 14d0) top
                                 (- width master-width 14d0) height)))))
 
+(defun %meta-raise-floating (world group)
+  (when group
+    (dolist (window (copy-list (%world-stacking world)))
+      (let ((member (%meta-member group window)))
+        (when (and member (subworld-member-floating-p member) (%window-visible-p window))
+          (%raise-window world window))))))
+
 (defun %meta-layout (world group)
   (let ((*meta-layout-motion* (not (%meta-group-drag world))))
    (when group
@@ -147,6 +154,7 @@
                (if (eq (subworld-layout group) :master)
                    (%meta-layout-master world group members)
                    (%meta-layout-dwindle world group members)))))))
+    (%meta-raise-floating world group)
     (%meta-changed world))))
 
 (defun move-object-to-subworld (world object group &key workspace)
@@ -231,6 +239,7 @@
       (let ((group (and object (object-subworld world object)))
             (state (%canvas-seat-output seat-state)))
         (when group (setf (gethash group (%meta-group-focus world)) object))
+        (%meta-raise-floating world group)
         (when (and group state (eq group (%meta-current world seat))
                    (eq :niri (subworld-kind group)))
           (multiple-value-bind (width height) (%output-logical-size state)

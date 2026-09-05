@@ -680,7 +680,10 @@
                          (and (%meta-standalone world) (first (metaworld-subworlds world))))))
           (when (and group (not (object-subworld world window)))
             (move-object-to-subworld world window group))))))
-    (%meta-focus world window)))
+    (when (and (%window-visible-p window)
+               (or (null (%meta-current world))
+                   (eq (object-subworld world window) (%meta-current world))))
+      (%meta-focus world window))))
 
 (defmethod ataxia.kernel:world-register-object :after
     ((world metaworld) (application ataxia.kernel:wayland-application))
@@ -789,6 +792,18 @@
                   (stable-sort (subworld-members group) #'< :key #'subworld-member-order))
             (%meta-layout world group)))))
     (setf (%meta-saved-notes world) nil)))
+
+(defmethod ataxia.kernel:world-seat-added :after ((world metaworld) seat)
+  (let* ((group (%meta-current world seat))
+         (member (and group (first (%meta-visible-members group :include-floating t)))))
+    (when member
+      (%meta-focus world (subworld-member-object member) seat nil))))
+
+(defmethod ataxia.kernel:world-unregister-object :after
+    ((world metaworld) (application ataxia.kernel:wayland-application) reason)
+  (declare (ignore application reason))
+  (dolist (group (metaworld-subworlds world))
+    (%meta-raise-floating world group)))
 
 (defmethod ataxia.kernel:world-output-changed :after ((world metaworld) output change)
   (unless (eq :backend-damage (ataxia.kernel:object-change-kind change))

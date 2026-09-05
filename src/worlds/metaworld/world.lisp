@@ -193,7 +193,8 @@
      (lambda (source)
        (declare (ignore source))
        (when (= generation (ataxia.kernel:kernel-world-generation kernel))
-         (ataxia.kernel:install-world kernel (make-metaworld :standalone mode)))))))
+         (ataxia.kernel:install-world kernel (make-metaworld :standalone mode)))
+       0))))
 
 (defun %meta-command (world seat action &optional argument)
   (let* ((object (%meta-focused-object world seat))

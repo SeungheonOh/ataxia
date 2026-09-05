@@ -1,0 +1,46 @@
+import { MetaButton } from "controls.slint";
+
+export component SubworldControls inherits Window {
+    background: #eee9dc;
+    in-out property <string> world-name;
+    in property <string> policy;
+    in property <bool> confirming: false;
+    in property <bool> standalone: false;
+    callback action(string);
+    callback rename(string);
+    Rectangle { border-width: 1px; border-color: #9b978b; background: #eee9dc; }
+    VerticalLayout {
+        padding: 8px;
+        spacing: 6px;
+        HorizontalLayout {
+            spacing: 6px;
+            Rectangle {
+                border-width: 1px; border-color: #171717; background: #f4f4f1;
+                TextInput {
+                    x: 7px; y: 6px; width: parent.width - 14px; height: parent.height - 12px;
+                    text <=> root.world-name; single-line: true; color: #171717;
+                    selection-background-color: #a8a8a3; font-size: 14px;
+                    edited => { root.rename(self.text); }
+                    accepted => { root.action("dismiss"); }
+                }
+            }
+            MetaButton { width: 28px; label: "×"; activate => { root.action("dismiss"); } }
+        }
+        HorizontalLayout {
+            spacing: 6px;
+            MetaButton { label: "Columns"; selected: root.policy == "niri"; activate => { root.action("policy-niri"); } }
+            MetaButton { label: "Dwindle"; selected: root.policy == "dwindle"; activate => { root.action("policy-dwindle"); } }
+            MetaButton { label: "Master"; selected: root.policy == "master"; activate => { root.action("policy-master"); } }
+        }
+        HorizontalLayout {
+            spacing: 6px;
+            MetaButton { label: "New note"; activate => { root.action("note"); } }
+            MetaButton { label: root.standalone ? "Canvas" : "Standalone"; activate => { root.action(root.standalone ? "mode-canvas" : "standalone"); } }
+        }
+        MetaButton {
+            label: root.confirming ? "Keep windows, remove group?" : "Ungroup";
+            enabled: !root.standalone;
+            activate => { root.action("dissolve"); }
+        }
+    }
+}

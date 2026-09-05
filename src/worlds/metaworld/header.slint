@@ -1,0 +1,40 @@
+export component SubworldHeader inherits Window {
+    background: transparent;
+    in property <string> caption;
+    in property <bool> active: false;
+    callback enter();
+    Rectangle {
+        background: transparent;
+        Text {
+            x: 4px;
+            width: parent.width - 108px;
+            text: root.caption;
+            color: #16140f;
+            font-size: 15px;
+            font-family: "monospace";
+            font-weight: root.active ? 700 : 500;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+        Text {
+            x: parent.width - 104px;
+            width: 52px;
+            text: touch.has-hover ? (root.active ? "Leave" : "Enter") : "";
+            color: #16140f;
+            font-size: 11px;
+            font-family: "DejaVu Sans Mono";
+            horizontal-alignment: right;
+            vertical-alignment: center;
+        }
+        Text {
+            x: parent.width - 40px;
+            width: 32px;
+            text: touch.has-hover ? "···" : "";
+            color: #16140f;
+            font-size: 19px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+        touch := TouchArea { clicked => { root.enter(); } }
+    }
+}

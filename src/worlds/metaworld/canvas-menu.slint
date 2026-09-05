@@ -1,0 +1,13 @@
+import { MetaButton } from "controls.slint";
+
+export component CanvasCreation inherits Window {
+    background: #eee9dc;
+    callback action(string);
+    Rectangle { border-width: 1px; border-color: #9b978b; background: #eee9dc; }
+    VerticalLayout {
+        padding: 6px; spacing: 5px;
+        MetaButton { label: "Niri world"; activate => { root.action("new-niri"); } }
+        MetaButton { label: "Hyprland world"; activate => { root.action("new-hyprland"); } }
+        MetaButton { label: "Note"; activate => { root.action("note"); } }
+    }
+}

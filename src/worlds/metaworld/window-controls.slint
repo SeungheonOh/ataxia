@@ -1,0 +1,19 @@
+import { MetaButton } from "controls.slint";
+
+export component ObjectControls inherits Window {
+    background: #eee9dc;
+    in property <bool> owned: false;
+    in property <bool> detachable: false;
+    in property <bool> niri: false;
+    in property <bool> floating: false;
+    callback action(string);
+    HorizontalLayout {
+        padding: 3px; spacing: 3px;
+        MetaButton { label: "Detach"; visible: root.detachable; activate => { root.action("pull-out"); } }
+        MetaButton { label: root.floating ? "Tile" : "Float"; visible: root.owned; activate => { root.action("floating"); } }
+        MetaButton { label: "Full"; visible: root.owned; activate => { root.action("fullscreen"); } }
+        MetaButton { label: "Stack"; visible: root.niri; activate => { root.action("consume"); } }
+        MetaButton { label: "Split"; visible: root.niri; activate => { root.action("expel"); } }
+        MetaButton { width: 28px; label: "×"; activate => { root.action("close"); } }
+    }
+}

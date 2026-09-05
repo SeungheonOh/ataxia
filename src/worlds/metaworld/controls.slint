@@ -1,0 +1,39 @@
+export component MetaButton inherits Rectangle {
+    in property <string> label;
+    in property <bool> selected: false;
+    in property <bool> enabled: true;
+    callback activate();
+    min-width: 32px;
+    preferred-height: 32px;
+    border-width: focus.has-focus ? 1px : 0px;
+    border-color: #16140f;
+    background: root.selected || touch.pressed ? #16140f : touch.has-hover ? #d8d4c9 : transparent;
+    animate background { duration: 100ms; }
+    opacity: root.enabled ? 1 : 0.4;
+    accessible-role: button;
+    accessible-label: root.label;
+    forward-focus: focus;
+    Text {
+        text: root.label;
+        color: root.selected || touch.pressed ? #eee9dc : #16140f;
+        font-family: "monospace";
+        font-size: 12px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+    focus := FocusScope {
+        enabled: root.enabled;
+        key-pressed(event) => {
+            if event.text == Key.Return || event.text == " " {
+                root.activate();
+                return accept;
+            }
+            return reject;
+        }
+    }
+    touch := TouchArea {
+        enabled: root.enabled;
+        clicked => { focus.focus(); root.activate(); }
+    }
+}

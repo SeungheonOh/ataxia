@@ -413,32 +413,33 @@
             (%meta-layout world previous)))
         (multiple-value-bind (x y)
             (%screen-to-world (%canvas-seat-output state) (%canvas-seat-x state) (%canvas-seat-y state))
-          (let ((destination (if (%meta-standalone world) (first (metaworld-subworlds world))
-                                 (%meta-group-at world x y))))
-            (if (eq previous destination)
-                (when destination
-                  (let* ((member (%meta-member destination object))
-                         (other
-                           (find-if
-                            (lambda (entry)
-                              (and (not (eq entry member))
-                                   (destructuring-bind (left top width height)
-                                       (%meta-object-geometry (subworld-member-object entry))
-                                     (and (<= left x (+ left width)) (<= top y (+ top height))))))
-                            (%meta-visible-members destination))))
-                    (when (and other (not (subworld-member-floating-p member)))
-                      (let ((members (remove member (subworld-members destination))))
-                        (setf (subworld-members destination)
-                              (loop for entry in members
-                                    when (eq entry other) collect member
-                                    collect entry)))
-                      (when (eq :niri (subworld-kind destination))
-                        (setf (subworld-member-column member)
-                              (if (member :control (gethash (%canvas-seat-seat state) (%meta-modifiers world)))
-                                  (subworld-member-column other)
-                                  (incf (subworld-next-column destination))))))
-                  (%meta-layout world destination)))
-                (move-object-to-subworld world object destination)))))
+          (let* ((destination (if (%meta-standalone world) (first (metaworld-subworlds world))
+                                  (%meta-group-at world x y)))
+                 (other
+                   (and destination
+                        (find-if
+                         (lambda (entry)
+                           (and (not (eq object (subworld-member-object entry)))
+                                (destructuring-bind (left top width height)
+                                    (%meta-object-geometry (subworld-member-object entry))
+                                  (and (<= left x (+ left width)) (<= top y (+ top height))))))
+                         (%meta-visible-members destination)))))
+            (unless (eq previous destination)
+              (move-object-to-subworld world object destination))
+            (when destination
+              (let ((member (%meta-member destination object)))
+                (when (and other (not (subworld-member-floating-p member)))
+                  (let ((members (remove member (subworld-members destination))))
+                    (setf (subworld-members destination)
+                          (loop for entry in members
+                                when (eq entry other) collect member
+                                collect entry)))
+                  (when (eq :niri (subworld-kind destination))
+                    (setf (subworld-member-column member)
+                          (if (member :control (gethash (%canvas-seat-seat state) (%meta-modifiers world)))
+                              (subworld-member-column other)
+                              (incf (subworld-next-column destination)))))))
+              (%meta-layout world destination)))))
     (%meta-changed world)))
 
 (defun %meta-header-group (world state target)
@@ -562,6 +563,7 @@
        (setf (gethash code (%canvas-seat-buttons seat-state)) :world))
       ((and pressed-p logo-p (member code '(272 273)) (typep target 'canvas-window))
        (ataxia.world:cancel-animation (%world-animator world) target :metaworld-layout)
+       (ataxia.world:cancel-animation (%world-animator world) state :metaworld-camera)
        (%begin-window-operation world seat-state target (if (= code 273) :resize :move)
                                 :edges (logior +resize-right+ +resize-bottom+))
        (setf (%canvas-operation-button (%canvas-seat-operation seat-state)) code
@@ -636,6 +638,13 @@
     ((world metaworld) (application ataxia.kernel:wayland-application) request)
   (let* ((window (find-canvas-window world application))
          (group (and window (object-subworld world window))))
+    (when (and window (typep request '(or ataxia.kernel:move-client-request
+                                         ataxia.kernel:resize-client-request)))
+      (ataxia.world:cancel-animation (%world-animator world) window :metaworld-layout)
+      (let ((seat-state (%meta-seat world (ataxia.kernel:client-request-seat request))))
+        (when seat-state
+          (ataxia.world:cancel-animation (%world-animator world)
+                                        (%canvas-seat-output seat-state) :metaworld-camera))))
     (cond
       ((and group (typep request 'ataxia.kernel:fullscreen-client-request))
        (%meta-toggle-fullscreen world window (ataxia.kernel:state-client-request-value request)))

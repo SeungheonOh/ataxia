@@ -1,19 +1,19 @@
 import { MetaButton } from "controls.slint";
 
 export component MetaworldToolbar inherits Window {
-    background: #eee9dc;
+    background: transparent;
     in property <string> caption: "METAWORLD";
     in property <bool> active: false;
     in property <bool> standalone: false;
     in property <int> workspace: 1;
     callback action(string);
-    Rectangle { border-width: 1px; border-color: #9b978b; background: #eee9dc; }
+    Rectangle { border-width: 1px; border-color: #c7c7c7; border-radius: 8px; background: #fffffff4; }
     HorizontalLayout {
         padding: 8px;
         spacing: 6px;
         Text {
             text: root.caption;
-            color: #171717;
+            color: #161616;
             font-family: "DejaVu Sans Mono";
             font-size: 12px;
             font-weight: 700;
@@ -24,7 +24,7 @@ export component MetaworldToolbar inherits Window {
         MetaButton { width: 68px; label: root.active ? "Layout" : "+ World"; activate => { root.action("controls"); } }
         MetaButton { width: 68px; label: root.standalone ? "Canvas" : root.active ? "Exit" : "Overview"; activate => { root.action(root.standalone ? "mode-canvas" : "overview"); } }
         if root.active : MetaButton { width: 32px; label: "<"; activate => { root.action("previous-workspace"); } }
-        if root.active : Text { width: 20px; text: root.workspace; color: #171717; horizontal-alignment: center; vertical-alignment: center; }
+        if root.active : Text { width: 20px; text: root.workspace; color: #505050; horizontal-alignment: center; vertical-alignment: center; }
         if root.active : MetaButton { width: 32px; label: ">"; activate => { root.action("next-workspace"); } }
         MetaButton { width: 68px; label: "Terminal"; activate => { root.action("terminal"); } }
     }

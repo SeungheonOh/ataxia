@@ -1,12 +1,13 @@
 import { MetaButton } from "controls.slint";
 
 export component ObjectControls inherits Window {
-    background: #eee9dc;
+    background: transparent;
     in property <bool> owned: false;
     in property <bool> detachable: false;
     in property <bool> niri: false;
     in property <bool> floating: false;
     callback action(string);
+    Rectangle { border-width: 1px; border-color: #c7c7c7; border-radius: 7px; background: #ffffff; }
     HorizontalLayout {
         padding: 3px; spacing: 3px;
         MetaButton { label: "Detach"; visible: root.detachable; activate => { root.action("pull-out"); } }

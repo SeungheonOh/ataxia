@@ -9,8 +9,8 @@ export component SubworldHeader inherits Window {
             x: 4px;
             width: parent.width - 108px;
             text: root.caption;
-            color: #16140f;
-            font-size: 15px;
+            color: root.active ? #161616 : #505050;
+            font-size: 14px;
             font-family: "monospace";
             font-weight: root.active ? 700 : 500;
             vertical-alignment: center;
@@ -20,7 +20,7 @@ export component SubworldHeader inherits Window {
             x: parent.width - 104px;
             width: 52px;
             text: touch.has-hover ? (root.active ? "Leave" : "Enter") : "";
-            color: #16140f;
+            color: #161616;
             font-size: 11px;
             font-family: "DejaVu Sans Mono";
             horizontal-alignment: right;
@@ -30,7 +30,7 @@ export component SubworldHeader inherits Window {
             x: parent.width - 40px;
             width: 32px;
             text: touch.has-hover ? "···" : "";
-            color: #16140f;
+            color: #161616;
             font-size: 19px;
             horizontal-alignment: center;
             vertical-alignment: center;

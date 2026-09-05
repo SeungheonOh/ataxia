@@ -8,6 +8,7 @@
     :serial t
     :components
     ((:file "model")
+     (:file "renderer")
      (:file "layout")
      (:file "persistence")
      (:file "ui")

@@ -1,16 +1,16 @@
 export component MetaworldNote inherits Window {
-    background: #f4f4e9;
+    background: transparent;
     in-out property <string> content: "";
     callback edited(string);
-    Rectangle { border-width: 1px; border-color: #171717; background: #f4f4e9; }
-    Text { x: 12px; y: 8px; text: "NOTE"; font-family: "DejaVu Sans Mono"; font-size: 11px; color: #494944; }
+    Rectangle { border-width: 1px; border-color: #c7c7c7; border-radius: 7px; background: #ffffff; }
+    Text { x: 12px; y: 8px; text: "NOTE"; font-family: "monospace"; font-size: 10px; color: #595959; }
     TextInput {
         x: 12px; y: 30px; width: parent.width - 24px; height: parent.height - 42px;
         text <=> root.content;
-        color: #171717;
+        color: #161616;
         font-size: 15px;
         wrap: word-wrap;
-        selection-background-color: #a8a8a3;
+        selection-background-color: #bfbfbf;
         edited => { root.edited(self.text); }
     }
 }

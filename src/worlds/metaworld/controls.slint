@@ -6,8 +6,9 @@ export component MetaButton inherits Rectangle {
     min-width: 32px;
     preferred-height: 32px;
     border-width: focus.has-focus ? 1px : 0px;
-    border-color: #16140f;
-    background: root.selected || touch.pressed ? #16140f : touch.has-hover ? #d8d4c9 : transparent;
+    border-color: #595959;
+    border-radius: 5px;
+    background: root.selected || touch.pressed ? #dedede : touch.has-hover ? #eeeeee : transparent;
     animate background { duration: 100ms; }
     opacity: root.enabled ? 1 : 0.4;
     accessible-role: button;
@@ -15,7 +16,7 @@ export component MetaButton inherits Rectangle {
     forward-focus: focus;
     Text {
         text: root.label;
-        color: root.selected || touch.pressed ? #eee9dc : #16140f;
+        color: root.enabled ? #161616 : #767676;
         font-family: "monospace";
         font-size: 12px;
         horizontal-alignment: center;

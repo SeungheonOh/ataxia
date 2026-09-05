@@ -33,7 +33,8 @@ $(GLUE): $(SOURCE) $(HEADER)
 $(SLINT_LIBRARY): $(SLINT_MANIFEST) $(SLINT_LOCK) $(SLINT_SOURCE)
 	@mkdir -p $(BUILD_DIR)
 	CARGO_TARGET_DIR='$(SLINT_TARGET_DIR)' cargo build --locked --release --manifest-path $(SLINT_MANIFEST)
-	cp '$(SLINT_TARGET_DIR)/release/libataxia_slint_native.so' $@
+	cp '$(SLINT_TARGET_DIR)/release/libataxia_slint_native.so' $@.pending
+	mv $@.pending $@
 
 clean:
 	rm -rf $(BUILD_DIR)

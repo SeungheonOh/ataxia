@@ -379,15 +379,11 @@ fn special_key(name: &str) -> Option<Key> {
 
 fn key_text(component: &mut NativeComponent, keycode: u32) -> SharedString {
     let code = xkb::Keycode::new(keycode + 8);
-    let text = component.xkb_state.key_get_utf8(code);
-    if !text.is_empty() {
-        return text.into();
-    }
     let symbol = component.xkb_state.key_get_one_sym(code);
     let name = xkb::keysym_get_name(symbol);
     special_key(&name)
         .map(SharedString::from)
-        .unwrap_or_default()
+        .unwrap_or_else(|| component.xkb_state.key_get_utf8(code).into())
 }
 
 fn pointer_button(value: u32) -> PointerEventButton {

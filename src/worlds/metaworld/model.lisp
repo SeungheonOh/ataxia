@@ -1,6 +1,7 @@
 (in-package #:ataxia.infinite-world)
 
 (defvar *meta-layout-motion* nil)
+(defvar *meta-action-seat* nil)
 
 (defstruct (subworld (:constructor %make-subworld))
   id name (kind :niri) (layout :dwindle)
@@ -82,8 +83,9 @@
         (setf (gethash state (%meta-views world)) (%make-meta-view)))))
 
 (defun %meta-seat (world &optional seat)
-  (or (and seat (gethash seat (%world-seats world)))
-      (first (%seat-states world))))
+  (let ((seat (or seat *meta-action-seat*)))
+    (if seat (gethash seat (%world-seats world))
+        (first (%seat-states world)))))
 
 (defun %meta-current (world &optional seat)
   (let* ((seat-state (%meta-seat world seat))

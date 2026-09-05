@@ -10,11 +10,11 @@ export component ObjectControls inherits Window {
     Rectangle { border-width: 1px; border-color: #c7c7c7; border-radius: 7px; background: #ffffff; }
     HorizontalLayout {
         padding: 3px; spacing: 3px;
-        MetaButton { label: "Detach"; visible: root.detachable; activate => { root.action("pull-out"); } }
-        MetaButton { label: root.floating ? "Tile" : "Float"; visible: root.owned; activate => { root.action("floating"); } }
-        MetaButton { label: "Full"; visible: root.owned; activate => { root.action("fullscreen"); } }
-        MetaButton { label: "Stack"; visible: root.niri; activate => { root.action("consume"); } }
-        MetaButton { label: "Split"; visible: root.niri; activate => { root.action("expel"); } }
+        if root.detachable : MetaButton { label: "Detach"; activate => { root.action("pull-out"); } }
+        if root.owned : MetaButton { label: root.floating ? "Tile" : "Float"; activate => { root.action("floating"); } }
+        if root.owned : MetaButton { label: "Full"; activate => { root.action("fullscreen"); } }
+        if root.niri : MetaButton { label: "Stack"; activate => { root.action("consume"); } }
+        if root.niri : MetaButton { label: "Split"; activate => { root.action("expel"); } }
         MetaButton { width: 28px; label: "×"; activate => { root.action("close"); } }
     }
 }

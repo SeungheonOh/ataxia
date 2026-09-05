@@ -60,6 +60,7 @@ Super is the Logo/Windows key (Command when captured by UTM).
 | Shortcut | Action |
 | --- | --- |
 | Super + E | Enter the group under the pointer, or the focused object's group |
+| Super + Page Up / Page Down | Enter the previous / next group |
 | Super + M / Escape | Leave; in the canvas, fit all objects; standalone: overview |
 | Super + comma | Open or dismiss contextual controls |
 | Escape | Dismiss an open context menu |

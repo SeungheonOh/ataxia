@@ -85,10 +85,15 @@
       (%meta-layout world group)
       (%meta-focus world object))))
 
+(defun %meta-navigation-objects (world group)
+  (if group
+      (mapcar #'subworld-member-object (%meta-visible-members group :include-floating t))
+      (append (remove-if-not #'%window-visible-p (%world-stacking world))
+              (loop for widget being the hash-keys of (%meta-spatial-widgets world)
+                    when (%target-visible-p widget) collect widget))))
+
 (defun %meta-neighbor (world object direction group)
-  (let* ((objects (if group
-                      (mapcar #'subworld-member-object (%meta-visible-members group :include-floating t))
-                      (remove-if-not #'%window-visible-p (%world-stacking world))))
+  (let* ((objects (%meta-navigation-objects world group))
          (geometry (and object (%meta-object-geometry object))))
     (if (null geometry)
         (first objects)
@@ -217,6 +222,14 @@
       ((string= action "overview")
        (%meta-dismiss-menu world)
        (if (%meta-current world seat) (leave-subworld world seat) (%meta-overview world seat)))
+      ((string= action "switch-group")
+       (let* ((groups (metaworld-subworlds world))
+              (position (position (%meta-current world seat) groups)))
+         (when groups
+           (%meta-dismiss-menu world)
+           (enter-subworld world
+                           (nth (mod (+ (or position (if (plusp argument) -1 0)) argument)
+                                     (length groups)) groups) seat))))
       ((string= action "enter")
        (let* ((seat-state (%meta-seat world seat))
               (state (and seat-state (%canvas-seat-output seat-state)))
@@ -268,9 +281,9 @@
          (%meta-overview world seat)
          (%meta-focus world object seat)))
       ((string= action "cycle")
-       (let* ((objects (if group
-                           (mapcar #'subworld-member-object (%meta-visible-members group :include-floating t))
-                           (remove-if-not #'%window-visible-p (%world-stacking world))))
+       (when (and group (subworld-fullscreen group))
+         (%meta-toggle-fullscreen world (subworld-fullscreen group) nil))
+       (let* ((objects (%meta-navigation-objects world group))
               (position (position object objects)))
          (when objects
            (%meta-focus world (nth (mod (1+ (or position -1)) (length objects)) objects) seat))))))
@@ -343,6 +356,8 @@
         (destructuring-bind (id key action) binding
           (bind-command id (list :keysym key) '(:logo) action)))
       (bind-command :meta-pull-out '(:keysym "E") '(:logo :shift) "pull-out")
+      (bind-command :meta-next-group '(:keysym "Next") '(:logo) "switch-group" 1)
+      (bind-command :meta-previous-group '(:keysym "Prior") '(:logo) "switch-group" -1)
       (dolist (direction '(:left :right :up :down))
         (bind-command (list :focus direction) (list :keysym direction) '(:logo) "focus" direction)
         (bind-command (list :move direction) (list :keysym direction) '(:logo :shift) "move" direction)

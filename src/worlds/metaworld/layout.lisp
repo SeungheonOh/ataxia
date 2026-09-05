@@ -317,6 +317,11 @@
     (dolist (member (subworld-members group))
       (let ((object (subworld-member-object member)))
         (ataxia.world:cancel-animation (%world-animator world) object :metaworld-layout)
+        (let ((saved (subworld-member-restore-geometry member)))
+          (when saved
+            (setf (subworld-member-restore-geometry member)
+                  (list (+ (first saved) shift-x) (+ (second saved) shift-y)
+                        (third saved) (fourth saved)))))
         (destructuring-bind (left top width height) (%meta-object-geometry object)
           (%meta-place world object (+ left shift-x) (+ top shift-y) width height)))))
   (%meta-changed world)

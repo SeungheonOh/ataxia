@@ -67,7 +67,7 @@ Super is the Logo/Windows key (Command when captured by UTM).
 | Escape | Dismiss an open context menu |
 | Super + Return | Create a terminal in the current group or the parent canvas |
 | Super + arrows | Focus a neighboring object |
-| Super + Shift + arrows | Reorder the focused tile or Niri column |
+| Super + Shift + arrows | Reorder a tile or Niri column; move a floating window |
 | Super + Control + arrows | Resize a tile, stack weight, floating window, or split ratio |
 | Super + Tab | Cycle through the current group's objects |
 | Super + [ / ] | Stack into an adjacent Niri column / split out |

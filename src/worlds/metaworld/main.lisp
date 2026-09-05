@@ -64,7 +64,7 @@
    #:subworld-x #:subworld-y #:subworld-width #:subworld-height
    #:subworld-workspace #:subworld-members
    #:enter-subworld #:leave-subworld #:move-object-to-subworld
-   #:remove-subworld #:save-metaworld #:run-metaworld-compositor #:metaworld-main)
+   #:move-subworld #:remove-subworld #:save-metaworld #:run-metaworld-compositor #:metaworld-main)
   (:export
    #:metaworld #:niri-world #:hyprland-world
    #:make-metaworld #:make-niri-world #:make-hyprland-world
@@ -73,4 +73,4 @@
    #:subworld-x #:subworld-y #:subworld-width #:subworld-height
    #:subworld-workspace #:subworld-members
    #:enter-subworld #:leave-subworld #:move-object-to-subworld
-   #:remove-subworld #:save-metaworld #:run-metaworld-compositor #:metaworld-main))
+   #:move-subworld #:remove-subworld #:save-metaworld #:run-metaworld-compositor #:metaworld-main))

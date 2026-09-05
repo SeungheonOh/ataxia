@@ -127,7 +127,7 @@
             (%world-to-canvas state (subworld-x group) (subworld-y group))
           (multiple-value-bind (x y) (%canvas-to-screen state canvas-x canvas-y)
             (%meta-reposition-ui world header x (- y 32d0)
-                                 (min 440d0 (max 210d0 (* (%canvas-output-zoom state)
+                                 (min 440d0 (max 100d0 (* (%canvas-output-zoom state)
                                                          (%meta-footprint-width group))))
                                  30d0)))
         (%meta-property header "caption"
@@ -250,14 +250,16 @@
          (object (and seat-state
                       (first (%windows-at-screen-point world state pointer-x pointer-y))))
          (panel (%meta-view-window-controls view)))
-    (when (and object (not (%canvas-seat-operation seat-state)) (not (%meta-group-drag world)))
+    (when (and object (> (%now) (%meta-view-hover-after view))
+               (not (%canvas-seat-operation seat-state)) (not (%meta-group-drag world)))
       (multiple-value-bind (x y width height) (%window-canvas-geometry state object)
         (declare (ignore height))
         (multiple-value-bind (canvas-x canvas-y) (%screen-to-canvas state pointer-x pointer-y)
           (when (and (<= x canvas-x (+ x width)) (<= y canvas-y (+ y 24d0)))
             (setf (%meta-view-window-target view) object
                   (%meta-view-window-controls-until view) (+ (%now) 1.1d0))))))
-    (when (and panel seat-state (canvas-overlay-visible-p panel)
+    (when (and panel seat-state (> (%now) (%meta-view-hover-after view))
+               (canvas-overlay-visible-p panel)
                (<= (canvas-overlay-x panel) pointer-x (+ (canvas-overlay-x panel) (canvas-overlay-width panel)))
                (<= (canvas-overlay-y panel) pointer-y (+ (canvas-overlay-y panel) (canvas-overlay-height panel))))
       (setf (%meta-view-window-controls-until view) (+ (%now) 1.1d0)))
@@ -295,6 +297,7 @@
     (when panel
       (if (and (> (%meta-view-window-controls-until view) (%now))
                (%target-visible-p (%meta-view-window-target view))
+               (not (and seat-state (%canvas-seat-operation seat-state)))
                (not (%meta-group-drag world)))
           (show-overlay world panel) (hide-overlay world panel)))))
 

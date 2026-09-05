@@ -584,6 +584,7 @@
       ((and pressed-p group
             (or (= code 273)
                 (and (= code +button-left+)
+                     (>= (canvas-overlay-width target) 220d0)
                      (> (%canvas-seat-x seat-state)
                         (- (+ (canvas-overlay-x target) (canvas-overlay-width target)) 42d0)))))
        (%meta-open-menu world seat group)
@@ -637,7 +638,11 @@
          (modifiers (gethash seat (%meta-modifiers world)))
          (group (%meta-current world seat))
          (delta (ataxia.kernel:cursor-axis-input-delta input)))
-    (when state (ataxia.world:cancel-animation (%world-animator world) state :metaworld-camera))
+    (when state
+      (ataxia.world:cancel-animation (%world-animator world) state :metaworld-camera)
+      (let ((view (%meta-view-for-state world state)))
+        (setf (%meta-view-hover-after view) (+ (%now) 0.15d0)
+              (%meta-view-window-controls-until view) 0d0)))
     (cond
       ((and state (member :logo modifiers))
        (zoom-output-camera world (%canvas-output-output state) (exp (* -0.0025d0 delta))

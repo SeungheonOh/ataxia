@@ -21,7 +21,7 @@
   active parent-camera (panel-until 0d0) panel
   (headers (make-hash-table :test #'eq))
   window-controls window-target (window-controls-until 0d0)
-  (last-camera nil) (last-focus nil))
+  (last-camera nil) (last-focus nil) (hover-after 0d0))
 
 (defclass metaworld (infinite-world)
   ((subworlds :initform nil :accessor metaworld-subworlds)
@@ -150,6 +150,9 @@
 (defun %meta-transition-camera (world state origin)
   (let ((destination (%meta-camera state)))
     (unless (equal origin destination)
+      (let ((view (%meta-view-for-state world state)))
+        (setf (%meta-view-hover-after view) (+ (%now) 0.36d0)
+              (%meta-view-window-controls-until view) 0d0))
       (%meta-set-camera world state origin)
       (ataxia.world:start-animation
        (%world-animator world) state :metaworld-camera (%now) 0.24d0

@@ -2,12 +2,13 @@ export component SubworldHeader inherits Window {
     background: transparent;
     in property <string> caption;
     in property <bool> active: false;
+    private property <bool> compact: root.width < 220px;
     callback enter();
     Rectangle {
         background: transparent;
         Text {
             x: 4px;
-            width: parent.width - 108px;
+            width: parent.width - (root.compact ? 8px : 108px);
             text: root.caption;
             color: root.active ? #161616 : #505050;
             font-size: 14px;
@@ -19,7 +20,7 @@ export component SubworldHeader inherits Window {
         Text {
             x: parent.width - 104px;
             width: 52px;
-            text: touch.has-hover ? (root.active ? "Leave" : "Enter") : "";
+            text: !root.compact && touch.has-hover ? (root.active ? "Leave" : "Enter") : "";
             color: #161616;
             font-size: 11px;
             font-family: "DejaVu Sans Mono";
@@ -29,7 +30,7 @@ export component SubworldHeader inherits Window {
         Text {
             x: parent.width - 40px;
             width: 32px;
-            text: touch.has-hover ? "···" : "";
+            text: !root.compact && touch.has-hover ? "···" : "";
             color: #161616;
             font-size: 19px;
             horizontal-alignment: center;

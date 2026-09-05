@@ -407,8 +407,14 @@ void main() {
            '(0.96d0 0.98d0 1d0 1d0) (cons x y))))
     tokens))
 
+(defgeneric %draw-world-background (world renderer output-state))
+
+(defmethod %draw-world-background (world renderer output-state)
+  (declare (ignore world renderer output-state)))
+
 (defun %render-canvas
-    (renderer output-state windows overlays seats damage-region damage-debug-p)
+    (renderer output-state windows overlays seats damage-region damage-debug-p
+     &optional world)
   (let ((tokens nil))
     (ataxia.world.gles:gles-reset-state)
     (when damage-debug-p
@@ -423,6 +429,7 @@ void main() {
         (ataxia.world.gles:gles-set-scissor x y width damage-height)
         (ataxia.world.gles:gles-clear 0.03d0 0.036d0 0.05d0 1d0)
         (%draw-grid renderer output-state)
+        (%draw-world-background world renderer output-state)
         (dolist (window windows)
           (when (and (%window-visible-p window)
                      (ataxia.world:region-intersects-p

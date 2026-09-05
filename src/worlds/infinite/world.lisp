@@ -1521,7 +1521,7 @@
                    (%world-renderer world) state
                    (%world-stacking world) (world-overlays world)
                    (%seat-states world) region
-                   (%world-damage-debug-p world))
+                   (%world-damage-debug-p world) world)
                   #())))
         (make-instance
          'ataxia.kernel:world-frame-result

@@ -1,5 +1,15 @@
 (in-package #:ataxia.infinite-world)
 
+(defvar *meta-kernel-sessions* (make-hash-table :test #'eq :weakness :key))
+
+(defun %meta-window-identity (world window)
+  (let* ((kernel (ataxia.kernel:world-kernel world))
+         (session (or (gethash kernel *meta-kernel-sessions*)
+                      (setf (gethash kernel *meta-kernel-sessions*)
+                            (format nil "~D-~36R" (get-universal-time)
+                                    (random (expt 2 64) (make-random-state t)))))))
+    (list session (ataxia.kernel:object-id (canvas-window-application window)))))
+
 (defun %meta-window-key (window)
   (let ((application (canvas-window-application window)))
     (list (or (ataxia.kernel:application-app-id application) "")
@@ -33,6 +43,7 @@
           for group = (object-subworld world window)
           for member = (and group (%meta-member group window))
           collect (list :key (%meta-window-key window)
+                        :identity (%meta-window-identity world window)
                         :geometry (%meta-object-geometry window)
                         :owner (and group (subworld-id group))
                         :order (and member (position member (subworld-members group)))
@@ -144,9 +155,11 @@
 
 (defun %meta-restore-window (world window)
   (let* ((key (%meta-window-key window))
+         (identity (%meta-window-identity world window))
          (records (%meta-saved-windows world))
          (record
-           (or (find key records :key (lambda (entry) (getf entry :key)) :test #'equal)
+           (or (find identity records :key (lambda (entry) (getf entry :identity)) :test #'equal)
+               (find key records :key (lambda (entry) (getf entry :key)) :test #'equal)
                (find (first key) records
                      :key (lambda (entry) (first (getf entry :key))) :test #'equal))))
     (when record
@@ -189,7 +202,7 @@
       (labels ((valid-camera-p (camera)
                  (and (listp camera) (= 4 (length camera))
                       (every #'%meta-valid-number-p camera)
-                      (%meta-valid-number-p (third camera) 0.05d0 6d0))))
+                      (%meta-valid-number-p (third camera) 0.08d0 8d0))))
         (when (valid-camera-p (getf record :camera))
           (%meta-set-camera world state (getf record :camera)))
         (when (valid-camera-p (getf record :parent))

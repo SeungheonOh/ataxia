@@ -91,8 +91,9 @@ atomic replacement. Unreadable state is preserved rather than overwritten.
 
 Saved state includes group placement and policy, workspaces, column order and
 widths, stack weights, floating geometry, output cameras, and note contents.
-Applications are matched by application ID and title, with application-ID
-fallback. Saving a layout does not relaunch external applications after the
+Live World switches match the Kernel's stable application identity within the
+current compositor session. After a compositor restart, applications are matched
+by application ID and title, with application-ID fallback. Saving a layout does not relaunch external applications after the
 compositor exits. Identical application IDs and titles cannot uniquely identify
 multiple restarted clients. Arbitrary agent-created Slint programs are not
 serialized; built-in notes are.

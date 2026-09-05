@@ -31,6 +31,7 @@
    (modifiers :initform (make-hash-table :test #'eq) :reader %meta-modifiers)
    (standalone :initarg :standalone :initform nil :accessor %meta-standalone)
    (state-file :initarg :state-file :initform nil :reader %meta-state-file)
+   (state-paths :initform (make-hash-table) :accessor %meta-state-paths)
    (saved-windows :initform nil :accessor %meta-saved-windows)
    (saved-cameras :initform nil :accessor %meta-saved-cameras)
    (saved-notes :initform nil :accessor %meta-saved-notes)

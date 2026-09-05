@@ -195,6 +195,7 @@
 
 (defun %meta-switch-mode (world mode &optional layout)
   (save-metaworld world)
+  (setf (gethash (%meta-standalone world) (%meta-state-paths world)) (%meta-state-file world))
   (let* ((kernel (ataxia.kernel:world-kernel world))
          (generation (ataxia.kernel:kernel-world-generation kernel)))
     (ataxia.runtime:add-event-loop-idle
@@ -204,7 +205,10 @@
        (when (= generation (ataxia.kernel:kernel-world-generation kernel))
          (let ((replacement (make-metaworld
                              :standalone mode
-                             :state-file (and (%meta-state-file world) (%meta-state-path mode)))))
+                             :state-file (and (%meta-state-file world)
+                                              (gethash mode (%meta-state-paths world)
+                                                       (%meta-state-path mode))))))
+           (setf (%meta-state-paths replacement) (%meta-state-paths world))
            (when (and layout (first (metaworld-subworlds replacement)))
              (setf (subworld-layout (first (metaworld-subworlds replacement))) layout))
            (ataxia.kernel:install-world kernel replacement)))

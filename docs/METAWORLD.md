@@ -23,7 +23,8 @@ replaces the World while retaining live Wayland clients. All live clients become
 available to the standalone layout; this is not a second compositor process.
 The Canvas action returns to the saved metaworld arrangement.
 
-`--state-file PATH` selects a layout file. `--no-persist` disables persistence,
+`--state-file PATH` selects a layout file, retained when returning from another
+mode. `--no-persist` disables persistence,
 including subsequent mode switches. The existing backend, debug, and SLY options
 are also supported; use `--help` to list them. Terminal creation requires `foot`.
 

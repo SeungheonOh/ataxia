@@ -38,7 +38,6 @@
    (agent-events :initform (ataxia.world:make-agent-event-stream)
                  :reader ataxia.world:world-agent-event-stream)
    (component-timer :initform nil :accessor %world-component-timer)
-   (imu-controller :initform nil :accessor %world-imu-controller)
    (animator :initform (ataxia.world:make-animator) :reader %world-animator)
    (damage :initform (ataxia.world:make-damage-tracker) :reader %world-damage)
    (damage-debug-p :initarg :damage-debug-p :initform nil

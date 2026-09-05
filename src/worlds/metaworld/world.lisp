@@ -184,7 +184,7 @@
         (show-notification world (format nil "Could not launch Foot: ~A" cause)
                            :title "TERMINAL")))))
 
-(defun %meta-switch-mode (world mode)
+(defun %meta-switch-mode (world mode &optional layout)
   (save-metaworld world)
   (let* ((kernel (ataxia.kernel:world-kernel world))
          (generation (ataxia.kernel:kernel-world-generation kernel)))
@@ -193,7 +193,12 @@
      (lambda (source)
        (declare (ignore source))
        (when (= generation (ataxia.kernel:kernel-world-generation kernel))
-         (ataxia.kernel:install-world kernel (make-metaworld :standalone mode)))
+         (let ((replacement (make-metaworld
+                             :standalone mode
+                             :state-file (and (%meta-state-file world) (%meta-state-path mode)))))
+           (when (and layout (first (metaworld-subworlds replacement)))
+             (setf (subworld-layout (first (metaworld-subworlds replacement))) layout))
+           (ataxia.kernel:install-world kernel replacement)))
        0))))
 
 (defun %meta-command (world seat action &optional argument)
@@ -282,7 +287,7 @@
        (when group
          (let ((kind (if (string= action "policy-niri") :niri :hyprland)))
            (if (and (%meta-standalone world) (not (eq kind (%meta-standalone world))))
-               (%meta-switch-mode world kind)
+               (%meta-switch-mode world kind (if (string= action "policy-master") :master :dwindle))
                (progn
                  (setf (subworld-kind group) kind
                        (subworld-layout group) (if (string= action "policy-master") :master :dwindle))
@@ -305,7 +310,7 @@
                                            (when (and anchor (not group))
                                              (append anchor (list 430d0 320d0)))) seat)))
       ((string= action "standalone")
-       (when group (%meta-switch-mode world (subworld-kind group))))
+       (when group (%meta-switch-mode world (subworld-kind group) (subworld-layout group))))
       ((string= action "mode-canvas") (%meta-switch-mode world nil))
       ((string= action "mode-niri") (%meta-switch-mode world :niri))
       ((string= action "mode-hyprland") (%meta-switch-mode world :hyprland))))
@@ -643,7 +648,8 @@
     (let ((pending (and (string= "foot" (first (%meta-window-key window)))
                         (pop (%meta-pending-launches world)))))
       (if pending
-          (when (cdr pending) (move-object-to-subworld world window (cdr pending)))
+          (when (member (cdr pending) (metaworld-subworlds world))
+            (move-object-to-subworld world window (cdr pending)))
           (unless (%meta-restore-window world window)
         (let ((group (or (%meta-current world)
                          (and (%meta-standalone world) (first (metaworld-subworlds world))))))
@@ -747,9 +753,15 @@
               (setf (subworld-member-order member) (getf record :order)))
             (when (%meta-valid-number-p (getf data :width) 96 100000)
               (setf (subworld-member-width member) (getf data :width)))
+            (when (%meta-valid-number-p (getf data :weight) 0.1d0 100d0)
+              (setf (subworld-member-weight member) (getf data :weight)))
+            (when (%meta-valid-geometry-p (getf data :restore))
+              (setf (subworld-member-restore-geometry member) (getf data :restore)))
             (setf (subworld-member-floating-p member) (not (null (getf data :floating))))
             (when (subworld-member-floating-p member)
               (apply #'%meta-place world widget (getf record :geometry)))
+            (setf (subworld-members group)
+                  (stable-sort (subworld-members group) #'< :key #'subworld-member-order))
             (%meta-layout world group)))))
     (setf (%meta-saved-notes world) nil)))
 

@@ -80,7 +80,7 @@ void main() {
   solid-program grid-program texture-program external-program
   (vertex-buffer 0 :type (unsigned-byte 32)))
 
-(defun %create-canvas-renderer ()
+(defun %create-canvas-renderer (&optional (grid-shader +grid-fragment-shader+))
   (let ((renderer (%make-canvas-renderer)))
     (handler-case
         (progn
@@ -90,7 +90,7 @@ void main() {
                  :attributes '(("a_position" . 0) ("a_uv" . 1)))
                 (%canvas-renderer-grid-program renderer)
                 (ataxia.world.gles:make-gles-program
-                 +canvas-vertex-shader+ +grid-fragment-shader+
+                 +canvas-vertex-shader+ grid-shader
                  :attributes '(("a_position" . 0) ("a_uv" . 1)))
                 (%canvas-renderer-texture-program renderer)
                 (ataxia.world.gles:make-gles-program

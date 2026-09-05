@@ -1461,10 +1461,15 @@
              (ataxia.kernel:state-client-request-value request))))))))
   request)
 
+(defgeneric %world-grid-shader (world))
+
+(defmethod %world-grid-shader ((world infinite-world))
+  +grid-fragment-shader+)
+
 (defmethod ataxia.kernel:world-graphics-attached
     ((world infinite-world) graphics-context)
   (declare (ignore graphics-context))
-  (setf (%world-renderer world) (%create-canvas-renderer))
+  (setf (%world-renderer world) (%create-canvas-renderer (%world-grid-shader world)))
   (dolist (overlay (world-overlays world))
     (ataxia.kernel:drawable-attach-graphics
      (canvas-overlay-component overlay)))

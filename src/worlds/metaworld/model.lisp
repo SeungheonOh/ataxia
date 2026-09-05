@@ -26,6 +26,7 @@
   ((subworlds :initform nil :accessor metaworld-subworlds)
    (next-subworld-id :initform 0 :accessor %meta-next-id)
    (owners :initform (make-hash-table :test #'eq) :reader %meta-owners)
+   (group-focus :initform (make-hash-table :test #'eq) :reader %meta-group-focus)
    (views :initform (make-hash-table :test #'eq) :reader %meta-views)
    (modifiers :initform (make-hash-table :test #'eq) :reader %meta-modifiers)
    (standalone :initarg :standalone :initform nil :accessor %meta-standalone)
@@ -188,3 +189,14 @@
           (append (metaworld-subworlds world) (list group)))
     (%meta-changed world)
     group))
+
+(defun %meta-vacant-position (world x y)
+  (loop for overlap = (find-if
+                       (lambda (group)
+                         (and (< x (+ (subworld-x group) (%meta-footprint-width group) 96d0))
+                              (> (+ x 1496d0) (subworld-x group))
+                              (< y (+ (subworld-y group) (subworld-height group) 96d0))
+                              (> (+ y 896d0) (subworld-y group))))
+                       (metaworld-subworlds world))
+        while overlap do (setf x (+ (subworld-x overlap) (%meta-footprint-width overlap) 96d0))
+        finally (return (list x y))))

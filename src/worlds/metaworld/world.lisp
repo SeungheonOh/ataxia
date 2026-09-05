@@ -255,6 +255,7 @@
              (%meta-place world object (+ (subworld-x group) (%meta-footprint-width group) 90d0)
                           y width height)))
          (leave-subworld world seat)
+         (%meta-overview world seat)
          (%meta-focus world object seat)))
       ((string= action "cycle")
        (let* ((objects (if group
@@ -271,7 +272,7 @@
       ((string= action "dismiss") (%meta-dismiss-menu world))
       ((member action '("new-niri" "new-hyprland") :test #'string=)
        (unless (%meta-standalone world)
-         (let* ((anchor (%meta-menu-anchor world))
+         (let* ((anchor (apply #'%meta-vacant-position world (%meta-menu-anchor world)))
                 (created (create-subworld world (if (string= action "new-niri") :niri :hyprland)
                                           :x (first anchor) :y (second anchor))))
            (%meta-dismiss-menu world)
@@ -422,6 +423,10 @@
             using (hash-value header) when (eq header target) return group))))
 
 (defun %meta-begin-drag (world seat-state subject &optional resize-p)
+  (ataxia.world:cancel-animation (%world-animator world) (%canvas-seat-output seat-state) :metaworld-camera)
+  (when (typep subject 'subworld)
+    (dolist (member (subworld-members subject))
+      (ataxia.world:cancel-animation (%world-animator world) (subworld-member-object member) :metaworld-layout)))
   (multiple-value-bind (x y)
       (%screen-to-world (%canvas-seat-output seat-state)
                         (%canvas-seat-x seat-state) (%canvas-seat-y seat-state))
@@ -441,7 +446,8 @@
                           (%canvas-seat-x seat-state) (%canvas-seat-y seat-state))
       (let ((delta-x (- x (getf drag :pointer-x)))
             (delta-y (- y (getf drag :pointer-y))))
-        (when (> (+ (abs delta-x) (abs delta-y)) 6d0)
+        (when (> (* (%canvas-output-zoom (%canvas-seat-output seat-state))
+                    (+ (abs delta-x) (abs delta-y))) 6d0)
           (setf (getf (%meta-group-drag world) :moved) t))
         (when (getf (%meta-group-drag world) :moved)
           (destructuring-bind (left top width height) (getf drag :geometry)
@@ -544,7 +550,10 @@
              (gethash code (%canvas-seat-buttons seat-state)) :world))
       ((and pressed-p (= code +button-left+) (typep target 'agent-widget)
             (gethash target (%meta-spatial-widgets world))
-            (or logo-p (< (%canvas-seat-y seat-state) (+ (canvas-overlay-y target) 24d0))))
+            (or logo-p
+                (and (< (%canvas-seat-y seat-state) (+ (canvas-overlay-y target) 24d0))
+                     (< (%canvas-seat-x seat-state)
+                        (- (+ (canvas-overlay-x target) (canvas-overlay-width target)) 30d0)))))
        (%meta-begin-drag world seat-state target)
        (%focus-target world seat-state target)
        (setf (gethash code (%canvas-seat-buttons seat-state)) :world))
@@ -643,7 +652,22 @@
 
 (defmethod ataxia.kernel:world-register-object :after
     ((world metaworld) (application ataxia.kernel:wayland-application))
-  (%meta-adopt-window world (find-canvas-window world application)))
+  (let ((window (find-canvas-window world application)))
+    (when window
+      (ataxia.world:cancel-animation (%world-animator world) window :presence)
+      (setf (canvas-window-effect window) 0d0
+            (canvas-window-scale window) 1d0
+            (canvas-window-opacity window) 1d0)
+      (set-window-animation-hook
+       window :visible
+       (lambda (target subject timestamp)
+         (setf (canvas-window-opacity subject) 0d0
+               (canvas-window-scale subject) 1d0
+               (canvas-window-effect subject) 0d0)
+         (animate-window target subject :presence 0.14d0
+                         (lambda (object progress) (setf (canvas-window-opacity object) progress))
+                         :start-time timestamp :easing #'ataxia.world:ease-out-cubic)))
+      (%meta-adopt-window world window))))
 
 (defmethod ataxia.kernel:world-object-changed :after ((world metaworld) object change)
   (when (typep object 'ataxia.kernel:wayland-application)
@@ -679,6 +703,8 @@
             (remove window (subworld-members group) :key #'subworld-member-object))
       (when (eq window (subworld-fullscreen group)) (setf (subworld-fullscreen group) nil))
       (remhash window (%meta-owners world))
+      (when (eq window (gethash group (%meta-group-focus world)))
+        (remhash group (%meta-group-focus world)))
       (%meta-layout world group))
     (when (eq window (%meta-menu-target world)) (setf (%meta-menu-target world) nil))
     (dolist (state (%output-states world))
@@ -803,11 +829,9 @@
         (let* ((zoom (%canvas-output-zoom state))
                (width (* zoom (%meta-footprint-width group)))
                (height (* zoom (subworld-height group)))
-               (line (if (or (eq group active) (eq group drop-target)) 3d0 1d0))
-               (color (if (eq group drop-target) '(0.12d0 0.12d0 0.10d0 1d0)
-                          '(0.30d0 0.30d0 0.28d0 1d0))))
-          (%draw-solid renderer state x y width height '(0.89d0 0.89d0 0.87d0 0.55d0))
-          (%draw-solid renderer state x y width line color)
-          (%draw-solid renderer state x (+ y height (- line)) width line color)
-          (%draw-solid renderer state x y line height color)
-          (%draw-solid renderer state (+ x width (- line)) y line height color))))))
+               (color (if (or (eq group drop-target) (eq group active))
+                          '(0.25d0 0.25d0 0.25d0 0.70d0)
+                          '(0.58d0 0.58d0 0.58d0 0.55d0))))
+          (unless (%meta-standalone world)
+            (%draw-solid renderer state x y width height '(1d0 1d0 1d0 0.30d0))
+            (%meta-dashed-rectangle renderer state x y width height color)))))))

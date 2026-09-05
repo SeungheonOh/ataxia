@@ -147,14 +147,18 @@
 
 (defun %meta-open-menu (world &optional seat (group (%meta-current world seat)))
   (let* ((seat-state (%meta-seat world seat))
-         (state (if seat-state (%canvas-seat-output seat-state) (%first-output-state world))))
+         (state (if seat-state (%canvas-seat-output seat-state) (%first-output-state world)))
+         (reuse-p (and state (%meta-menu world)
+                       (eq (%meta-menu-kind world) (if group :group :canvas))
+                       (eq (canvas-overlay-output (%meta-menu world)) (%canvas-output-output state)))))
     (when state
       (setf (%meta-menu-target world) (%meta-focused-object world seat)
             (%meta-menu-group world) group)
       (when (%meta-menu world)
         (%meta-dismiss-menu world)
-        (remove-agent-widget world (%meta-menu world)))
-      (let ((widget (%meta-ui-widget world (if group "group-controls" "canvas-menu")
+        (unless reuse-p (remove-agent-widget world (%meta-menu world))))
+      (unless reuse-p
+       (let ((widget (%meta-ui-widget world (if group "group-controls" "canvas-menu")
                                      (if group "SubworldControls" "CanvasCreation")
                                      state (if group 330d0 220d0) (if group 164d0 120d0) :layer 2000)))
         (setf (%meta-menu world) widget
@@ -172,7 +176,7 @@
          widget "action"
          (lambda (source event)
            (declare (ignore source))
-           (%meta-menu-action world (agent-widget-event-value event) *meta-action-seat*))))
+           (%meta-menu-action world (agent-widget-event-value event) *meta-action-seat*)))))
       (multiple-value-bind (x y)
           (%screen-to-world state (if seat-state (%canvas-seat-x seat-state) 40d0)
                             (if seat-state (%canvas-seat-y seat-state) 40d0))
@@ -253,7 +257,8 @@
           (show-overlay world panel) (hide-overlay world panel)))))
 
 (defun %meta-new-note (world &optional group content geometry)
-  (let* ((state (%first-output-state world))
+  (let* ((seat-state (%meta-seat world *meta-action-seat*))
+         (state (or (and seat-state (%canvas-seat-output seat-state)) (%first-output-state world)))
          (widget (%create-agent-widget
                   'meta-note world (cdr (assoc "note" *meta-ui-sources* :test #'equal))
                   :source-path (namestring (%meta-ui-path "note"))
@@ -267,6 +272,12 @@
      (lambda (source event)
        (setf (%meta-note-content source) (agent-widget-event-value event))
        (%meta-changed world)))
+    (bind-agent-widget-event
+     widget "close"
+     (lambda (source event)
+       (declare (ignore event))
+       (%meta-focus world source *meta-action-seat*)
+       (%meta-command world *meta-action-seat* "close")))
     (setf (gethash widget (%meta-spatial-widgets world))
           (or geometry (list (+ (%canvas-output-camera-x state) 120d0)
                              (+ (%canvas-output-camera-y state) 150d0) 430d0 320d0)))

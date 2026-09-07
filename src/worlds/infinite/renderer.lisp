@@ -22,6 +22,39 @@ void main() {
   gl_FragColor = vec4(u_color.rgb * u_color.a, u_color.a);
 }")
 
+(defparameter +shadow-fragment-shader+
+  "precision highp float;
+varying vec2 v_uv;
+uniform vec2 u_size;
+uniform float u_sigma;
+uniform float u_padding;
+uniform float u_opacity;
+// Gaussian integral over a rectangle: continuous edges and soft corners.
+vec2 gaussian_cdf(vec2 x) {
+  vec2 a = abs(x) * 0.70710678;
+  vec2 t = 1.0 / (1.0 + 0.3275911 * a);
+  vec2 erf_value = 1.0 - (((((1.061405429 * t - 1.453152027) * t
+                    + 1.421413741) * t - 0.284496736) * t
+                    + 0.254829592) * t) * exp(-a * a);
+  return 0.5 + 0.5 * sign(x) * erf_value;
+}
+void main() {
+  vec2 p = v_uv * (u_size + 2.0 * u_padding) - u_padding;
+  vec2 coverage = gaussian_cdf(p / u_sigma) - gaussian_cdf((p - u_size) / u_sigma);
+  float alpha = clamp(coverage.x * coverage.y, 0.0, 1.0) * u_opacity;
+  gl_FragColor = vec4(0.0, 0.0, 0.0, alpha);
+}")
+
+;; Separate ownership keeps renderer instances compatible across live updates.
+(defvar *canvas-shadow-programs* (make-hash-table :test #'eq))
+
+(defun %ensure-shadow-program (renderer)
+  (or (gethash renderer *canvas-shadow-programs*)
+      (setf (gethash renderer *canvas-shadow-programs*)
+            (ataxia.world.gles:make-gles-program
+             +canvas-vertex-shader+ +shadow-fragment-shader+
+             :attributes '(("a_position" . 0) ("a_uv" . 1))))))
+
 (defparameter +grid-fragment-shader+
   "precision highp float;
 uniform vec2 u_camera;
@@ -56,7 +89,29 @@ uniform float u_opacity;
 uniform float u_has_alpha;
 uniform float u_effect;
 uniform float u_seed;
+uniform vec2 u_filter_x;
+uniform vec2 u_filter_y;
+uniform vec2 u_filter_count;
+uniform vec4 u_uv_bounds;
 varying vec2 v_uv;
+vec4 window_sample(vec2 uv) {
+  if (u_filter_count.x <= 1.0 && u_filter_count.y <= 1.0)
+    return texture2D(u_texture, uv);
+  vec4 sum = vec4(0.0);
+  // Bounded quadrature over a screen pixel's source footprint. Unlike one
+  // bilinear lookup, this suppresses fine text/checkerboard aliasing at overview
+  // scales. Uniform loop exits keep work proportional to the reduction.
+  for (int y = 0; y < 16; ++y) {
+    if (float(y) >= u_filter_count.y) break;
+    for (int x = 0; x < 16; ++x) {
+      if (float(x) >= u_filter_count.x) break;
+      vec2 offset = u_filter_x * ((float(x) + 0.5) / u_filter_count.x - 0.5)
+                  + u_filter_y * ((float(y) + 0.5) / u_filter_count.y - 0.5);
+      sum += texture2D(u_texture, clamp(uv + offset, u_uv_bounds.xy, u_uv_bounds.zw));
+    }
+  }
+  return sum / (u_filter_count.x * u_filter_count.y);
+}
 float noise(vec2 point) {
   return fract(sin(dot(point, vec2(12.9898, 78.233)) + u_seed) * 43758.5453);
 }
@@ -64,13 +119,15 @@ void main() {
   float band = floor(v_uv.y * 37.0 + u_seed * 11.0);
   float displacement = (noise(vec2(band, u_seed)) - 0.5) * 0.075 * u_effect;
   vec2 shifted = clamp(v_uv + vec2(displacement, 0.0), 0.0, 1.0);
-  vec4 center = texture2D(u_texture, shifted);
+  vec4 center = window_sample(shifted);
+  if (u_effect > 0.0) {
   vec4 left_sample = texture2D(u_texture, clamp(shifted - vec2(0.009 * u_effect, 0.0), 0.0, 1.0));
   vec4 right_sample = texture2D(u_texture, clamp(shifted + vec2(0.009 * u_effect, 0.0), 0.0, 1.0));
   center.r = mix(center.r, right_sample.r, u_effect);
   center.b = mix(center.b, left_sample.b, u_effect);
   float dropout = step(0.965 - 0.10 * u_effect, noise(vec2(band, floor(u_seed * 19.0))));
   center.rgb = mix(center.rgb, center.bgr * 0.45, dropout * u_effect);
+  }
   center.a = mix(1.0, center.a, u_has_alpha);
   gl_FragColor = center * u_opacity;
 }"
@@ -84,6 +141,7 @@ void main() {
   (let ((renderer (%make-canvas-renderer)))
     (handler-case
         (progn
+          (%ensure-shadow-program renderer)
           (setf (%canvas-renderer-solid-program renderer)
                 (ataxia.world.gles:make-gles-program
                  +canvas-vertex-shader+ +solid-fragment-shader+
@@ -111,6 +169,8 @@ void main() {
 
 (defun %destroy-canvas-renderer (renderer)
   (when renderer
+    (ataxia.world.gles:destroy-gles-program (gethash renderer *canvas-shadow-programs*))
+    (remhash renderer *canvas-shadow-programs*)
     (dolist (program
               (list (%canvas-renderer-solid-program renderer)
                     (%canvas-renderer-grid-program renderer)
@@ -165,13 +225,19 @@ void main() {
          (cons x (+ y height)) (cons (+ x width) (+ y height)))))
 
 (defun %quad-vertices (positions texture-coordinates)
-  (flet ((vertex (index)
-           (list (car (nth index positions)) (cdr (nth index positions))
-                 (car (nth index texture-coordinates))
-                 (cdr (nth index texture-coordinates)))))
-    (coerce
-     (mapcan #'vertex '(0 1 2 1 3 2))
-     'vector)))
+  (let ((vertices (make-array 24 :element-type 'single-float)))
+    (flet ((vertex (offset point uv)
+             (setf (aref vertices offset) (coerce (car point) 'single-float)
+                   (aref vertices (+ offset 1)) (coerce (cdr point) 'single-float)
+                   (aref vertices (+ offset 2)) (coerce (car uv) 'single-float)
+                   (aref vertices (+ offset 3)) (coerce (cdr uv) 'single-float))))
+      (vertex 0 (first positions) (first texture-coordinates))
+      (vertex 4 (second positions) (second texture-coordinates))
+      (vertex 8 (third positions) (third texture-coordinates))
+      (vertex 12 (second positions) (second texture-coordinates))
+      (vertex 16 (fourth positions) (fourth texture-coordinates))
+      (vertex 20 (third positions) (third texture-coordinates)))
+    vertices))
 
 (defun %bind-vertices (renderer vertices)
   (ataxia.world.gles:gles-upload-floats
@@ -242,6 +308,26 @@ void main() {
     (apply #'ataxia.world.gles:gles-uniform-4f program "u_color" color)
     (ataxia.world.gles:gles-draw-triangles 3)))
 
+(defun %surface-minification-filter (positions uv buffer-width buffer-height source-width source-height)
+  "Return footprint vectors and sample counts using actual physical pixels.
+UV edges include buffer transforms and viewport crops; NDC edges include camera
+rotation, output transform, fractional scale and window resizing."
+  (labels ((edge (points index) (cons (- (car (nth index points)) (caar points))
+                                    (- (cdr (nth index points)) (cdar points)))))
+    (let ((vectors nil) (counts nil))
+      (dolist (index '(1 2))
+        (let* ((screen (edge positions index)) (texture (edge uv index))
+               (pixels (max 0.000001d0 (sqrt (+ (expt (* 0.5d0 buffer-width (car screen)) 2)
+                                              (expt (* 0.5d0 buffer-height (cdr screen)) 2)))))
+               (texels (sqrt (+ (expt (* source-width (car texture)) 2)
+                                (expt (* source-height (cdr texture)) 2))))
+               (footprint (/ texels pixels))
+               ;; Collapse continuously to a single bilinear sample at 1:1.
+               (factor (if (> footprint 1d0) (/ (sqrt (- 1d0 (/ (* footprint footprint)))) pixels) 0d0)))
+          (push (cons (* factor (car texture)) (* factor (cdr texture))) vectors)
+          (push (min 16 (max 1 (ceiling footprint))) counts)))
+      (values (nreverse vectors) (nreverse counts)))))
+
 (defun %draw-surface
     (renderer state surface x y width height opacity effect seed
      &optional canvas-p orientation-anchor)
@@ -254,41 +340,58 @@ void main() {
                (%canvas-renderer-texture-program renderer))))
     (unless program
       (error "The GLES renderer cannot sample texture target 0x~X." target))
-    (%bind-vertices
-     renderer
-     (%quad-vertices (cond
+    (let* ((uv (%source-uv surface))
+           (positions (cond
                        (orientation-anchor
                         (%oriented-screen-quad
                          state (car orientation-anchor) (cdr orientation-anchor)
                          x y width height))
                        (canvas-p (%canvas-quad state x y width height))
-                       (t (%screen-quad state x y width height)))
-                     (%source-uv surface)))
-    (ataxia.world.gles:gles-use-program program)
-    (ataxia.world.gles:gles-bind-texture
-     target (ataxia.kernel:render-source-gles-name source))
-    (ataxia.world.gles:gles-uniform-1i program "u_texture" 0)
-    (ataxia.world.gles:gles-uniform-1f program "u_opacity" opacity)
-    (ataxia.world.gles:gles-uniform-1f
-     program "u_has_alpha"
-     (if (ataxia.kernel:render-source-has-alpha-p source) 1d0 0d0))
-    (ataxia.world.gles:gles-uniform-1f program "u_effect" effect)
-    (ataxia.world.gles:gles-uniform-1f program "u_seed" seed)
-    (ataxia.world.gles:call-with-gles-linear-filter
-     target (lambda () (ataxia.world.gles:gles-draw-triangles 6)))))
+                       (t (%screen-quad state x y width height)))))
+      (%bind-vertices renderer (%quad-vertices positions uv))
+      (ataxia.world.gles:gles-use-program program)
+      (multiple-value-bind (vectors counts)
+          (%surface-minification-filter positions uv
+                                        (%canvas-output-buffer-width state) (%canvas-output-buffer-height state)
+                                        (ataxia.kernel:render-source-width source)
+                                        (ataxia.kernel:render-source-height source))
+        (ataxia.world.gles:gles-uniform-2f program "u_filter_x" (caar vectors) (cdar vectors))
+        (ataxia.world.gles:gles-uniform-2f program "u_filter_y" (caadr vectors) (cdadr vectors))
+        (ataxia.world.gles:gles-uniform-2f program "u_filter_count" (first counts) (second counts))
+        (ataxia.world.gles:gles-uniform-4f program "u_uv_bounds"
+                                        (reduce #'min uv :key #'car) (reduce #'min uv :key #'cdr)
+                                        (reduce #'max uv :key #'car) (reduce #'max uv :key #'cdr)))
+      (ataxia.world.gles:gles-bind-texture
+       target (ataxia.kernel:render-source-gles-name source))
+      (ataxia.world.gles:gles-uniform-1i program "u_texture" 0)
+      (ataxia.world.gles:gles-uniform-1f program "u_opacity" opacity)
+      (ataxia.world.gles:gles-uniform-1f
+       program "u_has_alpha"
+       (if (ataxia.kernel:render-source-has-alpha-p source) 1d0 0d0))
+      (ataxia.world.gles:gles-uniform-1f program "u_effect" effect)
+      (ataxia.world.gles:gles-uniform-1f program "u_seed" seed)
+      (ataxia.world.gles:call-with-gles-linear-filter
+       target (lambda () (ataxia.world.gles:gles-draw-triangles 6))))))
 
 (defun %draw-window-shadow (renderer state window)
   (multiple-value-bind (x y width height)
       (%window-canvas-geometry state window)
-    (let ((lift (canvas-window-elevation window)))
-      (loop for layer from 4 downto 1
-            for spread = (+ (* layer 4d0) (* lift 8d0))
-            for alpha = (* (+ 0.018d0 (* lift 0.014d0)) (- 5 layer))
-            do (%draw-solid renderer state
-                            (- x spread) (+ y (* 5d0 lift) (- spread))
-                            (+ width (* 2d0 spread))
-                            (+ height (* 2d0 spread))
-                            (list 0d0 0d0 0d0 alpha))))))
+    (let* ((lift (max 0d0 (min 1d0 (canvas-window-elevation window))))
+           (sigma (+ 5d0 (* lift 3d0)))
+           (padding (* 3d0 sigma))
+           (program (%ensure-shadow-program renderer)))
+      (%bind-vertices renderer
+                      (%quad-vertices
+                       (%canvas-quad state (- x padding) (+ y (* 5d0 lift) (- padding))
+                                     (+ width (* 2d0 padding)) (+ height (* 2d0 padding)))
+                       (list (cons 0d0 0d0) (cons 1d0 0d0) (cons 0d0 1d0) (cons 1d0 1d0))))
+      (ataxia.world.gles:gles-use-program program)
+      (ataxia.world.gles:gles-uniform-2f program "u_size" width height)
+      (ataxia.world.gles:gles-uniform-1f program "u_sigma" sigma)
+      (ataxia.world.gles:gles-uniform-1f program "u_padding" padding)
+      (ataxia.world.gles:gles-uniform-1f program "u_opacity"
+                                          (* (canvas-window-opacity window) (+ 0.22d0 (* lift 0.08d0))))
+      (ataxia.world.gles:gles-draw-triangles 6))))
 
 (defun %draw-window (renderer state window tokens)
   (let ((application (canvas-window-application window)))
@@ -415,7 +518,14 @@ void main() {
 (defun %render-canvas
     (renderer output-state windows overlays seats damage-region damage-debug-p
      &optional world)
-  (let ((tokens nil))
+  ;; Coverage is constant within a frame. Pointer damage can contain several
+  ;; rectangles; compute each object's transformed bounds once, not per clip.
+  (let ((tokens nil)
+        (window-coverage (loop for window in windows when (%window-visible-p window)
+                               collect (cons window (%window-buffer-coverage output-state window))))
+        (overlay-coverage (loop for overlay in overlays
+                                when (%overlay-visible-on-state-p overlay output-state)
+                                  collect (cons overlay (%overlay-buffer-coverage output-state overlay)))))
     (ataxia.world.gles:gles-reset-state)
     (when damage-debug-p
       (ataxia.world.gles:gles-clear 0.55d0 0.015d0 0.08d0 1d0))
@@ -430,18 +540,17 @@ void main() {
         (ataxia.world.gles:gles-clear 0.03d0 0.036d0 0.05d0 1d0)
         (%draw-grid renderer output-state)
         (%draw-world-background world renderer output-state)
-        (dolist (window windows)
-          (when (and (%window-visible-p window)
-                     (ataxia.world:region-intersects-p
-                      (%window-buffer-coverage output-state window)
-                      (list damage)))
-            (setf tokens (%draw-window renderer output-state window tokens))))
-        (dolist (overlay overlays)
-          (when (and (%overlay-visible-on-state-p overlay output-state)
-                     (ataxia.world:region-intersects-p
-                      (%overlay-buffer-coverage output-state overlay)
-                      (list damage)))
-            (setf tokens (%draw-overlay renderer output-state overlay tokens))))
+        (dolist (entry overlay-coverage)
+          (when (and (%overlay-below-windows-p (car entry))
+                     (ataxia.world:region-intersects-p (cdr entry) (list damage)))
+            (setf tokens (%draw-overlay renderer output-state (car entry) tokens))))
+        (dolist (entry window-coverage)
+          (when (ataxia.world:region-intersects-p (cdr entry) (list damage))
+            (setf tokens (%draw-window renderer output-state (car entry) tokens))))
+        (dolist (entry overlay-coverage)
+          (when (and (not (%overlay-below-windows-p (car entry)))
+                     (ataxia.world:region-intersects-p (cdr entry) (list damage)))
+            (setf tokens (%draw-overlay renderer output-state (car entry) tokens))))
         (dolist (seat-state seats)
           (when (eq output-state (%canvas-seat-output seat-state))
             (setf tokens

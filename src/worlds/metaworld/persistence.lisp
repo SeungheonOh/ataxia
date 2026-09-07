@@ -12,7 +12,8 @@
 
 (defun %meta-window-key (window)
   (let ((application (canvas-window-application window)))
-    (list (or (ataxia.kernel:application-app-id application) "")
+    (list (let ((id (or (ataxia.kernel:application-app-id application) "")))
+            (if (uiop:string-prefix-p "foot.ataxia." id) "foot" id))
           (or (ataxia.kernel:application-title application) ""))))
 
 (defun %meta-member-record (member)
@@ -28,7 +29,7 @@
         :kind (subworld-kind group) :layout (subworld-layout group)
         :x (subworld-x group) :y (subworld-y group)
         :width (subworld-width group) :height (subworld-height group)
-        :workspace (subworld-workspace group) :ratio (subworld-ratio group)
+        :workspace (subworld-workspace group) :workspace-count (%meta-workspace-count group) :ratio (subworld-ratio group)
         :next-column (subworld-next-column group)
         :scrolls (loop for workspace being the hash-keys of (subworld-scrolls group)
                       using (hash-value scroll) collect (list workspace scroll))))
@@ -69,24 +70,82 @@
                :active (and (%meta-view-active view)
                             (subworld-id (%meta-view-active view)))))))
 
+(defvar *meta-save-mailbox* nil)
+(defvar *meta-save-wakeup* (sb-thread:make-semaphore :count 0))
+(defvar *meta-save-worker* nil)
+(defvar *meta-save-busy-p* nil)
+;; Owner-thread cache makes mode switches see the latest queued snapshot even
+;; when the disk writer has not committed it yet. Never accessed by the worker.
+(defvar *meta-save-snapshots* (make-hash-table :test #'equal))
+
+(defun %meta-copy-snapshot (value)
+  (typecase value
+    (cons (cons (%meta-copy-snapshot (car value)) (%meta-copy-snapshot (cdr value))))
+    (string (copy-seq value))
+    (t value)))
+
+(defun %meta-write-snapshot (path snapshot)
+  (let ((temporary (make-pathname :type "sexp.pending" :defaults path)))
+    (ensure-directories-exist path)
+    (with-open-file (stream temporary :direction :output
+                           :if-exists :supersede :if-does-not-exist :create)
+      (with-standard-io-syntax
+        (let ((*print-readably* t) (*print-pretty* t))
+          (write snapshot :stream stream)
+          (terpri stream))))
+    (uiop:rename-file-overwriting-target temporary path)))
+
+(defun %meta-queue-save (path snapshot)
+  ;; Immutable latest-value mailbox: one pending snapshot per path. Neither
+  ;; filesystem work nor waiting for the writer happens on the owner thread.
+  (loop for old = *meta-save-mailbox*
+        for new = (acons path snapshot (remove path old :key #'car :test #'equal))
+        when (eq old (sb-ext:compare-and-swap *meta-save-mailbox* old new))
+          do (when (null old) (sb-thread:signal-semaphore *meta-save-wakeup*))
+             (return snapshot)))
+
+(defun %meta-save-worker-loop ()
+  (loop
+    (sb-thread:wait-on-semaphore *meta-save-wakeup*)
+    (setf *meta-save-busy-p* t)
+    (unwind-protect
+         (let ((batch (loop for old = *meta-save-mailbox*
+                            when (eq old (sb-ext:compare-and-swap *meta-save-mailbox* old nil))
+                              return old)))
+           (dolist (entry batch)
+             (handler-case (%meta-write-snapshot (car entry) (cdr entry))
+               (serious-condition (cause)
+                 (format *error-output* "[metaworld] State save failed: ~A~%" cause)))))
+      (setf *meta-save-busy-p* nil))))
+
+(defun %meta-flush-saves ()
+  "Drain saves only after the compositor event loop and Kernel have stopped."
+  (loop while (or *meta-save-mailbox* *meta-save-busy-p*) do (sleep 0.01)))
+
+;; One process-lifetime writer serializes saves across World replacements.
+;; It retains copied data only, and never calls World, Wayland, Slint or GLES.
+(unless (and *meta-save-worker* (sb-thread:thread-alive-p *meta-save-worker*))
+  (setf *meta-save-worker*
+        (sb-thread:make-thread #'%meta-save-worker-loop :name "Ataxia state writer")))
+
 (defun save-metaworld (world)
+  "Queue a copied state snapshot; completion of the disk write is asynchronous."
   (let ((path (%meta-state-file world)))
     (when (and path (not (%meta-state-error world)))
-      (handler-case
-          (let ((temporary (make-pathname :type "sexp.pending" :defaults path)))
-            (ensure-directories-exist path)
-            (with-open-file (stream temporary :direction :output
-                                   :if-exists :supersede :if-does-not-exist :create)
-              (with-standard-io-syntax
-                (let ((*print-readably* t) (*print-pretty* t))
-                  (write (%meta-snapshot world) :stream stream)
-                  (terpri stream))))
-            (uiop:rename-file-overwriting-target temporary path)
-            (setf (%meta-save-needed-p world) nil
-                  (%meta-last-save world) (%now)))
-        (serious-condition (cause)
-          (format *error-output* "[metaworld] State save failed: ~A~%" cause)))))
+      (let* ((key (namestring path))
+             (snapshot (%meta-copy-snapshot (%meta-snapshot world))))
+        (setf (gethash key *meta-save-snapshots*) snapshot)
+        (%meta-queue-save key snapshot)
+        (setf (%meta-save-needed-p world) nil
+              (%meta-last-save world) (%now)))))
   world)
+
+(defun %meta-read-state (path)
+  (or (%meta-copy-snapshot (gethash (namestring path) *meta-save-snapshots*))
+      (with-open-file (stream path)
+        (when (> (file-length stream) 1048576)
+          (error "State file exceeds one megabyte."))
+        (let ((*read-eval* nil)) (read stream nil nil)))))
 
 (defun %meta-valid-number-p (value &optional (minimum -10000000d0) (maximum 10000000d0))
   (and (realp value) (<= minimum value maximum)))
@@ -117,21 +176,44 @@
            :height (coerce (getf data :height) 'double-float)
            :workspace (getf data :workspace) :ratio (getf data :ratio)
            :next-column (getf data :next-column))))
+    (let ((count (getf data :workspace-count (subworld-workspace group))))
+      (unless (typep count '(integer 1 9)) (error "Invalid workspace count."))
+      (setf (gethash group *meta-workspace-counts*) count))
     (dolist (entry (getf data :scrolls))
       (when (and (typep (first entry) '(integer 1 9))
                  (%meta-valid-number-p (second entry) 0 10000000))
         (setf (gethash (first entry) (subworld-scrolls group)) (second entry))))
     group))
 
+(defun %meta-migrate-workspace-pages (data groups)
+  ;; Older state files placed all workspaces at the same Y. Translate their
+  ;; geometry and active camera once when adopting the vertical-page layout.
+  (dolist (group groups)
+    (let ((record (find (subworld-id group) (getf data :groups)
+                        :key (lambda (entry) (getf entry :id)))))
+      (when (and (eq :niri (subworld-kind group)) (not (getf record :workspace-count)))
+        (dolist (object (append (getf data :windows) (getf data :notes)))
+          (let* ((member (getf object :member)) (workspace (getf member :workspace)))
+            (when (and (eql (subworld-id group) (getf object :owner))
+                       (typep workspace '(integer 1 9)))
+              (let ((offset (- (%meta-workspace-y group workspace) (subworld-y group))))
+                (dolist (geometry (list (getf object :geometry) (getf member :restore)))
+                  (when (%meta-valid-geometry-p geometry) (incf (second geometry) offset)))))))
+        (dolist (view (getf data :cameras))
+          (let ((camera (getf view :camera)))
+            (when (and (eql (getf view :active) (subworld-id group))
+                       (listp camera) (= 4 (length camera)) (%meta-valid-number-p (second camera)))
+              (incf (second camera) (- (%meta-workspace-y group) (subworld-y group))))))
+        (nconc record (list :workspace-count (%meta-workspace-count group))))))
+  data)
+
 (defun %meta-load-state (world)
   (let ((path (%meta-state-file world)))
-    (when (and path (probe-file path))
+    (when (and path (or (gethash (namestring path) *meta-save-snapshots*)
+                        (probe-file path)))
       (handler-case
-          (with-open-file (stream path)
-            (when (> (file-length stream) 1048576)
-              (error "State file exceeds one megabyte."))
-            (let* ((*read-eval* nil)
-                   (data (read stream nil nil))
+          (progn
+            (let* ((data (%meta-read-state path))
                    (groups (and (eql 1 (getf data :version))
                                 (mapcar #'%meta-load-group (getf data :groups)))))
               (unless (eql 1 (getf data :version)) (error "Unknown state version."))
@@ -142,6 +224,7 @@
                          (or (/= 1 (length groups))
                              (not (eq (%meta-standalone world) (subworld-kind (first groups))))))
                 (error "Saved state does not match the standalone policy."))
+              (%meta-migrate-workspace-pages data groups)
               (setf (metaworld-subworlds world) groups
                     (%meta-state-loaded-p world) t
                     (%meta-next-id world) (reduce #'max groups :key #'subworld-id :initial-value 0)

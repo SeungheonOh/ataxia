@@ -1,0 +1,313 @@
+;;;; Run: sbcl --script tests/metaworld-performance.lisp
+(require :asdf)
+(let ((root (uiop:pathname-parent-directory-pathname
+             (uiop:pathname-directory-pathname *load-truename*))))
+  (asdf:initialize-source-registry
+   `(:source-registry (:tree ,root)
+     (:tree ,(merge-pathnames "fun/ataxia-deps/common-lisp/" (user-homedir-pathname)))
+     :inherit-configuration))
+  (asdf:load-system "ataxia-metaworld"))
+(in-package #:ataxia.infinite-world)
+
+;; A blocked filesystem writer must not block producers, retain stale snapshots,
+;; or observe later mutations to the owner's data.
+(let* ((original (symbol-function '%meta-write-snapshot))
+       (entered (sb-thread:make-semaphore))
+       (release (sb-thread:make-semaphore))
+       (finished (sb-thread:make-semaphore))
+       (writes nil))
+  (unwind-protect
+       (progn
+         (setf (symbol-function '%meta-write-snapshot)
+               (lambda (path snapshot)
+                 (when (equal path "blocked")
+                   (sb-thread:signal-semaphore entered)
+                   (sb-thread:wait-on-semaphore release))
+                 (push (cons path snapshot) writes)
+                 (sb-thread:signal-semaphore finished)))
+         (%meta-queue-save "blocked" '(:version 1))
+         (assert (sb-thread:wait-on-semaphore entered :timeout 2))
+         (let* ((name (copy-seq "original"))
+                (snapshot (list :name name :geometry (list 1 2 3 4)))
+                (copy (%meta-copy-snapshot snapshot)))
+           (dotimes (i 1000) (%meta-queue-save "latest" (list :sequence i)))
+           (%meta-queue-save "copy" copy)
+           (setf (char name 0) #\X (first (getf snapshot :geometry)) 99)
+           (assert (= 2 (length *meta-save-mailbox*)))
+           (assert (= 999 (getf (cdr (assoc "latest" *meta-save-mailbox* :test #'equal)) :sequence)))
+           (assert (equal "original" (getf copy :name)))
+           (assert (= 1 (first (getf copy :geometry)))))
+         (sb-thread:signal-semaphore release)
+         (dotimes (i 3) (assert (sb-thread:wait-on-semaphore finished :timeout 2)))
+         (%meta-flush-saves)
+         (assert (= 3 (length writes))))
+    (sb-thread:signal-semaphore release)
+    (%meta-flush-saves)
+    (setf (symbol-function '%meta-write-snapshot) original)))
+
+;; Disk round-trip and queued state must be independent of the restore consumer.
+(let* ((path (merge-pathnames (format nil "ataxia-save-test-~D.sexp" (sb-posix:getpid)) #P"/tmp/"))
+       (snapshot (list :version 1 :groups nil :geometry (list 1 2 3 4))))
+  (unwind-protect
+       (progn
+         (%meta-write-snapshot path snapshot)
+         (assert (equal snapshot (%meta-read-state path)))
+         (setf (gethash (namestring path) *meta-save-snapshots*) snapshot)
+         (setf (first (getf (%meta-read-state path) :geometry)) 999)
+         (assert (= 1 (first (getf snapshot :geometry)))))
+    (remhash (namestring path) *meta-save-snapshots*)
+    (when (probe-file path) (delete-file path))))
+(format t "PASS: stalled writer isolation, latest-save coalescing, copied snapshots, disk round-trip.~%")
+
+;; Pre-optimization reference used to guard dash placement and transforms.
+(in-package #:ataxia.infinite-world)
+(defun reference-border-vertices (state x y width height)
+  (multiple-value-bind (viewport-width viewport-height) (%output-logical-size state)
+    (let ((step 24d0)
+          (pattern '((0d0 . 1d0) (5d0 . 5d0) (14d0 . 1d0)))
+          (vertices (make-array 4096 :adjustable t :fill-pointer 0 :element-type 'single-float))
+          (uv '((0d0 . 0d0) (1d0 . 0d0) (0d0 . 1d0) (1d0 . 1d0))))
+      (labels ((stroke (left top stroke-width stroke-height)
+                 (loop for value across (%quad-vertices
+                                         (%canvas-quad state left top stroke-width stroke-height) uv)
+                       do (vector-push-extend (coerce value 'single-float) vertices))))
+        (loop for offset from (* step (max 0 (floor (/ (- x) step)))) below width by step
+              while (< (+ x offset) viewport-width)
+              do (dolist (segment pattern)
+                   (let ((start (+ offset (car segment))))
+                     (when (< start width)
+                       (stroke (round (+ x start)) (round y) (min (cdr segment) (- width start)) 1d0)
+                       (stroke (round (+ x start)) (round (+ y height))
+                               (min (cdr segment) (- width start)) 1d0)))))
+        (loop for offset from (* step (max 0 (floor (/ (- y) step)))) below height by step
+              while (< (+ y offset) viewport-height)
+              do (dolist (segment pattern)
+                   (let ((start (+ offset (car segment))))
+                     (when (< start height)
+                       (stroke (round x) (round (+ y start)) 1d0 (min (cdr segment) (- height start)))
+                       (stroke (round (+ x width)) (round (+ y start))
+                               1d0 (min (cdr segment) (- height start))))))))
+      vertices)))
+
+(let* ((output (make-instance 'ataxia.kernel:kernel-output
+                             :width 1920 :height 1080 :scale 1d0 :transform 0))
+       (state (%make-canvas-output output)))
+  (setf (%canvas-output-buffer-width state) 1920
+        (%canvas-output-buffer-height state) 1080)
+  (dotimes (transform 8)
+    (dolist (rotation '(0d0 0.3d0 -1.2d0))
+      (dolist (scale '(1d0 1.5d0 2d0))
+        (setf (ataxia.kernel:output-scale output) scale
+              (ataxia.kernel:output-transform output) transform
+              (%canvas-output-transform state) transform
+              (%canvas-output-rotation state) rotation)
+        (dolist (geometry '((20d0 40d0 800d0 500d0) (-101d0 -33d0 1500d0 900d0)
+                            (25d0 9d0 15d0 12d0)))
+          (let ((reference (apply #'reference-border-vertices state geometry))
+                (actual (apply #'%meta-border-vertices state geometry)))
+            (assert (= (length reference) (length actual)))
+            (assert (every (lambda (a b) (< (abs (- a b)) 0.00001)) reference actual))
+            (assert (eq actual (apply #'%meta-border-vertices state geometry)))
+            (assert (<= (length (gethash state *meta-border-cache*)) 16)))))))
+  (setf (ataxia.kernel:output-scale output) 1d0
+        (ataxia.kernel:output-transform output) 0
+        (%canvas-output-transform state) 0
+        (%canvas-output-rotation state) 0d0)
+  (flet ((measure (function)
+           (let ((start (get-internal-real-time)))
+             (dotimes (i 1000) (funcall function state 20d0 40d0 800d0 500d0))
+             (* 1000d0 (/ (- (get-internal-real-time) start) internal-time-units-per-second)))))
+    (%meta-border-vertices state 20d0 40d0 800d0 500d0)
+    (format t "Border geometry, 1000 identical draws: reference ~,3F ms; cached ~,3F ms.~%"
+            (measure #'reference-border-vertices) (measure #'%meta-border-vertices))))
+(format t "PASS: border geometry matches across 8 output transforms, 3 rotations, 3 scales; cache bounded.~%")
+
+(let* ((group (%make-subworld :kind :niri :next-column 3))
+       (top (%make-subworld-member :object :top :column 1 :width 500d0))
+       (bottom (%make-subworld-member :object :bottom :column 1 :width 500d0))
+       (incoming (%make-subworld-member :object :incoming :column 2 :width 900d0))
+       (unrelated (%make-subworld-member :object :other :column 3 :workspace 2)))
+  (setf (subworld-members group) (list top bottom incoming unrelated))
+  (%meta-insert-member group incoming top t t)
+  (assert (equal (mapcar #'subworld-member-object (subworld-members group))
+                 '(:top :incoming :bottom :other)))
+  (assert (= 1 (subworld-member-column incoming)))
+  (assert (= 500d0 (subworld-member-width incoming)))
+  (assert (= 2 (subworld-member-workspace unrelated)))
+  (%meta-insert-member group incoming top nil t)
+  (assert (eq incoming (first (subworld-members group))))
+  (%meta-insert-member group incoming bottom nil nil)
+  (assert (/= (subworld-member-column incoming) (subworld-member-column bottom)))
+  (assert (= 4 (length (subworld-members group)))))
+(let ((geometry '(100d0 200d0 600d0 400d0)))
+  (assert (eq :below (%meta-niri-drop-side geometry 400d0 580d0 nil)))
+  (assert (eq :above (%meta-niri-drop-side geometry 400d0 220d0 nil)))
+  (assert (null (%meta-niri-drop-side geometry 400d0 400d0 nil)))
+  (assert (null (%meta-niri-drop-side geometry 110d0 580d0 nil)))
+  (assert (eq :below (%meta-niri-drop-side geometry 110d0 450d0 t)))
+  (assert (eq :above (%meta-niri-drop-side geometry 110d0 300d0 t))))
+(format t "PASS: Niri above/below insertion, column splitting, workspace isolation and drop zones.~%")
+
+(let ((vertices (%quad-vertices '((-1d0 . -1d0) (1d0 . -1d0) (-1d0 . 1d0) (1d0 . 1d0))
+                               '((0d0 . 0d0) (1d0 . 0d0) (0d0 . 1d0) (1d0 . 1d0)))))
+  (assert (typep vertices '(simple-array single-float (24))))
+  (assert (equalp vertices #(-1 -1 0 0 1 -1 1 0 -1 1 0 1 1 -1 1 0 1 1 1 1 -1 1 0 1))))
+(format t "PASS: packed quad winding and texture coordinates.~%")
+
+;; Distinct Niri workspaces are full-height pages, not rows in one column.
+(let* ((group (%make-subworld :id 1 :name "Test" :kind :niri :width 1400d0 :height 800d0))
+       (a (make-instance 'canvas-window :application (make-instance 'ataxia.kernel:wayland-application) :x 0d0 :y 0d0 :width 100d0 :height 100d0))
+       (b (make-instance 'canvas-window :application (make-instance 'ataxia.kernel:wayland-application) :x 0d0 :y 0d0 :width 100d0 :height 100d0))
+       (original (symbol-function '%meta-place)))
+  (setf (%canvas-window-mapped-p a) t (%canvas-window-mapped-p b) t
+        (subworld-members group)
+        (list (%make-subworld-member :object a :workspace 1 :column 1 :width 600d0)
+              (%make-subworld-member :object b :workspace 2 :column 1 :width 700d0)))
+  (unwind-protect
+       (progn
+         (setf (symbol-function '%meta-place)
+               (lambda (world object x y width height)
+                 (declare (ignore world))
+                 (setf (canvas-window-x object) x (canvas-window-y object) y
+                       (canvas-window-width object) width (canvas-window-height object) height)))
+         (%meta-layout-niri nil group (%meta-visible-members group :workspace 1) 1)
+         (%meta-layout-niri nil group (%meta-visible-members group :workspace 2) 2)
+         (assert (= (canvas-window-height a) (canvas-window-height b) 800d0))
+         (assert (= (- (canvas-window-y b) (canvas-window-y a)) 800d0))
+         (assert (= (canvas-window-width a) 600d0))
+         (assert (= (canvas-window-width b) 700d0))
+         (assert (= 2 (%meta-workspace-at group (+ (canvas-window-y b) 100d0))))
+         (assert (= 1600d0 (%meta-footprint-height group)))
+         (assert (= 2 (%meta-workspace-count group)))
+         (setf (subworld-workspace group) 1
+               (subworld-members group) (list (first (subworld-members group))))
+         (assert (= 2 (%meta-workspace-count group)))
+         (assert (= 2 (%meta-workspace-count (%meta-load-group (%meta-group-record group))))))
+    (setf (symbol-function '%meta-place) original)))
+
+(let* ((world (make-metaworld :state-file nil))
+       (group (first (metaworld-subworlds world)))
+       (output (make-instance 'ataxia.kernel:kernel-output :width 1280 :height 720 :scale 1d0 :transform 0))
+       (state (%make-canvas-output output))
+       (original (symbol-function '%meta-set-camera))
+       (camera nil))
+  ;; Saved scrolls are meaningful only when those pages actually overflow.
+  (setf (subworld-members group)
+        (loop for workspace from 1 to 2 append
+          (loop for column from 1 to 3
+                for window = (make-instance 'canvas-window :application (make-instance 'ataxia.kernel:wayland-application)
+                                           :x 0d0 :y 0d0 :width 660d0 :height 100d0)
+                do (setf (%canvas-window-mapped-p window) t)
+                collect (%make-subworld-member :object window :workspace workspace :column column))))
+  (setf (gethash 1 (subworld-scrolls group)) 55d0
+        (gethash 2 (subworld-scrolls group)) 350d0)
+  (unwind-protect
+       (progn
+         (setf (symbol-function '%meta-set-camera)
+               (lambda (world state target) (declare (ignore world state)) (setf camera target)))
+         (%meta-fit-group world state group)
+         (let ((first-camera camera))
+           (setf (subworld-workspace group) 2)
+           (%meta-fit-group world state group)
+           (assert (= (- (second camera) (second first-camera)) 800d0))
+           (assert (< (abs (- (- (first camera) (first first-camera)) 295d0)) 0.00001d0))
+           (assert (= (third camera) (third first-camera)))))
+    (setf (symbol-function '%meta-set-camera) original)))
+(format t "PASS: full-size vertical workspace pages, persistent empty pages, independent scroll, camera translation.~%")
+
+(let* ((group (%make-subworld :id 1 :name "Legacy" :kind :niri :workspace 2))
+       (record (%meta-group-record group))
+       (data (list :groups (list record)
+                   :windows (list (list :owner 1 :geometry (list 0d0 52d0 600d0 732d0)
+                                        :member (list :workspace 2)))
+                   :cameras (list (list :active 1 :camera (list 0d0 0d0 1d0 0d0))))))
+  (remf record :workspace-count)
+  (%meta-migrate-workspace-pages data (list group))
+  (%meta-migrate-workspace-pages data (list group))
+  (assert (= 852d0 (second (getf (first (getf data :windows)) :geometry))))
+  (assert (= 800d0 (second (getf (first (getf data :cameras)) :camera)))))
+(format t "PASS: legacy workspace geometry and camera migration is applied once.~%")
+
+;; Process spawning may block; its bounded FIFO must keep the owner independent.
+(let* ((original (symbol-function 'uiop:launch-program))
+       (entered (sb-thread:make-semaphore))
+       (release (sb-thread:make-semaphore))
+       (finished (sb-thread:make-semaphore))
+       (received nil))
+  (unwind-protect
+       (progn
+         (setf (symbol-function 'uiop:launch-program)
+               (lambda (command &rest options)
+                 (declare (ignore options))
+                 (when (equal command '("blocked"))
+                   (sb-thread:signal-semaphore entered)
+                   (sb-thread:wait-on-semaphore release))
+                 (push command received)
+                 (sb-thread:signal-semaphore finished)))
+         (assert (%meta-queue-launch '("blocked")))
+         (assert (sb-thread:wait-on-semaphore entered :timeout 2))
+         (dotimes (i 16)
+           (let ((argument (format nil "~D" i)))
+             (assert (%meta-queue-launch (list argument)))
+             (setf (char argument 0) #\X)))
+         (assert (not (%meta-queue-launch '("overflow"))))
+         (sb-thread:signal-semaphore release)
+         (dotimes (i 17) (assert (sb-thread:wait-on-semaphore finished :timeout 2)))
+         (assert (equal (reverse received)
+                        (cons '("blocked") (loop for i below 16 collect (list (format nil "~D" i)))))))
+    (sb-thread:signal-semaphore release)
+    (setf (symbol-function 'uiop:launch-program) original)))
+(format t "PASS: stalled launcher isolation, bounded FIFO and copied arguments.~%")
+
+(let* ((group (%make-subworld :kind :niri :x 100d0 :y 200d0 :width 500d0 :height 800d0))
+       (windows (loop repeat 4 collect
+                  (make-instance 'canvas-window :application (make-instance 'ataxia.kernel:wayland-application))))
+       (original (symbol-function '%meta-place)))
+  (loop for window in windows for index from 0 do
+    (setf (%canvas-window-mapped-p window) t)
+    (push (%make-subworld-member :object window :column (if (< index 2) 1 2)
+                                :workspace (if (= index 3) 2 1) :width 500d0)
+          (subworld-members group)))
+  (setf (subworld-members group) (nreverse (subworld-members group)))
+  (unwind-protect
+       (progn
+         (setf (symbol-function '%meta-place)
+               (lambda (world object x y width height)
+                 (declare (ignore world))
+                 (setf (canvas-window-x object) x (canvas-window-y object) y
+                       (canvas-window-width object) width (canvas-window-height object) height)))
+         (loop for ws from 1 to 2 do (%meta-layout-niri nil group (%meta-visible-members group :workspace ws) ws))
+         (destructuring-bind (a b c d) windows
+           (assert (= (canvas-window-y b) (+ (canvas-window-y a) (canvas-window-height a))))
+           (assert (= (canvas-window-x c) (+ (canvas-window-x a) (canvas-window-width a))))
+           (assert (= (canvas-window-y d) (+ (canvas-window-y c) (canvas-window-height c)))))
+         (assert (= (%meta-footprint-width group) 1000d0))
+         (assert (= (%meta-footprint-height group) 1600d0)))
+    (setf (symbol-function '%meta-place) original)))
+(format t "PASS: Niri column, row and workspace edges touch inside the shared footprint.~%")
+
+;; Width must never shrink an entered Niri workspace below monitor height.
+(let* ((world (make-metaworld :state-file nil)) (state (%make-canvas-output nil))
+       (group (%make-subworld :kind :niri :x 100d0 :y 200d0 :width 2400d0 :height 800d0 :workspace 2))
+       (names '(%output-logical-size %meta-set-camera))
+       (saved (mapcar #'symbol-function names)) (camera nil))
+  (unwind-protect
+       (progn
+         (setf (symbol-function '%meta-set-camera)
+               (lambda (world state target) (declare (ignore world state)) (setf camera target)))
+         (dolist (size '((1920d0 1080d0) (1080d0 1920d0) (3440d0 1440d0)))
+           (destructuring-bind (width height) size
+             (setf (symbol-function '%output-logical-size)
+                   (lambda (state) (declare (ignore state)) (values width height))
+                   (gethash 2 (subworld-scrolls group)) 100000d0)
+             (%meta-fit-group world state group)
+             (assert (< (abs (- (* (third camera) (subworld-height group)) height)) .00001d0))
+             (assert (= (second camera) (%meta-workspace-y group)))
+             (assert (< (abs (- (first camera)
+                               (+ (subworld-x group) (max 0d0 (- 2400d0 (/ width (third camera))))))) .00001d0))
+             ;; Overview still fits the entire group, including its pages.
+             (%meta-fit-group world state group :overview-p t)
+             (assert (<= (* (third camera) (%meta-footprint-height group)) (+ height .00001d0)))
+             (assert (<= (* (third camera) (%meta-footprint-width group)) (+ width .00001d0))))))
+    (loop for name in names for fn in saved do (setf (symbol-function name) fn))))
+(format t "PASS: entered Niri fills landscape, portrait and ultrawide monitor heights; horizontal scroll clamps to the visible span.~%")

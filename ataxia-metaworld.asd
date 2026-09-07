@@ -8,9 +8,13 @@
     :serial t
     :components
     ((:file "model")
+     (:file "services")
+     (:file "motion")
      (:file "renderer")
      (:file "layout")
+     (:file "packing")
      (:file "persistence")
      (:file "ui")
      (:file "world")
+     (:file "gestures")
      (:file "main")))))

@@ -1,20 +1,57 @@
-import { MetaButton } from "controls.slint";
-
+component WindowAction inherits Rectangle {
+    in property <image> icon;
+    in property <string> label;
+    in property <length> hint-width;
+    in property <bool> selected: false;
+    in property <bool> danger: false;
+    callback activate();
+    width: 32px; height: 32px;
+    border-radius: 8px;
+    background: touch.pressed ? #dce4ef : root.selected ? #e5edf8 : touch.has-hover ? (root.danger ? #f6e5e8 : #eaf0f7) : transparent;
+    animate background { duration: 120ms; easing: ease-out; }
+    border-width: focus.has-focus ? 1px : 0px;
+    border-color: #8da1bd;
+    accessible-role: button;
+    accessible-label: root.label;
+    forward-focus: focus;
+    Image { x: 7px; y: touch.pressed ? 8px : 7px; width: 18px; height: 18px; source: root.icon; image-fit: contain;
+        animate y { duration: 90ms; easing: ease-out; }
+    }
+    focus := FocusScope {
+        key-pressed(event) => {
+            if event.text == Key.Return || event.text == " " { root.activate(); return accept; }
+            return reject;
+        }
+    }
+    touch := TouchArea { clicked => { focus.focus(); root.activate(); } }
+    Text {
+        x: -root.x; y: 41px; width: root.hint-width; height: 16px;
+        text: root.label; font-family: "DejaVu Sans"; font-size: 10px;
+        color: #526176; horizontal-alignment: center;
+        opacity: touch.has-hover || focus.has-focus ? 1 : 0;
+        animate opacity { duration: 140ms; easing: ease-out; }
+    }
+}
 export component ObjectControls inherits Window {
     background: transparent;
     in property <bool> owned: false;
     in property <bool> detachable: false;
     in property <bool> niri: false;
     in property <bool> floating: false;
+    // Retained for native ABI compatibility; controls now act directly.
+    in property <bool> expanded: false;
     callback action(string);
-    Rectangle { border-width: 1px; border-color: #c7c7c7; border-radius: 7px; background: #ffffff; }
-    HorizontalLayout {
-        padding: 3px; spacing: 3px;
-        if root.detachable : MetaButton { label: "Detach"; activate => { root.action("pull-out"); } }
-        if root.owned : MetaButton { label: root.floating ? "Tile" : "Float"; activate => { root.action("floating"); } }
-        if root.owned : MetaButton { label: "Full"; activate => { root.action("fullscreen"); } }
-        if root.niri : MetaButton { label: "Stack"; activate => { root.action("consume"); } }
-        if root.niri : MetaButton { label: "Split"; activate => { root.action("expel"); } }
-        MetaButton { width: 28px; label: "×"; activate => { root.action("close"); } }
+    Rectangle { width: parent.width; height: 44px;
+        border-width: 1px; border-color: #dce3ed; border-radius: 12px; background: #fafcfefa;
+        HorizontalLayout {
+            padding-left: 8px; padding-right: 8px; padding-top: 6px; padding-bottom: 6px; spacing: 2px;
+            if root.owned : WindowAction { hint-width: parent.width; icon: root.floating ? @image-url("icons/tile.svg") : @image-url("icons/float.svg"); label: root.floating ? "Tile window" : "Float window"; selected: root.floating; activate => { root.action("floating"); } }
+            if root.owned : WindowAction { hint-width: parent.width; icon: @image-url("icons/fullscreen.svg"); label: "Fullscreen"; activate => { root.action("fullscreen"); } }
+            if root.niri : WindowAction { hint-width: parent.width; icon: @image-url("icons/terminal-below.svg"); label: "Terminal below"; activate => { root.action("terminal-below"); } }
+            if root.niri : WindowAction { hint-width: parent.width; icon: @image-url("icons/stack.svg"); label: "Stack"; activate => { root.action("consume"); } }
+            if root.niri : WindowAction { hint-width: parent.width; icon: @image-url("icons/split.svg"); label: "Split"; activate => { root.action("expel"); } }
+            if root.detachable : WindowAction { hint-width: parent.width; icon: @image-url("icons/detach.svg"); label: "Move to canvas"; activate => { root.action("pull-out"); } }
+            WindowAction { hint-width: parent.width; icon: @image-url("icons/close.svg"); label: "Close"; danger: true; activate => { root.action("close"); } }
+        }
     }
 }

@@ -445,6 +445,7 @@
         (backend-new-input (%runtime-sink runtime) runtime input-device)))))
 
 (defun %install-pointer-signals (pointer)
+  (%install-pointer-gesture-signals pointer)
   (let ((native-pointer (%object-pointer pointer))
         (sink (%runtime-sink (%native-runtime pointer))))
     (%attach-object-signal
@@ -781,18 +782,21 @@
               source))))
     (unwind-protect
          (loop until (%runtime-stop-requested-p runtime)
-               do (let ((result
+               ;; Control commands have a registered pipe, and deadlines use
+               ;; Wayland timers. Flush outgoing events before sleeping until
+               ;; the next input, client request, command or timer.
+               do (ataxia.runtime.raw:%wl-display-flush-clients
+                   (%object-pointer (%runtime-display runtime)))
+                  (let ((result
                           (ataxia.runtime.raw:%wl-event-loop-dispatch
                            (%object-pointer (%runtime-event-loop runtime))
-                           100)))
+                           -1)))
                     (when (minusp result)
                       (error 'native-call-failed
                              :name :wl-event-loop-dispatch :detail result)))
                   (%run-safe-point-actions runtime)
                   (when (runtime-last-fault runtime)
-                    (error (runtime-last-fault runtime)))
-                  (ataxia.runtime.raw:%wl-display-flush-clients
-                   (%object-pointer (%runtime-display runtime))))
+                    (error (runtime-last-fault runtime))))
       (when (and deadline-timer (native-object-live-p deadline-timer))
         (remove-event-loop-source deadline-timer))))
   runtime)

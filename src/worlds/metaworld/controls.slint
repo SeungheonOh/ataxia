@@ -2,26 +2,32 @@ export component MetaButton inherits Rectangle {
     in property <string> label;
     in property <bool> selected: false;
     in property <bool> enabled: true;
+    in property <bool> quiet-danger: false;
+    in property <bool> align-left: false;
     callback activate();
-    min-width: 32px;
-    preferred-height: 32px;
+    min-width: 30px;
+    preferred-height: 30px;
     border-width: focus.has-focus ? 1px : 0px;
-    border-color: #595959;
-    border-radius: 5px;
-    background: root.selected || touch.pressed ? #dedede : touch.has-hover ? #eeeeee : transparent;
-    animate background { duration: 100ms; }
-    opacity: root.enabled ? 1 : 0.4;
+    border-color: #8494a8;
+    border-radius: 6px;
+    background: touch.pressed ? #dce3ec : root.selected ? #e8edf4 : touch.has-hover ? #edf0f4 : transparent;
+    animate background { duration: 120ms; easing: ease-out; }
+    opacity: root.enabled ? 1 : 0.38;
+    animate opacity { duration: 120ms; }
     accessible-role: button;
     accessible-label: root.label;
     forward-focus: focus;
     Text {
+        x: root.align-left ? 10px : 0px;
+        width: parent.width - (root.align-left ? 20px : 0px);
         text: root.label;
-        color: root.enabled ? #161616 : #767676;
-        font-family: "monospace";
+        color: root.quiet-danger && touch.has-hover ? #9d3944 : root.selected ? #273d58 : #343b46;
+        font-family: "DejaVu Sans";
         font-size: 12px;
-        horizontal-alignment: center;
+        horizontal-alignment: root.align-left ? left : center;
         vertical-alignment: center;
         overflow: elide;
+        animate color { duration: 120ms; }
     }
     focus := FocusScope {
         enabled: root.enabled;

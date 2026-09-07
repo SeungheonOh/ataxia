@@ -295,7 +295,7 @@ export component AtaxiaLauncher inherits Window {
          (list "env" (format nil "WAYLAND_DISPLAY=~A" display)
                "gio" "launch" (%desktop-entry-path entry))
          :input #P"/dev/null" :output #P"/dev/null"
-         :error-output #P"/dev/null" :wait nil)
+         :error-output :interactive :wait nil)
       (serious-condition (cause)
         (format *error-output* "[infinite-world] cannot launch ~A: ~A~%"
                 (%desktop-entry-name entry) cause)
@@ -355,7 +355,7 @@ export component AtaxiaLauncher inherits Window {
             (canvas-overlay-height overlay) height)
       (ataxia.world.slint:resize-slint-component
        (canvas-overlay-component overlay) width height
-       :scale (ataxia.kernel:output-scale (%canvas-output-output state)))))
+       :scale (ataxia.world.slint:slint-component-scale (canvas-overlay-component overlay)))))
   overlay)
 
 (defun %make-launcher-overlay (world state)

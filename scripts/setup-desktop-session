@@ -1,0 +1,17 @@
+#!/bin/sh
+# Only direct DRM sessions own the user's desktop activation environment.
+case ",${WLR_BACKENDS:-}," in
+    *,drm,*) ;;
+    *) exit 0 ;;
+esac
+set -eu
+: "${XDG_RUNTIME_DIR:?}" "${WAYLAND_DISPLAY:?}"
+export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
+export XDG_CURRENT_DESKTOP=Ataxia XDG_SESSION_TYPE=wayland
+ataxia_portal_dir="${XDG_CONFIG_HOME:-$HOME/.config}/xdg-desktop-portal"
+mkdir -p "$ataxia_portal_dir"
+if [ ! -e "$ataxia_portal_dir/ataxia-portals.conf" ]; then
+    (set -C; printf '[preferred]\ndefault=gtk\n' > "$ataxia_portal_dir/ataxia-portals.conf")
+fi
+dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE
+systemctl --user restart xdg-desktop-portal-gtk.service xdg-desktop-portal.service

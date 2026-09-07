@@ -82,6 +82,11 @@
   (let ((width (coerce width 'double-float))
         (height (coerce height 'double-float))
         (scale (coerce scale 'double-float)))
+    (%live-native component)
+    (when (and (= width (slint-component-width component))
+               (= height (slint-component-height component))
+               (= scale (slint-component-scale component)))
+      (return-from resize-slint-component component))
     (ataxia.world.slint.raw::check-result
      (ataxia.world.slint.raw::%component-resize
       (%live-native component)

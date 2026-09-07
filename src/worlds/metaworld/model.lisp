@@ -2,6 +2,17 @@
 
 (defvar *meta-layout-motion* nil)
 (defvar *meta-action-seat* nil)
+(defvar *meta-layout-deferred-p* nil)
+(defvar *meta-layout-pending* nil)
+
+(defmacro %with-meta-layout-batch ((world) &body body)
+  `(if *meta-layout-deferred-p*
+       (progn ,@body)
+       (let ((*meta-layout-deferred-p* t) (*meta-layout-pending* nil))
+         (multiple-value-prog1 (progn ,@body)
+           (let ((*meta-layout-deferred-p* nil))
+             (dolist (group (nreverse *meta-layout-pending*))
+               (%meta-layout ,world group)))))))
 
 (defstruct (subworld (:constructor %make-subworld))
   id name (kind :niri) (layout :dwindle)
@@ -24,7 +35,14 @@
   (last-camera nil) (last-focus nil) (hover-after 0d0))
 
 (defclass metaworld (infinite-world)
-  ((subworlds :initform nil :accessor metaworld-subworlds)
+  ((chrome-states :initform (make-hash-table :test #'eq) :reader %meta-chrome-states)
+   (packing-signature :initform nil :accessor %meta-packing-signature)
+   (packing-anchor :initform nil :accessor %meta-packing-anchor)
+   (packing-direction :initform '(1d0 0d0) :accessor %meta-packing-direction)
+   (motions :initform (make-hash-table :test #'eq) :reader %meta-motions)
+   (drop-previews :initform (make-hash-table :test #'eq) :reader %meta-drop-previews)
+   (preview-positions :initform (make-hash-table :test #'eq) :reader %meta-preview-positions)
+   (subworlds :initform nil :accessor metaworld-subworlds)
    (next-subworld-id :initform 0 :accessor %meta-next-id)
    (owners :initform (make-hash-table :test #'eq) :reader %meta-owners)
    (group-focus :initform (make-hash-table :test #'eq) :reader %meta-group-focus)
@@ -105,27 +123,77 @@
     (canvas-window (%canvas-window-mapped-p object))
     (agent-widget (member object (world-overlays (%agent-widget-world object))))))
 
-(defun %meta-visible-members (group &key include-floating)
+(defvar *meta-workspace-counts* (make-hash-table :test #'eq :weakness :key))
+(defvar *meta-workspace-focus* (make-hash-table :test #'eq :weakness :key))
+
+(defun %meta-workspace-count (group)
+  (let ((count (max (gethash group *meta-workspace-counts* 1)
+                    (subworld-workspace group)
+                    (reduce #'max (subworld-members group) :key #'subworld-member-workspace
+                            :initial-value 1))))
+    (setf (gethash group *meta-workspace-counts*) count)))
+
+(defun %meta-workspace-y (group &optional (workspace (subworld-workspace group)))
+  (+ (subworld-y group)
+     (if (eq :niri (subworld-kind group))
+         (* (1- workspace) (subworld-height group)) 0d0)))
+
+(defun %meta-footprint-height (group)
+  (if (eq :niri (subworld-kind group))
+      (+ (subworld-height group)
+         (* (1- (%meta-workspace-count group)) (subworld-height group)))
+      (subworld-height group)))
+
+(defun %meta-workspace-at (group y)
+  (if (eq :niri (subworld-kind group))
+      (max 1 (min (%meta-workspace-count group)
+                  (1+ (floor (- y (subworld-y group)) (subworld-height group)))))
+      (subworld-workspace group)))
+
+(defun %meta-visible-members (group &key include-floating (workspace (subworld-workspace group)))
   (remove-if-not
    (lambda (member)
-     (and (= (subworld-workspace group) (subworld-member-workspace member))
+     (and (or (null workspace) (= workspace (subworld-member-workspace member)))
           (%meta-mapped-p (subworld-member-object member))
           (or include-floating (not (subworld-member-floating-p member)))))
    (subworld-members group)))
 
-(defun %meta-columns (group)
+(defun %meta-workspace-members (group workspace)
+  (remove-if-not (lambda (entry) (= workspace (subworld-member-workspace entry)))
+                 (subworld-members group)))
+
+(defun %meta-same-column-p (a b)
+  (and (= (subworld-member-workspace a) (subworld-member-workspace b))
+       (= (subworld-member-column a) (subworld-member-column b))))
+
+(defun %meta-set-column-width (group member width)
+  (dolist (entry (subworld-members group))
+    (when (%meta-same-column-p entry member)
+      (setf (subworld-member-width entry) width))))
+
+(defun %meta-replace-workspace-members (group workspace members)
+  ;; Retain every other workspace's ordering and slots in the group list.
+  (setf (subworld-members group)
+        (loop for entry in (subworld-members group)
+              collect (if (= workspace (subworld-member-workspace entry))
+                          (pop members) entry))))
+
+(defun %meta-columns (group &optional (workspace (subworld-workspace group)))
   (remove-duplicates
-   (mapcar #'subworld-member-column (%meta-visible-members group))
+   (mapcar #'subworld-member-column (%meta-visible-members group :workspace workspace))
    :from-end t))
+
+(defun %meta-workspace-width (group workspace)
+  (let ((members (%meta-visible-members group :workspace workspace)))
+    (max (subworld-width group)
+         (loop for column in (remove-duplicates (mapcar #'subworld-member-column members))
+               for member = (find column members :key #'subworld-member-column)
+               sum (subworld-member-width member)))))
 
 (defun %meta-footprint-width (group)
   (if (eq (subworld-kind group) :niri)
-      (max (subworld-width group)
-           (+ 32d0
-              (loop for column in (%meta-columns group)
-                    for member = (find column (%meta-visible-members group)
-                                       :key #'subworld-member-column)
-                    sum (+ 14d0 (subworld-member-width member)))))
+      (loop for workspace from 1 to (%meta-workspace-count group)
+            maximize (%meta-workspace-width group workspace))
       (subworld-width group)))
 
 (defun %meta-group-at (world x y)
@@ -134,7 +202,7 @@
      (and (<= (subworld-x group) x
               (+ (subworld-x group) (%meta-footprint-width group)))
           (<= (subworld-y group) y
-              (+ (subworld-y group) (subworld-height group)))))
+              (+ (subworld-y group) (%meta-footprint-height group)))))
    (reverse (metaworld-subworlds world))))
 
 (defun %meta-camera (state)
@@ -147,25 +215,43 @@
           (%canvas-output-target-rotation state) (coerce rotation 'double-float))
     (set-output-camera world (%canvas-output-output state) x y zoom)))
 
+(defun %meta-camera-sample (origin destination progress)
+  "Interpolate the screen transform so pan and zoom follow the same path."
+  (if (>= progress 1d0) (copy-list destination)
+      (if (<= progress 0d0) (copy-list origin)
+          (destructuring-bind (ax ay az &optional (ar 0d0)) origin
+            (destructuring-bind (bx by bz &optional (br 0d0)) destination
+              (let* ((p (coerce progress 'double-float))
+                     (zoom (+ az (* p (- bz az))))
+                     (angle (- (mod (+ (- br ar) pi) (* 2d0 pi)) pi)))
+                (list (/ (+ (* ax az) (* p (- (* bx bz) (* ax az)))) zoom)
+                      (/ (+ (* ay az) (* p (- (* by bz) (* ay az)))) zoom)
+                      zoom (+ ar (* p angle)))))))))
+
 (defun %meta-transition-camera (world state origin)
   (let ((destination (%meta-camera state)))
+    (when (equalp origin destination)
+      (%meta-cancel-motion world state :metaworld-camera)
+      (return-from %meta-transition-camera state))
     (unless (equal origin destination)
       (let ((view (%meta-view-for-state world state)))
         (setf (%meta-view-hover-after view) (+ (%now) 0.36d0)
               (%meta-view-window-controls-until view) 0d0))
       (%meta-set-camera world state origin)
-      (ataxia.world:start-animation
-       (%world-animator world) state :metaworld-camera (%now) 0.24d0
-       (lambda (subject progress)
-         (%meta-set-camera
-          world subject
-          (mapcar (lambda (start end) (+ start (* progress (- end start))))
-                  origin destination))
-         (%meta-sync-ui world subject))
-       :easing #'ataxia.world:ease-out-cubic)
+      ;; One easing parameter keeps translation and scale in lockstep. Old
+      ;; per-axis velocities otherwise bend a retargeted camera's path.
+      (%meta-cancel-motion world state :metaworld-camera)
+      (%meta-animate-to world state :metaworld-camera '(0d0) '(1d0) 0.28d0
+                        (lambda (subject progress)
+                          (%meta-set-camera world subject
+                                            (%meta-camera-sample origin destination (first progress)))))
       (%request-output-state-frame world state))))
 
 (defun %meta-changed (world)
+  (when (and (fboundp '%meta-maintain-subworld-spacing)
+             (%output-states world) (not (%meta-restoring-p world))
+             (not (%world-quiescing-p world)))
+    (%meta-maintain-subworld-spacing world))
   (setf (%meta-save-needed-p world) t)
   (ataxia.world:refresh-world world)
   world)
@@ -189,7 +275,7 @@
                                   (reduce #'max (metaworld-subworlds world)
                                           :key (lambda (entry)
                                                  (+ (subworld-y entry)
-                                                    (subworld-height entry)))))
+                                                    (%meta-footprint-height entry)))))
                                0d0)) 'double-float))))
     (setf (metaworld-subworlds world)
           (append (metaworld-subworlds world) (list group)))
@@ -201,7 +287,7 @@
                        (lambda (group)
                          (and (< x (+ (subworld-x group) (%meta-footprint-width group) 96d0))
                               (> (+ x 1496d0) (subworld-x group))
-                              (< y (+ (subworld-y group) (subworld-height group) 96d0))
+                              (< y (+ (subworld-y group) (%meta-footprint-height group) 96d0))
                               (> (+ y 896d0) (subworld-y group))))
                        (metaworld-subworlds world))
         while overlap do (setf x (+ (subworld-x overlap) (%meta-footprint-width overlap) 96d0))

@@ -12,7 +12,8 @@ SOURCE := native/ataxia-wlr-glue.c
 HEADER := native/ataxia-wlr-glue.h
 SLINT_MANIFEST := src/world/slint/native/Cargo.toml
 SLINT_LOCK := src/world/slint/native/Cargo.lock
-SLINT_SOURCE := src/world/slint/native/src/lib.rs
+SLINT_SOURCE := $(wildcard src/world/slint/native/src/*.rs) src/world/slint/native/build.rs \
+                src/world/slint/native/builtins.slint $(wildcard src/worlds/metaworld/*.slint) $(wildcard src/worlds/metaworld/icons/*.svg)
 SLINT_TARGET_DIR := $(abspath $(BUILD_DIR)/slint-target)
 SLINT_LIBRARY := $(BUILD_DIR)/libataxia-slint-native.so
 
@@ -28,7 +29,8 @@ all: $(GLUE) $(SLINT_LIBRARY)
 
 $(GLUE): $(SOURCE) $(HEADER)
 	@mkdir -p $(BUILD_DIR)
-	$(CC) $(CFLAGS) -shared -o $@ $(SOURCE) $(LDLIBS)
+	$(CC) $(CFLAGS) -shared -o $@.pending $(SOURCE) $(LDLIBS)
+	mv $@.pending $@
 
 $(SLINT_LIBRARY): $(SLINT_MANIFEST) $(SLINT_LOCK) $(SLINT_SOURCE)
 	@mkdir -p $(BUILD_DIR)

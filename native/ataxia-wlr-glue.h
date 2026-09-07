@@ -488,4 +488,11 @@ ATAXIA_WLR_GLUE_API bool ataxia_pointer_constraint_cursor_hint(
 	const struct wlr_pointer_constraint_v1 *constraint,
 	double *x, double *y);
 
+struct ataxia_gesture_sample {
+ uint32_t time_msec, fingers, cancelled;
+ double dx, dy, scale, rotation;
+};
+ATAXIA_WLR_GLUE_API struct wl_signal *ataxia_pointer_gesture_signal(struct wlr_pointer *pointer, uint32_t kind, uint32_t phase);
+ATAXIA_WLR_GLUE_API void ataxia_pointer_gesture_read(const void *event, uint32_t kind, uint32_t phase, struct ataxia_gesture_sample *sample);
+
 #endif

@@ -177,10 +177,10 @@
       (let* ((deadline (ataxia.world.slint:slint-next-timer-milliseconds))
              (delay
                (cond
-                 ((not (%visible-component-p world)) 86400000)
+                 ((not (%visible-component-p world)) 0)
                  ((%component-animation-active-p world)
                   (if (zerop deadline) 16 (max 1 (min 16 deadline))))
-                 ((= deadline #xffffffffffffffff) 86400000)
+                 ((= deadline #xffffffffffffffff) 0)
                  (t (max 1 (min deadline 86400000))))))
         (ataxia.runtime:update-event-loop-timer timer delay))))
   world)
@@ -481,10 +481,17 @@
     (canvas-window (canvas-window-application target))
     (canvas-overlay (canvas-overlay-component target))))
 
+(defgeneric %overlay-below-windows-p (overlay)
+  (:documentation "Whether an overlay belongs to canvas decoration below application windows."))
+(defmethod %overlay-below-windows-p ((overlay canvas-overlay)) nil)
+
+(defgeneric %overlay-input-enabled-p (overlay))
+(defmethod %overlay-input-enabled-p ((overlay canvas-overlay)) t)
+
 (defun %target-visible-p (target)
   (typecase target
     (canvas-window (%window-visible-p target))
-    (canvas-overlay (canvas-overlay-visible-p target))
+    (canvas-overlay (and (canvas-overlay-visible-p target) (%overlay-input-enabled-p target)))
     (otherwise nil)))
 
 (defun %focus-target (world seat-state target)
@@ -571,6 +578,7 @@
      (and (typep (canvas-overlay-component overlay)
                  'ataxia.kernel:interactable)
           (%overlay-visible-on-state-p overlay state)
+          (%overlay-input-enabled-p overlay)
           (<= (canvas-overlay-x overlay) x
               (+ (canvas-overlay-x overlay) (canvas-overlay-width overlay)))
           (<= (canvas-overlay-y overlay) y
@@ -578,8 +586,10 @@
    (reverse (world-overlays world))))
 
 (defun %targets-at-screen-point (world state x y)
-  (append (%overlays-at-screen-point world state x y)
-          (%windows-at-screen-point world state x y)))
+  (let ((overlays (%overlays-at-screen-point world state x y)))
+    (append (remove-if #'%overlay-below-windows-p overlays)
+            (%windows-at-screen-point world state x y)
+            (remove-if-not #'%overlay-below-windows-p overlays))))
 
 (defun %target-at-screen-point (world state x y)
   (first (%targets-at-screen-point world state x y)))
@@ -1478,6 +1488,12 @@
     (%full-damage world state))
   world)
 
+(defgeneric %prepare-canvas-frame (world state)
+  (:documentation "Synchronize overlays after animation sampling, once per output frame."))
+
+(defmethod %prepare-canvas-frame ((world infinite-world) state)
+  (declare (ignore world state)))
+
 (defmethod ataxia.kernel:world-render
     ((world infinite-world) lease)
   (let* ((output (ataxia.kernel:frame-output lease))
@@ -1501,9 +1517,11 @@
         (ataxia.world:damage-reset-output (%world-damage world) output)))
     (%advance-world-animations world (ataxia.kernel:frame-timestamp lease))
     (%advance-view-shifts world (ataxia.kernel:frame-timestamp lease))
+    (%prepare-canvas-frame world state)
     (%reap-retired-overlays world)
     (dolist (overlay (world-overlays world))
       (when (%overlay-visible-on-state-p overlay state)
+        (%prepare-overlay-resolution world state overlay)
         (multiple-value-bind (damage active-p)
             (ataxia.kernel:drawable-prepare-frame
              (canvas-overlay-component overlay))

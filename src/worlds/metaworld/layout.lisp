@@ -11,44 +11,72 @@
                (canvas-overlay-width object) (canvas-overlay-height object))))))
 
 (defun %meta-place (world object x y width height)
-  (let ((width (max 96d0 (coerce width 'double-float)))
-        (height (max 64d0 (coerce height 'double-float))))
-    (etypecase object
-      (canvas-window
-       (%damage-window world object)
-       (let ((origin-x (canvas-window-x object))
-             (origin-y (canvas-window-y object))
-             (size-changed
-               (or (/= (round width) (round (canvas-window-width object)))
-                   (/= (round height) (round (canvas-window-height object))))))
-         (setf (canvas-window-x object) (coerce x 'double-float)
-               (canvas-window-y object) (coerce y 'double-float)
-               (canvas-window-width object) width
-               (canvas-window-height object) height)
-         (when size-changed
-           (ataxia.kernel:request-object-configuration
-            (canvas-window-application object) world
-            (make-instance 'ataxia.kernel:toplevel-configuration
-                           :width (round width) :height (round height))))
-         (when (and *meta-layout-motion* (not (%meta-restoring-p world))
-                    (not (%meta-dragged-p world object))
-                    (%window-visible-p object)
-                    (> (+ (abs (- x origin-x)) (abs (- y origin-y))) 1d0))
-           (animate-window
-            world object :metaworld-layout 0.18d0
-            (lambda (window progress)
-              (setf (canvas-window-x window) (+ origin-x (* progress (- x origin-x)))
-                    (canvas-window-y window) (+ origin-y (* progress (- y origin-y)))))
-            :easing #'ataxia.world:ease-out-cubic)))
-       (%damage-window world object)
-       (%update-window-membership world object))
-      (agent-widget
-       (setf (gethash object (%meta-spatial-widgets world))
-             (list (coerce x 'double-float) (coerce y 'double-float) width height))
-       (let ((component (canvas-overlay-component object)))
-         (unless (and (= width (ataxia.world.slint:slint-component-width component))
-                      (= height (ataxia.world.slint:slint-component-height component)))
-           (ataxia.world.slint:resize-slint-component component width height)))))))
+  ;; Layout may retarget neighbors during a grab, but must never move the grab.
+  (when (and *meta-layout-motion* (%meta-dragged-p world object))
+    (return-from %meta-place object))
+  (let* ((destination (list (coerce x 'double-float) (coerce y 'double-float)
+                            (max 96d0 (coerce width 'double-float))
+                            (max 64d0 (coerce height 'double-float))))
+         (origin (%meta-object-geometry object))
+         (target (%meta-target-geometry world object))
+         (animate-p (and *meta-layout-motion* (not (%meta-restoring-p world))
+                         (%target-visible-p object))))
+    (when (and animate-p (equalp target destination))
+      (return-from %meta-place object))
+    (when (typep object 'canvas-window) (%damage-window world object))
+    ;; Request the final client size once. Presentation scales the latest buffer
+    ;; while the displayed rectangle interpolates, without configure storms.
+    (unless (and (= (round (third target)) (round (third destination)))
+                 (= (round (fourth target)) (round (fourth destination))))
+      (etypecase object
+        (canvas-window
+         (ataxia.kernel:request-object-configuration
+          (canvas-window-application object) world
+          (make-instance 'ataxia.kernel:toplevel-configuration
+                         :width (round (third destination)) :height (round (fourth destination)))))
+        (agent-widget
+         (ataxia.world.slint:resize-slint-component
+          (canvas-overlay-component object) (third destination) (fourth destination)))))
+    (flet ((place (subject geometry)
+             (etypecase subject
+               (canvas-window
+                (setf (canvas-window-x subject) (first geometry)
+                      (canvas-window-y subject) (second geometry)
+                      (canvas-window-width subject) (third geometry)
+                      (canvas-window-height subject) (fourth geometry)))
+               (agent-widget
+                (setf (gethash subject (%meta-spatial-widgets world)) geometry)))))
+      (if (and animate-p (not (equalp origin destination)))
+          (%meta-animate-to world object :metaworld-layout origin destination 0.22d0 #'place)
+          (progn
+            (%meta-cancel-motion world object :metaworld-layout)
+            (place object destination))))
+    (when (typep object 'canvas-window)
+      (%damage-window world object)
+      (%update-window-membership world object)))
+  object)
+
+(defun %meta-translate-object (world object dx dy)
+  ;; Translate both the displayed sample and the path. A moving group must not
+  ;; freeze a child's in-flight layout or leave its destination behind.
+  (let ((motion (gethash object (%meta-motions world))))
+    (when motion
+      (dolist (geometry (list (%meta-trajectory-origin motion) (%meta-trajectory-destination motion)))
+        (incf (first geometry) dx)
+        (incf (second geometry) dy))))
+  (etypecase object
+    (canvas-window
+     (%damage-window world object)
+     (incf (canvas-window-x object) dx)
+     (incf (canvas-window-y object) dy)
+     (%damage-window world object)
+     (%update-window-membership world object))
+    (agent-widget
+     (let ((geometry (copy-list (%meta-object-geometry object))))
+       (incf (first geometry) dx)
+       (incf (second geometry) dy)
+       (setf (gethash object (%meta-spatial-widgets world)) geometry))))
+  object)
 
 (defun %meta-set-visible (world object visible-p)
   (etypecase object
@@ -62,47 +90,89 @@
      (when (member object (world-overlays world))
        (if visible-p (show-overlay world object) (hide-overlay world object))))))
 
-(defun %meta-stack-rectangles (world members x y width height)
-  (let* ((gap 14d0)
-         (usable (max 64d0 (- height (* gap (1- (length members))))))
-         (total (reduce #'+ members :key #'subworld-member-weight :initial-value 0d0))
-         (top y))
-    (dolist (member members)
-      (let ((tile-height (* usable (/ (subworld-member-weight member) total))))
-        (%meta-place world (subworld-member-object member) x top width tile-height)
-        (incf top (+ tile-height gap))))))
+(defun %meta-grid-rectangles (world members x y width height &optional (gap 14d0))
+  ;; When a narrow remainder cannot hold a first-leaf split, use a compact
+  ;; grid rather than letting minimum window sizes overlap neighboring tiles.
+  (let* ((count (length members))
+         (columns (or (loop for cols from 1 to count
+                            for rows = (ceiling count cols)
+                            when (and (>= (/ (- width (* gap (1- cols))) cols) 96d0)
+                                      (>= (/ (- height (* gap (1- rows))) rows) 64d0))
+                              return cols)
+                      count))
+         (rows (ceiling count columns))
+         (tile-width (/ (- width (* gap (1- columns))) columns))
+         (tile-height (/ (- height (* gap (1- rows))) rows)))
+    (loop for member in members for index from 0
+          do (%meta-place world (subworld-member-object member)
+                          (+ x (* (mod index columns) (+ tile-width gap)))
+                          (+ y (* (floor index columns) (+ tile-height gap)))
+                          tile-width tile-height))))
 
-(defun %meta-layout-niri (world group members)
-  (let ((left (+ (subworld-x group) 16d0))
-        (top (+ (subworld-y group) 52d0))
-        (height (- (subworld-height group) 68d0)))
-    (dolist (column (%meta-columns group))
+(defun %meta-stack-rectangles (world members x y width height &optional (gap 14d0))
+  (when members
+    (let* ((count (length members))
+           (usable (- height (* gap (1- count)))))
+      (when (< usable (* 64d0 count))
+        (return-from %meta-stack-rectangles (%meta-grid-rectangles world members x y width height gap)))
+      (let ((remaining (copy-list members)) (available usable)
+            (sizes (make-hash-table :test #'eq)) (top y))
+        ;; Reserve the real minimum size before distributing weighted space.
+        ;; Advancing by an unclamped share used to overlap skew-weight stacks.
+        (loop while remaining do
+          (let* ((total (reduce #'+ remaining :key #'subworld-member-weight))
+                 (small (remove-if-not
+                         (lambda (m) (< (* available (/ (subworld-member-weight m) total)) 64d0)) remaining)))
+            (if small
+                (dolist (m small)
+                  (setf (gethash m sizes) 64d0)
+                  (decf available 64d0)
+                  (setf remaining (remove m remaining :test #'eq)))
+                (progn
+                  (dolist (m remaining)
+                    (setf (gethash m sizes) (* available (/ (subworld-member-weight m) total))))
+                  (setf remaining nil)))))
+        (dolist (member members)
+          (let ((tile-height (gethash member sizes)))
+            (%meta-place world (subworld-member-object member) x top width tile-height)
+            (incf top (+ tile-height gap))))))))
+
+(defun %meta-layout-niri (world group members &optional (workspace (subworld-workspace group)))
+  (let ((left (subworld-x group))
+        (top (%meta-workspace-y group workspace))
+        (height (subworld-height group)))
+    (dolist (column (%meta-columns group workspace))
       (let* ((rows (remove-if-not
                     (lambda (member) (= column (subworld-member-column member)))
                     members))
              (width (subworld-member-width (first rows))))
         (dolist (member rows) (setf (subworld-member-width member) width))
-        (%meta-stack-rectangles world rows left top width height)
-        (incf left (+ width 14d0))))))
+        (%meta-stack-rectangles world rows left top width height 0d0)
+        (incf left width)))))
 
 (defun %meta-layout-dwindle (world group members)
   (labels ((split (remaining x y width height)
              (when remaining
                (if (null (rest remaining))
-                   (%meta-place world (subworld-member-object (first remaining))
-                                x y width height)
-                   (let ((ratio (subworld-ratio group)))
-                     (if (>= width height)
-                         (let ((first-width (* (- width 14d0) ratio)))
-                           (%meta-place world (subworld-member-object (first remaining))
-                                        x y first-width height)
-                           (split (rest remaining) (+ x first-width 14d0) y
-                                  (- width first-width 14d0) height))
-                         (let ((first-height (* (- height 14d0) ratio)))
-                           (%meta-place world (subworld-member-object (first remaining))
-                                        x y width first-height)
-                           (split (rest remaining) x (+ y first-height 14d0)
-                                  width (- height first-height 14d0)))))))))
+                   (%meta-place world (subworld-member-object (first remaining)) x y width height)
+                   (let* ((count (length (rest remaining)))
+                          (rows (max 1 (floor (/ (+ height 14d0) 78d0))))
+                          (columns (max 1 (floor (/ (+ width 14d0) 110d0))))
+                          (rest-width (- (* (ceiling count rows) 110d0) 14d0))
+                          (rest-height (- (* (ceiling count columns) 78d0) 14d0))
+                          (horizontal-p (>= width (+ 110d0 rest-width)))
+                          (vertical-p (>= height (+ 78d0 rest-height)))
+                          (ratio (subworld-ratio group)))
+                     (cond
+                       ((and horizontal-p (or (>= width height) (not vertical-p)))
+                        (let ((first-width (max 96d0 (min (- width 14d0 rest-width) (* (- width 14d0) ratio)))))
+                          (%meta-place world (subworld-member-object (first remaining)) x y first-width height)
+                          (split (rest remaining) (+ x first-width 14d0) y (- width first-width 14d0) height)))
+                       (vertical-p
+                        (let ((first-height (max 64d0 (min (- height 14d0 rest-height) (* (- height 14d0) ratio)))))
+                          (%meta-place world (subworld-member-object (first remaining)) x y width first-height)
+                          (split (rest remaining) x (+ y first-height 14d0) width (- height first-height 14d0))))
+                       (t (%meta-grid-rectangles world remaining x y width height))))))))
     (split members (+ (subworld-x group) 16d0) (+ (subworld-y group) 52d0)
            (- (subworld-width group) 32d0) (- (subworld-height group) 68d0))))
 
@@ -112,8 +182,14 @@
            (top (+ (subworld-y group) 52d0))
            (width (- (subworld-width group) 32d0))
            (height (- (subworld-height group) 68d0))
-           (master-width (if (rest members) (* (- width 14d0) (subworld-ratio group))
+           (rows (max 1 (floor (/ (+ height 14d0) 78d0))))
+           (side-minimum (- (* (ceiling (length (rest members)) rows) 110d0) 14d0))
+           (master-width (if (rest members)
+                             (max 96d0 (min (- width 14d0 side-minimum)
+                                           (* (- width 14d0) (subworld-ratio group))))
                              width)))
+      (when (and (rest members) (< width (+ 110d0 side-minimum)))
+        (return-from %meta-layout-master (%meta-grid-rectangles world members left top width height)))
       (%meta-place world (subworld-member-object (first members))
                    left top master-width height)
       (when (rest members)
@@ -129,7 +205,10 @@
           (%raise-window world window))))))
 
 (defun %meta-layout (world group)
-  (let ((*meta-layout-motion* (not (%meta-group-drag world))))
+  (when *meta-layout-deferred-p*
+    (when group (pushnew group *meta-layout-pending* :test #'eq))
+    (return-from %meta-layout group))
+  (let ((*meta-layout-motion* t))
    (when group
     (dolist (member (copy-list (subworld-members group)))
       (let ((object (subworld-member-object member)))
@@ -137,23 +216,29 @@
           (setf (subworld-members group) (remove member (subworld-members group)))
           (remhash object (%meta-owners world))
           (remhash object (%meta-spatial-widgets world)))))
-    (let ((fullscreen (subworld-fullscreen group)))
+    (let ((fullscreen (subworld-fullscreen group))
+          (niri-p (eq :niri (subworld-kind group))))
       (dolist (member (subworld-members group))
         (%meta-set-visible
          world (subworld-member-object member)
-         (and (= (subworld-workspace group) (subworld-member-workspace member))
-              (or (null fullscreen) (eq fullscreen (subworld-member-object member))))))
-      (if fullscreen
-          (%meta-place world fullscreen
-                       (+ (subworld-x group) 8d0) (+ (subworld-y group) 40d0)
-                       (- (subworld-width group) 16d0) (- (subworld-height group) 48d0))
-          (let ((members (%meta-visible-members group)))
-            (case (subworld-kind group)
-              (:niri (%meta-layout-niri world group members))
-              (:hyprland
-               (if (eq (subworld-layout group) :master)
-                   (%meta-layout-master world group members)
-                   (%meta-layout-dwindle world group members)))))))
+         (and (or niri-p (= (subworld-workspace group) (subworld-member-workspace member)))
+              (or (null fullscreen)
+                  (and niri-p (/= (subworld-workspace group) (subworld-member-workspace member)))
+                  (eq fullscreen (subworld-member-object member))))))
+      (if niri-p
+          (loop for workspace from 1 to (%meta-workspace-count group)
+                unless (and fullscreen (= workspace (subworld-workspace group)))
+                  do (%meta-layout-niri world group (%meta-visible-members group :workspace workspace)
+                                        workspace))
+          (unless fullscreen
+            (let ((members (%meta-visible-members group)))
+              (if (eq (subworld-layout group) :master)
+                  (%meta-layout-master world group members)
+                  (%meta-layout-dwindle world group members)))))
+      (when fullscreen
+        (%meta-place world fullscreen
+                     (+ (subworld-x group) 16d0) (+ (%meta-workspace-y group) 52d0)
+                     (- (subworld-width group) 32d0) (- (subworld-height group) 68d0))))
     (%meta-raise-floating world group)
     (%meta-changed world))))
 
@@ -220,16 +305,24 @@
 (defun %meta-fit-group (world state group &key overview-p)
   (multiple-value-bind (width height) (%output-logical-size state)
     (let* ((group-width (if overview-p (%meta-footprint-width group) (subworld-width group)))
-           (margin (if (%meta-standalone world) 0d0 80d0))
-           (zoom (max 0.08d0 (min 1.5d0 (/ (- width margin) group-width)
-                                  (/ (- height (if (%meta-standalone world) 0d0 100d0))
-                                     (subworld-height group)))))
+           (group-height (if overview-p (%meta-footprint-height group) (subworld-height group)))
+           (group-y (if overview-p (subworld-y group) (%meta-workspace-y group)))
+           ;; Entered Niri fills the monitor height. Its horizontal strip
+           ;; may overflow; fitting both dimensions would letterbox wide groups.
+           (niri-p (and (not overview-p) (eq :niri (subworld-kind group))))
+           (zoom (if niri-p (/ height group-height)
+                     (max 0.08d0 (min 8d0 (/ width group-width) (/ height group-height)))))
+           (viewport-width (if niri-p (/ width zoom) (subworld-width group)))
            (scroll (if overview-p 0d0
-                       (gethash (subworld-workspace group) (subworld-scrolls group) 0d0))))
+                       (max 0d0 (min (max 0d0 (- (%meta-workspace-width group (subworld-workspace group))
+                                                  viewport-width))
+                                     (gethash (subworld-workspace group) (subworld-scrolls group) 0d0))))))
+      (unless overview-p
+        (setf (gethash (subworld-workspace group) (subworld-scrolls group)) scroll))
       (%meta-set-camera
        world state
-       (list (- (+ (subworld-x group) scroll) (/ (- width (* group-width zoom)) (* 2d0 zoom)))
-             (- (subworld-y group) (/ (- height (* (subworld-height group) zoom)) (* 2d0 zoom)))
+       (list (- (+ (subworld-x group) scroll) (if niri-p 0d0 (/ (- width (* group-width zoom)) (* 2d0 zoom))))
+             (- group-y (/ (- height (* group-height zoom)) (* 2d0 zoom)))
              zoom 0d0)))))
 
 (defun %meta-focus (world object &optional seat (animate-p t))
@@ -238,27 +331,40 @@
       (%focus-target world seat-state object)
       (let ((group (and object (object-subworld world object)))
             (state (%canvas-seat-output seat-state)))
-        (when group (setf (gethash group (%meta-group-focus world)) object))
+        (when group
+          (setf (gethash group (%meta-group-focus world)) object)
+          (let ((member (%meta-member group object)))
+            (when member
+              (setf (gethash (subworld-member-workspace member)
+                             (or (gethash group *meta-workspace-focus*)
+                                 (setf (gethash group *meta-workspace-focus*) (make-hash-table)))) object))))
         (%meta-raise-floating world group)
-        (when (and group state (eq group (%meta-current world seat))
+        (when (and group state (not (%meta-dragged-p world object)) (eq group (%meta-current world seat))
                    (eq :niri (subworld-kind group)))
           (multiple-value-bind (width height) (%output-logical-size state)
             (declare (ignore height))
-            (let* ((object-x (first (%meta-object-geometry object)))
-                   (object-width (third (%meta-object-geometry object)))
+            (let* ((object-x (first (%meta-target-geometry world object)))
+                   (object-width (third (%meta-target-geometry world object)))
                    (camera-x (%canvas-output-camera-x state))
                    (visible-width (/ width (%canvas-output-zoom state)))
-                   (margin (/ 34d0 (%canvas-output-zoom state)))
-                   (origin (%meta-camera state)))
-              (when (or (< object-x (+ camera-x margin))
-                        (> (+ object-x object-width) (- (+ camera-x visible-width) margin)))
-                (set-output-camera
-                 world (%canvas-output-output state)
-                 (- (+ object-x (/ object-width 2d0)) (/ visible-width 2d0))
-                 (%canvas-output-camera-y state) (%canvas-output-zoom state)))
+                   (margin 0d0)
+                   (left-limit (subworld-x group))
+                   (right-limit (+ left-limit (max 0d0 (- (%meta-workspace-width group (subworld-workspace group))
+                                                         visible-width))))
+                   (origin (%meta-camera state))
+                   (desired (cond
+                              ((> object-width (- visible-width (* 2d0 margin)))
+                               (- (+ object-x (/ object-width 2d0)) (/ visible-width 2d0)))
+                              ((< object-x (+ camera-x margin)) (- object-x margin))
+                              ((> (+ object-x object-width) (- (+ camera-x visible-width) margin))
+                               (- (+ object-x object-width margin) visible-width))
+                              (t camera-x)))
+                   (destination (max left-limit (min right-limit desired))))
+              (unless (= destination camera-x)
+                (set-output-camera world (%canvas-output-output state) destination
+                                   (%canvas-output-camera-y state) (%canvas-output-zoom state)))
               (setf (gethash (subworld-workspace group) (subworld-scrolls group))
-                    (max 0d0 (+ (- (%canvas-output-camera-x state) (subworld-x group))
-                                (/ (- visible-width (subworld-width group)) 2d0))))
+                    (- destination left-limit))
               (when animate-p (%meta-transition-camera world state origin))))))))
   (%meta-changed world)
   object)
@@ -274,10 +380,11 @@
       (unless (%meta-view-active view)
         (setf (%meta-view-parent-camera view) (%meta-camera state)))
       (setf (%meta-view-active view) group
-            (%meta-view-panel-until view) (+ (%now) 2d0))
+            (%meta-view-panel-until view) 0d0)
       (%meta-fit-group world state group)
       (%meta-focus world
-                   (or (let ((previous (gethash group (%meta-group-focus world))))
+                   (or (let* ((table (gethash group *meta-workspace-focus*))
+                              (previous (and table (gethash (subworld-workspace group) table))))
                          (when (and (eq group (object-subworld world previous))
                                     (%target-visible-p previous)) previous))
                        (some (lambda (member)
@@ -301,14 +408,10 @@
             (when (%meta-view-parent-camera view)
               (%meta-set-camera world state (%meta-view-parent-camera view)))))
       (%meta-transition-camera world state origin)
-      (setf (%meta-view-panel-until view) (+ (%now) 2d0))))
+      (setf (%meta-view-panel-until view) 0d0)))
   (%meta-changed world))
 
-(defun move-subworld (world group x y)
-  (unless (member group (metaworld-subworlds world) :test #'eq)
-    (error "Subworld does not belong to this world."))
-  (check-type x real)
-  (check-type y real)
+(defun %meta-translate-subworld (world group x y)
   (let ((shift-x (- x (subworld-x group)))
         (shift-y (- y (subworld-y group)))
         (*meta-layout-motion* nil))
@@ -316,20 +419,30 @@
           (subworld-y group) (coerce y 'double-float))
     (dolist (member (subworld-members group))
       (let ((object (subworld-member-object member)))
-        (ataxia.world:cancel-animation (%world-animator world) object :metaworld-layout)
         (let ((saved (subworld-member-restore-geometry member)))
           (when saved
             (setf (subworld-member-restore-geometry member)
                   (list (+ (first saved) shift-x) (+ (second saved) shift-y)
                         (third saved) (fourth saved)))))
-        (destructuring-bind (left top width height) (%meta-object-geometry object)
-          (%meta-place world object (+ left shift-x) (+ top shift-y) width height)))))
+        (%meta-translate-object world object shift-x shift-y))))
+  group)
+
+(defun move-subworld (world group x y)
+  (unless (member group (metaworld-subworlds world) :test #'eq)
+    (error "Subworld does not belong to this world."))
+  (check-type x real)
+  (check-type y real)
+  (let ((direction (list (- x (subworld-x group)) (- y (subworld-y group)))))
+    (%meta-cancel-motion world group :subworld-push)
+    (%meta-translate-subworld world group x y)
+    (%meta-push-subworlds world group direction))
   (%meta-changed world)
   group)
 
 (defun remove-subworld (world group)
   (when (%meta-standalone world)
     (error "A standalone world's only layout cannot be removed."))
+  (%meta-cancel-motion world group :subworld-push)
   (dolist (state (%output-states world))
     (let ((view (%meta-view-for-state world state)))
       (when (eq group (%meta-view-active view))
@@ -341,3 +454,26 @@
   (setf (metaworld-subworlds world) (remove group (metaworld-subworlds world)))
   (remhash group (%meta-group-focus world))
   (%meta-changed world))
+
+(defun %meta-niri-drop-side (geometry x y control-p)
+  "Top/bottom quarter in the center of a tile stacks; side drops make columns."
+  (destructuring-bind (left top width height) geometry
+    (cond (control-p (if (< y (+ top (/ height 2d0))) :above :below))
+          ((<= (+ left (* width 0.25d0)) x (+ left (* width 0.75d0)))
+           (cond ((< y (+ top (* height 0.25d0))) :above)
+                 ((>= y (+ top (* height 0.75d0))) :below))))))
+
+(defun %meta-insert-member (group member target after-p stack-p)
+  (let ((members (remove member (subworld-members group))))
+    (setf (subworld-members group)
+          (loop for entry in members
+                when (and (eq entry target) (not after-p)) collect member
+                collect entry
+                when (and (eq entry target) after-p) collect member)))
+  (when (eq :niri (subworld-kind group))
+    (setf (subworld-member-column member)
+          (if stack-p (subworld-member-column target) (incf (subworld-next-column group))))
+    (when stack-p
+      (setf (subworld-member-width member) (subworld-member-width target)
+            (subworld-member-workspace member) (subworld-member-workspace target))))
+  member)

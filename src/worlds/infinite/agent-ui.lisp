@@ -249,8 +249,8 @@
                           (canvas-overlay-height widget))))
       (ataxia.world.slint:resize-slint-component
        (canvas-overlay-component widget) new-width new-height
-       :scale (ataxia.kernel:output-scale
-               (canvas-overlay-output widget)))
+       :scale (ataxia.world.slint:slint-component-scale
+               (canvas-overlay-component widget)))
       (setf (canvas-overlay-width widget) new-width
             (canvas-overlay-height widget) new-height)))
   (when opacity-p

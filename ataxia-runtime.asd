@@ -18,6 +18,7 @@
      (:file "raw")
      (:file "objects")
      (:file "listeners")
+     (:file "gestures")
      (:file "runtime")
      (:file "event-loop")
      (:file "subsurface")

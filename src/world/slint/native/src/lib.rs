@@ -6,10 +6,10 @@
 
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, VecDeque};
-use std::ffi::{CStr, CString, c_void};
+use std::ffi::{c_void, CStr, CString};
 use std::num::NonZeroU32;
 use std::os::raw::c_char;
-use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::PathBuf;
 use std::ptr;
 use std::rc::{Rc, Weak};
@@ -17,13 +17,14 @@ use std::rc::{Rc, Weak};
 use i_slint_renderer_femtovg::{
     FemtoVGOpenGLRenderer, FemtoVGOpenGLRendererExt, FemtoVGRendererExt,
 };
-use slint::Window;
 use slint::platform::femtovg_renderer::OpenGLInterface;
 use slint::platform::{
     Key, Platform, PlatformError, PointerEventButton, Renderer, WindowAdapter, WindowEvent,
 };
-use slint::{ComponentHandle, LogicalPosition, PhysicalSize, SharedString, WindowSize};
-use slint_interpreter::{Compiler, ComponentInstance, Value};
+use slint::Window;
+use slint::{LogicalPosition, PhysicalSize, SharedString, WindowSize};
+use slint_interpreter::{Compiler, Value};
+mod builtins;
 use xkbcommon::xkb;
 
 const GL_FRAMEBUFFER: u32 = 0x8D40;
@@ -74,9 +75,7 @@ struct ComponentOpenGLTarget {
 
 unsafe impl OpenGLInterface for ComponentOpenGLTarget {
     fn ensure_current(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        CURRENT_COMPONENT_FRAMEBUFFER.with(|framebuffer| {
-            framebuffer.set(self.state.framebuffer)
-        });
+        CURRENT_COMPONENT_FRAMEBUFFER.with(|framebuffer| framebuffer.set(self.state.framebuffer));
         unsafe {
             glBindFramebuffer(GL_FRAMEBUFFER, self.state.framebuffer);
             glViewport(
@@ -124,7 +123,10 @@ struct SavedGlTarget {
 
 impl SavedGlTarget {
     fn capture() -> Self {
-        let mut state = Self { framebuffer: 0, viewport: [0; 4] };
+        let mut state = Self {
+            framebuffer: 0,
+            viewport: [0; 4],
+        };
         unsafe {
             glGetIntegerv(GL_FRAMEBUFFER_BINDING, &mut state.framebuffer);
             glGetIntegerv(GL_VIEWPORT, state.viewport.as_mut_ptr());
@@ -225,7 +227,7 @@ impl Platform for AtaxiaPlatform {
 }
 
 pub struct NativeComponent {
-    _instance: ComponentInstance,
+    _instance: builtins::Instance,
     window: Rc<AtaxiaWindow>,
     callbacks: Rc<RefCell<VecDeque<CallbackEvent>>>,
     render_target: Option<Rc<RenderTargetState>>,
@@ -327,12 +329,30 @@ fn install_platform() -> Result<(), String> {
     })
 }
 
+thread_local! {
+    static DEFAULT_KEYMAP: RefCell<Option<xkb::Keymap>> = const { RefCell::new(None) };
+}
+
 fn make_xkb_state() -> Result<xkb::State, String> {
-    let context = xkb::Context::new(xkb::CONTEXT_NO_FLAGS);
-    let keymap =
-        xkb::Keymap::new_from_names(&context, "", "", "", "", None, xkb::KEYMAP_COMPILE_NO_FLAGS)
-            .ok_or_else(|| "xkbcommon could not create the default keymap".to_owned())?;
-    Ok(xkb::State::new(&keymap))
+    DEFAULT_KEYMAP.with(|cached| {
+        let mut cached = cached.borrow_mut();
+        if cached.is_none() {
+            let context = xkb::Context::new(xkb::CONTEXT_NO_FLAGS);
+            *cached = Some(
+                xkb::Keymap::new_from_names(
+                    &context,
+                    "",
+                    "",
+                    "",
+                    "",
+                    None,
+                    xkb::KEYMAP_COMPILE_NO_FLAGS,
+                )
+                .ok_or_else(|| "xkbcommon could not create the default keymap".to_owned())?,
+            );
+        }
+        Ok(xkb::State::new(cached.as_ref().unwrap()))
+    })
 }
 
 fn special_key(name: &str) -> Option<Key> {
@@ -431,30 +451,36 @@ pub unsafe extern "C" fn ataxia_slint_component_create(
             .unwrap_or_else(|| "ataxia-component.slint".to_owned());
         let requested_name = unsafe { optional_string(component_name) }?;
         PENDING_WINDOWS.with(|windows| windows.borrow_mut().clear());
-        let compiler = Compiler::default();
-        let result = futures_lite::future::block_on(
-            compiler.build_from_source(source.into(), PathBuf::from(source_path)),
-        );
-        let diagnostics = result.diagnostics().collect::<Vec<_>>();
-        if diagnostics.iter().any(|diagnostic| {
-            matches!(
-                diagnostic.level(),
-                slint_interpreter::DiagnosticLevel::Error
-            )
-        }) {
-            return Err(diagnostics
-                .iter()
-                .map(ToString::to_string)
-                .collect::<Vec<_>>()
-                .join("\n"));
-        }
-        let name = requested_name
-            .or_else(|| result.component_names().next().map(str::to_owned))
-            .ok_or_else(|| "Slint source exports no component".to_owned())?;
-        let definition = result
-            .component(&name)
-            .ok_or_else(|| format!("Slint component {name:?} was not found"))?;
-        let instance = definition.create().map_err(|error| error.to_string())?;
+        let instance = if source_path.starts_with("ataxia-builtin:") {
+            builtins::Instance::builtin(&source_path, requested_name.as_deref())?
+        } else {
+            let compiler = Compiler::default();
+            let result = futures_lite::future::block_on(
+                compiler.build_from_source(source.into(), PathBuf::from(source_path)),
+            );
+            let diagnostics = result.diagnostics().collect::<Vec<_>>();
+            if diagnostics.iter().any(|diagnostic| {
+                matches!(
+                    diagnostic.level(),
+                    slint_interpreter::DiagnosticLevel::Error
+                )
+            }) {
+                return Err(diagnostics
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join("\n"));
+            }
+            let name = requested_name
+                .or_else(|| result.component_names().next().map(str::to_owned))
+                .ok_or_else(|| "Slint source exports no component".to_owned())?;
+            let definition = result
+                .component(&name)
+                .ok_or_else(|| format!("Slint component {name:?} was not found"))?;
+            builtins::Instance::Dynamic(definition.create().map_err(|error| error.to_string())?)
+        };
+        // Both generated and interpreted handles create their adapter lazily.
+        instance.show().map_err(|error| error.to_string())?;
         let window = PENDING_WINDOWS
             .with(|windows| windows.borrow_mut().pop_front())
             .ok_or_else(|| "Slint did not request a World window adapter".to_owned())?;
@@ -462,7 +488,6 @@ pub unsafe extern "C" fn ataxia_slint_component_create(
             scale_factor: scale,
         });
         window.set_size(PhysicalSize::new(width, height));
-        instance.show().map_err(|error| error.to_string())?;
         window.request_redraw();
         let component = NativeComponent {
             _instance: instance,

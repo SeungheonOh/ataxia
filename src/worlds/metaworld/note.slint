@@ -4,20 +4,21 @@ export component MetaworldNote inherits Window {
     callback edited(string);
     callback close();
     forward-focus: editor;
-    Rectangle { border-width: 1px; border-color: #c7c7c7; border-radius: 7px; background: #ffffff; }
-    Text { x: 12px; y: 8px; text: "NOTE"; font-family: "monospace"; font-size: 10px; color: #595959; }
+    Rectangle { border-width: 1px; border-color: #d8dde5; border-radius: 10px; background: #fafbfd; }
+    Text { x: 12px; y: 8px; text: "Note"; font-family: "DejaVu Sans"; font-size: 10px; color: #7c8592; }
     close-area := TouchArea {
         x: parent.width - 30px; y: 0px; width: 30px; height: 28px;
         clicked => { root.close(); }
-        Text { text: parent.has-hover ? "×" : ""; color: #595959; horizontal-alignment: center; vertical-alignment: center; }
+        Text { text: parent.has-hover ? "×" : ""; color: #7c8592; horizontal-alignment: center; vertical-alignment: center; }
     }
     editor := TextInput {
         x: 12px; y: 30px; width: parent.width - 24px; height: parent.height - 42px;
         text <=> root.content;
-        color: #161616;
+        color: #343b46;
+        font-family: "DejaVu Sans";
         font-size: 15px;
         wrap: word-wrap;
-        selection-background-color: #bfbfbf;
+        selection-background-color: #cbd7e8;
         edited => { root.edited(self.text); }
     }
 }

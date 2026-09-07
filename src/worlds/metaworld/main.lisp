@@ -14,6 +14,13 @@
     (unwind-protect
          (progn
            (ataxia.kernel:start-kernel kernel)
+           ;; Portal activation belongs to the direct desktop session. Run its
+           ;; setup independently so a slow D-Bus service cannot stall frames.
+           (uiop:launch-program
+            (list "env" (format nil "WAYLAND_DISPLAY=~A"
+                                (ataxia.runtime:runtime-socket-name (ataxia.kernel:kernel-runtime kernel)))
+                  "sh" (namestring (asdf:system-relative-pathname "ataxia-metaworld" "scripts/setup-desktop-session")))
+            :input #P"/dev/null" :output :interactive :error-output :interactive)
            (when sly-port
              (setf control (ataxia.sly-control:start-sly-control kernel :port sly-port)))
            (format t "[metaworld] WAYLAND_DISPLAY=~A mode=~A~%"
@@ -23,7 +30,8 @@
            (ataxia.kernel:run-kernel kernel :run-for run-for)
            0)
       (when control (ataxia.sly-control:stop-sly-control control))
-      (ataxia.kernel:destroy-kernel kernel :metaworld-exit))))
+      (ataxia.kernel:destroy-kernel kernel :metaworld-exit)
+      (%meta-flush-saves))))
 
 (defun metaworld-main (&optional (arguments (uiop:command-line-arguments)))
   (handler-case

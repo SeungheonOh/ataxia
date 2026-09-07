@@ -23,4 +23,5 @@
      (:file "seats")
      (:file "wayland-objects")
      (:file "outputs")
-     (:file "runtime-sink")))))
+     (:file "runtime-sink")
+     (:file "gestures")))))

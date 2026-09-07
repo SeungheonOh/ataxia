@@ -72,6 +72,19 @@
    #:cursor-button-input-time-msec
    #:cursor-button-input-code
    #:cursor-button-input-state
+   #:cursor-gesture-input
+   #:make-cursor-gesture-input
+   #:world-cursor-gesture
+   #:cursor-gesture-input-device
+   #:cursor-gesture-input-kind
+   #:cursor-gesture-input-phase
+   #:cursor-gesture-input-time-msec
+   #:cursor-gesture-input-fingers
+   #:cursor-gesture-input-cancelled-p
+   #:cursor-gesture-input-dx
+   #:cursor-gesture-input-dy
+   #:cursor-gesture-input-scale
+   #:cursor-gesture-input-rotation
    #:cursor-axis-input
    #:make-cursor-axis-input
    #:cursor-axis-input-device

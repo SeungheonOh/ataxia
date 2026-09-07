@@ -417,6 +417,18 @@
    #:pointer-button-code
    #:pointer-button-state
    #:pointer-button-state-code
+   #:pointer-gesture
+   #:pointer-gesture-event
+   #:pointer-gesture-pointer
+   #:pointer-gesture-kind
+   #:pointer-gesture-phase
+   #:pointer-gesture-time-msec
+   #:pointer-gesture-fingers
+   #:pointer-gesture-cancelled-p
+   #:pointer-gesture-dx
+   #:pointer-gesture-dy
+   #:pointer-gesture-scale
+   #:pointer-gesture-rotation
    #:pointer-axis-event
    #:pointer-axis-pointer
    #:pointer-axis-time-msec

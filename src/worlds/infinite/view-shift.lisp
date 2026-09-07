@@ -203,8 +203,8 @@
               (canvas-overlay-height overlay) height)
         (ataxia.world.slint:resize-slint-component
          (canvas-overlay-component overlay) width height
-         :scale (ataxia.kernel:output-scale
-                 (canvas-overlay-output overlay)))
+         :scale (ataxia.world.slint:slint-component-scale
+                 (canvas-overlay-component overlay)))
         (%damage-overlay world overlay)))
     (%set-view-shift-properties
      shift (%canvas-seat-x seat-state) (%canvas-seat-y seat-state))))

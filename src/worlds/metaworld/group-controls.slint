@@ -8,18 +8,18 @@ export component SubworldControls inherits Window {
     in property <bool> standalone: false;
     callback action(string);
     callback rename(string);
-    Rectangle { border-width: 1px; border-color: #c7c7c7; border-radius: 8px; background: #ffffff; }
+    Rectangle { border-width: 1px; border-color: #d8dde5; border-radius: 10px; background: #fafbfd; }
     VerticalLayout {
         padding: 8px;
         spacing: 6px;
         HorizontalLayout {
             spacing: 6px;
             Rectangle {
-                border-width: 0px; border-radius: 4px; background: #f2f2f2;
+                border-width: 0px; border-radius: 4px; background: #eef1f5;
                 TextInput {
                     x: 7px; y: 6px; width: parent.width - 14px; height: parent.height - 12px;
-                    text <=> root.world-name; single-line: true; color: #161616;
-                    selection-background-color: #bfbfbf; font-size: 14px;
+                    text <=> root.world-name; single-line: true; color: #343b46;
+                    selection-background-color: #cbd7e8; font-size: 14px;
                     edited => { root.rename(self.text); }
                     accepted => { root.action("dismiss"); }
                 }
@@ -38,6 +38,7 @@ export component SubworldControls inherits Window {
             MetaButton { label: root.standalone ? "Canvas" : "Standalone"; activate => { root.action(root.standalone ? "mode-canvas" : "standalone"); } }
         }
         MetaButton {
+            quiet-danger: true;
             label: root.confirming ? "Keep windows, remove group?" : "Ungroup";
             enabled: !root.standalone;
             activate => { root.action("dissolve"); }

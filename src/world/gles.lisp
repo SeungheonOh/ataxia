@@ -224,15 +224,22 @@
 
 (defun gles-upload-floats (buffer values)
   (%gl-bind-buffer +array-buffer+ buffer)
-  (let ((vector (coerce values 'vector)))
-    (cffi:with-foreign-object (data :float (length vector))
-      (loop for value across vector
-            for index from 0
-            do (setf (cffi:mem-aref data :float index)
-                     (coerce value 'single-float)))
-      (%gl-buffer-data +array-buffer+
-                       (* (length vector) (cffi:foreign-type-size :float))
-                       data +stream-draw+))))
+  (if (typep values '(simple-array single-float (*)))
+      ;; glBufferData copies before returning. Pin packed geometry for the call
+      ;; instead of allocating and converting every float on every frame.
+      (cffi:with-pointer-to-vector-data (data values)
+        (%gl-buffer-data +array-buffer+
+                         (* (length values) (cffi:foreign-type-size :float))
+                         data +stream-draw+))
+      (let ((vector (coerce values 'vector)))
+        (cffi:with-foreign-object (data :float (length vector))
+          (loop for value across vector
+                for index from 0
+                do (setf (cffi:mem-aref data :float index)
+                         (coerce value 'single-float)))
+          (%gl-buffer-data +array-buffer+
+                           (* (length vector) (cffi:foreign-type-size :float))
+                           data +stream-draw+)))))
 
 (defun gles-enable-attribute (index size stride offset)
   (%gl-enable-vertex-attrib-array index)

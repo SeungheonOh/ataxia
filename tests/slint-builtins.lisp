@@ -1,12 +1,5 @@
 ;;;; Run: sbcl --eval '(sb-int:set-floating-point-modes :traps nil)' --script tests/slint-builtins.lisp
-(require :asdf)
-(let ((root (uiop:pathname-parent-directory-pathname
-             (uiop:pathname-directory-pathname *load-truename*))))
-  (asdf:initialize-source-registry
-   `(:source-registry (:tree ,root)
-     (:tree ,(merge-pathnames "fun/ataxia-deps/common-lisp/" (user-homedir-pathname)))
-     :inherit-configuration))
-  (asdf:load-system "ataxia-metaworld"))
+(load (merge-pathnames "support.lisp" *load-truename*))
 (in-package #:ataxia.infinite-world)
 
 (defun check-component (path source properties callbacks)
@@ -28,7 +21,7 @@
                 ("toolbar" (("caption" . "test") ("active" . t) ("standalone" . nil) ("workspace" . 2)) ("action"))
                 ("group-controls" (("world-name" . "test") ("policy" . "niri") ("confirming" . t) ("standalone" . nil)) ("action" "rename"))
                 ("canvas-menu" nil ("action"))
-                ("window-controls" (("expanded" . t) ("owned" . t) ("detachable" . nil) ("niri" . t) ("floating" . nil)) ("action"))
+                ("window-controls" (("owned" . t) ("detachable" . nil) ("niri" . t) ("floating" . nil)) ("action"))
                 ("note" (("content" . "test")) ("edited" "close"))))
   (let ((start (get-internal-real-time)))
     (dotimes (iteration 5)

@@ -48,6 +48,13 @@ void main() {
              (yy (- (cdr (third basis)) (cdr origin)))
              (vertices (make-array 4096 :adjustable t :fill-pointer 0
                                    :element-type 'single-float))
+             (corners (loop for (px py) in (list (list 0d0 0d0) (list viewport-width 0d0)
+                                                 (list 0d0 viewport-height) (list viewport-width viewport-height))
+                            collect (multiple-value-list (%screen-to-canvas state px py))))
+             (left (- (reduce #'min corners :key #'first) 1d0))
+             (top (- (reduce #'min corners :key #'second) 1d0))
+             (right (+ (reduce #'max corners :key #'first) 1d0))
+             (bottom (+ (reduce #'max corners :key #'second) 1d0))
              (step 24d0)
              (pattern '((0d0 . 1d0) (5d0 . 5d0) (14d0 . 1d0))))
         (labels ((vertex (px py u v)
@@ -63,16 +70,16 @@ void main() {
                      (vertex right top 1f0 0f0)
                      (vertex right bottom 1f0 1f0)
                      (vertex left bottom 0f0 1f0))))
-          (loop for offset from (* step (max 0 (floor (/ (- x) step)))) below width by step
-                while (< (+ x offset) viewport-width)
+          (loop for offset from (* step (max 0 (floor (/ (- left x) step)))) below width by step
+                while (< (+ x offset) right)
                 do (dolist (segment pattern)
                      (let ((start (+ offset (car segment))))
                        (when (< start width)
                          (stroke (round (+ x start)) (round y) (min (cdr segment) (- width start)) 1d0)
                          (stroke (round (+ x start)) (round (+ y height))
                                  (min (cdr segment) (- width start)) 1d0)))))
-          (loop for offset from (* step (max 0 (floor (/ (- y) step)))) below height by step
-                while (< (+ y offset) viewport-height)
+          (loop for offset from (* step (max 0 (floor (/ (- top y) step)))) below height by step
+                while (< (+ y offset) bottom)
                 do (dolist (segment pattern)
                      (let ((start (+ offset (car segment))))
                        (when (< start height)

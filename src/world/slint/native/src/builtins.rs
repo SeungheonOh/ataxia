@@ -94,7 +94,6 @@ impl Instance {
             (Self::GroupControls(ui), "policy", Value::String(value)) => ui.set_policy(value),
             (Self::GroupControls(ui), "confirming", Value::Bool(value)) => ui.set_confirming(value),
             (Self::GroupControls(ui), "standalone", Value::Bool(value)) => ui.set_standalone(value),
-            (Self::WindowControls(ui), "expanded", Value::Bool(value)) => ui.set_expanded(value),
             (Self::WindowControls(ui), "owned", Value::Bool(value)) => ui.set_owned(value),
             (Self::WindowControls(ui), "detachable", Value::Bool(value)) => {
                 ui.set_detachable(value)

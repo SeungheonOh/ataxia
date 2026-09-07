@@ -8,7 +8,6 @@
     :serial t
     :components
     ((:file "model")
-     (:file "services")
      (:file "motion")
      (:file "renderer")
      (:file "layout")

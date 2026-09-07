@@ -1,12 +1,5 @@
-;;;; Run: sbcl --script tests/metaworld-motion.lisp
-(require :asdf)
-(let ((root (uiop:pathname-parent-directory-pathname
-             (uiop:pathname-directory-pathname *load-truename*))))
-  (asdf:initialize-source-registry
-   `(:source-registry (:tree ,root)
-     (:tree ,(merge-pathnames "fun/ataxia-deps/common-lisp/" (user-homedir-pathname)))
-     :inherit-configuration))
-  (asdf:load-system "ataxia-metaworld"))
+;;;; Run: sbcl --script tests/metaworld-minification.lisp
+(load (merge-pathnames "support.lisp" *load-truename*))
 (in-package #:ataxia.infinite-world)
 (let ((uv '((0d0 . 0d0) (1d0 . 0d0) (0d0 . 1d0) (1d0 . 1d0)))
       (quad '((-1d0 . -1d0) (1d0 . -1d0) (-1d0 . 1d0) (1d0 . 1d0))))
@@ -32,6 +25,7 @@
       (assert (every (lambda (v) (and (<= 0d0 (car v)) (<= 0d0 (cdr v)))) vectors)))))
 (let ((directory (uiop:getenv "ATAXIA_SHADER_TEST_DIR")))
   (when directory
+    (ensure-directories-exist (uiop:ensure-directory-pathname directory))
     (dolist (entry (list (cons "canvas.vert" +canvas-vertex-shader+)
                         (cons "texture.frag" (%texture-fragment-shader nil))
                         (cons "external.frag" (%texture-fragment-shader t))))

@@ -1,12 +1,5 @@
 ;;;; Run: sbcl --script tests/metaworld-chrome.lisp
-(require :asdf)
-(let ((root (uiop:pathname-parent-directory-pathname
-             (uiop:pathname-directory-pathname *load-truename*))))
-  (asdf:initialize-source-registry
-   `(:source-registry (:tree ,root)
-     (:tree ,(merge-pathnames "fun/ataxia-deps/common-lisp/" (user-homedir-pathname)))
-     :inherit-configuration))
-  (asdf:load-system "ataxia-metaworld"))
+(load (merge-pathnames "support.lisp" *load-truename*))
 (in-package #:ataxia.infinite-world)
 
 (defclass test-chrome-drawable (ataxia.kernel:drawable ataxia.kernel:interactable) ())
@@ -94,8 +87,6 @@
              (funcall handler panel (%make-agent-widget-event 1 "action" "close" clock))
              (assert (equal command "close"))
              (%meta-sync-object-controls world state)
-             (assert (not (%overlay-input-enabled-p panel)))
-             (assert (not (%meta-chrome-expanded-p (%meta-chrome-for-state world state))))
              (assert (not (%overlay-input-enabled-p panel)))
              (assert (canvas-overlay-visible-p panel))
              (ataxia.world:advance-animations (%world-animator world) 2.2d0)

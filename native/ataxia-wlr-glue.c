@@ -993,72 +993,90 @@ struct wlr_surface *ataxia_xdg_popup_parent_surface(
 	return popup == NULL ? NULL : popup->parent;
 }
 
-struct wl_signal *ataxia_pointer_gesture_signal(struct wlr_pointer *pointer, uint32_t kind, uint32_t phase) {
- if (kind == 0 && phase == 0) return &pointer->events.swipe_begin;
- if (kind == 0 && phase == 1) return &pointer->events.swipe_update;
- if (kind == 0 && phase == 2) return &pointer->events.swipe_end;
- if (kind == 1 && phase == 0) return &pointer->events.pinch_begin;
- if (kind == 1 && phase == 1) return &pointer->events.pinch_update;
- if (kind == 1 && phase == 2) return &pointer->events.pinch_end;
- if (kind == 2 && phase == 0) return &pointer->events.hold_begin;
- if (kind == 2 && phase == 2) return &pointer->events.hold_end;
- return NULL;
+struct wl_signal *ataxia_pointer_gesture_signal(
+		struct wlr_pointer *pointer, uint32_t kind, uint32_t phase) {
+	if (kind == 0 && phase == 0) {
+		return &pointer->events.swipe_begin;
+	}
+	if (kind == 0 && phase == 1) {
+		return &pointer->events.swipe_update;
+	}
+	if (kind == 0 && phase == 2) {
+		return &pointer->events.swipe_end;
+	}
+	if (kind == 1 && phase == 0) {
+		return &pointer->events.pinch_begin;
+	}
+	if (kind == 1 && phase == 1) {
+		return &pointer->events.pinch_update;
+	}
+	if (kind == 1 && phase == 2) {
+		return &pointer->events.pinch_end;
+	}
+	if (kind == 2 && phase == 0) {
+		return &pointer->events.hold_begin;
+	}
+	if (kind == 2 && phase == 2) {
+		return &pointer->events.hold_end;
+	}
+	return NULL;
 }
 
-void ataxia_pointer_gesture_read(const void *event, uint32_t kind, uint32_t phase, struct ataxia_gesture_sample *sample) {
- *sample = (struct ataxia_gesture_sample){.scale = 1.0};
- if (kind == 0 && phase == 0) {
-  const struct wlr_pointer_swipe_begin_event *e = event;
-  sample->time_msec = e->time_msec;
-  sample->fingers = e->fingers;
-  return;
- }
- if (kind == 0 && phase == 1) {
-  const struct wlr_pointer_swipe_update_event *e = event;
-  sample->time_msec = e->time_msec;
-  sample->fingers = e->fingers;
-  sample->dx = e->dx;
-  sample->dy = e->dy;
-  return;
- }
- if (kind == 0 && phase == 2) {
-  const struct wlr_pointer_swipe_end_event *e = event;
-  sample->time_msec = e->time_msec;
-  sample->cancelled = e->cancelled;
-  return;
- }
- if (kind == 1 && phase == 0) {
-  const struct wlr_pointer_pinch_begin_event *e = event;
-  sample->time_msec = e->time_msec;
-  sample->fingers = e->fingers;
-  return;
- }
- if (kind == 1 && phase == 1) {
-  const struct wlr_pointer_pinch_update_event *e = event;
-  sample->time_msec = e->time_msec;
-  sample->fingers = e->fingers;
-  sample->dx = e->dx;
-  sample->dy = e->dy;
-  sample->scale = e->scale;
-  sample->rotation = e->rotation;
-  return;
- }
- if (kind == 1 && phase == 2) {
-  const struct wlr_pointer_pinch_end_event *e = event;
-  sample->time_msec = e->time_msec;
-  sample->cancelled = e->cancelled;
-  return;
- }
- if (kind == 2 && phase == 0) {
-  const struct wlr_pointer_hold_begin_event *e = event;
-  sample->time_msec = e->time_msec;
-  sample->fingers = e->fingers;
-  return;
- }
- if (kind == 2 && phase == 2) {
-  const struct wlr_pointer_hold_end_event *e = event;
-  sample->time_msec = e->time_msec;
-  sample->cancelled = e->cancelled;
-  return;
- }
+void ataxia_pointer_gesture_read(const void *event, uint32_t kind,
+		uint32_t phase, struct ataxia_gesture_sample *sample) {
+	*sample = (struct ataxia_gesture_sample){ .scale = 1.0 };
+	if (kind == 0 && phase == 0) {
+		const struct wlr_pointer_swipe_begin_event *e = event;
+		sample->time_msec = e->time_msec;
+		sample->fingers = e->fingers;
+		return;
+	}
+	if (kind == 0 && phase == 1) {
+		const struct wlr_pointer_swipe_update_event *e = event;
+		sample->time_msec = e->time_msec;
+		sample->fingers = e->fingers;
+		sample->dx = e->dx;
+		sample->dy = e->dy;
+		return;
+	}
+	if (kind == 0 && phase == 2) {
+		const struct wlr_pointer_swipe_end_event *e = event;
+		sample->time_msec = e->time_msec;
+		sample->cancelled = e->cancelled;
+		return;
+	}
+	if (kind == 1 && phase == 0) {
+		const struct wlr_pointer_pinch_begin_event *e = event;
+		sample->time_msec = e->time_msec;
+		sample->fingers = e->fingers;
+		return;
+	}
+	if (kind == 1 && phase == 1) {
+		const struct wlr_pointer_pinch_update_event *e = event;
+		sample->time_msec = e->time_msec;
+		sample->fingers = e->fingers;
+		sample->dx = e->dx;
+		sample->dy = e->dy;
+		sample->scale = e->scale;
+		sample->rotation = e->rotation;
+		return;
+	}
+	if (kind == 1 && phase == 2) {
+		const struct wlr_pointer_pinch_end_event *e = event;
+		sample->time_msec = e->time_msec;
+		sample->cancelled = e->cancelled;
+		return;
+	}
+	if (kind == 2 && phase == 0) {
+		const struct wlr_pointer_hold_begin_event *e = event;
+		sample->time_msec = e->time_msec;
+		sample->fingers = e->fingers;
+		return;
+	}
+	if (kind == 2 && phase == 2) {
+		const struct wlr_pointer_hold_end_event *e = event;
+		sample->time_msec = e->time_msec;
+		sample->cancelled = e->cancelled;
+		return;
+	}
 }

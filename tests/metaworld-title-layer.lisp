@@ -1,12 +1,5 @@
-;;;; Run: sbcl --script tests/metaworld-motion.lisp
-(require :asdf)
-(let ((root (uiop:pathname-parent-directory-pathname
-             (uiop:pathname-directory-pathname *load-truename*))))
-  (asdf:initialize-source-registry
-   `(:source-registry (:tree ,root)
-     (:tree ,(merge-pathnames "fun/ataxia-deps/common-lisp/" (user-homedir-pathname)))
-     :inherit-configuration))
-  (asdf:load-system "ataxia-metaworld"))
+;;;; Run: sbcl --script tests/metaworld-title-layer.lisp
+(load (merge-pathnames "support.lisp" *load-truename*))
 (in-package #:ataxia.infinite-world)
 
 (defclass title-test-component (ataxia.kernel:drawable ataxia.kernel:interactable) ())

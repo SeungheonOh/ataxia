@@ -2,6 +2,10 @@
 
 (defvar *meta-layout-motion* nil)
 (defvar *meta-action-seat* nil)
+(defvar *meta-launch-sequence* 0)
+
+(defstruct (%meta-launch (:constructor %make-meta-launch))
+  expires app-id group-id below-id workspace)
 (defvar *meta-layout-deferred-p* nil)
 (defvar *meta-layout-pending* nil)
 
@@ -140,8 +144,7 @@
 
 (defun %meta-footprint-height (group)
   (if (eq :niri (subworld-kind group))
-      (+ (subworld-height group)
-         (* (1- (%meta-workspace-count group)) (subworld-height group)))
+      (* (%meta-workspace-count group) (subworld-height group))
       (subworld-height group)))
 
 (defun %meta-workspace-at (group y)
@@ -233,19 +236,18 @@
     (when (equalp origin destination)
       (%meta-cancel-motion world state :metaworld-camera)
       (return-from %meta-transition-camera state))
-    (unless (equal origin destination)
-      (let ((view (%meta-view-for-state world state)))
-        (setf (%meta-view-hover-after view) (+ (%now) 0.36d0)
-              (%meta-view-window-controls-until view) 0d0))
-      (%meta-set-camera world state origin)
-      ;; One easing parameter keeps translation and scale in lockstep. Old
-      ;; per-axis velocities otherwise bend a retargeted camera's path.
-      (%meta-cancel-motion world state :metaworld-camera)
-      (%meta-animate-to world state :metaworld-camera '(0d0) '(1d0) 0.28d0
-                        (lambda (subject progress)
-                          (%meta-set-camera world subject
-                                            (%meta-camera-sample origin destination (first progress)))))
-      (%request-output-state-frame world state))))
+    (let ((view (%meta-view-for-state world state)))
+      (setf (%meta-view-hover-after view) (+ (%now) 0.36d0)
+            (%meta-view-window-controls-until view) 0d0))
+    (%meta-set-camera world state origin)
+    ;; One easing parameter keeps translation and scale in lockstep. Old
+    ;; per-axis velocities otherwise bend a retargeted camera's path.
+    (%meta-cancel-motion world state :metaworld-camera)
+    (%meta-animate-to world state :metaworld-camera '(0d0) '(1d0) 0.28d0
+                      (lambda (subject progress)
+                        (%meta-set-camera world subject
+                                          (%meta-camera-sample origin destination (first progress)))))
+    (%request-output-state-frame world state)))
 
 (defun %meta-changed (world)
   (when (and (fboundp '%meta-maintain-subworld-spacing)

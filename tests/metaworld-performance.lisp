@@ -1,12 +1,5 @@
 ;;;; Run: sbcl --script tests/metaworld-performance.lisp
-(require :asdf)
-(let ((root (uiop:pathname-parent-directory-pathname
-             (uiop:pathname-directory-pathname *load-truename*))))
-  (asdf:initialize-source-registry
-   `(:source-registry (:tree ,root)
-     (:tree ,(merge-pathnames "fun/ataxia-deps/common-lisp/" (user-homedir-pathname)))
-     :inherit-configuration))
-  (asdf:load-system "ataxia-metaworld"))
+(load (merge-pathnames "support.lisp" *load-truename*))
 (in-package #:ataxia.infinite-world)
 
 ;; A blocked filesystem writer must not block producers, retain stale snapshots,
@@ -59,10 +52,10 @@
     (when (probe-file path) (delete-file path))))
 (format t "PASS: stalled writer isolation, latest-save coalescing, copied snapshots, disk round-trip.~%")
 
-;; Pre-optimization reference used to guard dash placement and transforms.
+;; Unclipped reference checks dash placement and visible strokes after transforms.
 (in-package #:ataxia.infinite-world)
 (defun reference-border-vertices (state x y width height)
-  (multiple-value-bind (viewport-width viewport-height) (%output-logical-size state)
+  (progn
     (let ((step 24d0)
           (pattern '((0d0 . 1d0) (5d0 . 5d0) (14d0 . 1d0)))
           (vertices (make-array 4096 :adjustable t :fill-pointer 0 :element-type 'single-float))
@@ -71,16 +64,14 @@
                  (loop for value across (%quad-vertices
                                          (%canvas-quad state left top stroke-width stroke-height) uv)
                        do (vector-push-extend (coerce value 'single-float) vertices))))
-        (loop for offset from (* step (max 0 (floor (/ (- x) step)))) below width by step
-              while (< (+ x offset) viewport-width)
+        (loop for offset from 0d0 below width by step
               do (dolist (segment pattern)
                    (let ((start (+ offset (car segment))))
                      (when (< start width)
                        (stroke (round (+ x start)) (round y) (min (cdr segment) (- width start)) 1d0)
                        (stroke (round (+ x start)) (round (+ y height))
                                (min (cdr segment) (- width start)) 1d0)))))
-        (loop for offset from (* step (max 0 (floor (/ (- y) step)))) below height by step
-              while (< (+ y offset) viewport-height)
+        (loop for offset from 0d0 below height by step
               do (dolist (segment pattern)
                    (let ((start (+ offset (car segment))))
                      (when (< start height)
@@ -88,6 +79,14 @@
                        (stroke (round (+ x width)) (round (+ y start))
                                1d0 (min (cdr segment) (- height start))))))))
       vertices)))
+
+(defun visible-border-strokes (vertices)
+  (loop for offset from 0 below (length vertices) by 24
+        for xs = (loop for i from offset below (+ offset 24) by 4 collect (aref vertices i))
+        for ys = (loop for i from (1+ offset) below (+ offset 24) by 4 collect (aref vertices i))
+        when (and (< (reduce #'min xs) 1f0) (> (reduce #'max xs) -1f0)
+                  (< (reduce #'min ys) 1f0) (> (reduce #'max ys) -1f0))
+          append (coerce (subseq vertices offset (+ offset 24)) 'list)))
 
 (let* ((output (make-instance 'ataxia.kernel:kernel-output
                              :width 1920 :height 1080 :scale 1d0 :transform 0))
@@ -102,12 +101,13 @@
               (%canvas-output-transform state) transform
               (%canvas-output-rotation state) rotation)
         (dolist (geometry '((20d0 40d0 800d0 500d0) (-101d0 -33d0 1500d0 900d0)
-                            (25d0 9d0 15d0 12d0)))
-          (let ((reference (apply #'reference-border-vertices state geometry))
-                (actual (apply #'%meta-border-vertices state geometry)))
+                            (25d0 9d0 15d0 12d0) (500d0 -200d0 300d0 600d0)))
+          (let ((reference (visible-border-strokes (apply #'reference-border-vertices state geometry)))
+                (actual (visible-border-strokes (apply #'%meta-border-vertices state geometry))))
             (assert (= (length reference) (length actual)))
             (assert (every (lambda (a b) (< (abs (- a b)) 0.00001)) reference actual))
-            (assert (eq actual (apply #'%meta-border-vertices state geometry)))
+            (assert (eq (apply #'%meta-border-vertices state geometry)
+                        (apply #'%meta-border-vertices state geometry)))
             (assert (<= (length (gethash state *meta-border-cache*)) 16)))))))
   (setf (ataxia.kernel:output-scale output) 1d0
         (ataxia.kernel:output-transform output) 0
@@ -244,13 +244,13 @@
                    (sb-thread:wait-on-semaphore release))
                  (push command received)
                  (sb-thread:signal-semaphore finished)))
-         (assert (%meta-queue-launch '("blocked")))
+         (assert (%queue-program-launch '("blocked")))
          (assert (sb-thread:wait-on-semaphore entered :timeout 2))
          (dotimes (i 16)
            (let ((argument (format nil "~D" i)))
-             (assert (%meta-queue-launch (list argument)))
+             (assert (%queue-program-launch (list argument)))
              (setf (char argument 0) #\X)))
-         (assert (not (%meta-queue-launch '("overflow"))))
+         (assert (not (%queue-program-launch '("overflow"))))
          (sb-thread:signal-semaphore release)
          (dotimes (i 17) (assert (sb-thread:wait-on-semaphore finished :timeout 2)))
          (assert (equal (reverse received)
@@ -311,3 +311,20 @@
              (assert (<= (* (third camera) (%meta-footprint-width group)) (+ width .00001d0))))))
     (loop for name in names for fn in saved do (setf (symbol-function name) fn))))
 (format t "PASS: entered Niri fills landscape, portrait and ultrawide monitor heights; horizontal scroll clamps to the visible span.~%")
+
+;; A failed spawn must not kill the worker or escape onto the World thread.
+(let ((original (symbol-function 'uiop:launch-program))
+      (finished (sb-thread:make-semaphore)))
+  (unwind-protect
+       (progn
+         (setf (symbol-function 'uiop:launch-program)
+               (lambda (command &rest options)
+                 (declare (ignore options))
+                 (if (equal command '("fail"))
+                     (error "Simulated launch failure")
+                     (sb-thread:signal-semaphore finished))))
+         (assert (%queue-program-launch '("fail")))
+         (assert (%queue-program-launch '("next")))
+         (assert (sb-thread:wait-on-semaphore finished :timeout 2)))
+    (setf (symbol-function 'uiop:launch-program) original)))
+(format t "PASS: a failed application launch leaves the worker available for subsequent launches.~%")

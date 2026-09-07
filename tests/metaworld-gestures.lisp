@@ -1,12 +1,5 @@
-;;;; Run: sbcl --script tests/metaworld-motion.lisp
-(require :asdf)
-(let ((root (uiop:pathname-parent-directory-pathname
-             (uiop:pathname-directory-pathname *load-truename*))))
-  (asdf:initialize-source-registry
-   `(:source-registry (:tree ,root)
-     (:tree ,(merge-pathnames "fun/ataxia-deps/common-lisp/" (user-homedir-pathname)))
-     :inherit-configuration))
-  (asdf:load-system "ataxia-metaworld"))
+;;;; Run: sbcl --script tests/metaworld-gestures.lisp
+(load (merge-pathnames "support.lisp" *load-truename*))
 (in-package #:ataxia.infinite-world)
 (let* ((world (make-infinite-world)) (output (gensym)) (seat (gensym)) (device (gensym))
        (state (%make-canvas-output output)) (ss (%make-canvas-seat seat))
@@ -81,30 +74,6 @@
            (assert (null (gethash ss *canvas-gestures*)))))
     (loop for name in names for fn in saved do (setf (symbol-function name) fn))))
 (format t "PASS: pan, bounded momentum, contact braking, anchored absolute pinch, cancellation, device isolation, rotated canvas and drag exclusion.~%")
-;; Workspace commits require a deliberate dominant-axis swipe; endpoints clamp.
-(let* ((world (make-metaworld :state-file nil)) (group (%make-subworld :id 1 :kind :niri))
-       (names '(%meta-current %meta-switch-workspace %meta-changed))
-       (saved (mapcar #'symbol-function names)) (calls 0))
-  (unwind-protect
-       (progn
-         (setf (gethash group *meta-workspace-counts*) 3
-               (symbol-function '%meta-current) (lambda (&rest args) (declare (ignore args)) group)
-               (symbol-function '%meta-changed) #'identity
-               (symbol-function '%meta-switch-workspace)
-               (lambda (world target number seat) (declare (ignore world seat))
-                 (incf calls) (setf (subworld-workspace target) number)))
-         (%canvas-workspace-gesture world nil 0d0 -30d0)
-         (%canvas-workspace-gesture world nil -150d0 -150d0)
-         (assert (zerop calls))
-         (%canvas-workspace-gesture world nil 0d0 -150d0)
-         (assert (= (subworld-workspace group) 2))
-         (%canvas-workspace-gesture world nil -150d0 0d0)
-         (assert (= (subworld-workspace group) 3))
-         (%canvas-workspace-gesture world nil -150d0 0d0)
-         (assert (= calls 2))
-         (%canvas-workspace-gesture world nil 150d0 0d0)
-         (assert (= (subworld-workspace group) 2)))
-    (loop for name in names for fn in saved do (setf (symbol-function name) fn))))
 ;; The Runtime snapshot retains an owned copy after native event storage changes.
 (ataxia.runtime.raw:load-native-libraries)
 (cffi:with-foreign-object (event :uint8 64)
@@ -121,7 +90,7 @@
     (assert (= 1.25d0 (ataxia.runtime:pointer-gesture-scale snapshot)))
     (assert (= 123 (ataxia.runtime:pointer-gesture-time-msec snapshot)))
     (assert (eq :pinch (ataxia.runtime:pointer-gesture-kind snapshot)))))
-(format t "PASS: workspace thresholds/endpoints and copied native gesture snapshots.~%")
+(format t "PASS: copied native gesture snapshots.~%")
 (defclass gesture-test-world (ataxia.kernel:world) ())
 (defvar *gesture-test-received* nil)
 (defmethod ataxia.kernel:world-cursor-gesture ((world gesture-test-world) seat input)
@@ -227,6 +196,21 @@
            (event :swipe :update :fingers 3 :dy -60d0)
            (event :swipe :end :cancelled-p t)
            (assert (= 2 (subworld-workspace group)))
+           ;; Four fingers retain workspace navigation on either axis, clamped
+           ;; at existing pages. Ambiguous diagonal travel never picks an axis.
+           (event :swipe :begin :fingers 4)
+           (event :swipe :update :fingers 4 :dx -300d0)
+           (event :swipe :end)
+           (assert (= 3 (subworld-workspace group)))
+           (event :swipe :begin :fingers 4)
+           (event :swipe :update :fingers 4 :dy 110d0)
+           (event :swipe :end)
+           (assert (= 2 (subworld-workspace group)))
+           (event :swipe :begin :fingers 3)
+           (event :swipe :update :fingers 3 :dx -150d0 :dy -150d0)
+           (event :swipe :end)
+           (assert (= 2 (subworld-workspace group)))
+           (unchanged-camera)
            ;; Unsupported pinch is owned, including after exiting mid-stream.
            (event :pinch :begin :fingers 2)
            (event :pinch :update :fingers 2 :scale 2d0 :dx 90d0)

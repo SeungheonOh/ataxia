@@ -38,8 +38,6 @@ export component ObjectControls inherits Window {
     in property <bool> detachable: false;
     in property <bool> niri: false;
     in property <bool> floating: false;
-    // Retained for native ABI compatibility; controls now act directly.
-    in property <bool> expanded: false;
     callback action(string);
     Rectangle { width: parent.width; height: 44px;
         border-width: 1px; border-color: #dce3ed; border-radius: 12px; background: #fafcfefa;

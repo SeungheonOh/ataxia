@@ -19,5 +19,6 @@
      (:file "view-shift")
      (:file "gestures")
      (:file "agent-ui")
+     (:file "services")
      (:file "launcher")
      (:file "main")))))

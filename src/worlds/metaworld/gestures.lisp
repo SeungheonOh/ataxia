@@ -3,19 +3,6 @@
 (defmethod %canvas-gesture-allowed-p ((world metaworld) seat-state)
   (and (call-next-method) (null (%meta-group-drag world))))
 
-(defmethod %canvas-workspace-gesture ((world metaworld) seat dx dy)
-  ;; One intentional, dominant-axis swipe commits one existing workspace.
-  (let* ((group (%meta-current world seat))
-         (horizontal (> (abs dx) (* 1.25d0 (abs dy))))
-         (vertical (> (abs dy) (* 1.25d0 (abs dx))))
-         (distance (if horizontal dx dy)))
-    (when (and group (or horizontal vertical) (> (abs distance) 96d0))
-      (let ((next (max 1 (min (%meta-workspace-count group)
-                             (+ (subworld-workspace group) (if (minusp distance) 1 -1))))))
-        (unless (= next (subworld-workspace group))
-          (%meta-switch-workspace world group next seat)
-          (%meta-changed world))))))
-
 (defmethod ataxia.kernel:world-cursor-gesture :before ((world metaworld) seat input)
   (when (member (ataxia.kernel:cursor-gesture-input-phase input) '(:begin :update))
     (let* ((seat-state (%meta-seat world seat))
@@ -30,8 +17,7 @@
 (defmethod %canvas-gesture-owner ((world metaworld) seat)
   ;; Ownership is captured at BEGIN. Unsupported gestures remain consumed by
   ;; the subworld, and leaving it during a swipe never hands that swipe off.
-  (let ((group (%meta-current world seat)))
-    (when group (list group nil))))
+  (%meta-current world seat))
 
 (defun %meta-gesture-step (world seat group axis distance)
   (if (eq axis :vertical)
@@ -48,33 +34,32 @@
             (%meta-toggle-fullscreen world (subworld-fullscreen group) nil))
           (%meta-focus world neighbor seat)))))
 
-(defmethod %canvas-owned-gesture ((world metaworld) seat gesture owner phase input)
-  (let ((group (first owner)))
-    (unless (and (eq group (%meta-current world seat))
-                 (member group (metaworld-subworlds world)))
-      (%cancel-seat-gesture world seat)
-      (return-from %canvas-owned-gesture nil))
-    (when (and (eq (canvas-gesture-kind gesture) :swipe)
-               (member (canvas-gesture-fingers gesture) '(3 4)))
-      (when (eq phase :update)
-        (incf (canvas-gesture-dx gesture) (ataxia.kernel:cursor-gesture-input-dx input))
-        (incf (canvas-gesture-dy gesture) (ataxia.kernel:cursor-gesture-input-dy input)))
-      (let ((dx (canvas-gesture-dx gesture)) (dy (canvas-gesture-dy gesture)))
-        (unless (second owner)
-          (cond ((and (> (abs dx) 12d0) (> (abs dx) (* 1.25d0 (abs dy))))
-                 (setf (second owner) :horizontal))
-                ((and (> (abs dy) 12d0) (> (abs dy) (* 1.25d0 (abs dx))))
-                 (setf (second owner) :vertical)))))
-      (when (second owner)
-        (let* ((axis (second owner))
-               (distance (if (eq axis :horizontal) (canvas-gesture-dx gesture) (canvas-gesture-dy gesture)))
-               (threshold (if (eq phase :end) 48d0 96d0)))
-          ;; Three fingers navigate columns horizontally and workspaces
-          ;; vertically. Four fingers retain workspace navigation on either axis.
-          (loop repeat 16 while (>= (abs distance) threshold) do
-            (%meta-gesture-step world seat group
-                                (if (= (canvas-gesture-fingers gesture) 4) :vertical axis) distance)
-            (decf distance (* (signum distance) threshold)))
-          (if (eq axis :horizontal)
-              (setf (canvas-gesture-dx gesture) distance)
-              (setf (canvas-gesture-dy gesture) distance)))))))
+(defmethod %canvas-owned-gesture ((world metaworld) seat gesture group phase input)
+  (unless (and (eq group (%meta-current world seat))
+               (member group (metaworld-subworlds world)))
+    (%cancel-seat-gesture world seat)
+    (return-from %canvas-owned-gesture nil))
+  (when (and (eq (canvas-gesture-kind gesture) :swipe)
+             (member (canvas-gesture-fingers gesture) '(3 4)))
+    (when (eq phase :update)
+      (incf (canvas-gesture-dx gesture) (ataxia.kernel:cursor-gesture-input-dx input))
+      (incf (canvas-gesture-dy gesture) (ataxia.kernel:cursor-gesture-input-dy input)))
+    (let ((dx (canvas-gesture-dx gesture)) (dy (canvas-gesture-dy gesture)))
+      (unless (canvas-gesture-axis gesture)
+        (cond ((and (> (abs dx) 12d0) (> (abs dx) (* 1.25d0 (abs dy))))
+               (setf (canvas-gesture-axis gesture) :horizontal))
+              ((and (> (abs dy) 12d0) (> (abs dy) (* 1.25d0 (abs dx))))
+               (setf (canvas-gesture-axis gesture) :vertical)))))
+    (when (canvas-gesture-axis gesture)
+      (let* ((axis (canvas-gesture-axis gesture))
+             (distance (if (eq axis :horizontal) (canvas-gesture-dx gesture) (canvas-gesture-dy gesture)))
+             (threshold (if (eq phase :end) 48d0 96d0)))
+        ;; Three fingers navigate columns horizontally and workspaces
+        ;; vertically. Four fingers retain workspace navigation on either axis.
+        (loop repeat 16 while (>= (abs distance) threshold) do
+          (%meta-gesture-step world seat group
+                              (if (= (canvas-gesture-fingers gesture) 4) :vertical axis) distance)
+          (decf distance (* (signum distance) threshold)))
+        (if (eq axis :horizontal)
+            (setf (canvas-gesture-dx gesture) distance)
+            (setf (canvas-gesture-dy gesture) distance))))))

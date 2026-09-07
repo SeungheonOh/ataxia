@@ -9,7 +9,7 @@
 (defmethod %overlay-below-windows-p ((widget meta-title-widget)) t)
 
 (defstruct (%meta-chrome (:constructor %make-meta-chrome))
-  edge-since window-since candidate expanded-p)
+  edge-since window-since candidate)
 
 (defun %meta-chrome-for-state (world state)
   (or (gethash state (%meta-chrome-states world))
@@ -223,8 +223,7 @@
     (dolist (group (metaworld-subworlds world))
       (let ((header (%meta-header world state group)))
         (if (eq group active)
-            ;; Keep a quiet, reachable breadcrumb inside the reserved top inset,
-            ;; including when the page's canvas header has moved offscreen.
+            ;; Keep the breadcrumb reachable when the canvas header is offscreen.
             (multiple-value-bind (width height) (%output-logical-size state)
               (declare (ignore height))
               (%meta-reposition-ui world header 12d0 8d0 (max 96d0 (min 248d0 (- width 24d0))) 30d0))
@@ -289,10 +288,10 @@
 (defun %meta-dismiss-transient-ui (world)
   (%meta-dismiss-menu world)
   (maphash (lambda (state chrome)
+             (declare (ignore chrome))
              (let ((view (%meta-view-for-state world state)))
                (%meta-suppress-hover world state)
-               (setf (%meta-chrome-expanded-p chrome) nil
-                     (%meta-view-window-controls-until view) 0d0
+               (setf (%meta-view-window-controls-until view) 0d0
                      (%meta-view-panel-until view) 0d0)
                (%meta-present-ui world (%meta-view-window-controls view) nil)
                (%meta-present-ui world (%meta-view-panel view) nil)))
@@ -395,20 +394,19 @@
     (cond
       (blocked
        (setf (%meta-chrome-candidate chrome) nil (%meta-chrome-window-since chrome) nil
-             (%meta-chrome-expanded-p chrome) nil (%meta-view-window-controls-until view) 0d0))
+             (%meta-view-window-controls-until view) 0d0))
       ((%meta-pointer-in-ui-p seat panel)
        (setf (%meta-view-window-controls-until view) (+ now 0.55d0)))
       (candidate
        (unless (eq candidate (%meta-chrome-candidate chrome))
          (setf (%meta-chrome-candidate chrome) candidate (%meta-chrome-window-since chrome) now))
        (when (>= (- now (%meta-chrome-window-since chrome)) 0.45d0)
-         (unless (%meta-chrome-expanded-p chrome)
-           (setf (%meta-view-window-target view) candidate))
+         (setf (%meta-view-window-target view) candidate)
          (setf (%meta-view-window-controls-until view) (+ now 0.55d0))))
       (t (setf (%meta-chrome-candidate chrome) nil (%meta-chrome-window-since chrome) nil)))
     (let* ((target (%meta-view-window-target view))
            (show (and (not blocked) (%target-visible-p target)
-                      (or (%meta-chrome-expanded-p chrome) (> (%meta-view-window-controls-until view) now)))))
+                      (> (%meta-view-window-controls-until view) now))))
       (when show
         (unless panel
           (setf panel (%meta-ui-widget world "window-controls" "ObjectControls" state 36d0 30d0 :layer 1500)
@@ -418,7 +416,7 @@
            (lambda (widget event)
              (let ((action (agent-widget-event-value event)))
                (%meta-suppress-hover world state)
-               (setf (%meta-chrome-expanded-p chrome) nil (%meta-view-window-controls-until view) 0d0)
+               (setf (%meta-view-window-controls-until view) 0d0)
                (%meta-present-ui world widget nil)
                (let ((object (%meta-view-window-target view)))
                  (when (%target-visible-p object)
@@ -434,7 +432,6 @@
           (%meta-property panel "detachable" (not (null detachable)))
           (%meta-property panel "niri" (not (null niri)))
           (%meta-property panel "floating" (and member (subworld-member-floating-p member)))
-          (%meta-property panel "expanded" nil)
           (multiple-value-bind (x y width height) (%window-canvas-geometry state target)
             (declare (ignore height))
             (multiple-value-bind (screen-x screen-y) (%canvas-to-screen state (+ x width) y)

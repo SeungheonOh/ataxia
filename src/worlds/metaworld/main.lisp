@@ -16,11 +16,10 @@
            (ataxia.kernel:start-kernel kernel)
            ;; Portal activation belongs to the direct desktop session. Run its
            ;; setup independently so a slow D-Bus service cannot stall frames.
-           (uiop:launch-program
+           (%queue-program-launch
             (list "env" (format nil "WAYLAND_DISPLAY=~A"
                                 (ataxia.runtime:runtime-socket-name (ataxia.kernel:kernel-runtime kernel)))
-                  "sh" (namestring (asdf:system-relative-pathname "ataxia-metaworld" "scripts/setup-desktop-session")))
-            :input #P"/dev/null" :output :interactive :error-output :interactive)
+                  "sh" (namestring (asdf:system-relative-pathname "ataxia-metaworld" "scripts/setup-desktop-session"))))
            (when sly-port
              (setf control (ataxia.sly-control:start-sly-control kernel :port sly-port)))
            (format t "[metaworld] WAYLAND_DISPLAY=~A mode=~A~%"

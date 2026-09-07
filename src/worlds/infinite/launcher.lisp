@@ -291,11 +291,10 @@ export component AtaxiaLauncher inherits Window {
            (ataxia.kernel:kernel-runtime
             (ataxia.kernel:world-kernel world)))))
     (handler-case
-        (uiop:launch-program
-         (list "env" (format nil "WAYLAND_DISPLAY=~A" display)
-               "gio" "launch" (%desktop-entry-path entry))
-         :input #P"/dev/null" :output #P"/dev/null"
-         :error-output :interactive :wait nil)
+        (unless (%queue-program-launch
+                 (list "env" (format nil "WAYLAND_DISPLAY=~A" display)
+                       "gio" "launch" (%desktop-entry-path entry)))
+          (show-notification world "Too many pending application launches." :title "Launcher"))
       (serious-condition (cause)
         (format *error-output* "[infinite-world] cannot launch ~A: ~A~%"
                 (%desktop-entry-name entry) cause)

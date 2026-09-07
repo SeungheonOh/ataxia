@@ -1,0 +1,14 @@
+#!/bin/sh
+set -eu
+cd "$(dirname "$0")/.."
+if [ -z "${ATAXIA_SHADER_TEST_DIR:-}" ]; then
+    ATAXIA_SHADER_TEST_DIR=$(mktemp -d)
+    trap 'rm -rf "$ATAXIA_SHADER_TEST_DIR"' EXIT HUP INT TERM
+fi
+export ATAXIA_SHADER_TEST_DIR
+./build/gesture-native-test
+for test in tests/metaworld-*.lisp tests/slint-builtins.lisp; do
+    printf '\nRunning %s\n' "$test"
+    "${SBCL:-sbcl}" --noinform --eval '(sb-int:set-floating-point-modes :traps nil)' --script "$test"
+done
+"${PYTHON:-python3}" tests/minification-gles.py "$ATAXIA_SHADER_TEST_DIR"

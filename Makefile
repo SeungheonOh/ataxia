@@ -40,3 +40,11 @@ $(SLINT_LIBRARY): $(SLINT_MANIFEST) $(SLINT_LOCK) $(SLINT_SOURCE)
 
 clean:
 	rm -rf $(BUILD_DIR)
+
+$(BUILD_DIR)/gesture-native-test: tests/gesture-native.c $(GLUE) $(HEADER)
+	$(CC) $(CFLAGS) -I. -o $@ tests/gesture-native.c -L$(BUILD_DIR) \
+		-Wl,-rpath,'$(abspath $(BUILD_DIR))' -lataxia-wlr-glue $(LDLIBS)
+
+.PHONY: test
+test: all $(BUILD_DIR)/gesture-native-test
+	LD_LIBRARY_PATH='$(abspath $(BUILD_DIR)):$(PREFIX)/lib:$(LD_LIBRARY_PATH)' sh tests/run

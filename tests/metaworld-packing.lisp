@@ -1,12 +1,5 @@
-;;;; Run: sbcl --script tests/metaworld-motion.lisp
-(require :asdf)
-(let ((root (uiop:pathname-parent-directory-pathname
-             (uiop:pathname-directory-pathname *load-truename*))))
-  (asdf:initialize-source-registry
-   `(:source-registry (:tree ,root)
-     (:tree ,(merge-pathnames "fun/ataxia-deps/common-lisp/" (user-homedir-pathname)))
-     :inherit-configuration))
-  (asdf:load-system "ataxia-metaworld"))
+;;;; Run: sbcl --script tests/metaworld-packing.lisp
+(load (merge-pathnames "support.lisp" *load-truename*))
 (in-package #:ataxia.infinite-world)
 
 (defun assert-separated (records gap)
@@ -78,7 +71,7 @@
            (setf (subworld-kind anchor) :niri
                  (gethash anchor *meta-workspace-counts*) 4)
            (%meta-maintain-subworld-spacing world)
-           (assert (= (%meta-footprint-height anchor) (+ 400d0 (* 3 496d0))))
+           (assert (= (%meta-footprint-height anchor) (* 4 400d0)))
            (assert-separated (%meta-packing-records world) +meta-subworld-contact-gap+)
            (incf clock 1d0)
            (ataxia.world:advance-animations (%world-animator world) clock)

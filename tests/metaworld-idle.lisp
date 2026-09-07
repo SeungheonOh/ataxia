@@ -1,12 +1,5 @@
-;;;; Run: sbcl --script tests/metaworld-chrome.lisp
-(require :asdf)
-(let ((root (uiop:pathname-parent-directory-pathname
-             (uiop:pathname-directory-pathname *load-truename*))))
-  (asdf:initialize-source-registry
-   `(:source-registry (:tree ,root)
-     (:tree ,(merge-pathnames "fun/ataxia-deps/common-lisp/" (user-homedir-pathname)))
-     :inherit-configuration))
-  (asdf:load-system "ataxia-metaworld"))
+;;;; Run: sbcl --script tests/metaworld-idle.lisp
+(load (merge-pathnames "support.lisp" *load-truename*))
 (in-package #:ataxia.infinite-world)
 
 ;;;; Deadline scheduling must not poll idle UI or disabled persistence.
@@ -37,8 +30,8 @@
          (assert (<= 450 (%meta-maintenance-delay world) 451))
          (setf clock 13d0 (%meta-view-window-controls-until view) 13.55d0)
          (assert (zerop (%meta-maintenance-delay world)))
-         (setf (%meta-chrome-window-since chrome) nil (%meta-chrome-expanded-p chrome) t)
-         (assert (zerop (%meta-maintenance-delay world)))
+         (setf (%meta-chrome-window-since chrome) nil)
+         (assert (<= 550 (%meta-maintenance-delay world) 551))
          (setf (slot-value world 'state-file) #P"/tmp/ataxia-idle-test.sexp"
                (%meta-last-save world) 12.8d0)
          (assert (<= 300 (%meta-maintenance-delay world) 301))
@@ -46,7 +39,7 @@
          (assert (<= 1 (%meta-maintenance-delay world) 2))
          (setf (%meta-save-needed-p world) nil)
          (assert (zerop (%meta-maintenance-delay world)))
-         (format t "PASS: idle disarm, hover dwell/expiry/hold, expanded menu and deferred save deadlines.~%"))
+         (format t "PASS: idle disarm, hover dwell/expiry/hold and deferred save deadlines.~%"))
     (setf (symbol-function '%now) original)))
 (let* ((world (make-metaworld :state-file nil))
        (names '(%visible-component-p %component-animation-active-p

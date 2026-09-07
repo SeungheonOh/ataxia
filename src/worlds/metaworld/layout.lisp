@@ -236,9 +236,12 @@
                   (%meta-layout-master world group members)
                   (%meta-layout-dwindle world group members)))))
       (when fullscreen
-        (%meta-place world fullscreen
-                     (+ (subworld-x group) 16d0) (+ (%meta-workspace-y group) 52d0)
-                     (- (subworld-width group) 32d0) (- (subworld-height group) 68d0))))
+        (if niri-p
+            (%meta-place world fullscreen (subworld-x group) (%meta-workspace-y group)
+                         (subworld-width group) (subworld-height group))
+            (%meta-place world fullscreen
+                         (+ (subworld-x group) 16d0) (+ (%meta-workspace-y group) 52d0)
+                         (- (subworld-width group) 32d0) (- (subworld-height group) 68d0)))))
     (%meta-raise-floating world group)
     (%meta-changed world))))
 
@@ -302,6 +305,10 @@
     (%meta-changed world)
     object))
 
+(defun %meta-clamp-scroll (group scroll viewport-width)
+  (max 0d0 (min scroll (max 0d0 (- (%meta-workspace-width group (subworld-workspace group))
+                                   viewport-width)))))
+
 (defun %meta-fit-group (world state group &key overview-p)
   (multiple-value-bind (width height) (%output-logical-size state)
     (let* ((group-width (if overview-p (%meta-footprint-width group) (subworld-width group)))
@@ -313,10 +320,11 @@
            (zoom (if niri-p (/ height group-height)
                      (max 0.08d0 (min 8d0 (/ width group-width) (/ height group-height)))))
            (viewport-width (if niri-p (/ width zoom) (subworld-width group)))
-           (scroll (if overview-p 0d0
-                       (max 0d0 (min (max 0d0 (- (%meta-workspace-width group (subworld-workspace group))
-                                                  viewport-width))
-                                     (gethash (subworld-workspace group) (subworld-scrolls group) 0d0))))))
+           (scroll (if niri-p
+                       (%meta-clamp-scroll group
+                                           (gethash (subworld-workspace group) (subworld-scrolls group) 0d0)
+                                           viewport-width)
+                       0d0)))
       (unless overview-p
         (setf (gethash (subworld-workspace group) (subworld-scrolls group)) scroll))
       (%meta-set-camera
@@ -347,19 +355,16 @@
                    (object-width (third (%meta-target-geometry world object)))
                    (camera-x (%canvas-output-camera-x state))
                    (visible-width (/ width (%canvas-output-zoom state)))
-                   (margin 0d0)
                    (left-limit (subworld-x group))
-                   (right-limit (+ left-limit (max 0d0 (- (%meta-workspace-width group (subworld-workspace group))
-                                                         visible-width))))
                    (origin (%meta-camera state))
                    (desired (cond
-                              ((> object-width (- visible-width (* 2d0 margin)))
+                              ((> object-width visible-width)
                                (- (+ object-x (/ object-width 2d0)) (/ visible-width 2d0)))
-                              ((< object-x (+ camera-x margin)) (- object-x margin))
-                              ((> (+ object-x object-width) (- (+ camera-x visible-width) margin))
-                               (- (+ object-x object-width margin) visible-width))
+                              ((< object-x camera-x) object-x)
+                              ((> (+ object-x object-width) (+ camera-x visible-width))
+                               (- (+ object-x object-width) visible-width))
                               (t camera-x)))
-                   (destination (max left-limit (min right-limit desired))))
+                   (destination (+ left-limit (%meta-clamp-scroll group (- desired left-limit) visible-width))))
               (unless (= destination camera-x)
                 (set-output-camera world (%canvas-output-output state) destination
                                    (%canvas-output-camera-y state) (%canvas-output-zoom state)))

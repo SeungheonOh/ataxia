@@ -11,9 +11,9 @@ export component MetaButton inherits Rectangle {
     border-color: #8494a8;
     border-radius: 6px;
     background: touch.pressed ? #dce3ec : root.selected ? #e8edf4 : touch.has-hover ? #edf0f4 : transparent;
-    animate background { duration: 120ms; easing: ease-out; }
+    animate background { duration: 120ms; easing: cubic-bezier(0.2, 0, 0.2, 1); }
     opacity: root.enabled ? 1 : 0.38;
-    animate opacity { duration: 120ms; }
+    animate opacity { duration: 120ms; easing: cubic-bezier(0.2, 0, 0.2, 1); }
     accessible-role: button;
     accessible-label: root.label;
     forward-focus: focus;
@@ -27,7 +27,7 @@ export component MetaButton inherits Rectangle {
         horizontal-alignment: root.align-left ? left : center;
         vertical-alignment: center;
         overflow: elide;
-        animate color { duration: 120ms; }
+        animate color { duration: 120ms; easing: cubic-bezier(0.2, 0, 0.2, 1); }
     }
     focus := FocusScope {
         enabled: root.enabled;

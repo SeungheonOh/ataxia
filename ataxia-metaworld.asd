@@ -11,6 +11,7 @@
      (:file "motion")
      (:file "renderer")
      (:file "layout")
+     (:file "hyprland")
      (:file "packing")
      (:file "persistence")
      (:file "ui")

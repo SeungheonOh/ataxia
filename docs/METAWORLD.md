@@ -142,6 +142,8 @@ group cancels an in-flight gesture instead of handing it to a different handler.
 
 - On the canvas, three fingers pan with a short bounded coast, and two-finger
   pinch zooms around the pointer. A new contact or button press stops the coast.
+  Release velocity uses elapsed time, including coalesced events, and a pause
+  clears stale momentum. The coast settles with zero speed and acceleration.
 - Inside a subworld, three fingers navigate neighboring tiles horizontally and
   existing workspaces vertically. Four fingers navigate workspaces on either
   axis. Unsupported gestures, including pinch, are consumed by the subworld.
@@ -163,12 +165,38 @@ immutable keymap. Dismissed controls stop accepting input immediately, then fade
 out. Explicit menus and direct manipulation suppress automatic hover controls.
 
 Layout animations retain separate displayed and destination rectangles. They
-retarget from the displayed position, keep compatible velocity, and request the
-final client size once per target. Grabs stay attached to the pointer while
-neighboring tiles reflow. Moving a group also translates its children's active
-animation paths. Camera transitions use a shared easing curve for scale and
-translation; unrotated zooms follow straight screen paths, and rotations take
-the shortest arc.
+retarget from the displayed position and retain velocity and acceleration,
+including on reversals. Quintic trajectories settle exactly with zero velocity
+and acceleration. Sizes, opacity, and zoom constrain their trajectory control
+points to valid ranges. Each window's layout, fade, and shadow lift has an
+independent channel; the client receives its final size once per target.
+Grabs stay attached to the pointer while neighboring tiles reflow. Moving a
+group also translates its children's active animation paths. Fresh camera
+pan/zoom transitions follow straight screen paths; interrupted transitions bend
+smoothly toward the new target, and rotations take the shortest arc.
+
+Slint timers advance before rendering each output frame, so control animations
+follow the display refresh rate rather than a 16 ms polling timer. Application
+timers still use their own deadlines. Animation damage samples only animated
+windows and does no coverage work when the animator is idle. Callback-driven
+cancellation and chaining preserve newly scheduled animations.
+
+Hyprland subworlds keep a Dwindle split tree for each workspace, including
+per-split ratios in saved state. New tiles split the focused tile; closing a tile
+collapses its branch. Directional swaps and edge drops operate on those leaves.
+Keyboard and pointer resizing adjust the nearest split on the selected axis.
+Super+J rotates the focused tile's split. Master layout supports independent
+stack weights for vertical resizing. Fullscreen fills the entire subworld.
+Workspace visibility crossfades separately from window presence; outgoing
+windows stop accepting input immediately. Shadow lift does not move content
+away from the grabbed point.
+
+These choices follow Hyprland's [Dwindle split model](https://wiki.hypr.land/configuring/layouts/dwindle-layout/)
+and separate [window/workspace animation channels](https://wiki.hypr.land/configuring/core/animations/).
+Split orientation stays fixed until explicitly rotated, corresponding to a
+preserved-split policy. This is an Ataxia layout implementation; Hyprland's
+configuration language, plugins, special workspaces and full decoration system
+are not implemented here.
 
 Niri column operations stay within their workspace. Weighted stacks reserve
 minimum sizes before distributing space; crowded stacks and Hyprland splits

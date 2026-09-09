@@ -8,14 +8,14 @@ component WindowAction inherits Rectangle {
     width: 32px; height: 32px;
     border-radius: 8px;
     background: touch.pressed ? #dce4ef : root.selected ? #e5edf8 : touch.has-hover ? (root.danger ? #f6e5e8 : #eaf0f7) : transparent;
-    animate background { duration: 120ms; easing: ease-out; }
+    animate background { duration: 120ms; easing: cubic-bezier(0.2, 0, 0.2, 1); }
     border-width: focus.has-focus ? 1px : 0px;
     border-color: #8da1bd;
     accessible-role: button;
     accessible-label: root.label;
     forward-focus: focus;
     Image { x: 7px; y: touch.pressed ? 8px : 7px; width: 18px; height: 18px; source: root.icon; image-fit: contain;
-        animate y { duration: 90ms; easing: ease-out; }
+        animate y { duration: 90ms; easing: cubic-bezier(0.2, 0, 0.2, 1); }
     }
     focus := FocusScope {
         key-pressed(event) => {
@@ -29,7 +29,7 @@ component WindowAction inherits Rectangle {
         text: root.label; font-family: "DejaVu Sans"; font-size: 10px;
         color: #526176; horizontal-alignment: center;
         opacity: touch.has-hover || focus.has-focus ? 1 : 0;
-        animate opacity { duration: 140ms; easing: ease-out; }
+        animate opacity { duration: 140ms; easing: cubic-bezier(0.2, 0, 0.2, 1); }
     }
 }
 export component ObjectControls inherits Window {

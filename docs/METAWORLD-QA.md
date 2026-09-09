@@ -6,6 +6,8 @@
 | --- | --- |
 | `metaworld-layout-qa.lisp` | Niri zero-gap tiles, fullscreen height, focus and wheel scroll bounds; Hyprland fit and tiling; exact overview-camera restoration. Layouts cover 1–12 windows, three sizes and split ratios, and skewed stack weights. |
 | `metaworld-performance.lisp` | Writer and launcher isolation, queue bounds, failure recovery, persistence and migration, visible border strokes across output transforms and rotations, touching workspace edges, and full-height Niri on landscape, portrait, and ultrawide displays. |
+| `metaworld-animation.lisp` | Velocity/acceleration continuity on reversal, independent channels, bounded fades, callback chaining/cancellation, 60–240 Hz and missed-frame equivalence, and damage work restricted to animated windows. |
+| `metaworld-hyprland.lisp` | Focused Dwindle insertion, local keyboard/pointer resize, swaps, edge drops, split rotation, saved trees, fullscreen bounds, workspace fade reversal/input ownership, and stationary grab geometry. |
 | `metaworld-motion.lisp` | Retargeting, interrupted camera motion, direct grabs, resize configure counts, workspace-local column operations, and raster-density limits. |
 | `metaworld-gestures.lisp` | Runtime-to-Kernel dispatch, modifier events, canvas pan/pinch/coast, subworld ownership, cancellation, and device isolation. |
 | `metaworld-chrome.lisp`, `metaworld-title-layer.lisp` | Hover dwell, direct actions, fade reversal, dismissal, header navigation, draw order, and pointer targeting. |

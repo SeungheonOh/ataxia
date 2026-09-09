@@ -19,7 +19,7 @@ export component SubworldHeader inherits Window {
             x: root.active ? 30px : 4px;
             width: max(0px, parent.width - self.x - 8px);
             text: root.caption; color: touch.has-hover ? #43536a : #657183;
-            animate color { duration: 120ms; easing: ease-out; }
+            animate color { duration: 120ms; easing: cubic-bezier(0.2, 0, 0.2, 1); }
             font-family: "DejaVu Sans"; font-size: 11px;
             vertical-alignment: center; overflow: elide;
         }

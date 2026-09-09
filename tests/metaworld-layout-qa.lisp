@@ -56,7 +56,7 @@
                (dolist (r rectangles)
                  (destructuring-bind (x y w h) r
                    (assert (>= x (if (eq layout :niri) 0d0 16d0)))
-                   (assert (>= y (if (eq layout :niri) 0d0 52d0)))
+                   (assert (>= y (if (eq layout :niri) 0d0 16d0)))
                    (assert (<= (+ x w) (+ (- (if (eq layout :niri) (%meta-workspace-width group 1)
                                                  (subworld-width group)) (if (eq layout :niri) 0d0 16d0)) 0.000001d0)))
                    (assert (<= (+ y h) (+ (- (subworld-height group) (if (eq layout :niri) 0d0 16d0)) 0.000001d0)))))

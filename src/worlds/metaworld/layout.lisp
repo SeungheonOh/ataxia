@@ -46,8 +46,11 @@
                       (canvas-window-height subject) (fourth geometry)))
                (agent-widget
                 (setf (gethash subject (%meta-spatial-widgets world)) geometry)))))
-      (if (and animate-p (not (equalp origin destination)))
-          (%meta-animate-to world object :metaworld-layout origin destination 0.22d0 #'place)
+      (if (and animate-p (or (not (equalp origin destination))
+                             (%meta-motion world object :metaworld-layout)))
+          (%meta-animate-to world object :metaworld-layout origin destination 0.22d0 #'place
+                            :bounds (list nil nil (list 96d0 most-positive-double-float)
+                                          (list 64d0 most-positive-double-float)))
           (progn
             (%meta-cancel-motion world object :metaworld-layout)
             (place object destination))))
@@ -59,7 +62,7 @@
 (defun %meta-translate-object (world object dx dy)
   ;; Translate both the displayed sample and the path. A moving group must not
   ;; freeze a child's in-flight layout or leave its destination behind.
-  (let ((motion (gethash object (%meta-motions world))))
+  (let ((motion (%meta-motion world object :metaworld-layout)))
     (when motion
       (dolist (geometry (list (%meta-trajectory-origin motion) (%meta-trajectory-destination motion)))
         (incf (first geometry) dx)
@@ -79,6 +82,13 @@
   object)
 
 (defun %meta-set-visible (world object visible-p)
+  (let ((group (object-subworld world object)))
+    (when (and (typep object 'canvas-window) group (eq :hyprland (subworld-kind group)))
+      (return-from %meta-set-visible (%meta-hypr-set-visible world object visible-p))))
+  (when (typep object 'canvas-window)
+    (%meta-cancel-motion world object :visibility)
+    (setf (%canvas-window-input-enabled-p object) (not (null visible-p))
+          (%canvas-window-visibility-opacity object) 1d0))
   (etypecase object
     (canvas-window
      (unless (eq (not visible-p) (%canvas-window-hidden-p object))
@@ -151,37 +161,14 @@
         (incf left width)))))
 
 (defun %meta-layout-dwindle (world group members)
-  (labels ((split (remaining x y width height)
-             (when remaining
-               (if (null (rest remaining))
-                   (%meta-place world (subworld-member-object (first remaining)) x y width height)
-                   (let* ((count (length (rest remaining)))
-                          (rows (max 1 (floor (/ (+ height 14d0) 78d0))))
-                          (columns (max 1 (floor (/ (+ width 14d0) 110d0))))
-                          (rest-width (- (* (ceiling count rows) 110d0) 14d0))
-                          (rest-height (- (* (ceiling count columns) 78d0) 14d0))
-                          (horizontal-p (>= width (+ 110d0 rest-width)))
-                          (vertical-p (>= height (+ 78d0 rest-height)))
-                          (ratio (subworld-ratio group)))
-                     (cond
-                       ((and horizontal-p (or (>= width height) (not vertical-p)))
-                        (let ((first-width (max 96d0 (min (- width 14d0 rest-width) (* (- width 14d0) ratio)))))
-                          (%meta-place world (subworld-member-object (first remaining)) x y first-width height)
-                          (split (rest remaining) (+ x first-width 14d0) y (- width first-width 14d0) height)))
-                       (vertical-p
-                        (let ((first-height (max 64d0 (min (- height 14d0 rest-height) (* (- height 14d0) ratio)))))
-                          (%meta-place world (subworld-member-object (first remaining)) x y width first-height)
-                          (split (rest remaining) x (+ y first-height 14d0) width (- height first-height 14d0))))
-                       (t (%meta-grid-rectangles world remaining x y width height))))))))
-    (split members (+ (subworld-x group) 16d0) (+ (subworld-y group) 52d0)
-           (- (subworld-width group) 32d0) (- (subworld-height group) 68d0))))
+  (%meta-hypr-layout world group members))
 
 (defun %meta-layout-master (world group members)
   (when members
     (let* ((left (+ (subworld-x group) 16d0))
-           (top (+ (subworld-y group) 52d0))
+           (top (+ (subworld-y group) 16d0))
            (width (- (subworld-width group) 32d0))
-           (height (- (subworld-height group) 68d0))
+           (height (- (subworld-height group) 32d0))
            (rows (max 1 (floor (/ (+ height 14d0) 78d0))))
            (side-minimum (- (* (ceiling (length (rest members)) rows) 110d0) 14d0))
            (master-width (if (rest members)
@@ -240,8 +227,8 @@
             (%meta-place world fullscreen (subworld-x group) (%meta-workspace-y group)
                          (subworld-width group) (subworld-height group))
             (%meta-place world fullscreen
-                         (+ (subworld-x group) 16d0) (+ (%meta-workspace-y group) 52d0)
-                         (- (subworld-width group) 32d0) (- (subworld-height group) 68d0)))))
+                         (subworld-x group) (subworld-y group)
+                         (subworld-width group) (subworld-height group)))))
     (%meta-raise-floating world group)
     (%meta-changed world))))
 

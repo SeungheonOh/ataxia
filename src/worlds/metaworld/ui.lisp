@@ -53,7 +53,8 @@
            (setf (canvas-overlay-opacity target) (first value))
            (when (and (zerop (first value)) (not (%meta-chrome-present-p target)))
              (hide-overlay world target))
-           (%damage-overlay world target)))))
+           (%damage-overlay world target))
+         :bounds '((0d0 1d0)))))
     widget))
 
 (defun %meta-pointer-in-ui-p (seat widget)

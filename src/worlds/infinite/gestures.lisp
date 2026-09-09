@@ -1,6 +1,7 @@
 (in-package #:ataxia.infinite-world)
 
 (defstruct canvas-gesture device kind fingers state owner axis anchor-x anchor-y
+  (pending-dx 0d0) (pending-dy 0d0)
   (scale 1d0) (zoom 1d0) (time 0) (vx 0d0) (vy 0d0) (samples 0) (dx 0d0) (dy 0d0))
 (defvar *canvas-gestures* (make-hash-table :test #'eq :weakness :key))
 (defgeneric %canvas-gesture-owner (world seat))
@@ -34,7 +35,10 @@
       (ataxia.world:start-animation (%world-animator world) state :touchpad-pan (%now) .24d0
        (lambda (subject progress)
          (when (member subject (%output-states world))
-           (let* ((distance (* .12d0 (- 1d0 (expt (- 1d0 progress) 2))))
+           (let* (;; Integrated smoothstep velocity preserves release speed
+                  ;; and settles with zero speed and acceleration.
+                  (distance (* .24d0 (+ progress (- (expt progress 3))
+                                        (* .5d0 (expt progress 4)))))
                   (delta (- distance previous)))
              (setf previous distance)
              (%gesture-pan world subject (* vx delta) (* vy delta))))))
@@ -50,12 +54,28 @@
     (cond
       ((and (eq (canvas-gesture-kind gesture) :swipe) (= (canvas-gesture-fingers gesture) 3))
        (%gesture-pan world state dx dy)
+       (incf (canvas-gesture-pending-dx gesture) dx)
+       (incf (canvas-gesture-pending-dy gesture) dy)
        (let ((dt (/ (mod (- time (canvas-gesture-time gesture)) #x100000000) 1000d0)))
-         (when (and (> dt 0d0) (< dt .1d0))
-           (flet ((speed (old delta) (+ (* .5d0 old) (* .5d0 (max -2500d0 (min 2500d0 (/ delta dt)))))))
-             (setf (canvas-gesture-vx gesture) (speed (canvas-gesture-vx gesture) dx)
-                   (canvas-gesture-vy gesture) (speed (canvas-gesture-vy gesture) dy)))))
-       (incf (canvas-gesture-samples gesture)))
+         (cond
+           ((>= dt .1d0)
+            (setf (canvas-gesture-vx gesture) 0d0 (canvas-gesture-vy gesture) 0d0
+                  (canvas-gesture-samples gesture) 0))
+           ((plusp dt)
+            ;; Use elapsed time, not event count, to filter release velocity.
+            (flet ((speed (old delta)
+                     (+ old (* (- 1d0 (exp (- (/ dt .025d0))))
+                               (- (max -2500d0 (min 2500d0 (/ delta dt))) old)))))
+              (setf (canvas-gesture-vx gesture)
+                    (speed (canvas-gesture-vx gesture) (canvas-gesture-pending-dx gesture))
+                    (canvas-gesture-vy gesture)
+                    (speed (canvas-gesture-vy gesture) (canvas-gesture-pending-dy gesture))))
+            (incf (canvas-gesture-samples gesture))))
+         ;; Coalesced events can share a millisecond timestamp. Carry their
+         ;; distance into the next measurable interval instead of losing it.
+         (when (plusp dt)
+           (setf (canvas-gesture-pending-dx gesture) 0d0
+                 (canvas-gesture-pending-dy gesture) 0d0))))
       ((eq (canvas-gesture-kind gesture) :pinch)
        (let ((scale (ataxia.kernel:cursor-gesture-input-scale input)))
          (when (and (realp scale) (< .001d0 scale 1000d0))

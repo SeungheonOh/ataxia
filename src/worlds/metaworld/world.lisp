@@ -146,6 +146,8 @@
         (%meta-focus world object)
         (return-from %meta-reorder object))
       (when (and member other)
+        (when (and (eq :hyprland (subworld-kind group)) (eq :dwindle (subworld-layout group)))
+          (%meta-hypr-swap group member other))
         (if (and (eq :niri (subworld-kind group)) (member direction '(:left :right)))
             (let* ((workspace (subworld-member-workspace member))
                    (columns (%meta-columns group workspace))
@@ -203,8 +205,13 @@
                           (+ width (case direction (:left -60d0) (:right 60d0) (t 0d0)))
                           (+ height (case direction (:up -60d0) (:down 60d0) (t 0d0))))))
           ((eq :hyprland (subworld-kind group))
-           (setf (subworld-ratio group)
-                 (max 0.2d0 (min 0.8d0 (+ (subworld-ratio group) (if increase-p 0.04d0 -0.04d0))))))
+           (if (eq :dwindle (subworld-layout group))
+               (%meta-hypr-resize group member direction)
+               (if (member direction '(:left :right))
+                   (setf (subworld-ratio group)
+                         (max .2d0 (min .8d0 (+ (subworld-ratio group) (if increase-p .04d0 -.04d0)))))
+                   (setf (subworld-member-weight member)
+                         (max .2d0 (min 5d0 (+ (subworld-member-weight member) (if increase-p .2d0 -.2d0))))))))
           ((member direction '(:left :right))
            (let ((width (max 220d0 (min (* 1.5d0 (subworld-width group))
                                        (+ (subworld-member-width member) (if increase-p 80d0 -80d0))))))
@@ -371,6 +378,9 @@
                  (remove-subworld world group)
                  (setf (%meta-menu-group world) nil))
                (%meta-property widget "confirming" t)))))
+      ((string= action "toggle-split")
+       (let ((object (%meta-focused-object world seat)))
+         (when object (%meta-hypr-toggle-split world object))))
       ((string= action "note")
        (%meta-dismiss-menu world)
        (let ((anchor (%meta-menu-anchor world)))
@@ -408,6 +418,7 @@
           (bind-command id (list :keysym key) '(:logo) action)))
       (bind-command :meta-workspace-up '(:keysym :up) '(:logo :alt) "previous-workspace")
       (bind-command :meta-workspace-down '(:keysym :down) '(:logo :alt) "next-workspace")
+      (bind-command :meta-toggle-split '(:keysym "J") '(:logo) "toggle-split")
       (bind-command :meta-terminal-below '(:keysym "Return") '(:logo :shift) "terminal-below")
       (bind-command :meta-pull-out '(:keysym "E") '(:logo :shift) "pull-out")
       (bind-command :meta-next-group '(:keysym "Next") '(:logo) "switch-group" 1)
@@ -468,9 +479,11 @@
             (if (eq :niri (subworld-kind previous))
                 (let ((width (third (%meta-object-geometry object))))
                   (%meta-set-column-width previous member width))
-                (setf (subworld-ratio previous)
-                      (max 0.2d0 (min 0.8d0 (/ (third (%meta-object-geometry object))
-                                               (subworld-width previous))))))
+                (if (eq :dwindle (subworld-layout previous))
+                    (%meta-hypr-resize-to previous member (%meta-object-geometry object))
+                    (setf (subworld-ratio previous)
+                          (max .2d0 (min .8d0 (/ (third (%meta-object-geometry object))
+                                                  (subworld-width previous)))))))
             (%meta-layout world previous)))
         (multiple-value-bind (x y)
             (%screen-to-world (%canvas-seat-output state) (%canvas-seat-x state) (%canvas-seat-y state))
@@ -487,7 +500,7 @@
                                   (and (<= left x (+ left width)) (<= top y (+ top height))))))
                          (%meta-visible-members destination :workspace workspace))))
                  (geometry (and other (%meta-target-geometry world (subworld-member-object other))))
-                 (side (and other (eq :niri (subworld-kind destination))
+                 (side (and other
                             (%meta-niri-drop-side
                              geometry x y
                              (member :control (gethash (%canvas-seat-seat state) (%meta-modifiers world))))))
@@ -506,7 +519,10 @@
             (when destination
               (let ((member (%meta-member destination object)))
                 (when (and other (not (subworld-member-floating-p member)))
-                  (%meta-insert-member destination member other after-p (not (null side)))))
+                  (if (and (eq :hyprland (subworld-kind destination))
+                           (eq :dwindle (subworld-layout destination)))
+                      (%meta-hypr-drop destination member other side)
+                      (%meta-insert-member destination member other after-p (not (null side))))))
               (%meta-layout world destination))))))
     (%meta-changed world)))
 
@@ -816,13 +832,12 @@
       (set-window-animation-hook
        window name
        (lambda (world subject timestamp)
-         (let ((origin (canvas-window-elevation subject)))
-           (animate-window
-            world subject :engagement duration
-            (lambda (target progress)
-              (setf (canvas-window-elevation target)
-                    (+ origin (* progress (- destination origin)))))
-            :start-time timestamp :easing #'ataxia.world:ease-out-cubic))))))
+         (declare (ignore timestamp))
+         (%meta-animate-to
+          world subject :engagement (list (canvas-window-elevation subject))
+          (list destination) duration
+          (lambda (target values) (setf (canvas-window-elevation target) (first values)))
+          :bounds '((0d0 1d0)))))))
   window)
 
 (defmethod ataxia.kernel:world-register-object :after
@@ -830,6 +845,7 @@
   (let ((window (find-canvas-window world application)))
     (when window
       (%meta-install-engagement-hooks window)
+      (setf (%canvas-window-lift-offset window) 0d0)
       (ataxia.world:cancel-animation (%world-animator world) window :presence)
       (setf (canvas-window-effect window) 0d0
             (canvas-window-scale window) 1d0
@@ -837,12 +853,17 @@
       (set-window-animation-hook
        window :visible
        (lambda (target subject timestamp)
+         (declare (ignore timestamp))
          (setf (canvas-window-opacity subject) 0d0
                (canvas-window-scale subject) 1d0
                (canvas-window-effect subject) 0d0)
-         (animate-window target subject :presence 0.14d0
-                         (lambda (object progress) (setf (canvas-window-opacity object) progress))
-                         :start-time timestamp :easing #'ataxia.world:ease-out-cubic)))
+         (%meta-cancel-motion target subject :presence)
+         (%meta-animate-to
+          target subject :presence '(0d0) '(1d0) 0.16d0
+          (lambda (object values) (setf (canvas-window-opacity object) (first values)))
+          :bounds '((0d0 1d0)))))
+      (when (%canvas-window-mapped-p window)
+        (run-window-animation-hook world window :visible))
       (%meta-adopt-window world window))))
 
 (defmethod ataxia.kernel:world-object-changed :after ((world metaworld) object change)
@@ -875,7 +896,8 @@
   (let* ((window (find-canvas-window world application))
          (group (and window (object-subworld world window))))
     (when window
-      (%meta-cancel-motion world window :metaworld-layout)
+      (ataxia.world:cancel-subject-animations (%world-animator world) window)
+      (remhash window (%meta-motions world))
       (remhash window (%meta-drop-previews world))
       (remhash window (%meta-preview-positions world)))
     (when group
@@ -964,6 +986,8 @@
 (defmethod ataxia.kernel:world-output-removing :before ((world metaworld) output)
   (let ((state (gethash output (%world-outputs world))))
     (when state
+      (ataxia.world:cancel-subject-animations (%world-animator world) state)
+      (remhash state (%meta-motions world))
       (remhash state (%meta-chrome-states world))
       (remhash state (%meta-views world))))
   (when (and (%meta-menu world) (eq output (canvas-overlay-output (%meta-menu world))))

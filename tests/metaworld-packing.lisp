@@ -43,7 +43,7 @@
            ;; The soft buffer moves the neighbor gradually, then propagates.
            (move-subworld world anchor 30d0 0d0)
            (assert (= 596d0 (subworld-x neighbor)))
-           (assert (gethash neighbor (%meta-motions world)))
+           (assert (%meta-motion world neighbor :subworld-push))
            (incf clock .06d0)
            (ataxia.world:advance-animations (%world-animator world) clock)
            (%meta-enforce-subworld-separation world)
@@ -80,7 +80,7 @@
            ;; Grabbing a moving neighbor cancels its prior push trajectory.
            (move-subworld world anchor (subworld-x neighbor) (subworld-y neighbor))
            (move-subworld world neighbor -5000d0 -5000d0)
-           (assert (null (gethash neighbor (%meta-motions world))))
+           (assert (null (%meta-motion world neighbor :subworld-push)))
            (incf clock 1d0)
            (ataxia.world:advance-animations (%world-animator world) clock)
            (%meta-enforce-subworld-separation world)

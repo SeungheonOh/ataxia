@@ -178,10 +178,12 @@
              (delay
                (cond
                  ((not (%visible-component-p world)) 0)
-                 ((%component-animation-active-p world)
-                  (if (zerop deadline) 16 (max 1 (min 16 deadline))))
                  ((= deadline #xffffffffffffffff) 0)
                  (t (max 1 (min deadline 86400000))))))
+        ;; Output frame callbacks pace animations at the display refresh rate.
+        ;; This timer exists only for Slint's application timers.
+        (when (%component-animation-active-p world)
+          (%request-all-frames world))
         (ataxia.runtime:update-event-loop-timer timer delay))))
   world)
 
@@ -425,9 +427,9 @@
     (%full-damage world state))
   world)
 
-(defun %capture-window-coverage (world)
+(defun %capture-window-coverage (world &optional (windows (%world-stacking world)))
   (let ((coverage (make-hash-table :test #'eq)))
-    (dolist (window (%world-stacking world))
+    (dolist (window windows)
       (let ((per-output (make-hash-table :test #'eq)))
         (dolist (state (%output-states world))
           (setf (gethash state per-output)
@@ -437,8 +439,12 @@
 
 (defun %advance-world-animations (world timestamp)
   (let ((animator (%world-animator world)))
-    (when (> timestamp (%world-last-animation-time world))
-      (let ((old-coverage (%capture-window-coverage world)))
+    (when (and (ataxia.world:animations-active-p animator)
+               (> timestamp (%world-last-animation-time world)))
+      (let ((old-coverage
+              (%capture-window-coverage
+               world (remove-if-not (lambda (subject) (typep subject 'canvas-window))
+                                    (ataxia.world:animation-subjects animator)))))
         (multiple-value-bind (changed active-p)
             (ataxia.world:advance-animations animator timestamp)
           (declare (ignore active-p))
@@ -490,7 +496,7 @@
 
 (defun %target-visible-p (target)
   (typecase target
-    (canvas-window (%window-visible-p target))
+    (canvas-window (and (%canvas-window-input-enabled-p target) (%window-visible-p target)))
     (canvas-overlay (and (canvas-overlay-visible-p target) (%overlay-input-enabled-p target)))
     (otherwise nil)))
 
@@ -565,7 +571,7 @@
 (defun %windows-at-screen-point (world state x y)
   (multiple-value-bind (canvas-x canvas-y) (%screen-to-canvas state x y)
     (loop for window in (reverse (%world-stacking world))
-          when (and (%window-visible-p window)
+          when (and (%window-visible-p window) (%canvas-window-input-enabled-p window)
                     (multiple-value-bind (window-x window-y width height)
                         (%window-input-geometry state window)
                       (and (<= window-x canvas-x (+ window-x width))
@@ -1515,6 +1521,7 @@
             (ataxia.kernel:frame-transform lease))
       (when geometry-changed-p
         (ataxia.world:damage-reset-output (%world-damage world) output)))
+    (ataxia.world.slint:update-slint-timers)
     (%advance-world-animations world (ataxia.kernel:frame-timestamp lease))
     (%advance-view-shifts world (ataxia.kernel:frame-timestamp lease))
     (%prepare-canvas-frame world state)

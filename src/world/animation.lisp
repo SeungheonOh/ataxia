@@ -13,7 +13,8 @@
              (:constructor %make-animation
                  (&key subject channel start-time duration delay easing update
                        finish repeat alternate-p)))
-  subject channel start-time duration delay easing update finish repeat alternate-p)
+  subject channel start-time duration delay easing update finish repeat alternate-p
+  (cancelled-p nil))
 
 (defun make-animator ()
   (make-instance 'animator))
@@ -38,15 +39,18 @@
   (setf (%active-animations animator)
         (delete-if
          (lambda (animation)
-           (and (eq subject (%animation-subject animation))
-                (equal channel (%animation-channel animation))))
+           (when (and (eq subject (%animation-subject animation))
+                      (equal channel (%animation-channel animation)))
+             (setf (%animation-cancelled-p animation) t)))
          (%active-animations animator)))
   animator)
 
 (defun cancel-subject-animations (animator subject)
   (setf (%active-animations animator)
-        (delete subject (%active-animations animator)
-                :key #'%animation-subject :test #'eq))
+        (delete-if (lambda (animation)
+                     (when (eq subject (%animation-subject animation))
+                       (setf (%animation-cancelled-p animation) t)))
+                   (%active-animations animator)))
   animator)
 
 (defun start-animation
@@ -69,6 +73,10 @@
          :repeat repeat :alternate-p alternate-p)
         (%active-animations animator))
   animator)
+
+(defun animation-subjects (animator)
+  "Return the subjects with scheduled animation work, without duplicates."
+  (remove-duplicates (mapcar #'%animation-subject (%active-animations animator)) :test #'eq))
 
 (defun animations-active-p (animator)
   (not (null (%active-animations animator))))
@@ -95,24 +103,26 @@
 
 (defun advance-animations (animator timestamp)
   "Sample all animations. Return changed subjects and whether work remains."
-  (let ((remaining nil)
-        (changed nil)
+  ;; Callbacks may cancel, replace, or chain animations. Sample a snapshot but
+  ;; keep the live registry authoritative, so a callback cannot resurrect old
+  ;; work or lose a newly scheduled transition at the end of this frame.
+  (let ((changed nil)
         (time (coerce timestamp 'double-float)))
-    (dolist (animation (%active-animations animator))
-      (multiple-value-bind (progress complete-p)
-          (%animation-progress animation time)
-        (cond
-          ((null progress)
-           (push animation remaining))
-          (t
-           (funcall (%animation-update animation)
-                    (%animation-subject animation)
-                    (funcall (%animation-easing animation) progress))
-           (pushnew (%animation-subject animation) changed :test #'eq)
-           (if complete-p
-               (when (%animation-finish animation)
-                 (funcall (%animation-finish animation)
-                          (%animation-subject animation)))
-               (push animation remaining))))))
-    (setf (%active-animations animator) (nreverse remaining))
-    (values (nreverse changed) (not (null remaining)))))
+    (dolist (animation (copy-list (%active-animations animator)))
+      (unless (%animation-cancelled-p animation)
+        (multiple-value-bind (progress complete-p)
+            (%animation-progress animation time)
+          (when progress
+            (funcall (%animation-update animation)
+                     (%animation-subject animation)
+                     (funcall (%animation-easing animation) progress))
+            (pushnew (%animation-subject animation) changed :test #'eq)
+            (when (and complete-p
+                       (not (%animation-cancelled-p animation)))
+              (setf (%animation-cancelled-p animation) t)
+              (when (%animation-finish animation)
+                (funcall (%animation-finish animation)
+                         (%animation-subject animation))))))))
+    (setf (%active-animations animator)
+          (delete-if #'%animation-cancelled-p (%active-animations animator)))
+    (values (nreverse changed) (animations-active-p animator))))

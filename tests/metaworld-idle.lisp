@@ -44,9 +44,9 @@
 (let* ((world (make-metaworld :state-file nil))
        (names '(%visible-component-p %component-animation-active-p
                 ataxia.world.slint:slint-next-timer-milliseconds
-                ataxia.runtime:update-event-loop-timer))
+                ataxia.runtime:update-event-loop-timer %request-all-frames))
        (originals (mapcar #'symbol-function names))
-       (visible t) (active nil) (deadline #xffffffffffffffff) (delay nil))
+       (visible t) (active nil) (deadline #xffffffffffffffff) (delay nil) (frames 0))
   (unwind-protect
        (progn
          (setf (%world-component-timer world) :timer
@@ -54,9 +54,12 @@
                (symbol-function '%component-animation-active-p) (lambda (w) (declare (ignore w)) active)
                (symbol-function 'ataxia.world.slint:slint-next-timer-milliseconds) (lambda () deadline)
                (symbol-function 'ataxia.runtime:update-event-loop-timer)
-               (lambda (source milliseconds) (declare (ignore source)) (setf delay milliseconds)))
+               (lambda (source milliseconds) (declare (ignore source)) (setf delay milliseconds))
+               (symbol-function '%request-all-frames)
+               (lambda (w) (declare (ignore w)) (incf frames)))
          (%schedule-component-timer world) (assert (zerop delay))
-         (setf active t) (%schedule-component-timer world) (assert (= delay 16))
+         (setf active t) (%schedule-component-timer world)
+         (assert (zerop delay)) (assert (= frames 1))
          (setf active nil deadline 250) (%schedule-component-timer world) (assert (= delay 250))
          (setf visible nil) (%schedule-component-timer world) (assert (zerop delay))
          (format t "PASS: component timer disarms while idle and retains animation and application deadlines.~%"))

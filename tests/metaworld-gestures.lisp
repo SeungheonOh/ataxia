@@ -227,3 +227,49 @@
            (unchanged-camera)))
     (loop for name in names for fn in saved do (setf (symbol-function name) fn))))
 (format t "PASS: subworld ownership, horizontal tile focus, vertical workspaces, consumed pinch and mid-gesture entry/exit.~%")
+
+;; Velocity estimation follows elapsed time, including coalesced timestamps;
+;; a long pause invalidates an old flick instead of reusing stale momentum.
+(let* ((world (make-infinite-world)) (output (gensym)) (state (%make-canvas-output output))
+       (names '(%full-damage %update-all-membership %request-all-frames %now))
+       (saved (mapcar #'symbol-function names)) (speeds nil))
+  (unwind-protect
+       (progn
+         (dolist (name (butlast names))
+           (setf (symbol-function name) (lambda (&rest args) (declare (ignore args)))))
+         (setf (symbol-function '%now) (lambda () 1d0)
+               (gethash output (%world-outputs world)) state)
+         (flet ((update (gesture time dx)
+                  (%gesture-update world gesture
+                    (ataxia.kernel:make-cursor-gesture-input
+                     :kind :swipe :phase :update :time-msec time :dx dx))))
+           (dolist (interval '(4 5 10 20))
+             (let ((gesture (make-canvas-gesture :kind :swipe :fingers 3 :state state)))
+               (loop for time from interval to 100 by interval do
+                 (update gesture time (float interval 1d0)))
+               (push (canvas-gesture-vx gesture) speeds)))
+           (assert (every (lambda (v) (< (abs (- v (first speeds))) 1d-6)) speeds))
+           (let ((gesture (make-canvas-gesture :kind :swipe :fingers 3 :state state)))
+             (update gesture 0 5d0)
+             (update gesture 10 5d0)
+             (let ((expected (* 1000d0 (- 1d0 (exp -.4d0)))))
+               (assert (< (abs (- (canvas-gesture-vx gesture) expected)) 1d-6)))
+             (update gesture 20 10d0)
+             (update gesture 200 0d0)
+             (%gesture-coast world gesture 201)
+             (assert (zerop (canvas-gesture-vx gesture)))
+             (assert (not (ataxia.world:animations-active-p (%world-animator world)))))
+           (let ((gesture (make-canvas-gesture :kind :swipe :fingers 3 :state state
+                                              :time #xfffffff8)))
+             (update gesture 2 10d0)
+             (assert (plusp (canvas-gesture-vx gesture)))))
+         (dolist (hz '(60 120 144 240))
+           (setf (%canvas-output-camera-x state) 0d0 (%canvas-output-zoom state) 1d0)
+           (%gesture-coast world (make-canvas-gesture :state state :samples 2 :time 100 :vx 1000d0) 101)
+           (loop for i from 1 to (ceiling (* hz .24d0)) do
+             (ataxia.world:advance-animations (%world-animator world) (+ 1d0 (/ i (float hz 1d0)))))
+           (ataxia.world:advance-animations (%world-animator world) 2d0)
+           (assert (< (abs (+ 120d0 (%canvas-output-camera-x state))) 1d-6))
+           (assert (not (ataxia.world:animations-active-p (%world-animator world)))))
+         (format t "PASS: event-rate independent velocity, coalesced timestamps, stale flick rejection, timestamp wrap and refresh-rate independent coast.~%"))
+    (loop for name in names for original in saved do (setf (symbol-function name) original))))

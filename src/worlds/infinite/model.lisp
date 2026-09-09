@@ -21,6 +21,9 @@
    (mapped-p :initform nil :accessor %canvas-window-mapped-p)
    (hidden-p :initform nil :accessor %canvas-window-hidden-p)
    (z :initform 0 :accessor %canvas-window-z)
+   (visibility-opacity :initform 1d0 :accessor %canvas-window-visibility-opacity)
+   (input-enabled-p :initform t :accessor %canvas-window-input-enabled-p)
+   (lift-offset :initform 10d0 :accessor %canvas-window-lift-offset)
    (opacity :initform 1d0 :accessor canvas-window-opacity)
    (scale :initform 1d0 :accessor canvas-window-scale)
    (elevation :initform 0d0 :accessor canvas-window-elevation)
@@ -261,7 +264,7 @@
            (scaled-height (* height scale)))
       (values (+ screen-x (/ (- width scaled-width) 2d0))
               (+ screen-y (/ (- height scaled-height) 2d0)
-                 (* -10d0 (canvas-window-elevation window)))
+                 (- (* (%canvas-window-lift-offset window) (canvas-window-elevation window))))
               scaled-width scaled-height))))
 
 (defun %window-buffer-coverage (state window)
@@ -284,7 +287,10 @@
        (plusp (canvas-overlay-opacity overlay))
        (%overlay-on-state-p overlay state)))
 
+(defun %window-opacity (window)
+  (* (canvas-window-opacity window) (%canvas-window-visibility-opacity window)))
+
 (defun %window-visible-p (window)
   (and (%canvas-window-mapped-p window)
        (not (%canvas-window-hidden-p window))
-       (plusp (canvas-window-opacity window))))
+       (plusp (%window-opacity window))))

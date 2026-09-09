@@ -218,35 +218,35 @@
           (%canvas-output-target-rotation state) (coerce rotation 'double-float))
     (set-output-camera world (%canvas-output-output state) x y zoom)))
 
-(defun %meta-camera-sample (origin destination progress)
-  "Interpolate the screen transform so pan and zoom follow the same path."
-  (if (>= progress 1d0) (copy-list destination)
-      (if (<= progress 0d0) (copy-list origin)
-          (destructuring-bind (ax ay az &optional (ar 0d0)) origin
-            (destructuring-bind (bx by bz &optional (br 0d0)) destination
-              (let* ((p (coerce progress 'double-float))
-                     (zoom (+ az (* p (- bz az))))
-                     (angle (- (mod (+ (- br ar) pi) (* 2d0 pi)) pi)))
-                (list (/ (+ (* ax az) (* p (- (* bx bz) (* ax az)))) zoom)
-                      (/ (+ (* ay az) (* p (- (* by bz) (* ay az)))) zoom)
-                      zoom (+ ar (* p angle)))))))))
+(defun %meta-camera-transform (camera)
+  (destructuring-bind (x y zoom rotation) camera
+    (list (* x zoom) (* y zoom) zoom rotation)))
 
 (defun %meta-transition-camera (world state origin)
-  (let ((destination (%meta-camera state)))
-    (when (equalp origin destination)
+  (let* ((destination (%meta-camera state))
+         (start (%meta-camera-transform origin))
+         (target (%meta-camera-transform destination)))
+    ;; Unwrap around the displayed angle, so crossing +/-pi cannot spin a turn.
+    (setf (fourth target)
+          (+ (fourth start) (- (mod (+ (- (fourth target) (fourth start)) pi)
+                                   (* 2d0 pi)) pi)))
+    (when (and (equalp start target)
+               (null (%meta-motion world state :metaworld-camera)))
       (%meta-cancel-motion world state :metaworld-camera)
       (return-from %meta-transition-camera state))
     (let ((view (%meta-view-for-state world state)))
       (setf (%meta-view-hover-after view) (+ (%now) 0.36d0)
             (%meta-view-window-controls-until view) 0d0))
+    (ataxia.world:cancel-animation (%world-animator world) state :touchpad-pan)
     (%meta-set-camera world state origin)
-    ;; One easing parameter keeps translation and scale in lockstep. Old
-    ;; per-axis velocities otherwise bend a retargeted camera's path.
-    (%meta-cancel-motion world state :metaworld-camera)
-    (%meta-animate-to world state :metaworld-camera '(0d0) '(1d0) 0.28d0
-                      (lambda (subject progress)
-                        (%meta-set-camera world subject
-                                          (%meta-camera-sample origin destination (first progress)))))
+    ;; Animate the screen transform itself. A fresh pan/zoom follows a straight
+    ;; screen path; an interrupted one carries its velocity and acceleration.
+    (%meta-animate-to
+     world state :metaworld-camera start target 0.28d0
+     (lambda (subject transform)
+       (destructuring-bind (x y zoom rotation) transform
+         (%meta-set-camera world subject (list (/ x zoom) (/ y zoom) zoom rotation))))
+     :bounds (list nil nil (list 0.08d0 8d0) nil))
     (%request-output-state-frame world state)))
 
 (defun %meta-changed (world)

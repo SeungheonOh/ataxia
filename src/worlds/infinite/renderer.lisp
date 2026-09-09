@@ -390,7 +390,7 @@ rotation, output transform, fractional scale and window resizing."
       (ataxia.world.gles:gles-uniform-1f program "u_sigma" sigma)
       (ataxia.world.gles:gles-uniform-1f program "u_padding" padding)
       (ataxia.world.gles:gles-uniform-1f program "u_opacity"
-                                          (* (canvas-window-opacity window) (+ 0.22d0 (* lift 0.08d0))))
+                                          (* (%window-opacity window) (+ 0.22d0 (* lift 0.08d0))))
       (ataxia.world.gles:gles-draw-triangles 6))))
 
 (defun %draw-window (renderer state window tokens)
@@ -429,7 +429,7 @@ rotation, output transform, fractional scale and window resizing."
                      (%draw-surface
                       renderer state surface
                       surface-x surface-y surface-width surface-height
-                      (canvas-window-opacity window)
+                      (%window-opacity window)
                       (canvas-window-effect window)
                       (coerce (mod (ataxia.kernel:object-id application) 997)
                               'double-float)

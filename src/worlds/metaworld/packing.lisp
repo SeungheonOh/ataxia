@@ -6,7 +6,7 @@
 
 (defun %meta-packing-records (world &optional targets-p)
   (loop for group in (metaworld-subworlds world)
-        for motion = (and targets-p (gethash group (%meta-motions world)))
+        for motion = (and targets-p (%meta-motion world group :subworld-push))
         for position = (and motion (%meta-trajectory-destination motion))
         collect (list group (if position (first position) (subworld-x group))
                       (if position (second position) (subworld-y group))

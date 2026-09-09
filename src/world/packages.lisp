@@ -66,6 +66,7 @@
    #:cancel-subject-animations
    #:advance-animations
    #:animations-active-p
+   #:animation-subjects
    #:linear-easing
    #:ease-in-cubic
    #:ease-out-cubic

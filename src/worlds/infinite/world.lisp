@@ -212,9 +212,12 @@
 
 (defun %damage-window (world window)
   (dolist (state (%output-states world))
-    (ataxia.world:damage-add-region
-     (%world-damage world) (%canvas-output-output state)
-     (list (%window-buffer-coverage state window))))
+    (let ((region (ataxia.world:clip-region
+                   (list (%window-buffer-coverage state window))
+                   (%canvas-output-buffer-width state) (%canvas-output-buffer-height state))))
+      (when region
+        (ataxia.world:damage-add-region
+         (%world-damage world) (%canvas-output-output state) region))))
   window)
 
 (defun %damage-window-region (world window rectangles)
@@ -226,25 +229,25 @@
         (dolist (state (%output-states world))
           (multiple-value-bind (screen-x screen-y screen-width screen-height)
               (%window-canvas-geometry state window)
-            (ataxia.world:damage-add-region
-             (%world-damage world) (%canvas-output-output state)
-             (mapcar
-              (lambda (rectangle)
-                (%canvas-rectangle-to-buffer
-                 state
-                 (+ screen-x
-                    (* screen-width
-                       (/ (- (ataxia.world:rectangle-x rectangle) local-x)
-                          local-width)))
-                 (+ screen-y
-                    (* screen-height
-                       (/ (- (ataxia.world:rectangle-y rectangle) local-y)
-                          local-height)))
-                 (* screen-width
-                    (/ (ataxia.world:rectangle-width rectangle) local-width))
-                 (* screen-height
-                    (/ (ataxia.world:rectangle-height rectangle) local-height))))
-              rectangles)))))))
+            (let ((region
+                    (ataxia.world:clip-region
+                     (mapcar
+                      (lambda (rectangle)
+                        (%canvas-rectangle-to-buffer
+                         state
+                         (+ screen-x
+                            (* screen-width
+                               (/ (- (ataxia.world:rectangle-x rectangle) local-x) local-width)))
+                         (+ screen-y
+                            (* screen-height
+                               (/ (- (ataxia.world:rectangle-y rectangle) local-y) local-height)))
+                         (* screen-width (/ (ataxia.world:rectangle-width rectangle) local-width))
+                         (* screen-height (/ (ataxia.world:rectangle-height rectangle) local-height))))
+                      rectangles)
+                     (%canvas-output-buffer-width state) (%canvas-output-buffer-height state))))
+              (when region
+                (ataxia.world:damage-add-region
+                 (%world-damage world) (%canvas-output-output state) region))))))))
   window)
 
 (defun %damage-overlay (world overlay)
@@ -1182,7 +1185,14 @@
                 (ataxia.world:frame-damage-to-region
                  (ataxia.kernel:drawable-invalidation-damage invalidation)))))
          (%update-window-membership world window)
-         (%request-all-frames world))))
+         ;; A client may commit while its workspace or damaged pixels are off
+         ;; screen. Keep its latest content without waking unaffected outputs.
+         (dolist (state (%output-states world))
+           (when (or (ataxia.world:damage-pending-p (%world-damage world) (%canvas-output-output state))
+                     ;; Keep servicing visible callback-only commits too.
+                     (and (zerop (length (ataxia.kernel:drawable-invalidation-damage invalidation)))
+                          (%window-output-membership state window)))
+             (%request-output-state-frame world state))))))
     (ataxia.kernel:surface-node
      (dolist (seat-state (%seat-states world))
        (when (eq object (%canvas-seat-cursor-surface seat-state))

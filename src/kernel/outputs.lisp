@@ -278,11 +278,10 @@
            (ataxia.runtime:output-state-set-buffer state buffer)
            (ataxia.runtime:output-state-set-damage
             state (%runtime-damage (frame-result-damage result)))
-           (unless (ataxia.runtime:output-test-state runtime-output state)
-             (%call-world
-              kernel world-frame-failed
-              output result :output-test-failed)
-             (return-from %commit-world-frame nil))
+           ;; This state only changes the rendered buffer and damage. The
+           ;; swapchain is already configured, and commit validates the state
+           ;; itself. A separate test duplicates the DRM atomic submission on
+           ;; every frame. Configuration changes retain their explicit tests.
            (unless (ataxia.runtime:output-commit-state runtime-output state)
              (%call-world
               kernel world-frame-failed

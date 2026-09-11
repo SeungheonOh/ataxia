@@ -94,10 +94,9 @@
      (%agent-widget-expiry-source widget))
     (setf (%agent-widget-expiry-source widget) nil))
   (let ((component (canvas-overlay-component widget)))
-    (ataxia.world.slint:set-slint-component-invalidator component nil)
-    (when (ataxia.world.slint:slint-component-graphics-attached-p component)
-      (ataxia.kernel:drawable-detach-graphics component))
-    (ataxia.world.slint:destroy-slint-component component))
+    (ataxia.world:ui-set-invalidator component nil)
+    (ataxia.kernel:drawable-detach-graphics component)
+    (ataxia.world:ui-destroy component))
   nil)
 
 (defun list-agent-widgets (world)
@@ -133,11 +132,11 @@
     (copy-list (%agent-widget-events widget)))))
 
 (defun bind-agent-widget-event (widget name &optional handler)
-  "Record a public Slint callback and optionally invoke a short Lisp handler."
+  "Record a named UI callback and optionally invoke a short Lisp handler."
   (check-type widget agent-widget)
   (check-type name string)
   (check-type handler (or null function))
-  (ataxia.world.slint:set-slint-callback
+  (ataxia.world:ui-set-callback
    (canvas-overlay-component widget) name
    (lambda (component value)
      (declare (ignore component))
@@ -155,14 +154,17 @@
          (state (gethash (canvas-overlay-output widget)
                          (%world-outputs world))))
     (unless (%world-quiescing-p world)
-      (when (and state (canvas-overlay-visible-p widget))
+      (when (and state
+                 (or (%updatable-overlay-p world widget)
+                     (ataxia.world:damage-pending-p
+                      (%world-damage world) (canvas-overlay-output widget))))
         (%request-output-state-frame world state))
       (%schedule-component-timer world)))
   widget)
 
 (defun %create-agent-widget
     (class world source
-     &key component-name source-path output
+     &key component-name source-path output component-factory
        (x 24d0) (y 24d0) (width 320d0) (height 180d0)
        (layer 1100) (visible-p t) (opacity 1d0) callbacks)
   (check-type world infinite-world)
@@ -175,7 +177,7 @@
     (handler-case
         (progn
           (setf component
-                (ataxia.world.slint:make-slint-component
+                (funcall (or component-factory #'ataxia.world.slint:make-slint-component)
                  :source source
                  :source-path (or source-path
                                   (format nil "ataxia-agent-widget-~D.slint" id))
@@ -190,7 +192,7 @@
                  :height (coerce height 'double-float)
                  :layer layer :visible-p visible-p
                  :opacity (coerce opacity 'double-float)))
-          (ataxia.world.slint:set-slint-component-invalidator
+          (ataxia.world:ui-set-invalidator
            component (lambda (ignored)
                        (declare (ignore ignored))
                        (%request-agent-widget-frame widget)))
@@ -202,9 +204,9 @@
             (error cause)
             (progn
               (when component
-                (ataxia.world.slint:set-slint-component-invalidator
+                (ataxia.world:ui-set-invalidator
                  component nil)
-                (ataxia.world.slint:destroy-slint-component component))
+                (ataxia.world:ui-destroy component))
               (error 'ataxia.world:world-operation-rejected :cause cause)))))))
 
 (defun make-agent-widget
@@ -247,9 +249,9 @@
                          (canvas-overlay-width widget)))
           (new-height (if height-p (coerce height 'double-float)
                           (canvas-overlay-height widget))))
-      (ataxia.world.slint:resize-slint-component
+      (ataxia.world:ui-resize
        (canvas-overlay-component widget) new-width new-height
-       :scale (ataxia.world.slint:slint-component-scale
+       :scale (ataxia.world:ui-raster-scale
                (canvas-overlay-component widget)))
       (setf (canvas-overlay-width widget) new-width
             (canvas-overlay-height widget) new-height)))
@@ -262,9 +264,9 @@
   (%request-agent-widget-frame widget))
 
 (defun set-agent-widget-property (widget name value)
-  "Update one public Slint property on WIDGET."
+  "Update one public UI property on WIDGET."
   (check-type widget agent-widget)
-  (ataxia.world.slint:set-slint-property
+  (ataxia.world:ui-set-property
    (canvas-overlay-component widget) name value)
   widget)
 

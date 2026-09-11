@@ -6,6 +6,15 @@
 (defpackage #:ataxia.world
   (:use #:cl)
   (:export
+   #:ui-raster-scale
+   #:ui-resize
+   #:ui-destroy
+   #:ui-set-invalidator
+   #:ui-set-property
+   #:ui-set-callback
+   #:ui-service-key
+   #:ui-service
+   #:ui-next-update-delay
    #:rectangle
    #:make-rectangle
    #:rectangle-x

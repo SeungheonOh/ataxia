@@ -35,7 +35,7 @@
           (make-instance 'ataxia.kernel:toplevel-configuration
                          :width (round (third destination)) :height (round (fourth destination)))))
         (agent-widget
-         (ataxia.world.slint:resize-slint-component
+         (ataxia.world:ui-resize
           (canvas-overlay-component object) (third destination) (fourth destination)))))
     (flet ((place (subject geometry)
              (etypecase subject

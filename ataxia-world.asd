@@ -11,6 +11,7 @@
   ((:module "src/world"
     :components
     ((:file "packages")
+     (:file "ui")
      (:file "geometry")
      (:file "application")
      (:file "agent-events")

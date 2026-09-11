@@ -18,21 +18,21 @@
 
 (defun %prepare-overlay-resolution (world state overlay)
   (let ((component (canvas-overlay-component overlay)))
-    (when (typep component 'ataxia.world.slint:slint-component)
+    (when (ataxia.world:ui-raster-scale component)
       (let* ((renderer (%world-renderer world))
              (limit (or (gethash renderer *overlay-texture-limits*)
                         (setf (gethash renderer *overlay-texture-limits*)
                               (cffi:with-foreign-object (value :int32)
-                                (ataxia.world.slint::%gl-get-integer #x0D33 value) ; GL_MAX_TEXTURE_SIZE
+                                (ataxia.world.gles::%gl-get-integer #x0D33 value) ; GL_MAX_TEXTURE_SIZE
                                 (max 1 (cffi:mem-ref value :int32))))))
-             (width (ataxia.world.slint:slint-component-width component))
-             (height (ataxia.world.slint:slint-component-height component))
-             (current (ataxia.world.slint:slint-component-scale component))
+             (width (nth-value 2 (ataxia.kernel:drawable-local-bounds component)))
+             (height (nth-value 3 (ataxia.kernel:drawable-local-bounds component)))
+             (current (ataxia.world:ui-raster-scale component))
              (scale (%overlay-raster-scale
                      width height (max 1d0 (canvas-overlay-width overlay))
                      (max 1d0 (canvas-overlay-height overlay))
                      (ataxia.kernel:output-scale (%canvas-output-output state)) current limit)))
         (unless (= current scale)
-          (ataxia.world.slint:resize-slint-component component width height :scale scale)
+          (ataxia.world:ui-resize component width height :scale scale)
           (%damage-overlay world overlay)))))
   overlay)

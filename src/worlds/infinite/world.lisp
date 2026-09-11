@@ -171,27 +171,55 @@
 (defun %visible-component-p (world)
   (some #'canvas-overlay-visible-p (world-overlays world)))
 
+(defun %updatable-overlay-p (world overlay)
+  (let ((state (gethash (canvas-overlay-output overlay) (%world-outputs world))))
+    (and state (%overlay-visible-on-state-p overlay state)
+         (multiple-value-bind (width height) (%output-logical-size state)
+           (and (< (canvas-overlay-x overlay) width)
+                (< (canvas-overlay-y overlay) height)
+                (> (+ (canvas-overlay-x overlay) (canvas-overlay-width overlay)) 0)
+                (> (+ (canvas-overlay-y overlay) (canvas-overlay-height overlay)) 0))))))
+
+(defun %service-ui-engines (world)
+  (let ((serviced nil))
+    (dolist (overlay (world-overlays world))
+      (when (%updatable-overlay-p world overlay)
+        (let* ((component (canvas-overlay-component overlay))
+               (key (ataxia.world:ui-service-key component)))
+          (when (and key (not (member key serviced)))
+            (push key serviced)
+            (ataxia.world:ui-service component)))))))
+
 (defun %schedule-component-timer (world)
-  (let ((timer (%world-component-timer world)))
+  (let ((timer (%world-component-timer world)) (deadline nil))
     (when timer
-      (let* ((deadline (ataxia.world.slint:slint-next-timer-milliseconds))
-             (delay
-               (cond
-                 ((not (%visible-component-p world)) 0)
-                 ((= deadline #xffffffffffffffff) 0)
-                 (t (max 1 (min deadline 86400000))))))
-        ;; Output frame callbacks pace animations at the display refresh rate.
-        ;; This timer exists only for Slint's application timers.
-        (when (%component-animation-active-p world)
-          (%request-all-frames world))
-        (ataxia.runtime:update-event-loop-timer timer delay))))
+      (dolist (overlay (world-overlays world))
+        (when (%updatable-overlay-p world overlay)
+          (let* ((component (canvas-overlay-component overlay))
+                 (active (ataxia.kernel:drawable-active-p component))
+                 (delay (ataxia.world:ui-next-update-delay component)))
+            (when (or active (and delay (zerop delay)))
+              (%request-output-state-frame
+               world (gethash (canvas-overlay-output overlay) (%world-outputs world))))
+            (when (and delay (plusp delay))
+              (setf deadline (if deadline (min deadline delay) delay))))))
+      (ataxia.runtime:update-event-loop-timer
+       timer (if deadline (max 1 (min (ceiling deadline) 86400000)) 0))))
   world)
 
 (defun %component-timer-fired (world source)
   (declare (ignore source))
   (unless (%world-quiescing-p world)
-    (ataxia.world.slint:update-slint-timers)
-    (%request-all-frames world)
+    (%service-ui-engines world)
+    (dolist (overlay (world-overlays world))
+      (when (%updatable-overlay-p world overlay)
+        (let* ((component (canvas-overlay-component overlay))
+               (delay (ataxia.world:ui-next-update-delay component)))
+          ;; Slint services timers globally; its invalidators are not all public.
+          (when (or (ataxia.world:ui-service-key component)
+                    (and delay (<= delay 1)))
+            (%request-output-state-frame
+             world (gethash (canvas-overlay-output overlay) (%world-outputs world)))))))
     (%schedule-component-timer world))
   0)
 
@@ -254,9 +282,12 @@
   (let ((state (gethash (canvas-overlay-output overlay)
                         (%world-outputs world))))
     (when state
-      (ataxia.world:damage-add-region
-       (%world-damage world) (canvas-overlay-output overlay)
-       (list (%overlay-buffer-coverage state overlay)))))
+      (let ((region (ataxia.world:clip-region
+                     (list (%overlay-buffer-coverage state overlay))
+                     (%canvas-output-buffer-width state) (%canvas-output-buffer-height state))))
+        (when region
+          (ataxia.world:damage-add-region
+           (%world-damage world) (canvas-overlay-output overlay) region)))))
   overlay)
 
 (defun %damage-overlay-region (world overlay rectangles)
@@ -1531,13 +1562,14 @@
             (ataxia.kernel:frame-transform lease))
       (when geometry-changed-p
         (ataxia.world:damage-reset-output (%world-damage world) output)))
-    (ataxia.world.slint:update-slint-timers)
+    (%service-ui-engines world)
     (%advance-world-animations world (ataxia.kernel:frame-timestamp lease))
     (%advance-view-shifts world (ataxia.kernel:frame-timestamp lease))
     (%prepare-canvas-frame world state)
     (%reap-retired-overlays world)
     (dolist (overlay (world-overlays world))
-      (when (%overlay-visible-on-state-p overlay state)
+      (when (and (%overlay-visible-on-state-p overlay state)
+                 (%updatable-overlay-p world overlay))
         (%prepare-overlay-resolution world state overlay)
         (multiple-value-bind (damage active-p)
             (ataxia.kernel:drawable-prepare-frame

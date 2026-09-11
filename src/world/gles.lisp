@@ -307,3 +307,6 @@
   (let ((code (%gl-get-error)))
     (unless (zerop code)
       (error "~A failed with GLES error 0x~X." operation code))))
+
+(cffi:defcfun ("glGetIntegerv" %gl-get-integer) :void
+  (name :uint32) (value :pointer))

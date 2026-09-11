@@ -48,3 +48,23 @@ $(BUILD_DIR)/gesture-native-test: tests/gesture-native.c $(GLUE) $(HEADER)
 .PHONY: test
 test: all $(BUILD_DIR)/gesture-native-test
 	LD_LIBRARY_PATH='$(abspath $(BUILD_DIR)):$(PREFIX)/lib:$(LD_LIBRARY_PATH)' sh tests/run
+
+# Optional HTML/CSS UI engine. RmlUi 6.3 is pinned and verified by CMake.
+CMAKE ?= cmake
+RMLUI_BUILD := $(BUILD_DIR)/rmlui-native
+RMLUI_LIBRARY := $(BUILD_DIR)/libataxia-rmlui-native.so
+.PHONY: rmlui test-rmlui
+rmlui: $(RMLUI_LIBRARY)
+$(RMLUI_LIBRARY): $(wildcard src/world/rmlui/native/*)
+	$(CMAKE) -S src/world/rmlui/native -B $(RMLUI_BUILD) -DCMAKE_BUILD_TYPE=Release
+	$(CMAKE) --build $(RMLUI_BUILD) --parallel 4
+	cp $(RMLUI_BUILD)/libataxia-rmlui-native.so $@.pending
+	mv $@.pending $@
+
+test-rmlui: all rmlui
+	LD_LIBRARY_PATH='$(abspath $(BUILD_DIR)):$(PREFIX)/lib:$(LD_LIBRARY_PATH)' sbcl --noinform --eval '(sb-int:set-floating-point-modes :traps nil)' --script tests/rmlui.lisp
+	python3 tests/rmlui-gles.py
+
+.PHONY: test-rmlui-world
+test-rmlui-world: all rmlui
+	WLR_RENDERER=gles2 LD_LIBRARY_PATH='$(abspath $(BUILD_DIR)):$(PREFIX)/lib:$(LD_LIBRARY_PATH)' sbcl --noinform --eval '(sb-int:set-floating-point-modes :traps nil)' --script tests/rmlui-world.lisp

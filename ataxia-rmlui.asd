@@ -11,3 +11,11 @@
   :description "RmlUi widgets in Infinite World and Metaworld"
   :depends-on ("ataxia-rmlui" "ataxia-infinite-world")
   :components ((:file "src/world/rmlui/infinite")))
+
+(asdf:defsystem "ataxia-rmlui/status-bar"
+  :description "Responsive RmlUi status bar for Metaworld"
+  :depends-on ("ataxia-rmlui/infinite" "ataxia-metaworld")
+  :serial t
+  :components ((:file "src/world/rmlui/status-bar/status-bar")
+               (:file "src/world/rmlui/status-bar/power")
+               (:file "src/world/rmlui/status-bar/menu")))

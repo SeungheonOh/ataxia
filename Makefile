@@ -68,3 +68,16 @@ test-rmlui: all rmlui
 .PHONY: test-rmlui-world
 test-rmlui-world: all rmlui
 	WLR_RENDERER=gles2 LD_LIBRARY_PATH='$(abspath $(BUILD_DIR)):$(PREFIX)/lib:$(LD_LIBRARY_PATH)' sbcl --noinform --eval '(sb-int:set-floating-point-modes :traps nil)' --script tests/rmlui-world.lisp
+
+.PHONY: test-rmlui-status-bar test-rmlui-status-bar-world
+test-rmlui-status-bar: all rmlui
+	python3 tests/rmlui-status-bar-gles.py
+test-rmlui-status-bar-world: all rmlui
+	WLR_RENDERER=gles2 LD_LIBRARY_PATH='$(abspath $(BUILD_DIR)):$(PREFIX)/lib:$(LD_LIBRARY_PATH)' sbcl --noinform --disable-debugger --eval '(sb-int:set-floating-point-modes :traps nil)' --script tests/rmlui-status-bar-world.lisp
+
+.PHONY: test-rmlui-shell test-rmlui-shell-world
+test-rmlui-shell: all rmlui
+	LD_LIBRARY_PATH='$(abspath $(BUILD_DIR)):$(PREFIX)/lib:$(LD_LIBRARY_PATH)' sbcl --noinform --disable-debugger --eval '(sb-int:set-floating-point-modes :traps nil)' --script tests/rmlui-shell-unit.lisp
+	python3 tests/rmlui-shell-gles.py
+test-rmlui-shell-world: all rmlui
+	WLR_RENDERER=gles2 LD_LIBRARY_PATH='$(abspath $(BUILD_DIR)):$(PREFIX)/lib:$(LD_LIBRARY_PATH)' sbcl --noinform --disable-debugger --eval '(sb-int:set-floating-point-modes :traps nil)' --script tests/rmlui-shell-world.lisp

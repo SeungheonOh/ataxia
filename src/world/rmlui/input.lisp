@@ -77,6 +77,12 @@
           (if (member :alt names) 4 0) (if (member :logo names) 8 0)
           (if (member :caps-lock names) 16 0) (if (member :num-lock names) 32 0)))
 
+(defun %key-symbol-number (symbol)
+  ;; Kernel copies XKB names into key-input; native RmlUi consumes numeric keysyms.
+  (etypecase symbol
+    ((unsigned-byte 32) symbol)
+    (string (cffi:foreign-funcall "xkb_keysym_from_name" :string symbol :int 0 :uint32))))
+
 (defmethod ataxia.kernel:interactable-key-event
     ((component rmlui-component) world seat input)
   (declare (ignore world seat))
@@ -89,7 +95,7 @@
     (loop for symbol across (ataxia.kernel:key-input-keysyms input) do
       (ataxia.world.rmlui.raw::check-result
        (ataxia.world.rmlui.raw::%key-symbol
-        (%live-native component) symbol
+        (%live-native component) (%key-symbol-number symbol)
         (eq (ataxia.kernel:key-input-state input) :pressed)
         (%modifier-mask (ataxia.kernel:key-input-modifiers input))) :key)))
   (poll-rmlui-callbacks component)

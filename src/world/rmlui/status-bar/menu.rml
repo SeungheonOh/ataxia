@@ -1,0 +1,56 @@
+<rml><head><title>Ataxia applications</title><style>
+body { margin:0; width:100%; height:100%; color:#e5ecf7; font-family:DejaVu Sans; font-size:13dp; }
+div { display:block; box-sizing:border-box; }
+#panel { position:absolute; left:12dp; right:12dp; top:12dp; bottom:12dp; padding:24dp;
+ background:#171e2cfb; border:1dp #3a485d; border-radius:22dp; box-shadow:#0007 0dp 5dp 12dp 2dp;
+ animation:0.26s cubic-out 1 open; display:flex; flex-direction:column; gap:12dp; overflow-y:auto; }
+#heading { display:flex; align-items:center; justify-content:space-between; }
+#eyebrow { color:#89d5bb; font-size:10dp; letter-spacing:2dp; margin-bottom:6dp; }
+#hello { font-size:25dp; font-weight:bold; }
+button { display:block; box-sizing:border-box; color:#c6d2e5; background:#252f42; border-radius:10dp; padding:9dp 12dp; text-align:center;
+ transition:background-color 0.18s cubic-out,transform 0.18s cubic-out,color 0.18s; }
+button:hover { color:#fff; background:#35445d; transform:translateY(-2dp); }
+button:active { transform:scale(0.97); }
+#close { font-size:18dp; padding:5dp 12dp; }
+#search { display:block; box-sizing:border-box; width:100%; height:44dp; padding:12dp 14dp; font-size:14dp;
+ font-family:DejaVu Sans; color:#f1f6ff; background:#101723; border:1dp #45586d; border-radius:11dp; }
+#search:focus { border-color:#83d7bd; }
+#section { display:flex; align-items:center; justify-content:space-between; }
+#section-name { font-size:12dp; font-weight:bold; }
+#count { color:#8293ad; font-size:11dp; }
+#grid { display:flex; flex-wrap:wrap; gap:10dp; flex:1; min-height:230dp; flex-shrink:0; align-content:flex-start; }
+.app { width:31.5%; flex-shrink:0; height:110dp; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:9dp; background:#202b3d; padding:10dp 5dp; }
+.app.selected { background:#2c4148; border:1dp #527f75; }
+.icon { width:36dp; height:36dp; border-radius:11dp; color:#d2fff0; background:#33574e; font-size:19dp; line-height:36dp; font-weight:bold; }
+.tone1 .icon { color:#dfdaff; background:#49405f; }
+.tone2 .icon { color:#ffe7c8; background:#5d4937; }
+.tone3 .icon { color:#cce7ff; background:#324b66; }
+.name { width:100%; height:16dp; line-height:16dp; text-align:center; overflow:hidden; white-space:nowrap; font-size:11dp; }
+#empty { display:none; color:#8d9db6; padding:28dp 0; }
+#footer { display:flex; align-items:center; gap:8dp; border-top:1dp #334054; padding-top:14dp; }
+#page { white-space:nowrap; flex-shrink:0; color:#8f9fb7; font-size:11dp; margin-left:auto; }
+#prev, #next { font-size:18dp; padding:4dp 10dp; }
+#hint { color:#74859e; font-size:10dp; }
+#panel.small { padding:16dp; gap:12dp; }
+.small .app { width:47%; height:85dp; gap:5dp; }
+.small .icon { width:28dp; height:28dp; font-size:16dp; line-height:28dp; }
+.small #hello { font-size:21dp; }
+.small #hint { display:none; }
+.small #grid { min-height:275dp; }
+.small #footer { gap:4dp; }
+.small #footer button { font-size:11dp; padding:6dp 8dp; }
+@keyframes open { from { opacity:0; transform:translateY(14dp) scale(0.97); } to { opacity:1; transform:translateY(0dp) scale(1); } }
+</style></head><body data-model="state">
+<div id="panel"><div id="heading"><div><div id="eyebrow">ATAXIA / YOUR APPS</div><div id="hello">Make yourself at home.</div></div><button id="close">×</button></div>
+<input id="search" type="text" data-value="query" autofocus="autofocus" placeholder="Search applications…" />
+<div id="section"><div id="section-name">Applications</div><div id="count">Installed on this device</div></div>
+<div id="grid">
+<button id="app0" class="app selected"><div id="icon0" class="icon">A</div><div id="name0" class="name">Application</div></button>
+<button id="app1" class="app tone1"><div id="icon1" class="icon">A</div><div id="name1" class="name">Application</div></button>
+<button id="app2" class="app tone2"><div id="icon2" class="icon">A</div><div id="name2" class="name">Application</div></button>
+<button id="app3" class="app tone3"><div id="icon3" class="icon">A</div><div id="name3" class="name">Application</div></button>
+<button id="app4" class="app tone1"><div id="icon4" class="icon">A</div><div id="name4" class="name">Application</div></button>
+<button id="app5" class="app tone2"><div id="icon5" class="icon">A</div><div id="name5" class="name">Application</div></button>
+<div id="empty">No applications match your search.</div></div>
+<div id="footer"><button id="overview">Overview</button><button id="power">Power</button><div id="page">1 / 1</div><button id="prev">‹</button><button id="next">›</button></div>
+<div id="hint">Type to search · arrows to select · Enter to launch · Esc to close</div></div></body></rml>

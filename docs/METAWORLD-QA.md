@@ -2,6 +2,9 @@
 
 `make test` runs the following checks without modifying a live desktop.
 
+For thread ownership, idle scheduling and repeatable CPU measurements, see
+[Maintenance and idle performance](MAINTENANCE.md).
+
 | Suite | Coverage |
 | --- | --- |
 | `metaworld-layout-qa.lisp` | Niri zero-gap tiles, fullscreen height, focus and wheel scroll bounds; Hyprland fit and tiling; exact overview-camera restoration. Layouts cover 1–12 windows, three sizes and split ratios, and skewed stack weights. |

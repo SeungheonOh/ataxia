@@ -18,16 +18,16 @@
 
     height: 44px;
     visible: root.enabled;
-    background: touch.pressed ? #a9a9a5 : root.selected ? #171717 : touch.has-hover ? #d4d4d0 : #f4f4f1;
+    background: touch.pressed ? #e3e7eb : root.selected ? #eaf0ff : touch.has-hover ? #f0f2f4 : #ffffff;
     Text {
         x: 14px;
         y: 0px;
         width: parent.width - 28px;
         height: parent.height;
         text: root.title;
-        color: root.selected ? #f4f4f1 : #171717;
-        font-size: 14px;
-        font-weight: 700;
+        color: root.selected ? #244ebc : #24282d;
+        font-size: 13px;
+        font-weight: 400;
         vertical-alignment: center;
         overflow: elide;
     }
@@ -70,8 +70,8 @@ export component AtaxiaLauncher inherits Window {
         width: parent.width;
         height: parent.height;
         border-width: 1px;
-        border-color: #171717;
-        background: #e4e4e0;
+        border-color: #d4d8dc;
+        background: #ffffff;
 
         search-box := Rectangle {
             x: 12px;
@@ -79,17 +79,17 @@ export component AtaxiaLauncher inherits Window {
             width: parent.width - 24px;
             height: 48px;
             border-width: 1px;
-            border-color: #171717;
-            background: #f4f4f1;
+            border-color: #d4d8dc;
+            background: #f7f8f9;
             editor := TextInput {
                 x: 14px;
                 y: 7px;
                 width: parent.width - 28px;
                 height: parent.height - 14px;
                 text <=> root.query;
-                color: #171717;
-                selection-background-color: #a8a8a3;
-                font-size: 18px;
+                color: #24282d;
+                selection-background-color: #eaf0ff;
+                font-size: 13px;
                 single-line: true;
                 edited => { root.search(self.text); }
                 accepted => { if root.result-count > 0 { root.activate(root.selected-index); } }
@@ -132,7 +132,7 @@ export component AtaxiaLauncher inherits Window {
             height: 269px;
             visible: root.result-count == 0;
             text: \"No matches\";
-            color: #666662;
+            color: #626a73;
             font-size: 13px;
             horizontal-alignment: center;
             vertical-alignment: center;
@@ -148,22 +148,22 @@ export component AtaxiaLauncher inherits Window {
              (:constructor %make-launcher-entry (kind title detail subject score)))
   kind title detail subject score)
 
-(defclass launcher-overlay (canvas-overlay)
+(defclass launcher-overlay (ui-overlay)
   ((results :initform #() :accessor %launcher-results)
    (desktop-entries :initform nil :accessor %launcher-desktop-entries)))
 
-(defmethod %overlay-visibility-changed
+(defmethod overlay-visibility-changed
     ((overlay launcher-overlay) visible-p)
   (ataxia.world.slint:set-slint-property
-   (canvas-overlay-component overlay) "shown" visible-p)
+   (overlay-component overlay) "shown" visible-p)
   overlay)
 
-(defmethod %overlay-output-changed
-    ((overlay launcher-overlay) output-state)
-  (%position-launcher overlay output-state))
+(defmethod overlay-output-changed
+    ((overlay launcher-overlay) output)
+  (%position-launcher overlay (%make-canvas-output output)))
 
-(defmethod %destroy-overlay ((overlay launcher-overlay))
-  (let ((component (canvas-overlay-component overlay)))
+(defmethod destroy-overlay ((overlay launcher-overlay))
+  (let ((component (overlay-component overlay)))
     (ataxia.world.slint:set-slint-component-invalidator component nil)
     (when (ataxia.world.slint:slint-component-graphics-attached-p component)
       (ataxia.kernel:drawable-detach-graphics component))
@@ -265,7 +265,7 @@ export component AtaxiaLauncher inherits Window {
    component (format nil "~A-~D" prefix index) value))
 
 (defun %refresh-launcher (world overlay query)
-  (let* ((component (canvas-overlay-component overlay))
+  (let* ((component (overlay-component overlay))
          (results (coerce (%launcher-candidates world overlay query) 'vector)))
     (setf (%launcher-results overlay) results)
     (ataxia.world.slint:set-slint-property component "result-count" (length results))
@@ -324,13 +324,14 @@ export component AtaxiaLauncher inherits Window {
              (when (eq window
                        (find-canvas-window
                         world (canvas-window-application window)))
+               (%set-window-minimized world window nil)
                (when (%canvas-window-hidden-p window)
                  (setf (%canvas-window-hidden-p window) nil)
                  (%damage-window world window)
                  (%update-window-membership world window))
                (dolist (seat-state (%seat-states world))
                  (when (and (%canvas-seat-output seat-state)
-                            (eq (canvas-overlay-output overlay)
+                            (eq (overlay-output overlay)
                                 (%canvas-output-output
                                  (%canvas-seat-output seat-state))))
                    (%center-camera-on-window world seat-state window)
@@ -348,13 +349,13 @@ export component AtaxiaLauncher inherits Window {
 (defun %position-launcher (overlay state)
   (multiple-value-bind (output-width output-height) (%output-logical-size state)
     (multiple-value-bind (width height) (%launcher-size state)
-      (setf (canvas-overlay-x overlay) (/ (- output-width width) 2d0)
-            (canvas-overlay-y overlay) (/ (- output-height height) 2d0)
-            (canvas-overlay-width overlay) width
-            (canvas-overlay-height overlay) height)
+      (setf (overlay-x overlay) (/ (- output-width width) 2d0)
+            (overlay-y overlay) (/ (- output-height height) 2d0)
+            (overlay-width overlay) width
+            (overlay-height overlay) height)
       (ataxia.world.slint:resize-slint-component
-       (canvas-overlay-component overlay) width height
-       :scale (ataxia.world.slint:slint-component-scale (canvas-overlay-component overlay)))))
+       (overlay-component overlay) width height
+       :scale (ataxia.world.slint:slint-component-scale (overlay-component overlay)))))
   overlay)
 
 (defun %make-launcher-overlay (world state)
@@ -379,7 +380,7 @@ export component AtaxiaLauncher inherits Window {
        (lambda (ignored)
          (declare (ignore ignored))
          (unless (%world-quiescing-p world)
-           (when (canvas-overlay-visible-p overlay)
+           (when (overlay-visible-p overlay)
              (%request-output-state-frame world state))
            (%schedule-component-timer world))))
       (ataxia.world.slint:set-slint-callback
@@ -405,7 +406,7 @@ export component AtaxiaLauncher inherits Window {
 (defun %launcher-for-output (world output)
   (find-if (lambda (overlay)
              (and (typep overlay 'launcher-overlay)
-                  (eq output (canvas-overlay-output overlay))))
+                  (eq output (overlay-output overlay))))
            (world-overlays world)))
 
 (defun %ensure-output-launcher (world state)
@@ -418,14 +419,14 @@ export component AtaxiaLauncher inherits Window {
          (state (and seat-state (%canvas-seat-output seat-state)))
          (overlay (and state (%ensure-output-launcher world state))))
     (when overlay
-      (if (canvas-overlay-visible-p overlay)
+      (if (overlay-visible-p overlay)
           (hide-overlay world overlay)
           (progn
             (setf (%canvas-seat-previous-focus seat-state)
                   (%canvas-seat-focused seat-state))
             (%refresh-launcher world overlay "")
             (ataxia.world.slint:set-slint-property
-             (canvas-overlay-component overlay) "query" "")
+             (overlay-component overlay) "query" "")
             (show-overlay world overlay)
             (%focus-target world seat-state overlay)))))
   world)

@@ -8,7 +8,7 @@
   :version "0.1.0"
   :author "Ataxia contributors"
   :license "Unspecified"
-  :depends-on ("cffi")
+  :depends-on ("cffi" "babel")
   :serial t
   :components
   ((:module "src/runtime"

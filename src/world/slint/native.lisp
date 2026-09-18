@@ -5,7 +5,7 @@
 
 (in-package #:ataxia.world.slint.raw)
 
-(defconstant +expected-abi+ 4)
+(defconstant +expected-abi+ 5)
 
 (defun library-path ()
   (or (uiop:getenv "ATAXIA_SLINT_NATIVE")
@@ -71,6 +71,8 @@
   (component :pointer))
 (%define-native-call ("ataxia_slint_component_revision" %component-revision) :uint64
   (component :pointer))
+(%define-native-call ("ataxia_slint_component_needs_redraw" %component-needs-redraw-p) :boolean
+  (component :pointer))
 (%define-native-call ("ataxia_slint_component_has_active_animations"
           %component-active-p) :boolean
   (component :pointer))
@@ -125,3 +127,7 @@
     (error "Slint native ABI mismatch: expected ~D, received ~D."
            +expected-abi+ (%abi-version)))
   (check-result (%initialize) :initialize))
+
+(%define-native-call ("ataxia_slint_clipboard_text" %clipboard-text) :string)
+(%define-native-call ("ataxia_slint_clipboard_revision" %clipboard-revision) :uint64)
+(%define-native-call ("ataxia_slint_clipboard_set" %clipboard-set) :boolean (text :string))

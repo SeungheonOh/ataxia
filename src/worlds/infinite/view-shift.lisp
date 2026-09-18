@@ -149,7 +149,7 @@
 
 (defun %set-view-shift-properties (shift cursor-x cursor-y)
   (let ((component
-          (canvas-overlay-component (%view-shift-overlay shift))))
+          (overlay-component (%view-shift-overlay shift))))
     (ataxia.world.slint:set-slint-property
      component "anchor-x" (%view-shift-anchor-x shift))
     (ataxia.world.slint:set-slint-property
@@ -173,7 +173,7 @@
                    :width width :height height
                    :scale (ataxia.kernel:output-scale output))
                   overlay
-                  (make-canvas-overlay
+                  (make-overlay
                    component output 0d0 0d0 width height
                    :layer 1900 :visible-p t :opacity 1d0))
             (ataxia.world.slint:set-slint-component-invalidator
@@ -196,15 +196,15 @@
   (let* ((state (%view-shift-output-state shift))
          (overlay (%view-shift-overlay shift)))
     (multiple-value-bind (width height) (%output-logical-size state)
-      (when (or (/= width (canvas-overlay-width overlay))
-                (/= height (canvas-overlay-height overlay)))
+      (when (or (/= width (overlay-width overlay))
+                (/= height (overlay-height overlay)))
         (%damage-overlay world overlay)
-        (setf (canvas-overlay-width overlay) width
-              (canvas-overlay-height overlay) height)
+        (setf (overlay-width overlay) width
+              (overlay-height overlay) height)
         (ataxia.world.slint:resize-slint-component
-         (canvas-overlay-component overlay) width height
+         (overlay-component overlay) width height
          :scale (ataxia.world.slint:slint-component-scale
-                 (canvas-overlay-component overlay)))
+                 (overlay-component overlay)))
         (%damage-overlay world overlay)))
     (%set-view-shift-properties
      shift (%canvas-seat-x seat-state) (%canvas-seat-y seat-state))))

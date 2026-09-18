@@ -24,10 +24,17 @@
         (setf (gethash runtime-surface (%kernel-surface-table kernel)) surface)
         surface)))
 
+(defun %surface-damage-bounds (x y width height)
+  ;; wlroots returns popup positions as doubles. Drawable placement may retain
+  ;; them, but pixel damage must cover the translated rectangle with integers.
+  (let ((left (floor x)) (top (floor y)))
+    (make-frame-damage-rectangle left top (- (ceiling (+ x width)) left)
+                                (- (ceiling (+ y height)) top))))
+
 (defun %runtime-damage-rectangles (rectangles &optional (offset-x 0) (offset-y 0))
   (mapcar
    (lambda (rectangle)
-     (make-frame-damage-rectangle
+     (%surface-damage-bounds
       (+ offset-x (ataxia.runtime:damage-rectangle-x rectangle))
       (+ offset-y (ataxia.runtime:damage-rectangle-y rectangle))
       (ataxia.runtime:damage-rectangle-width rectangle)
@@ -78,7 +85,12 @@
           (ataxia.runtime:surface-mapped-p (surface-runtime-object surface))
           (%surface-source-box surface)
           (vector source-x source-y source-width source-height)
-          (%surface-buffer-transform surface) transform))
+          (%surface-buffer-transform surface) transform
+          (%surface-frame-callback-p surface)
+          (ataxia.runtime:surface-has-frame-callbacks-p (surface-runtime-object surface))
+          (%surface-opaque-region surface)
+          (%runtime-damage-rectangles
+           (ataxia.runtime:surface-opaque-region (surface-runtime-object surface)))))
   (when commit
     (setf (surface-commit-sequence surface)
           (ataxia.runtime:surface-commit-sequence commit)
@@ -140,9 +152,27 @@
                      (coerce (+ top (* v height)) 'double-float))))
     coordinates))
 
+(defun %drawable-surface-identity (surface)
+  (let ((token (drawable-surface-presentation-token surface)))
+    (if token (%protocol-token-surface token)
+        (drawable-surface-render-source surface))))
+
+(defun %same-surface-placement-p (first second)
+  (and (eq (%drawable-surface-identity first) (%drawable-surface-identity second))
+       (= (drawable-surface-local-x first) (drawable-surface-local-x second))
+       (= (drawable-surface-local-y first) (drawable-surface-local-y second))
+       (= (drawable-surface-width first) (drawable-surface-width second))
+       (= (drawable-surface-height first) (drawable-surface-height second))
+       (equalp (drawable-surface-opaque-region first) (drawable-surface-opaque-region second))))
+
+(defun %drawable-surface-damage (surface)
+  (%surface-damage-bounds (drawable-surface-local-x surface) (drawable-surface-local-y surface)
+                          (drawable-surface-width surface) (drawable-surface-height surface)))
+
 (defun %rebuild-application-drawables (application)
   (let ((records nil)
-        (damage nil))
+        (damage nil)
+        (old (%application-drawable-surfaces application)))
     (%walk-surface-tree
      (application-root-surface application)
      (lambda (surface x y)
@@ -159,18 +189,33 @@
            :height (surface-height surface)
            :texture-coordinates (%surface-texture-coordinates surface)
            :render-source (%surface-render-source surface)
+           :opaque-region (%surface-opaque-region surface)
+           :frame-callback-p (%surface-frame-callback-p surface)
            :presentation-token (%surface-protocol-token surface))
           records)
          (dolist (rectangle (%surface-damage surface))
            (push
-            (make-frame-damage-rectangle
+            (%surface-damage-bounds
              (+ x (frame-damage-rectangle-x rectangle))
              (+ y (frame-damage-rectangle-y rectangle))
              (frame-damage-rectangle-width rectangle)
              (frame-damage-rectangle-height rectangle))
             damage)))))
-    (setf (%application-drawable-surfaces application)
-          (coerce (nreverse records) 'vector))
+    (setf records (coerce (nreverse records) 'vector))
+    ;; Buffer damage does not describe moved, mapped, or removed quads. Damage
+    ;; both placements, including areas outside the root surface. Stable quads
+    ;; keep the client's narrow buffer damage and do not wake idle outputs.
+    ;; Compare in stacking order as well: moving a quad through another quad
+    ;; changes visible pixels even when both rectangles stay in place.
+    (loop for surface across old for index from 0
+          unless (and (< index (length records))
+                      (%same-surface-placement-p surface (aref records index)))
+            do (pushnew (%drawable-surface-damage surface) damage :test #'equalp))
+    (loop for surface across records for index from 0
+          unless (and (< index (length old))
+                      (%same-surface-placement-p surface (aref old index)))
+            do (pushnew (%drawable-surface-damage surface) damage :test #'equalp))
+    (setf (%application-drawable-surfaces application) records)
     (incf (%application-drawable-revision application))
     (nreverse damage)))
 
@@ -187,6 +232,8 @@
            :height (surface-height surface)
            :texture-coordinates (%surface-texture-coordinates surface)
            :render-source source
+           :opaque-region (%surface-opaque-region surface)
+           :frame-callback-p (%surface-frame-callback-p surface)
            :presentation-token (%surface-protocol-token surface)))
          #())
      (surface-commit-sequence surface))))
@@ -195,6 +242,17 @@
   (values 0 0 (surface-width surface) (surface-height surface)))
 
 (defun %invalidate-application (application)
+  ;; A popup's final offset is committed after its creation/reposition request.
+  ;; Refresh from the same committed geometry that wlroots uses for hit testing.
+  ;; Parent window geometry can also change without a commit on the popup.
+  (maphash
+   (lambda (popup surface)
+     (when (and (surface-mapped-p surface)
+                (eq application (%surface-tree-application surface)))
+       (multiple-value-bind (x y) (ataxia.runtime:xdg-popup-position popup)
+         (setf (surface-local-x surface) x
+               (surface-local-y surface) y))))
+   (%kernel-popup-table (object-kernel application)))
   (let ((damage (%rebuild-application-drawables application)))
     (%call-world
      (object-kernel application) world-object-invalidated application
@@ -296,9 +354,35 @@
   (ataxia.runtime:xdg-surface-at
    (application-toplevel application) local-x local-y))
 
+(defun %application-pointer-surface-at (application seat local-x local-y)
+  ;; wlroots leaves implicit pointer grabs to the compositor. Preserve the
+  ;; pressed wl_surface, not just its application, until all buttons release.
+  ;; Explicit popup and data-device grabs keep their own routing semantics.
+  (let ((runtime-seat (seat-runtime-object seat)))
+    (when (or (ataxia.runtime:seat-pointer-has-grab-p runtime-seat)
+              ;; A World gesture can consume release; Runtime still releases
+              ;; its protocol button even when no interactable receives it.
+              (notany (lambda (code)
+                        (plusp (ataxia.runtime:seat-pointer-button-press-count runtime-seat code)))
+                      (getf (%seat-implicit-pointer-grab seat) :buttons)))
+      (setf (%seat-implicit-pointer-grab seat) nil)))
+  (let* ((grab (%seat-implicit-pointer-grab seat))
+         (surface (getf grab :surface)))
+    (when grab
+      (return-from %application-pointer-surface-at
+        (when (and (eq application (getf grab :application))
+                   (eq :live (object-state surface)) (surface-mapped-p surface)
+                   (ataxia.runtime:seat-pointer-surface-has-focus-p
+                    (seat-runtime-object seat) (surface-runtime-object surface)))
+          (let ((x 0) (y 0))
+            (loop for node = surface then (surface-parent node) while node do
+                  (incf x (surface-local-x node)) (incf y (surface-local-y node)))
+            (values (surface-runtime-object surface) (- local-x x) (- local-y y)))))))
+  (%application-surface-at application local-x local-y))
+
 (defun %enter-application-surface (application seat local-x local-y input)
   (multiple-value-bind (surface surface-x surface-y)
-      (%application-surface-at application local-x local-y)
+      (%application-pointer-surface-at application seat local-x local-y)
     (when surface
       (ataxia.runtime:seat-pointer-notify-enter
        (seat-runtime-object seat) surface surface-x surface-y)
@@ -325,16 +409,32 @@
     ((application wayland-application) world (seat logical-seat)
      local-x local-y input)
   (declare (ignore world))
-  (if (%enter-application-surface
-       application seat local-x local-y input)
-      (progn
-        (ataxia.runtime:seat-pointer-notify-button
-         (seat-runtime-object seat)
-         (cursor-button-input-time-msec input)
-         (cursor-button-input-code input)
-         (cursor-button-input-state input))
-        (make-interaction-result :status :delivered :object application))
-      (make-interaction-result :status :miss :object application)))
+  (let ((code (cursor-button-input-code input))
+        (pressed (eq :pressed (cursor-button-input-state input)))
+        (runtime-seat (seat-runtime-object seat)))
+    (unwind-protect
+         (let ((surface (%enter-application-surface application seat local-x local-y input)))
+           (if surface
+               (progn
+                 (ataxia.runtime:seat-pointer-notify-button
+                  runtime-seat (cursor-button-input-time-msec input) code
+                  (cursor-button-input-state input))
+                 (when (and pressed
+                            (not (ataxia.runtime:seat-pointer-has-grab-p runtime-seat))
+                            (ataxia.runtime:seat-pointer-surface-has-focus-p runtime-seat surface))
+                   (unless (%seat-implicit-pointer-grab seat)
+                     (setf (%seat-implicit-pointer-grab seat)
+                           (list :application application
+                                 :surface (gethash surface (%kernel-surface-table (object-kernel application)))
+                                 :buttons nil)))
+                   (push code (getf (%seat-implicit-pointer-grab seat) :buttons)))
+                 (make-interaction-result :status :delivered :object application))
+               (make-interaction-result :status :miss :object application)))
+      (when (and (not pressed) (%seat-implicit-pointer-grab seat))
+        (setf (getf (%seat-implicit-pointer-grab seat) :buttons)
+              (remove code (getf (%seat-implicit-pointer-grab seat) :buttons) :count 1))
+        (unless (getf (%seat-implicit-pointer-grab seat) :buttons)
+          (setf (%seat-implicit-pointer-grab seat) nil))))))
 
 (defmethod interactable-pointer-axis
     ((application wayland-application) world (seat logical-seat)
@@ -357,7 +457,7 @@
 (defmethod interactable-pointer-leave
     ((application wayland-application) world (seat logical-seat))
   (declare (ignore world))
-  (ataxia.runtime:seat-pointer-notify-clear-focus (seat-runtime-object seat))
+  (clear-wayland-focus seat :pointer t)
   (make-interaction-result
    :status :delivered :object application :focus-changed-p t))
 
@@ -394,8 +494,7 @@
      (ataxia.runtime:seat-keyboard-notify-clear-focus
       (seat-runtime-object seat)))
     (:clear-pointer
-     (ataxia.runtime:seat-pointer-notify-clear-focus
-      (seat-runtime-object seat))))
+     (clear-wayland-focus seat :pointer t)))
   (make-interaction-result
    :status :delivered :object application :focus-changed-p t))
 

@@ -5,6 +5,54 @@
 
 (in-package #:ataxia.world)
 
+(defun coalesce-damage-region (rectangles &key width height (rectangle-limit 32) (merge-cost 1024))
+  "Bound pixel damage while trading extra pixels against repeated draw passes.
+MERGE-COST is the estimated per-rectangle overhead expressed in pixels. Work on
+at most RECTANGLE-LIMIT+1 candidates at a time, even for a large client update.
+The result always covers the input and must never be used as opaque coverage."
+  (check-type rectangle-limit (integer 1))
+  (check-type merge-cost (real 0))
+  (let ((region nil)
+        (bounds (and width height (make-rectangle 0 0 width height))))
+    (labels ((cost (a b)
+               (- (rectangle-area (rectangle-union a b)) (rectangle-area a) (rectangle-area b)))
+             (insert (rectangle)
+               (loop
+                 (let ((best nil) (best-cost nil))
+                   (dolist (candidate region)
+                     (let ((extra (cost rectangle candidate)))
+                       (when (and (<= extra merge-cost) (or (null best-cost) (< extra best-cost)))
+                         (setf best candidate best-cost extra))))
+                   (unless best (push rectangle region) (return))
+                   (setf rectangle (rectangle-union rectangle best)
+                         region (delete best region :test #'eq :count 1)))))
+             (reduce-count ()
+               (let ((left nil) (right nil) (best-cost nil))
+                 (loop for tail on region do
+                   (dolist (candidate (cdr tail))
+                     (let ((extra (cost (car tail) candidate)))
+                       (when (or (null best-cost) (< extra best-cost))
+                         (setf left (car tail) right candidate best-cost extra)))))
+                 (setf region (delete left region :test #'eq :count 1)
+                       region (delete right region :test #'eq :count 1))
+                 (insert (rectangle-union left right)))))
+      (dolist (rectangle rectangles)
+        (unless (rectangle-empty-p rectangle)
+          (let* ((x (floor (rectangle-x rectangle))) (y (floor (rectangle-y rectangle)))
+                 (pixels (make-rectangle x y (- (ceiling (rectangle-right rectangle)) x)
+                                               (- (ceiling (rectangle-bottom rectangle)) y)))
+                 (clipped (if bounds (rectangle-intersection pixels bounds) pixels)))
+            (when clipped
+              (insert clipped)
+              (when (> (length region) rectangle-limit) (reduce-count))))))
+      (when region
+        (let* ((box (reduce #'rectangle-union region))
+               (cost (+ (reduce #'+ region :key #'rectangle-area) (* merge-cost (length region)))))
+          (cond
+            ((and bounds (<= (+ (rectangle-area bounds) merge-cost) cost)) (setf region (list bounds)))
+            ((<= (+ (rectangle-area box) merge-cost) cost) (setf region (list box)))))))
+    (nreverse region)))
+
 (defclass damage-tracker ()
   ((outputs :initform (make-hash-table :test #'eq) :reader %damage-outputs)
    (history-limit :initarg :history-limit :initform 24
@@ -37,13 +85,22 @@
 
 (defun damage-add-region (tracker output region)
   (let ((state (%damage-output tracker output)))
-    (setf (%damage-output-pending state)
-          (normalize-region
-           (append region (%damage-output-pending state)))))
+    ;; Before a full frame is staged, its existing full damage covers everything.
+    ;; During staging, preserve a new list identity so commit cannot eat changes
+    ;; that arrived after the frame snapshot.
+    (unless (and (%damage-output-full-p state) (null (%damage-output-staged state)))
+      (setf (%damage-output-pending state)
+            (coalesce-damage-region
+             (append region (%damage-output-pending state))
+             :width (%damage-output-width state) :height (%damage-output-height state)))))
   tracker)
 
 (defun damage-full-output (tracker output)
-  (setf (%damage-output-full-p (%damage-output tracker output)) t)
+  (let ((state (%damage-output tracker output)))
+    (setf (%damage-output-full-p state) t)
+    (when (%damage-output-staged state)
+      (setf (%damage-output-pending state)
+            (list (make-rectangle 0 0 (%damage-output-width state) (%damage-output-height state))))))
   tracker)
 
 (defun damage-reset-output (tracker output)
@@ -97,13 +154,13 @@
     (let* ((pending (%damage-output-pending state))
            (full-p (%damage-output-full-p state))
            (new-region
-             (clip-region (if full-p full-region pending) width height))
+             (coalesce-damage-region (if full-p full-region pending) :width width :height height))
            (repair
-             (clip-region
+             (coalesce-damage-region
               (append new-region
                       (unless full-p
                         (%history-repair state target full-region)))
-              width height))
+              :width width :height height))
            (frame (%make-damage-frame
                    output state target pending full-p new-region repair)))
       (setf (%damage-output-staged state) frame)

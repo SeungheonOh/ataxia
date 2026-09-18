@@ -6,9 +6,9 @@
      (list (canvas-window-x object) (canvas-window-y object)
            (canvas-window-width object) (canvas-window-height object)))
     (agent-widget
-     (or (gethash object (%meta-spatial-widgets (%agent-widget-world object)))
-         (list (canvas-overlay-x object) (canvas-overlay-y object)
-               (canvas-overlay-width object) (canvas-overlay-height object))))))
+     (or (gethash object (%meta-spatial-widgets (agent-widget-world object)))
+         (list (overlay-x object) (overlay-y object)
+               (overlay-width object) (overlay-height object))))))
 
 (defun %meta-place (world object x y width height)
   ;; Layout may retarget neighbors during a grab, but must never move the grab.
@@ -36,7 +36,7 @@
                          :width (round (third destination)) :height (round (fourth destination)))))
         (agent-widget
          (ataxia.world:ui-resize
-          (canvas-overlay-component object) (third destination) (fourth destination)))))
+          (overlay-component object) (third destination) (fourth destination)))))
     (flet ((place (subject geometry)
              (etypecase subject
                (canvas-window
@@ -82,6 +82,8 @@
   object)
 
 (defun %meta-set-visible (world object visible-p)
+  (when (and (typep object 'canvas-window) (%canvas-window-minimized-p object))
+    (setf visible-p nil))
   (let ((group (object-subworld world object)))
     (when (and (typep object 'canvas-window) group (eq :hyprland (subworld-kind group)))
       (return-from %meta-set-visible (%meta-hypr-set-visible world object visible-p))))
@@ -256,12 +258,12 @@
          (member (and previous (%meta-member previous object))))
     (when (and (typep object 'agent-widget)
                (not (gethash object (%meta-spatial-widgets world))))
-      (let ((state (gethash (canvas-overlay-output object) (%world-outputs world))))
+      (let ((state (gethash (overlay-output object) (%world-outputs world))))
         (multiple-value-bind (x y)
-            (%screen-to-world state (canvas-overlay-x object) (canvas-overlay-y object))
+            (%screen-to-world state (overlay-x object) (overlay-y object))
           (setf (gethash object (%meta-spatial-widgets world))
-                (list x y (/ (canvas-overlay-width object) (%canvas-output-zoom state))
-                      (/ (canvas-overlay-height object) (%canvas-output-zoom state)))))))
+                (list x y (/ (overlay-width object) (%canvas-output-zoom state))
+                      (/ (overlay-height object) (%canvas-output-zoom state)))))))
     (when (eq previous group)
       (when (and member workspace)
         (setf (subworld-member-workspace member) workspace)
@@ -297,11 +299,11 @@
                                    viewport-width)))))
 
 (defun %meta-fit-group (world state group &key overview-p)
-  (multiple-value-bind (width height) (%output-logical-size state)
+  (multiple-value-bind (work-x work-y width height) (%canvas-work-area world state)
     (let* ((group-width (if overview-p (%meta-footprint-width group) (subworld-width group)))
            (group-height (if overview-p (%meta-footprint-height group) (subworld-height group)))
            (group-y (if overview-p (subworld-y group) (%meta-workspace-y group)))
-           ;; Entered Niri fills the monitor height. Its horizontal strip
+           ;; Entered Niri fills the work area. Its horizontal strip
            ;; may overflow; fitting both dimensions would letterbox wide groups.
            (niri-p (and (not overview-p) (eq :niri (subworld-kind group))))
            (zoom (if niri-p (/ height group-height)
@@ -316,9 +318,22 @@
         (setf (gethash (subworld-workspace group) (subworld-scrolls group)) scroll))
       (%meta-set-camera
        world state
-       (list (- (+ (subworld-x group) scroll) (if niri-p 0d0 (/ (- width (* group-width zoom)) (* 2d0 zoom))))
-             (- group-y (/ (- height (* group-height zoom)) (* 2d0 zoom)))
+       (list (- (+ (subworld-x group) scroll) (if niri-p 0d0 (/ (- width (* group-width zoom)) (* 2d0 zoom)))
+                (/ work-x zoom))
+             (- group-y (/ (- height (* group-height zoom)) (* 2d0 zoom)) (/ work-y zoom))
              zoom 0d0)))))
+
+(defun %meta-refit-work-area (world output)
+  (let* ((state (gethash output (%world-outputs world)))
+         (group (and state (%meta-view-active (%meta-view-for-state world state)))))
+    (when group
+      (%meta-cancel-motion world state :metaworld-camera)
+      (when (%meta-standalone world)
+        (multiple-value-bind (x y width height) (%canvas-work-area world state)
+          (declare (ignore x y))
+          (setf (subworld-width group) width (subworld-height group) height))
+        (%meta-layout world group))
+      (%meta-fit-group world state group))))
 
 (defun %meta-focus (world object &optional seat (animate-p t))
   (let ((seat-state (%meta-seat world seat)))
@@ -336,11 +351,11 @@
         (%meta-raise-floating world group)
         (when (and group state (not (%meta-dragged-p world object)) (eq group (%meta-current world seat))
                    (eq :niri (subworld-kind group)))
-          (multiple-value-bind (width height) (%output-logical-size state)
-            (declare (ignore height))
+          (multiple-value-bind (work-x work-y width height) (%canvas-work-area world state)
+            (declare (ignore work-y height))
             (let* ((object-x (first (%meta-target-geometry world object)))
                    (object-width (third (%meta-target-geometry world object)))
-                   (camera-x (%canvas-output-camera-x state))
+                   (camera-x (+ (%canvas-output-camera-x state) (/ work-x (%canvas-output-zoom state))))
                    (visible-width (/ width (%canvas-output-zoom state)))
                    (left-limit (subworld-x group))
                    (origin (%meta-camera state))
@@ -353,7 +368,7 @@
                               (t camera-x)))
                    (destination (+ left-limit (%meta-clamp-scroll group (- desired left-limit) visible-width))))
               (unless (= destination camera-x)
-                (set-output-camera world (%canvas-output-output state) destination
+                (set-output-camera world (%canvas-output-output state) (- destination (/ work-x (%canvas-output-zoom state)))
                                    (%canvas-output-camera-y state) (%canvas-output-zoom state)))
               (setf (gethash (subworld-workspace group) (subworld-scrolls group))
                     (- destination left-limit))

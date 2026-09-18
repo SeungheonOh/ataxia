@@ -8,9 +8,9 @@ export component MetaButton inherits Rectangle {
     min-width: 30px;
     preferred-height: 30px;
     border-width: focus.has-focus ? 1px : 0px;
-    border-color: #8494a8;
-    border-radius: 6px;
-    background: touch.pressed ? #dce3ec : root.selected ? #e8edf4 : touch.has-hover ? #edf0f4 : transparent;
+    border-color: #365dc0;
+    border-radius: 0px;
+    background: touch.pressed ? #dce3ec : root.selected ? #eaf0ff : touch.has-hover ? #f0f2f4 : transparent;
     animate background { duration: 120ms; easing: cubic-bezier(0.2, 0, 0.2, 1); }
     opacity: root.enabled ? 1 : 0.38;
     animate opacity { duration: 120ms; easing: cubic-bezier(0.2, 0, 0.2, 1); }
@@ -21,7 +21,7 @@ export component MetaButton inherits Rectangle {
         x: root.align-left ? 10px : 0px;
         width: parent.width - (root.align-left ? 20px : 0px);
         text: root.label;
-        color: root.quiet-danger && touch.has-hover ? #9d3944 : root.selected ? #273d58 : #343b46;
+        color: root.quiet-danger && touch.has-hover ? #ad343f : root.selected ? #244ebc : #24282d;
         font-family: "DejaVu Sans";
         font-size: 12px;
         horizontal-alignment: root.align-left ? left : center;

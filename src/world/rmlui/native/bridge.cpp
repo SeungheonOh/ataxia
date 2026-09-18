@@ -5,6 +5,9 @@
 #include <RmlUi/Core/Elements/ElementFormControl.h>
 #include <algorithm>
 #include <chrono>
+#include <climits>
+#include <cstdio>
+#include <cstdlib>
 #include <cmath>
 #include <deque>
 #include <limits>
@@ -36,8 +39,35 @@ static void require(bool condition, const char *message) {
     if (!condition)
         throw std::runtime_error(message);
 }
+// Enabled only in isolated app-preview processes, before RmlUi initialization.
+static std::string asset_root;
+static std::string allowed_asset(const std::string &path) {
+    if (asset_root.empty()) return path;
+    char resolved[PATH_MAX];
+    if (!realpath(path.c_str(), resolved)) return {};
+    std::string canonical(resolved);
+    if (canonical.rfind(asset_root + "/", 0) == 0 ||
+        canonical == "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf") return canonical;
+    return {};
+}
+struct PreviewFiles : Rml::FileInterface {
+    Rml::FileHandle Open(const Rml::String &path) override {
+        auto canonical = allowed_asset(path);
+        if (canonical.empty()) return 0;
+        auto *file = fopen(canonical.c_str(), "rb");
+        if (!file) return 0;
+        if (fseek(file, 0, SEEK_END) || ftell(file) < 0 || ftell(file) > 8 * 1024 * 1024) { fclose(file); return 0; }
+        rewind(file); return reinterpret_cast<Rml::FileHandle>(file);
+    }
+    void Close(Rml::FileHandle file) override { fclose(reinterpret_cast<FILE *>(file)); }
+    size_t Read(void *buffer, size_t size, Rml::FileHandle file) override { return fread(buffer, 1, size, reinterpret_cast<FILE *>(file)); }
+    bool Seek(Rml::FileHandle file, long offset, int origin) override { return fseek(reinterpret_cast<FILE *>(file), offset, origin) == 0; }
+    size_t Tell(Rml::FileHandle file) override { return ftell(reinterpret_cast<FILE *>(file)); }
+};
+static PreviewFiles preview_files;
 struct HostSystem : Rml::SystemInterface {
     std::string clipboard;
+    uint64_t clipboard_revision = 0;
     double GetElapsedTime() override {
         return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
     }
@@ -46,7 +76,7 @@ struct HostSystem : Rml::SystemInterface {
             last_error = message;
         return true;
     }
-    void SetClipboardText(const Rml::String &text) override { clipboard = text; }
+    void SetClipboardText(const Rml::String &text) override { clipboard = text; ++clipboard_revision; }
     void GetClipboardText(Rml::String &text) override { text = clipboard; }
 };
 static HostSystem host;
@@ -189,8 +219,12 @@ struct Renderer : Rml::RenderInterface {
     Rml::TextureHandle LoadTexture(Rml::Vector2i &dims, const Rml::String &source) override {
         png_image im{};
         im.version = PNG_IMAGE_VERSION;
-        if (!png_image_begin_read_from_file(&im, source.c_str()))
+        auto path = allowed_asset(source);
+        if (path.empty() || !png_image_begin_read_from_file(&im, path.c_str()))
             return 0;
+        if (!asset_root.empty() && (im.width > 4096 || im.height > 4096)) {
+            png_image_free(&im); return 0;
+        }
         im.format = PNG_FORMAT_RGBA;
         std::vector<Rml::byte> pixels(PNG_IMAGE_SIZE(im));
         if (!png_image_finish_read(&im, nullptr, pixels.data(), 0, nullptr)) {
@@ -318,8 +352,22 @@ static std::string escaped(const std::string &text) {
     }
     return result;
 }
-API uint32_t ataxia_rmlui_abi_version() { return 1; }
+API uint32_t ataxia_rmlui_abi_version() { return 2; }
+API const char *ataxia_rmlui_clipboard_text() { return host.clipboard.c_str(); }
+API uint64_t ataxia_rmlui_clipboard_revision() { return host.clipboard_revision; }
+API bool ataxia_rmlui_clipboard_set(const char *text) {
+    return checked([&] { host.clipboard = text ? text : ""; });
+}
 API const char *ataxia_rmlui_last_error() { return last_error.c_str(); }
+API bool ataxia_rmlui_set_asset_root(const char *path) {
+    return checked([&] {
+        require(!initialized, "Set the preview root before initialization");
+        char resolved[PATH_MAX];
+        require(path && realpath(path, resolved), "Invalid preview asset root");
+        asset_root = resolved;
+        Rml::SetFileInterface(&preview_files);
+    });
+}
 API bool ataxia_rmlui_initialize() {
     return checked([] {
         if (initialized)
@@ -608,7 +656,11 @@ API bool ataxia_rmlui_component_key_symbol(void *p, uint32_t sym, bool pressed, 
         if (pressed) {
             c.context->ProcessKeyDown(id, modifiers);
             uint32_t ch = xkb_keysym_to_utf32(sym);
-            if (ch >= 32 && ch != 127 && !(modifiers & (Rml::Input::KM_CTRL | Rml::Input::KM_META)))
+            // RmlUi's multiline editor receives line breaks as text input.
+            // KeyDown handles navigation and single-line submit, not insertion.
+            if (sym == XKB_KEY_Return || sym == XKB_KEY_KP_Enter)
+                ch = '\n';
+            if ((ch == '\n' || (ch >= 32 && ch != 127)) && !(modifiers & (Rml::Input::KM_CTRL | Rml::Input::KM_META)))
                 c.context->ProcessTextInput(Rml::Character(ch));
         } else
             c.context->ProcessKeyUp(id, modifiers);
@@ -663,6 +715,10 @@ static void set_model(Component &c, const std::string &name, const Rml::Variant 
         require(constructor.BindFunc(
                     name, [&c, name](Rml::Variant &out) { out = c.model_values.at(name); },
                     [&c, name](const Rml::Variant &incoming) {
+                        // Range controls emit change while applying model updates.
+                        // Do not turn that echo into a second application command.
+                        if (c.model_values.at(name).Get<Rml::String>() == incoming.Get<Rml::String>())
+                            return;
                         c.model_values[name] = incoming;
                         c.model.DirtyVariable(name);
                         if (c.model_events.count(name))

@@ -1,0 +1,18 @@
+(load (merge-pathnames "../src/world/computer-use/json.lisp" *load-truename*))
+(flet ((decode (text) (ataxia.computer-use.wire:decode text)))
+  (assert (equal "λ🙂" (decode "\"\\u03bb\\ud83d\\ude42\"")))
+  (assert (equal "quote\" slash/ backslash\\" (decode "\"quote\\\" slash\\/ backslash\\\\\"")))
+  (assert (= -125d0 (decode "-1.25e2")))
+  (assert (= 0.01d0 (decode "1e-2")))
+  (assert (equalp #(t :false nil) (decode "[true,false,null]")))
+  (dolist (text '("" "#.(error 'oops)" "01" "-01" "+1" "1." "1e" "NaN" "Infinity"
+                  "1e309" "9007199254740993" "[1,]" "{\"a\":1,}" "{\"a\":1,\"a\":2}"
+                  "\"\\ud800\"" "\"\\udc00\"" "\"\\ud800\\u0000\"" "{} garbage"))
+    (assert (handler-case (progn (decode text) nil) (error () t)) () "Accepted invalid JSON: ~A" text))
+  (assert (handler-case (progn (decode (format nil "~A0~A" (make-string 10 :initial-element #\[)
+                                               (make-string 10 :initial-element #\]))) nil)
+            (error () t)))
+  (let* ((text "{\"op\":\"batch\",\"capture\":false,\"actions\":[{\"op\":\"type\",\"text\":\"λ🙂\"}]}")
+         (value (decode (ataxia.computer-use.wire:encode (decode text)))))
+    (assert (equal "λ🙂" (gethash "text" (aref (gethash "actions" value) 0))))))
+(format t "PASS: bounded JSON syntax, Unicode, numeric limits, duplicate fields, nesting and round trip.~%")

@@ -1,0 +1,59 @@
+<!-- Design prototype: callbacks are demonstrated by the renderer fixture only.
+     No model connection or microphone capture is started by this document. -->
+<rml><head><title>Assistant activity</title><style>
+body { margin:0; width:100%; height:100%; font-family:DejaVu Sans; font-size:13dp; color:#24282d; }
+div { display:block; box-sizing:border-box; }
+#panel { position:absolute; left:0; right:0; top:0; bottom:0; background:#ffffff; border:1dp #d4d8dc;
+ display:flex; flex-direction:column; padding:16dp; gap:16dp; }
+#header { display:flex; align-items:center; height:32dp; flex-shrink:0; }
+#heading { font-size:15dp; font-weight:bold; }
+#state { color:#626a73; font-size:12dp; margin-left:auto; margin-right:12dp; }
+button { display:block; box-sizing:border-box; height:32dp; line-height:32dp; padding:0 12dp; text-align:center; color:#424950; background:#f0f2f4; }
+button:hover { background:#e3e7eb; }
+button:active { background:#d4d8dc; }
+#close { width:32dp; padding:0; background:transparent; font-size:18dp; }
+#context { display:flex; justify-content:space-between; align-items:center; color:#626a73; font-size:11dp; padding-bottom:12dp; border-bottom:1dp #d4d8dc; flex-shrink:0; }
+#conversation { flex:1; width:100%; min-height:0; overflow-y:auto; }
+scrollbarvertical { width:6dp; margin-left:6dp; }
+scrollbarvertical sliderbar { background:#aeb5bd; min-height:20dp; }
+scrollbarvertical sliderarrowinc, scrollbarvertical sliderarrowdec { height:0; }
+.label { color:#626a73; font-size:11dp; margin-bottom:8dp; }
+#request { font-size:14dp; margin-bottom:20dp; }
+#action { line-height:20dp; margin-bottom:12dp; }
+#target { color:#626a73; font-size:12dp; margin-bottom:16dp; }
+.step { display:flex; align-items:center; gap:10dp; min-height:28dp; color:#626a73; font-size:12dp; }
+.marker { width:16dp; text-align:center; }
+.current { color:#244ebc; }
+#result { display:none; padding-top:12dp; line-height:20dp; }
+#controls { display:flex; gap:8dp; padding-top:12dp; border-top:1dp #d4d8dc; flex-shrink:0; }
+#stop { color:#ad343f; }
+#details { margin-left:auto; background:transparent; }
+#voice { display:none; padding:12dp; background:#eaf0ff; color:#244ebc; line-height:20dp; flex-shrink:0; }
+#voice-label { font-weight:bold; margin-bottom:4dp; }
+#compose { border:1dp #d4d8dc; background:#f7f8f9; flex-shrink:0; }
+#message { display:block; box-sizing:border-box; width:100%; height:60dp; padding:12dp; font-family:DejaVu Sans; font-size:13dp; color:#24282d; background:transparent; }
+#message:focus { border:1dp #365dc0; }
+#compose-actions { display:flex; align-items:center; gap:8dp; padding:8dp; }
+#mic-status { color:#626a73; font-size:11dp; }
+#send { margin-left:auto; background:#eaf0ff; color:#244ebc; }
+#hint { font-size:11dp; color:#626a73; }
+#panel.listening #voice { display:block; }
+#panel.listening #steps, #panel.listening #controls { display:none; }
+#panel.done #controls { display:none; }
+#panel.done #result { display:block; }
+#panel.small { padding:12dp; gap:12dp; }
+.small #context { display:block; line-height:18dp; }
+.small #mic-status { display:none; }
+</style></head><body data-model="state"><div id="panel">
+<div id="header"><div id="heading">Assistant</div><div id="state">Working</div><button id="close">×</button></div>
+<div id="context"><div id="scope">This desktop · layout access</div><div id="elapsed">00:12</div></div>
+<div id="conversation"><div class="label">You</div><div id="request">Reorganise my desktop.</div>
+<div class="label">Assistant</div><div id="action">Grouping your editor and terminals together. Your reference windows will stay beside them.</div>
+<div id="target">Current step: arranging Development</div>
+<div id="steps"><div class="step"><div class="marker">✓</div><div>Inspect open windows</div></div><div class="step current"><div class="marker">→</div><div>Arrange two groups</div></div><div class="step"><div class="marker">·</div><div>Check the final layout</div></div></div>
+<div id="result">Your desktop is arranged. You can undo the layout change.</div></div>
+<div id="controls"><button id="pause">Pause</button><button id="stop">Stop</button><button id="details">View activity</button></div>
+<div id="voice"><div id="voice-label">Listening</div><div id="transcript">“Put the reference windows on the right…”</div></div>
+<div id="compose"><textarea id="message" data-value="message" placeholder="Ask or give a correction…"/><div id="compose-actions"><button id="talk">Talk</button><div id="mic-status">Microphone off</div><button id="send">Send</button></div></div>
+<div id="hint">Super + Shift + A to talk · Ctrl + Alt + Esc to pause all</div>
+</div></body></rml>

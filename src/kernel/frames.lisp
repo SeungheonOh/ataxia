@@ -33,10 +33,12 @@
     :initarg :presentation-tokens
     :initform #()
     :reader frame-result-presentation-tokens)
+   (callback-tokens :initarg :callback-tokens :initform #()
+                    :reader frame-result-callback-tokens)
    (complete-p :initarg :complete-p :reader frame-result-complete-p)
    (world-cookie :initarg :world-cookie :reader frame-result-world-cookie))
   (:documentation
-   "World result containing final damage, opaque World state, and presented Kernel tokens."))
+   "World result containing final damage, opaque World state, and presented Kernel tokens. CALLBACK-TOKENS additionally release visible clients' frame callbacks after commit without claiming texture presentation."))
 
 (defstruct (output-presentation
              (:constructor make-output-presentation

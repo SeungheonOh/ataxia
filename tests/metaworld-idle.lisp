@@ -130,8 +130,13 @@
                (symbol-function '%update-window-membership) (lambda (&rest args) (declare (ignore args)))
                (symbol-function '%request-output-state-frame)
                (lambda (w state) (assert (eq w world)) (push state requested)))
-         (labels ((commit (&optional (damage (list (ataxia.kernel:make-frame-damage-rectangle 0 0 100 100))))
+         (labels ((commit (&optional (damage (list (ataxia.kernel:make-frame-damage-rectangle 0 0 100 100)))
+                                    (callback (null damage)))
                     (setf requested nil (slot-value world 'damage) (ataxia.world:make-damage-tracker))
+                    (setf (ataxia.kernel::%application-drawable-surfaces app)
+                          (vector (make-instance 'ataxia.kernel::wayland-drawable-surface
+                                                 :local-x 0 :local-y 0 :width 100 :height 100
+                                                 :frame-callback-p callback :presentation-token :callback)))
                     (ataxia.kernel:world-object-invalidated world app (ataxia.kernel:make-drawable-invalidation 1 damage))))
            (commit)
            (assert (equal requested (list (first states))))
@@ -147,7 +152,25 @@
            ;; A partially visible window's damage can still be fully offscreen.
            (setf (canvas-window-x window) 300d0)
            (commit (list (ataxia.kernel:make-frame-damage-rectangle 50 0 50 100)))
-           (assert (null requested)))
+           (assert (null requested))
+           (let* ((cover-app (make-instance 'idle-test-application))
+                  (cover (make-instance 'canvas-window :application cover-app :x 80d0 :y 0d0 :width 160d0 :height 150d0)))
+             (setf (%canvas-window-mapped-p cover) t (canvas-window-x window) 100d0
+                   (slot-value world 'stacking) (list window cover)
+                   (ataxia.kernel::%application-drawable-surfaces cover-app)
+                   (vector (make-instance 'ataxia.kernel::wayland-drawable-surface
+                              :local-x 0 :local-y 0 :width 100 :height 100 :presentation-token nil
+                              :opaque-region (list (ataxia.kernel:make-frame-damage-rectangle 0 0 100 100))
+                              :render-source (make-instance 'ataxia.kernel::wayland-render-source :has-alpha-p nil))))
+             (commit) (assert (null requested))
+             (commit nil) (assert (null requested))
+             (setf (canvas-window-x cover) 150d0)
+             (commit) (assert (equal requested (list (first states))))
+             ;; Changed pixels are covered, but visible client callbacks progress.
+             (commit (list (ataxia.kernel:make-frame-damage-rectangle 60 0 40 100)))
+             (assert (null requested))
+             (commit (list (ataxia.kernel:make-frame-damage-rectangle 60 0 40 100)) t)
+             (assert (equal requested (list (first states))))))
          (format t "PASS: client damage wakes only affected outputs; hidden/offscreen commits sleep; visible callback-only commits remain scheduled.~%"))
     (loop for name in names for original in originals do (setf (symbol-function name) original))))
 

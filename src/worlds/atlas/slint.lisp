@@ -112,30 +112,44 @@
             (atlas-object-height object) height)))
   object)
 
-(defun %component-animation-active-p (world)
-  (some (lambda (object)
-          (ataxia.kernel:drawable-active-p
-           (atlas-object-component object)))
-        (%scene-object-sequence world)))
+(defun %updatable-object-p (world object)
+  (and (%object-visible-p object)
+       (some (lambda (state) (%object-on-output-p world object state (%now)))
+             (%output-states world))))
+
+(defun %service-ui-engines (world)
+  (let ((serviced nil))
+    (dolist (object (%scene-object-sequence world))
+      (when (%updatable-object-p world object)
+        (let* ((component (atlas-object-component object))
+               (key (ataxia.world:ui-service-key component)))
+          (when (and key (not (member key serviced)))
+            (push key serviced)
+            (ataxia.world:ui-service component)))))
+    (dolist (object (%scene-object-sequence world))
+      (when (%updatable-object-p world object)
+        (ataxia.world:ui-dispatch-callbacks (atlas-object-component object))))))
 
 (defun %schedule-component-timer (world)
-  (let ((timer (%world-component-timer world)))
+  (let ((timer (%world-component-timer world)) (deadline nil))
     (when timer
-      (let* ((deadline (ataxia.world.slint:slint-next-timer-milliseconds))
-             (delay
-               (cond
-                 ((%component-animation-active-p world)
-                  (if (zerop deadline) 16 (max 1 (min 16 deadline))))
-                 ((= deadline #xffffffffffffffff) 86400000)
-                 (t (max 1 (min deadline 86400000))))))
-        (ataxia.runtime:update-event-loop-timer timer delay))))
+      (dolist (object (%scene-object-sequence world))
+        (when (%updatable-object-p world object)
+          (let* ((component (atlas-object-component object))
+                 (delay (ataxia.world:ui-next-update-delay component)))
+            (when (or (ataxia.kernel:drawable-active-p component)
+                      (and delay (zerop delay)))
+              (%request-object-frames world object))
+            (when (and delay (plusp delay))
+              (setf deadline (if deadline (min deadline delay) delay))))))
+      (ataxia.runtime:update-event-loop-timer
+       timer (if deadline (max 1 (min (ceiling deadline) 86400000)) 0))))
   world)
 
 (defun %component-timer-fired (world source)
   (declare (ignore source))
   (unless (%world-quiescing-p world)
-    (ataxia.world.slint:update-slint-timers)
-    (%request-all-frames world)
+    (%service-ui-engines world)
     (%schedule-component-timer world))
   0)
 
@@ -144,7 +158,14 @@
     (setf (%world-component-timer world)
           (ataxia.runtime:add-event-loop-timer
            (ataxia.kernel:kernel-runtime (ataxia.kernel:world-kernel world))
-           (lambda (source) (%component-timer-fired world source))))
+           (lambda (source)
+             (unless (%world-quiescing-p world)
+               (ataxia.kernel:call-with-current-world
+                (ataxia.kernel:world-kernel world)
+                (lambda (current)
+                  (when (eq current world) (%component-timer-fired world source)))
+                :operation :ui-timer))
+             0)))
     (%schedule-component-timer world))
   world)
 

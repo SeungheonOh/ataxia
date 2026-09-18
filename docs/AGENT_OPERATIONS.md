@@ -22,7 +22,7 @@ again before each mutation.
 The compositor normally exposes SLYNK on `localhost:4005`. Inside the VM:
 
 ```sh
-cd /home/sho/fun/ataxia-world-watchdog
+cd /path/to/ataxia
 ./scripts/ataxia-eval '(ataxia.sly-control:current-kernel)'
 ```
 
@@ -58,7 +58,7 @@ Use `agent-apply` for World changes:
 (ataxia.sly-control:agent-apply
  (lambda (kernel world)
    (declare (ignore kernel))
-   (ataxia.infinite-world:show-notification
+   (ataxia.world.slint:show-notification
     world "The agent is attached" :title "AGENT" :duration 4d0)))
 ```
 
@@ -73,7 +73,9 @@ event waiting inside `agent-inspect`, `agent-apply`, widget callbacks, or
 
 ## Create interactive UI
 
-The Infinite World can compile arbitrary Slint source into an ordinary overlay.
+Any World implementing the shared UI host protocol can attach a Slint overlay.
+Load `ataxia-slint` for Slint widgets or `ataxia-rmlui` for RML widgets. See
+[World services](WORLD-SERVICES.md) for the host contract.
 Declare every callback the agent needs in both the Slint component and the
 `:callbacks` argument:
 
@@ -97,8 +99,8 @@ Declare every callback the agent needs in both the Slint component and the
 (ataxia.sly-control:agent-apply
  (lambda (kernel world)
    (declare (ignore kernel))
-   (ataxia.infinite-world:agent-widget-id
-    (ataxia.infinite-world:make-agent-widget
+   (ataxia.world:agent-widget-id
+    (ataxia.world.slint:make-agent-widget
      world *prompt-source*
      :component-name "AgentPrompt"
      :x 400d0 :y 220d0 :width 248d0 :height 110d0
@@ -107,7 +109,7 @@ Declare every callback the agent needs in both the Slint component and the
 ```
 
 Keep the returned widget ID rather than depending on a printed CLOS object.
-Use `find-agent-widget`, `configure-agent-widget`,
+Use the `ataxia.world` functions `find-agent-widget`, `configure-agent-widget`,
 `set-agent-widget-property`, and `remove-agent-widget` inside later
 `agent-apply` calls.
 
@@ -164,10 +166,10 @@ Apply the chosen result through a new guarded mutation:
 (ataxia.sly-control:agent-apply
  (lambda (kernel world)
    (declare (ignore kernel))
-   (let ((widget (ataxia.infinite-world:find-agent-widget world 7)))
+   (let ((widget (ataxia.world:find-agent-widget world 7)))
      (when widget
-       (ataxia.infinite-world:remove-agent-widget world widget))
-     (ataxia.infinite-world:show-notification
+       (ataxia.world:remove-agent-widget world widget))
+     (ataxia.world.slint:show-notification
       world "Layout accepted" :title "AGENT" :duration 4d0)))
  :expected-generation 4
  :refresh :world-managed)

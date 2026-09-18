@@ -11,12 +11,25 @@
   ((:module "src/world"
     :components
     ((:file "packages")
+     (:file "command-line")
      (:file "ui")
      (:file "geometry")
      (:file "application")
      (:file "agent-events")
+     (:file "overlays")
+     (:file "widgets")
+     (:file "desktop")
+     (:file "services")
      (:file "shortcuts")
      (:file "animation")
      (:file "damage")
      (:file "gles")
      (:file "rescue")))))
+
+(asdf:defsystem "ataxia-world/synthetic-input"
+  :description "Optional World-owned native input devices"
+  :depends-on ("ataxia-world")
+  :serial t
+  :components ((:module "src/world/synthetic-input"
+                :serial t
+                :components ((:file "packages") (:file "input")))))

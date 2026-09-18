@@ -1,0 +1,40 @@
+<rml><head><title>Workspaces</title><style>
+body { margin:0; width:100%; height:100%; font-family:DejaVu Sans; color:#24282d; font-size:12dp; }
+div { display:block; box-sizing:border-box; }
+#panel { width:100%; height:100%; background:#fff; border:1dp #c9ced4; padding:16dp; }
+#header { display:flex; align-items:center; height:28dp; }
+#title { font-size:18dp; font-weight:bold; flex:1; }
+button { display:block; box-sizing:border-box; padding:8dp 10dp; color:#424950; background:#f4f6f8; text-align:left; }
+button:hover, button:focus { background:#e9eef6; }
+button.selected { color:#244ebc; background:#eaf0ff; border-left:3dp #355fd0; }
+#close { background:transparent; }
+#location { color:#626a73; margin-top:12dp; }
+#body { position:absolute; left:16dp; right:16dp; top:86dp; bottom:62dp; display:flex; gap:16dp; overflow:auto; }
+#groups { width:160dp; flex-shrink:0; }
+.group { margin-bottom:5dp; width:100%; white-space:nowrap; overflow:hidden; }
+#group-paging { display:flex; align-items:center; justify-content:space-between; margin-top:8dp; }
+#group-page { color:#626a73; }
+#workspaces { flex:1; min-width:0; }
+#group-heading { display:flex; align-items:center; gap:8dp; margin-bottom:10dp; }
+#group-title { font-size:14dp; font-weight:bold; flex:1; }
+#group-remove { font-size:10dp; padding:6dp; flex-shrink:0; }
+#workspace-grid { display:flex; flex-wrap:wrap; gap:6dp; }
+.workspace { display:none; width:31%; background:#f4f6f8; }
+.workspace-open { width:100%; min-height:70dp; padding:8dp; }
+.remove { display:none; width:100%; background:transparent; color:#a14141; padding:4dp 8dp; font-size:10dp; }
+.remove:hover, .remove:focus { background:#fbecec; }
+#workspace-card1, #workspace-new { display:block; }
+#workspace-new { min-height:70dp; padding:8dp; background:#f8f9fb; color:#626a73; }
+.name { font-weight:bold; }
+.detail { font-size:10dp; margin-top:3dp; color:#626a73; }
+.preview { font-size:10dp; margin-top:3dp; color:#626a73; height:13dp; white-space:nowrap; overflow:hidden; }
+#footer { position:absolute; left:16dp; right:16dp; bottom:16dp; display:flex; align-items:center; gap:10dp; flex-shrink:0; color:#626a73; font-size:11dp; }
+#overview { flex-shrink:0; }
+.small #body { display:block; }
+.small #workspaces { width:100%; margin-top:12dp; flex:none; }
+.small #groups { width:100%; }
+.small #workspace-grid { width:100%; }
+.small .workspace { width:48%; }
+scrollbarvertical { width:5dp; } scrollbarhorizontal { height:5dp; }
+scrollbarvertical sliderbar, scrollbarhorizontal sliderbar { background:#d4d8dc; }
+</style></head><body><div id="panel"><div id="header"><div id="title">Workspaces</div><button id="close">Close</button></div><div id="location">Choose a group, then a workspace</div><div id="body"><div id="groups"><button id="group0" class="group">Group 1</button><button id="group1" class="group">Group 2</button><button id="group2" class="group">Group 3</button><button id="group3" class="group">Group 4</button><button id="group4" class="group">Group 5</button><button id="group5" class="group">Group 6</button><div id="group-paging"><button id="group-prev">‹</button><div id="group-page">1 / 1</div><button id="group-next">›</button></div></div><div id="workspaces"><div id="group-heading"><div id="group-title">Studio</div><button id="group-remove">Remove subworld</button></div><div id="workspace-grid"><div id="workspace-card1" class="workspace"><button id="workspace1" class="workspace-open"><div id="workspace-name1" class="name">Workspace 1</div><div id="workspace-detail1" class="detail">Empty</div><div id="workspace-preview1" class="preview"/></button><button id="workspace-remove1" class="remove">Remove</button></div><div id="workspace-card2" class="workspace"><button id="workspace2" class="workspace-open"><div id="workspace-name2" class="name">Workspace 2</div><div id="workspace-detail2" class="detail">Empty</div><div id="workspace-preview2" class="preview"/></button><button id="workspace-remove2" class="remove">Remove</button></div><div id="workspace-card3" class="workspace"><button id="workspace3" class="workspace-open"><div id="workspace-name3" class="name">Workspace 3</div><div id="workspace-detail3" class="detail">Empty</div><div id="workspace-preview3" class="preview"/></button><button id="workspace-remove3" class="remove">Remove</button></div><div id="workspace-card4" class="workspace"><button id="workspace4" class="workspace-open"><div id="workspace-name4" class="name">Workspace 4</div><div id="workspace-detail4" class="detail">Empty</div><div id="workspace-preview4" class="preview"/></button><button id="workspace-remove4" class="remove">Remove</button></div><div id="workspace-card5" class="workspace"><button id="workspace5" class="workspace-open"><div id="workspace-name5" class="name">Workspace 5</div><div id="workspace-detail5" class="detail">Empty</div><div id="workspace-preview5" class="preview"/></button><button id="workspace-remove5" class="remove">Remove</button></div><div id="workspace-card6" class="workspace"><button id="workspace6" class="workspace-open"><div id="workspace-name6" class="name">Workspace 6</div><div id="workspace-detail6" class="detail">Empty</div><div id="workspace-preview6" class="preview"/></button><button id="workspace-remove6" class="remove">Remove</button></div><div id="workspace-card7" class="workspace"><button id="workspace7" class="workspace-open"><div id="workspace-name7" class="name">Workspace 7</div><div id="workspace-detail7" class="detail">Empty</div><div id="workspace-preview7" class="preview"/></button><button id="workspace-remove7" class="remove">Remove</button></div><div id="workspace-card8" class="workspace"><button id="workspace8" class="workspace-open"><div id="workspace-name8" class="name">Workspace 8</div><div id="workspace-detail8" class="detail">Empty</div><div id="workspace-preview8" class="preview"/></button><button id="workspace-remove8" class="remove">Remove</button></div><div id="workspace-card9" class="workspace"><button id="workspace9" class="workspace-open"><div id="workspace-name9" class="name">Workspace 9</div><div id="workspace-detail9" class="detail">Empty</div><div id="workspace-preview9" class="preview"/></button><button id="workspace-remove9" class="remove">Remove</button></div><button id="workspace-new" class="workspace"><div class="name">+</div><div class="detail">New workspace</div></button></div></div></div><div id="footer"><button id="overview">Overview</button><div>Apps stay open · Esc to close</div></div></div></body></rml>

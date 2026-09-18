@@ -139,22 +139,7 @@
 (defmethod ataxia.runtime:backend-new-input
     ((kernel kernel) runtime runtime-input)
   (declare (ignore runtime))
-  (let ((input-device
-          (make-instance
-           'kernel-input-device
-           :kernel kernel
-           :id (%allocate-object-id kernel)
-           :runtime-object runtime-input
-           :name (ataxia.runtime:input-device-name runtime-input)
-           :type (ataxia.runtime:input-device-type runtime-input))))
-    (%register-object kernel input-device :runtime-object runtime-input)
-    (setf (gethash runtime-input (%kernel-input-table kernel)) input-device)
-    (when (typep runtime-input 'ataxia.runtime:wlr-keyboard)
-      (ataxia.runtime:set-keyboard-keymap-from-names runtime-input)
-      (ataxia.runtime:set-keyboard-repeat-info runtime-input 25 600))
-    (when (%kernel-default-seat kernel)
-      (assign-input-device input-device (%kernel-default-seat kernel)))
-    input-device))
+  (register-input-device kernel runtime-input))
 
 (defmethod ataxia.runtime:input-device-destroying
     ((kernel kernel) runtime-input)
@@ -347,6 +332,16 @@
         (ataxia.runtime:seat-start-pointer-drag seat drag serial)
         (ataxia.runtime:destroy-drag drag))))
 
+(defmethod ataxia.runtime:seat-request-set-selection ((kernel kernel) request)
+  ;; wlroots has validated the source client's serial for this seat. Keep the
+  ;; selection on that seat; never copy it into another seat's clipboard.
+  (when (gethash (ataxia.runtime:seat-selection-request-seat request) (%kernel-seat-table kernel))
+    (ataxia.runtime:accept-seat-selection-request request)))
+
+(defmethod ataxia.runtime:seat-selection-changed ((kernel kernel) runtime-seat)
+  (let ((seat (gethash runtime-seat (%kernel-seat-table kernel))))
+    (when seat (%call-world kernel world-seat-selection-changed seat))))
+
 (defmethod ataxia.runtime:compositor-new-surface
     ((kernel kernel) runtime surface)
   (declare (ignore runtime))
@@ -370,7 +365,9 @@
     ((kernel kernel) runtime-surface)
   (let* ((surface (%ensure-surface-node kernel runtime-surface))
          (application (%surface-tree-application surface)))
-    (setf (surface-mapped-p surface) t)
+    ;; A synchronized subsurface can commit its buffer while still unmapped,
+    ;; then map when its parent commits. Retain the now-usable texture here too.
+    (%update-surface-node surface nil)
     (when application
       (%invalidate-application application))))
 

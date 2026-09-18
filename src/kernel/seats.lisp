@@ -106,6 +106,7 @@
   "Clear selected protocol focus kinds without introducing a native target."
   (check-type seat logical-seat)
   (when pointer
+    (setf (%seat-implicit-pointer-grab seat) nil)
     (ataxia.runtime:seat-pointer-notify-clear-focus
      (seat-runtime-object seat)))
   (when keyboard
@@ -119,3 +120,30 @@
 (defun %event-seat (kernel runtime-input-device)
   (let ((input-device (%event-input-device kernel runtime-input-device)))
     (and input-device (input-seat input-device))))
+
+(defun register-input-device (kernel runtime-input &key (seat (%kernel-default-seat kernel)))
+  "Register a Runtime device directly on SEAT without changing another seat."
+  (check-type kernel kernel)
+  (ataxia.runtime::%assert-runtime-live (kernel-runtime kernel) :register-input-device)
+  (when seat
+    (check-type seat logical-seat)
+    (unless (and (eq kernel (object-kernel seat)) (eq :live (object-state seat)))
+      (error "Input registration requires a live seat belonging to this Kernel.")))
+  (ataxia.runtime::%assert-object-runtime (kernel-runtime kernel) runtime-input :register-input-device)
+  (when (gethash runtime-input (%kernel-input-table kernel))
+    (error "Input device is already registered."))
+  (let ((input-device
+          (make-instance
+           'kernel-input-device
+           :kernel kernel
+           :id (%allocate-object-id kernel)
+           :runtime-object runtime-input
+           :name (ataxia.runtime:input-device-name runtime-input)
+           :type (ataxia.runtime:input-device-type runtime-input))))
+    (%register-object kernel input-device :runtime-object runtime-input)
+    (setf (gethash runtime-input (%kernel-input-table kernel)) input-device)
+    (when (typep runtime-input 'ataxia.runtime:wlr-keyboard)
+      (ataxia.runtime:set-keyboard-keymap-from-names runtime-input)
+      (ataxia.runtime:set-keyboard-repeat-info runtime-input 25 600))
+    (when seat (assign-input-device input-device seat))
+    input-device))

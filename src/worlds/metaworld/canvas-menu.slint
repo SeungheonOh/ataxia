@@ -3,7 +3,7 @@ import { MetaButton } from "controls.slint";
 export component CanvasCreation inherits Window {
     background: transparent;
     callback action(string);
-    Rectangle { border-width: 1px; border-color: #d8dde5; border-radius: 10px; background: #fafbfd; }
+    Rectangle { border-width: 1px; border-color: #d4d8dc; border-radius: 0px; background: #ffffff; }
     VerticalLayout {
         padding: 6px; spacing: 5px;
         MetaButton { align-left: true; label: "Niri world"; activate => { root.action("new-niri"); } }

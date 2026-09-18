@@ -211,11 +211,12 @@
                   rectangle (frame-width lease) (frame-height lease))
            (error "World returned out-of-bounds frame damage ~S." rectangle)))
        (frame-result-damage result))
-  (map nil
-       (lambda (token)
-         (unless (%validate-protocol-token kernel token)
-           (error "World returned an invalid Wayland protocol token.")))
-       (frame-result-presentation-tokens result))
+  (dolist (tokens (list (frame-result-presentation-tokens result) (frame-result-callback-tokens result)))
+    (map nil
+         (lambda (token)
+           (unless (%validate-protocol-token kernel token)
+             (error "World returned an invalid Wayland protocol token.")))
+         tokens))
   result)
 
 (defun %runtime-damage (rectangles)
@@ -240,7 +241,14 @@
                 (surface-runtime-object surface) runtime-output)
                (ataxia.runtime:surface-send-frame-done
                 (surface-runtime-object surface)))))
-         (frame-result-presentation-tokens result))))
+         (frame-result-presentation-tokens result))
+    (map nil
+         (lambda (token)
+           (let ((surface (%protocol-token-surface token)))
+             (unless (gethash surface seen)
+               (setf (gethash surface seen) t)
+               (ataxia.runtime:surface-send-frame-done (surface-runtime-object surface)))))
+         (frame-result-callback-tokens result))))
 
 (defun %execute-world-frame
     (output framebuffer target-token buffer-width buffer-height)
@@ -339,6 +347,16 @@
             (setf (%output-next-frame-requested-p output) nil)
             (when (eq (object-state output) :live)
               (%schedule-output-retry output)))))))
+
+(defun complete-wayland-surface-frame (token)
+  "Release frame callbacks for a live surface without claiming display presentation.
+World uses this for offscreen consumers; the opaque token still identifies the
+exact live surface commit, as it does for output rendering."
+  (unless (and (typep token 'surface-protocol-token)
+               (%validate-protocol-token (object-kernel (%protocol-token-surface token)) token))
+    (error "Wayland surface token is no longer live."))
+  (ataxia.runtime:surface-send-frame-done (surface-runtime-object (%protocol-token-surface token)))
+  nil)
 
 (defun set-wayland-surface-output-membership (token outputs)
   "Apply World-computed output membership for one opaque Wayland surface token."

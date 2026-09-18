@@ -131,6 +131,8 @@ SIGNAL_ACCESSOR(ataxia_seat_event_request_set_cursor, wlr_seat,
 	events.request_set_cursor)
 SIGNAL_ACCESSOR(ataxia_seat_event_request_start_drag, wlr_seat,
 	events.request_start_drag)
+SIGNAL_ACCESSOR(ataxia_seat_event_request_set_selection, wlr_seat,
+	events.request_set_selection)
 SIGNAL_ACCESSOR(ataxia_drag_event_destroy, wlr_drag, events.destroy)
 SIGNAL_ACCESSOR(ataxia_surface_event_commit, wlr_surface, events.commit)
 SIGNAL_ACCESSOR(ataxia_surface_event_map, wlr_surface, events.map)
@@ -571,6 +573,13 @@ bool ataxia_seat_validate_current_pointer_grab_serial(struct wlr_seat *seat,
 			seat, seat->pointer_state.focused_surface, serial);
 }
 
+void ataxia_seat_apply_selection_request(struct wlr_seat *seat,
+		const struct wlr_seat_request_set_selection_event *event) {
+	if (seat != NULL && event != NULL) {
+		wlr_seat_set_selection(seat, event->source, event->serial);
+	}
+}
+
 bool ataxia_seat_pointer_drag_active(const struct wlr_seat *seat) {
 	return seat != NULL && seat->drag != NULL &&
 		seat->drag->grab_type == WLR_DRAG_GRAB_KEYBOARD_POINTER;
@@ -656,6 +665,31 @@ uint32_t ataxia_surface_effective_damage_rectangles(
 	}
 	pixman_region32_fini(&damage);
 	return rectangle_count;
+}
+
+uint32_t ataxia_surface_opaque_rectangles(struct wlr_surface *surface,
+		int32_t *rectangles, uint32_t rectangle_capacity) {
+	if (surface == NULL) {
+		return 0;
+	}
+	/* wlroots clips this committed region to surface-local bounds, and fills
+	 * it for buffer formats without alpha. Never use its bounding box: holes
+	 * and transparent corners must remain visible to the compositor. */
+	int count = 0;
+	pixman_box32_t *boxes = pixman_region32_rectangles(&surface->opaque_region, &count);
+	uint32_t total = count > 0 ? (uint32_t)count : 0;
+	uint32_t copied = total < rectangle_capacity ? total : rectangle_capacity;
+	for (uint32_t i = 0; rectangles != NULL && i < copied; i++) {
+		rectangles[4 * i] = boxes[i].x1;
+		rectangles[4 * i + 1] = boxes[i].y1;
+		rectangles[4 * i + 2] = boxes[i].x2 - boxes[i].x1;
+		rectangles[4 * i + 3] = boxes[i].y2 - boxes[i].y1;
+	}
+	return total;
+}
+
+bool ataxia_surface_has_frame_callbacks(struct wlr_surface *surface) {
+	return surface != NULL && !wl_list_empty(&surface->current.frame_callback_list);
 }
 
 uint32_t ataxia_surface_current_transform(const struct wlr_surface *surface) {

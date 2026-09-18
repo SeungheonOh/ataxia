@@ -146,7 +146,7 @@
   (%refresh-surface component)
   component)
 
-(defun %call-with-preserved-framebuffer (function)
+(defun call-with-preserved-graphics-state (function)
   (let ((state (ataxia.world.rmlui.raw::%gl-save)))
     (when (cffi:null-pointer-p state)
       (ataxia.world.rmlui.raw::native-error :graphics-scope))
@@ -186,7 +186,7 @@
 (defun attach-rmlui-component-graphics (component)
   "Attach a direct RmlUi GLES render target inside a World graphics scope."
   (when (zerop (%component-framebuffer component))
-    (%call-with-preserved-framebuffer
+    (call-with-preserved-graphics-state
      (lambda ()
        (handler-case
            (progn
@@ -253,10 +253,18 @@
 
 (defun detach-rmlui-component-graphics (component)
   (when (rmlui-component-graphics-attached-p component)
-    (%call-with-preserved-framebuffer
+    (call-with-preserved-graphics-state
      (lambda () (%detach-rmlui-component-graphics component))))
   component)
 
 (defun render-rmlui-component (component)
-  (%call-with-preserved-framebuffer
+  ;; Other drawables can request a frame while this texture is unchanged.
+  ;; Check the native dirty flag/deadline before saving any GLES state. Resizing
+  ;; invalidates the component, and unattached graphics still take the error path.
+  (when (and (rmlui-component-graphics-attached-p component)
+             (not (rmlui-component-active-p component)))
+    (poll-rmlui-callbacks component)
+    (return-from render-rmlui-component
+      (values nil (rmlui-component-active-p component))))
+  (call-with-preserved-graphics-state
    (lambda () (%render-rmlui-component component))))

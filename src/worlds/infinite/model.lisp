@@ -20,6 +20,8 @@
    (height :initarg :height :accessor canvas-window-height)
    (mapped-p :initform nil :accessor %canvas-window-mapped-p)
    (hidden-p :initform nil :accessor %canvas-window-hidden-p)
+   (minimized-p :initform nil :accessor %canvas-window-minimized-p)
+   (expanded-state :initform nil :accessor %canvas-window-expanded-state)
    (z :initform 0 :accessor %canvas-window-z)
    (visibility-opacity :initform 1d0 :accessor %canvas-window-visibility-opacity)
    (input-enabled-p :initform t :accessor %canvas-window-input-enabled-p)
@@ -38,53 +40,6 @@
 
 (defun canvas-window-application (window)
   (ataxia.world:binding-application window))
-
-(defclass canvas-overlay ()
-  ((component :initarg :component :reader canvas-overlay-component)
-   (output :initarg :output :accessor canvas-overlay-output)
-   (x :initarg :x :accessor canvas-overlay-x)
-   (y :initarg :y :accessor canvas-overlay-y)
-   (width :initarg :width :accessor canvas-overlay-width)
-   (height :initarg :height :accessor canvas-overlay-height)
-   (layer :initarg :layer :initform 0 :accessor canvas-overlay-layer)
-   (visible-p :initarg :visible-p :initform nil
-              :accessor canvas-overlay-visible-p)
-   (opacity :initarg :opacity :initform 1d0
-            :accessor canvas-overlay-opacity))
-  (:documentation
-   "Output-local drawable content composited above the World scene and below cursors. Interactable components also participate in input picking."))
-
-(defmethod initialize-instance :after ((overlay canvas-overlay) &key)
-  (unless (typep (canvas-overlay-component overlay) 'ataxia.kernel:drawable)
-    (error "CANVAS-OVERLAY requires a drawable component.")))
-
-(defun make-canvas-overlay
-    (component output x y width height &key (layer 0) visible-p (opacity 1d0))
-  (make-instance
-   'canvas-overlay :component component :output output
-   :x (coerce x 'double-float) :y (coerce y 'double-float)
-   :width (coerce width 'double-float) :height (coerce height 'double-float)
-   :layer layer :visible-p visible-p :opacity (coerce opacity 'double-float)))
-
-(defgeneric %overlay-visibility-changed (overlay visible-p))
-
-(defmethod %overlay-visibility-changed ((overlay canvas-overlay) visible-p)
-  (declare (ignore visible-p))
-  overlay)
-
-(defgeneric %overlay-output-changed (overlay output-state))
-
-(defmethod %overlay-output-changed
-    ((overlay canvas-overlay) output-state)
-  (declare (ignore output-state))
-  overlay)
-
-(defgeneric %destroy-overlay (overlay))
-
-(defmethod %destroy-overlay ((overlay canvas-overlay))
-  (ataxia.kernel:drawable-detach-graphics
-   (canvas-overlay-component overlay))
-  nil)
 
 (defstruct (%canvas-output (:constructor %make-canvas-output (output)))
   output
@@ -122,14 +77,7 @@
   damage-frame)
 
 (defun %output-logical-size (state)
-  (let* ((output (%canvas-output-output state))
-         (scale (max 0.01d0 (coerce (ataxia.kernel:output-scale output)
-                                    'double-float)))
-         (width (/ (ataxia.kernel:output-width output) scale))
-         (height (/ (ataxia.kernel:output-height output) scale)))
-    (if (member (ataxia.kernel:output-transform output) '(1 3 5 7))
-        (values height width)
-        (values width height))))
+  (ataxia.world:output-logical-size (%canvas-output-output state)))
 
 (defun %rotate-screen-point (state x y radians)
   (multiple-value-bind (width height) (%output-logical-size state)
@@ -181,17 +129,7 @@
              (%canvas-output-zoom state))))
 
 (defun %transform-normalized-point (transform x y)
-  (case transform
-    (0 (values x y))
-    (1 (values (- 1d0 y) x))
-    (2 (values (- 1d0 x) (- 1d0 y)))
-    (3 (values y (- 1d0 x)))
-    (4 (values (- 1d0 x) y))
-    (5 (values (- 1d0 y) (- 1d0 x)))
-    (6 (values x (- 1d0 y)))
-    (7 (values y x))
-    (otherwise (values x y))))
-
+  (ataxia.world:transform-normalized-point transform x y))
 (defun %screen-point-to-buffer (state x y)
   (multiple-value-bind (logical-width logical-height)
       (%output-logical-size state)
@@ -267,24 +205,50 @@
                  (- (* (%canvas-window-lift-offset window) (canvas-window-elevation window))))
               scaled-width scaled-height))))
 
+(defun %map-window-surfaces (state window function)
+  "Visit committed quads with the same canvas geometry used for drawing."
+  (let* ((application (canvas-window-application window))
+         (surfaces (ataxia.kernel:drawable-surfaces application)))
+    (when (plusp (length surfaces))
+      (multiple-value-bind (root-x root-y root-width root-height)
+          (ataxia.kernel:drawable-local-bounds application)
+        (when (and (plusp root-width) (plusp root-height))
+          (multiple-value-bind (x y width height) (%window-canvas-geometry state window)
+            (let ((scale-x (/ width root-width)) (scale-y (/ height root-height)))
+              (map nil
+                   (lambda (surface)
+                     (funcall function surface
+                              (+ x (* scale-x (- (ataxia.kernel:drawable-surface-local-x surface) root-x)))
+                              (+ y (* scale-y (- (ataxia.kernel:drawable-surface-local-y surface) root-y)))
+                              (* scale-x (ataxia.kernel:drawable-surface-width surface))
+                              (* scale-y (ataxia.kernel:drawable-surface-height surface))))
+                   surfaces))))))))
+
 (defun %window-buffer-coverage (state window)
   (multiple-value-bind (x y width height)
       (%window-canvas-geometry state window)
-    (%canvas-rectangle-to-buffer
-     state x y width height (+ 28d0 (* 14d0 (canvas-window-elevation window))))))
+    (let ((coverage (%canvas-rectangle-to-buffer
+                     state x y width height (+ 28d0 (* 14d0 (canvas-window-elevation window))))))
+      ;; Popups and subsurfaces can extend beyond the root's window geometry.
+      (%map-window-surfaces
+       state window (lambda (surface sx sy sw sh)
+                      (declare (ignore surface))
+                      (setf coverage (ataxia.world:rectangle-union
+                                      coverage (%canvas-rectangle-to-buffer state sx sy sw sh 1d0)))))
+      coverage)))
 
 (defun %overlay-buffer-coverage (state overlay)
   (%screen-rectangle-to-buffer
    state
-   (canvas-overlay-x overlay) (canvas-overlay-y overlay)
-   (canvas-overlay-width overlay) (canvas-overlay-height overlay)))
+   (overlay-x overlay) (overlay-y overlay)
+   (overlay-width overlay) (overlay-height overlay)))
 
 (defun %overlay-on-state-p (overlay state)
-  (eq (canvas-overlay-output overlay) (%canvas-output-output state)))
+  (eq (overlay-output overlay) (%canvas-output-output state)))
 
 (defun %overlay-visible-on-state-p (overlay state)
-  (and (canvas-overlay-visible-p overlay)
-       (plusp (canvas-overlay-opacity overlay))
+  (and (overlay-visible-p overlay)
+       (plusp (overlay-opacity overlay))
        (%overlay-on-state-p overlay state)))
 
 (defun %window-opacity (window)
@@ -292,5 +256,6 @@
 
 (defun %window-visible-p (window)
   (and (%canvas-window-mapped-p window)
+       (not (%canvas-window-minimized-p window))
        (not (%canvas-window-hidden-p window))
        (plusp (%window-opacity window))))

@@ -84,10 +84,10 @@
              (assert (%meta-transient-ui-active-p world))
              ;; An icon invokes its action directly, with no expanded menu.
              (setf clock .7d0)
-             (funcall handler panel (%make-agent-widget-event 1 "action" "close" clock))
+             (funcall handler panel (ataxia.world::%make-agent-widget-event 1 "action" "close" clock))
              (assert (equal command "close"))
              (%meta-sync-object-controls world state)
-             (assert (not (%overlay-input-enabled-p panel)))
+             (assert (not (overlay-input-enabled-p panel)))
              (assert (canvas-overlay-visible-p panel))
              (ataxia.world:advance-animations (%world-animator world) 2.2d0)
              (assert (not (canvas-overlay-visible-p panel)))

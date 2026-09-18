@@ -171,6 +171,12 @@
   (origin nil :type wlr-surface :read-only t)
   (serial 0 :type (unsigned-byte 32) :read-only t))
 
+(defstruct (seat-selection-request
+             (:constructor %make-seat-selection-request (&key seat event-pointer)))
+  (seat nil :type wlr-seat :read-only t)
+  ;; Borrowed only for this synchronous callback; consumed or expired afterward.
+  event-pointer)
+
 (defclass runtime-sink () ())
 
 (defclass diagnostic-sink (runtime-sink)
@@ -199,6 +205,9 @@
 (defgeneric seat-destroying (sink seat))
 (defgeneric seat-request-set-cursor (sink request))
 (defgeneric seat-request-start-drag (sink request))
+(defgeneric seat-request-set-selection (sink request))
+(defgeneric seat-selection-changed (sink seat)
+  (:method (sink seat) (declare (ignore sink seat))))
 (defgeneric surface-committed (sink surface event))
 (defgeneric surface-mapped (sink surface))
 (defgeneric surface-unmapped (sink surface))
@@ -247,6 +256,8 @@
 (defmethod seat-request-set-cursor ((sink runtime-sink) request)
   (declare (ignore sink request)))
 (defmethod seat-request-start-drag ((sink runtime-sink) request)
+  (declare (ignore sink request)))
+(defmethod seat-request-set-selection ((sink runtime-sink) request)
   (declare (ignore sink request)))
 (defmethod surface-committed ((sink runtime-sink) surface event)
   (declare (ignore sink surface event)))

@@ -21,13 +21,13 @@
              (right (reduce #'max rectangles :key (lambda (geometry) (+ (first geometry) (third geometry)))))
              (bottom (reduce #'max rectangles :key (lambda (geometry) (+ (second geometry) (fourth geometry)))))
              (origin (%meta-camera state)))
-        (multiple-value-bind (width height) (%output-logical-size state)
+        (multiple-value-bind (work-x work-y width height) (%canvas-work-area world state)
           (let ((zoom (max 0.08d0 (min 1d0 (/ (- width 100d0) (max 1d0 (- right left)))
                                          (/ (- height 120d0) (max 1d0 (- bottom top)))))))
             (setf (%meta-view-active (%meta-view-for-state world state)) nil)
             (%meta-set-camera world state
-                              (list (- (/ (+ left right) 2d0) (/ width (* 2d0 zoom)))
-                                    (- (/ (+ top bottom) 2d0) (/ height (* 2d0 zoom))) zoom 0d0))
+                              (list (- (/ (+ left right) 2d0) (/ width (* 2d0 zoom)) (/ work-x zoom))
+                                    (- (/ (+ top bottom) 2d0) (/ height (* 2d0 zoom)) (/ work-y zoom)) zoom 0d0))
             (%meta-transition-camera world state origin))))))
   (%meta-changed world))
 
@@ -55,7 +55,7 @@
         (%meta-focus world target seat nil))
       (when entered-p (%meta-transition-camera world state origin)))))
 
-(defun %meta-toggle-fullscreen (world object &optional (value nil supplied-p))
+(defun %meta-toggle-fullscreen (world object &optional (value nil supplied-p) (focus-p t))
   (let ((group (and object (object-subworld world object))))
     (when group
       (let* ((old (subworld-fullscreen group))
@@ -75,7 +75,13 @@
           (ataxia.kernel:request-object-state
            (canvas-window-application object) world :fullscreen (not (null enabled))))
         (%meta-layout world group)
-        (%meta-focus world object)))))
+        (when focus-p (%meta-focus world object))))))
+
+(defmethod %set-window-minimized :after ((world metaworld) window minimized-p)
+  (let ((group (object-subworld world window)))
+    (when (and minimized-p group (eq window (subworld-fullscreen group)))
+      (%meta-toggle-fullscreen world window nil nil))
+    (when group (%meta-layout world group))))
 
 (defun %meta-toggle-floating (world object)
   (let* ((group (and object (object-subworld world object)))
@@ -266,7 +272,7 @@
          (group (%meta-command-group world seat)))
     (cond
       ((string= action "controls")
-       (if (and (%meta-menu world) (canvas-overlay-visible-p (%meta-menu world)))
+       (if (and (%meta-menu world) (overlay-visible-p (%meta-menu world)))
            (%meta-dismiss-menu world) (%meta-open-menu world seat)))
       ((string= action "mode-canvas") (%meta-switch-mode world nil))
       ((string= action "terminal") (%meta-dismiss-menu world) (%meta-launch-terminal world))
@@ -371,7 +377,7 @@
       ((string= action "dissolve")
        (when (and group (%meta-menu world) (not (%meta-standalone world)))
          (let* ((widget (%meta-menu world))
-                (cache (gethash (canvas-overlay-component widget) *meta-property-cache*)))
+                (cache (gethash (overlay-component widget) *meta-property-cache*)))
            (if (and cache (gethash "confirming" cache))
                (progn
                  (%meta-dismiss-menu world)
@@ -619,12 +625,12 @@
     (when (and pressed-p state)
       (let* ((view (%meta-view-for-state world state))
              (panel (%meta-view-window-controls view)))
-        (when (and panel (%overlay-input-enabled-p panel) (not (eq target panel)))
+        (when (and panel (overlay-input-enabled-p panel) (not (eq target panel)))
           (setf (%meta-view-window-controls-until view) 0d0)
           (%meta-present-ui world (%meta-view-window-controls view) nil))))
     (when (and pressed-p state (= code +button-middle+))
       (%meta-cancel-motion world state :metaworld-camera))
-    (when (and pressed-p (%meta-menu world) (canvas-overlay-visible-p (%meta-menu world))
+    (when (and pressed-p (%meta-menu world) (overlay-visible-p (%meta-menu world))
                (not (eq target (%meta-menu world))))
       (%meta-dismiss-menu world))
     (cond
@@ -652,9 +658,9 @@
       ((and pressed-p group
             (or (= code 273)
                 (and (= code +button-left+)
-                     (>= (canvas-overlay-width target) 220d0)
+                     (>= (overlay-width target) 220d0)
                      (> (%canvas-seat-x seat-state)
-                        (- (+ (canvas-overlay-x target) (canvas-overlay-width target)) 42d0)))))
+                        (- (+ (overlay-x target) (overlay-width target)) 42d0)))))
        (%meta-open-menu world seat group)
        (setf (gethash code (%canvas-seat-buttons seat-state)) :world))
       ((and pressed-p (= code 273) (null target))
@@ -679,15 +685,15 @@
             (or logo-p
                 (and (typep target 'meta-note)
                      (< (%canvas-seat-y seat-state)
-                        (+ (canvas-overlay-y target) (* 28d0 (%canvas-output-zoom state))))
+                        (+ (overlay-y target) (* 28d0 (%canvas-output-zoom state))))
                      (< (%canvas-seat-x seat-state)
-                        (- (+ (canvas-overlay-x target) (canvas-overlay-width target))
+                        (- (+ (overlay-x target) (overlay-width target))
                            (* 30d0 (%canvas-output-zoom state)))))))
        (%meta-begin-drag world seat-state target)
        (%focus-target world seat-state target)
        (setf (gethash code (%canvas-seat-buttons seat-state)) :world))
       (t
-       (when (and pressed-p (typep target 'canvas-overlay) seat-state
+       (when (and pressed-p (typep target 'ui-overlay) seat-state
                   (not (gethash target (%meta-spatial-widgets world))))
          (let ((object (%meta-focused-object world seat)))
            (when object (setf (%canvas-seat-previous-focus seat-state) object))))
@@ -726,13 +732,15 @@
       ((and state group (eq :niri (subworld-kind group))
             (or (member :shift modifiers)
                 (not (%target-at-screen-point world state (%canvas-seat-x seat-state) (%canvas-seat-y seat-state)))))
-       (multiple-value-bind (width height) (%output-logical-size state)
-         (declare (ignore height))
+       (multiple-value-bind (work-x work-y width height) (%canvas-work-area world state)
+         (declare (ignore work-y height))
          (let ((scroll (%meta-clamp-scroll
                         group (+ (- (%canvas-output-camera-x state) (subworld-x group))
+                                 (/ work-x (%canvas-output-zoom state))
                                  (/ (* delta 2d0) (%canvas-output-zoom state)))
                         (/ width (%canvas-output-zoom state)))))
-           (set-output-camera world (%canvas-output-output state) (+ (subworld-x group) scroll)
+           (set-output-camera world (%canvas-output-output state)
+                              (- (+ (subworld-x group) scroll) (/ work-x (%canvas-output-zoom state)))
                               (%canvas-output-camera-y state) (%canvas-output-zoom state))
            (setf (gethash (subworld-workspace group) (subworld-scrolls group)) scroll))))
       (t (call-next-method)))
@@ -927,7 +935,8 @@
           (let ((group (first (metaworld-subworlds world))))
             (setf (%meta-view-active view) group)
             (when (= 1 (hash-table-count (%world-outputs world)))
-              (multiple-value-bind (width height) (%output-logical-size state)
+              (multiple-value-bind (x y width height) (%canvas-work-area world state)
+                (declare (ignore x y))
                 (setf (subworld-width group) width (subworld-height group) height)))
             (%meta-fit-group world state group))
           (%meta-overview world nil state)))
@@ -974,13 +983,8 @@
 
 (defmethod ataxia.kernel:world-output-changed :after ((world metaworld) output change)
   (unless (eq :backend-damage (ataxia.kernel:object-change-kind change))
-    (let* ((state (gethash output (%world-outputs world)))
-           (group (and state (%meta-view-active (%meta-view-for-state world state)))))
-      (when (and group (%meta-standalone world))
-        (multiple-value-bind (width height) (%output-logical-size state)
-          (setf (subworld-width group) width (subworld-height group) height))
-        (%meta-layout world group))
-      (when group (%meta-fit-group world state group))
+    (let ((state (gethash output (%world-outputs world))))
+      (%meta-refit-work-area world output)
       (when state (%meta-sync-ui world state)))))
 
 (defmethod ataxia.kernel:world-output-removing :before ((world metaworld) output)
@@ -990,7 +994,7 @@
       (remhash state (%meta-motions world))
       (remhash state (%meta-chrome-states world))
       (remhash state (%meta-views world))))
-  (when (and (%meta-menu world) (eq output (canvas-overlay-output (%meta-menu world))))
+  (when (and (%meta-menu world) (eq output (overlay-output (%meta-menu world))))
     (setf (%meta-menu world) nil)))
 
 (defmethod ataxia.kernel:world-seat-removing :before ((world metaworld) seat)

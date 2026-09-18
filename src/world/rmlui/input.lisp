@@ -83,21 +83,43 @@
     ((unsigned-byte 32) symbol)
     (string (cffi:foreign-funcall "xkb_keysym_from_name" :string symbol :int 0 :uint32))))
 
+(defun %forward-rmlui-key (component symbol pressed modifiers)
+  (ataxia.world.rmlui.raw::check-result
+   (ataxia.world.rmlui.raw::%key-symbol (%live-native component) (%key-symbol-number symbol)
+                                      pressed (%modifier-mask modifiers)) :key))
+
+(defun %clipboard-paste-key-p (symbol modifiers)
+  (or (and (member :control modifiers) (member symbol '("v" "V") :test #'equal))
+      (and (member :shift modifiers) (equal symbol "Insert"))))
+
 (defmethod ataxia.kernel:interactable-key-event
     ((component rmlui-component) world seat input)
-  (declare (ignore world seat))
   (when (typep input 'ataxia.kernel:modifiers-input)
     (ataxia.world.rmlui.raw::check-result
      (ataxia.world.rmlui.raw::%modifier-mask
       (%live-native component) (%modifier-mask (ataxia.kernel:modifiers-input-names input)))
      :modifiers))
   (when (typep input 'ataxia.kernel:key-input)
-    (loop for symbol across (ataxia.kernel:key-input-keysyms input) do
-      (ataxia.world.rmlui.raw::check-result
-       (ataxia.world.rmlui.raw::%key-symbol
-        (%live-native component) (%key-symbol-number symbol)
-        (eq (ataxia.kernel:key-input-state input) :pressed)
-        (%modifier-mask (ataxia.kernel:key-input-modifiers input))) :key)))
+    (let ((pressed (eq (ataxia.kernel:key-input-state input) :pressed))
+          (modifiers (ataxia.kernel:key-input-modifiers input)))
+      (loop for symbol across (ataxia.kernel:key-input-keysyms input) do
+        (let ((paste-symbol symbol)
+              (revision (ataxia.world.rmlui.raw::%clipboard-revision))
+              (focus (gethash :clipboard-focus (%component-pressed-keys component)))
+              (target (ataxia.world:world-seat-focus world seat)))
+          (unless
+              (and pressed (%clipboard-paste-key-p symbol modifiers)
+                   (ataxia.world:request-clipboard-text world seat
+                     (lambda (text)
+                       (when (and text (not (%component-destroyed-p component))
+                                  (eq focus (gethash :clipboard-focus (%component-pressed-keys component)))
+                                  (eq target (ataxia.world:world-seat-focus world seat)))
+                         (ataxia.world.rmlui.raw::%clipboard-set text)
+                         (%forward-rmlui-key component paste-symbol t modifiers)
+                         (poll-rmlui-callbacks component) (%notify-change component)))))
+            (%forward-rmlui-key component symbol pressed modifiers))
+          (when (/= revision (ataxia.world.rmlui.raw::%clipboard-revision))
+            (ataxia.world:set-clipboard-text world seat (ataxia.world.rmlui.raw::%clipboard-text)))))))
   (poll-rmlui-callbacks component)
   (%delivered component))
 
@@ -106,6 +128,7 @@
   (declare (ignore world seat))
   (unless (eq focus-kind :keyboard)
     (clrhash (%component-pressed-keys component)))
+  (setf (gethash :clipboard-focus (%component-pressed-keys component)) (list focus-kind))
   (ataxia.world.rmlui.raw::check-result
    (ataxia.world.rmlui.raw::%focus
     (%live-native component) (eq focus-kind :keyboard))

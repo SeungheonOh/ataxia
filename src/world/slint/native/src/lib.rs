@@ -24,7 +24,7 @@ use slint::platform::{
 use slint::Window;
 use slint::{LogicalPosition, PhysicalSize, SharedString, WindowSize};
 use slint_interpreter::{Compiler, Value};
-mod builtins;
+mod component;
 use xkbcommon::xkb;
 
 const GL_FRAMEBUFFER: u32 = 0x8D40;
@@ -219,6 +219,17 @@ impl std::ops::Deref for AtaxiaWindow {
 struct AtaxiaPlatform;
 
 impl Platform for AtaxiaPlatform {
+    fn set_clipboard_text(&self, text: &str, clipboard: slint::platform::Clipboard) {
+        if clipboard == slint::platform::Clipboard::DefaultClipboard {
+            CLIPBOARD_TEXT.with(|value| *value.borrow_mut() = CString::new(text.replace('\0', " ")).unwrap());
+            CLIPBOARD_REVISION.with(|revision| revision.set(revision.get().wrapping_add(1)));
+        }
+    }
+    fn clipboard_text(&self, clipboard: slint::platform::Clipboard) -> Option<String> {
+        (clipboard == slint::platform::Clipboard::DefaultClipboard)
+            .then(|| CLIPBOARD_TEXT.with(|value| value.borrow().to_string_lossy().into_owned()))
+    }
+
     fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, PlatformError> {
         let window = AtaxiaWindow::new();
         PENDING_WINDOWS.with(|windows| windows.borrow_mut().push_back(window.clone()));
@@ -227,7 +238,7 @@ impl Platform for AtaxiaPlatform {
 }
 
 pub struct NativeComponent {
-    _instance: builtins::Instance,
+    _instance: component::Instance,
     window: Rc<AtaxiaWindow>,
     callbacks: Rc<RefCell<VecDeque<CallbackEvent>>>,
     render_target: Option<Rc<RenderTargetState>>,
@@ -245,6 +256,8 @@ struct CallbackEvent {
 }
 
 thread_local! {
+    static CLIPBOARD_TEXT: RefCell<CString> = RefCell::new(CString::new("").unwrap());
+    static CLIPBOARD_REVISION: Cell<u64> = const { Cell::new(0) };
     static PLATFORM_INSTALLED: Cell<bool> = const { Cell::new(false) };
     static PENDING_WINDOWS: RefCell<VecDeque<Rc<AtaxiaWindow>>> = const { RefCell::new(VecDeque::new()) };
     static LAST_ERROR: RefCell<CString> = RefCell::new(CString::new("").unwrap());
@@ -403,7 +416,9 @@ fn key_text(component: &mut NativeComponent, keycode: u32) -> SharedString {
     let name = xkb::keysym_get_name(symbol);
     special_key(&name)
         .map(SharedString::from)
-        .unwrap_or_else(|| component.xkb_state.key_get_utf8(code).into())
+        // Slint tracks modifier keys separately. XKB's state UTF-8 path
+        // turns Ctrl+C into U+0003, which hides the clipboard shortcut.
+        .unwrap_or_else(|| xkb::keysym_to_utf8(symbol).into())
 }
 
 fn pointer_button(value: u32) -> PointerEventButton {
@@ -419,7 +434,7 @@ fn pointer_button(value: u32) -> PointerEventButton {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn ataxia_slint_abi_version() -> u32 {
-    4
+    5
 }
 
 #[unsafe(no_mangle)]
@@ -452,7 +467,7 @@ pub unsafe extern "C" fn ataxia_slint_component_create(
         let requested_name = unsafe { optional_string(component_name) }?;
         PENDING_WINDOWS.with(|windows| windows.borrow_mut().clear());
         let instance = if source_path.starts_with("ataxia-builtin:") {
-            builtins::Instance::builtin(&source_path, requested_name.as_deref())?
+            component::Instance::builtin(&source_path, requested_name.as_deref())?
         } else {
             let compiler = Compiler::default();
             let result = futures_lite::future::block_on(
@@ -477,7 +492,7 @@ pub unsafe extern "C" fn ataxia_slint_component_create(
             let definition = result
                 .component(&name)
                 .ok_or_else(|| format!("Slint component {name:?} was not found"))?;
-            builtins::Instance::Dynamic(definition.create().map_err(|error| error.to_string())?)
+            component::Instance::Dynamic(definition.create().map_err(|error| error.to_string())?)
         };
         // Both generated and interpreted handles create their adapter lazily.
         instance.show().map_err(|error| error.to_string())?;
@@ -617,6 +632,9 @@ pub unsafe extern "C" fn ataxia_slint_component_render(component: *mut NativeCom
         if component.render_target.is_none() {
             return Err("Slint component graphics are not attached".to_owned());
         }
+        if !component.window.needs_redraw.get() {
+            return Ok(());
+        }
         let _saved_target = SavedGlTarget::capture();
         let result = component
             .window
@@ -643,6 +661,13 @@ pub unsafe extern "C" fn ataxia_slint_component_height(component: *mut NativeCom
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ataxia_slint_component_revision(component: *mut NativeComponent) -> u64 {
     unsafe { component.as_ref() }.map_or(0, |component| component.revision)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ataxia_slint_component_needs_redraw(
+    component: *mut NativeComponent,
+) -> bool {
+    unsafe { component.as_ref() }.is_some_and(|component| component.window.needs_redraw.get())
 }
 
 #[unsafe(no_mangle)]
@@ -961,4 +986,21 @@ pub unsafe extern "C" fn ataxia_slint_component_clear_callbacks(component: *mut 
     if let Some(component) = unsafe { component.as_ref() } {
         component.callbacks.borrow_mut().clear();
     }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn ataxia_slint_clipboard_text() -> *const c_char {
+    CLIPBOARD_TEXT.with(|value| value.borrow().as_ptr())
+}
+#[unsafe(no_mangle)]
+pub extern "C" fn ataxia_slint_clipboard_revision() -> u64 {
+    CLIPBOARD_REVISION.with(Cell::get)
+}
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ataxia_slint_clipboard_set(text: *const c_char) -> bool {
+    ffi_bool(|| {
+        let text = unsafe { required_string(text, "clipboard text") }?;
+        CLIPBOARD_TEXT.with(|value| *value.borrow_mut() = CString::new(text).unwrap());
+        Ok(())
+    })
 }

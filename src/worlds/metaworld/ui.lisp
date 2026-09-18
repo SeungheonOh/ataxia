@@ -15,18 +15,19 @@
   (or (gethash state (%meta-chrome-states world))
       (setf (gethash state (%meta-chrome-states world)) (%make-meta-chrome))))
 
-(defmethod %overlay-input-enabled-p ((widget meta-chrome-widget))
+(defmethod overlay-input-enabled-p ((widget meta-chrome-widget))
   (%meta-chrome-present-p widget))
 
-(defmethod %destroy-overlay :before ((widget agent-widget))
-  (let ((world (%agent-widget-world widget)))
+(defmethod destroy-overlay :before ((widget agent-widget))
+  (let ((world (agent-widget-world widget)))
     (when (typep world 'metaworld)
       (ataxia.world:cancel-subject-animations (%world-animator world) widget)
       (remhash widget (%meta-motions world)))))
 
 (defun %meta-ui-widget (world name component state width height &key (layer 1200))
-  (%create-agent-widget
+  (ataxia.world:create-agent-widget
    (if (string= name "header") 'meta-title-widget 'meta-chrome-widget) world ""
+   :component-factory #'ataxia.world.slint:make-slint-component
    :source-path (format nil "ataxia-builtin:~A" name) :component-name component
    :output (%canvas-output-output state) :width width :height height :layer layer
    :visible-p nil :opacity 0d0))
@@ -41,16 +42,16 @@
           (let ((previous (%canvas-seat-previous-focus seat)))
             (%focus-target world seat (when (%target-visible-p previous) previous))))))
     (let ((destination (if wanted opacity 0d0)))
-      (when (= destination (canvas-overlay-opacity widget))
+      (when (= destination (overlay-opacity widget))
         (%meta-cancel-motion world widget :chrome)
         (unless wanted (hide-overlay world widget)))
-      (unless (= destination (canvas-overlay-opacity widget))
+      (unless (= destination (overlay-opacity widget))
         (%meta-animate-to
-         world widget :chrome (list (canvas-overlay-opacity widget)) (list destination)
+         world widget :chrome (list (overlay-opacity widget)) (list destination)
          (if wanted 0.16d0 0.12d0)
          (lambda (target value)
            (%damage-overlay world target)
-           (setf (canvas-overlay-opacity target) (first value))
+           (setf (overlay-opacity target) (first value))
            (when (and (zerop (first value)) (not (%meta-chrome-present-p target)))
              (hide-overlay world target))
            (%damage-overlay world target))
@@ -58,11 +59,11 @@
     widget))
 
 (defun %meta-pointer-in-ui-p (seat widget)
-  (and seat widget (%overlay-input-enabled-p widget) (canvas-overlay-visible-p widget)
-       (<= (canvas-overlay-x widget) (%canvas-seat-x seat)
-           (+ (canvas-overlay-x widget) (canvas-overlay-width widget)))
-       (<= (canvas-overlay-y widget) (%canvas-seat-y seat)
-           (+ (canvas-overlay-y widget) (canvas-overlay-height widget)))))
+  (and seat widget (overlay-input-enabled-p widget) (overlay-visible-p widget)
+       (<= (overlay-x widget) (%canvas-seat-x seat)
+           (+ (overlay-x widget) (overlay-width widget)))
+       (<= (overlay-y widget) (%canvas-seat-y seat)
+           (+ (overlay-y widget) (overlay-height widget)))))
 
 (defvar *meta-dismissed-chrome* (make-hash-table :test #'eq :weakness :key))
 
@@ -92,7 +93,7 @@
       (cond
         ((or (null seat) (%meta-hover-suppressed-p world state)
              (%canvas-seat-operation seat) (%meta-group-drag world)
-             (and (%meta-menu world) (%overlay-input-enabled-p (%meta-menu world)))
+             (and (%meta-menu world) (overlay-input-enabled-p (%meta-menu world)))
              (< now (%meta-view-hover-after view)))
          (setf (%meta-chrome-edge-since chrome) nil (%meta-view-panel-until view) 0d0))
         ((%meta-pointer-in-ui-p seat (%meta-view-panel view))
@@ -106,7 +107,7 @@
   world)
 
 (defun %meta-property (widget name value)
-  (let* ((component (canvas-overlay-component widget))
+  (let* ((component (overlay-component widget))
          (cache (or (gethash component *meta-property-cache*)
                     (setf (gethash component *meta-property-cache*)
                           (make-hash-table :test #'equal)))))
@@ -115,19 +116,7 @@
       (set-agent-widget-property widget name value))))
 
 (defun %meta-reposition-ui (world widget x y width height)
-  ;; Chrome remains aligned to device pixels, including fractional output scale.
-  (let* ((scale (ataxia.kernel:output-scale (canvas-overlay-output widget)))
-         (x (/ (round (* x scale)) scale))
-         (y (/ (round (* y scale)) scale))
-         (width (/ (max 1 (round (* width scale))) scale))
-         (height (/ (max 1 (round (* height scale))) scale)))
-    (unless (and (= x (canvas-overlay-x widget)) (= y (canvas-overlay-y widget))
-                 (= width (canvas-overlay-width widget)) (= height (canvas-overlay-height widget)))
-      (let ((resize (or (/= width (canvas-overlay-width widget))
-                        (/= height (canvas-overlay-height widget)))))
-        (if resize
-            (configure-agent-widget world widget :x x :y y :width width :height height)
-            (configure-agent-widget world widget :x x :y y))))))
+  (ataxia.world:position-widget world widget x y width height))
 
 (defun %meta-focused-object (world &optional seat)
   (let* ((state (%meta-seat world seat))
@@ -139,7 +128,7 @@
                       (and (typep object 'agent-widget)
                            (gethash object (%meta-spatial-widgets world)))))))
       (cond ((object-p focused) focused)
-            ((and (typep focused 'canvas-overlay) (object-p previous)) previous)
+            ((and (typep focused 'ui-overlay) (object-p previous)) previous)
             (t nil)))))
 
 (defun %meta-header (world state group)
@@ -239,7 +228,7 @@
         (%meta-property header "active" (eq group active))
         (%meta-present-ui world header
                           (if (eq group active)
-                              (not (and panel (%overlay-input-enabled-p panel)))
+                              (not (and panel (overlay-input-enabled-p panel)))
                               (not (%meta-standalone world)))
                           (if (eq group active) 1d0 0.8d0))))
     (dolist (group (loop for group being the hash-keys of (%meta-view-headers view)
@@ -248,20 +237,20 @@
       (remhash group (%meta-view-headers view)))
     (maphash
      (lambda (widget geometry)
-       (when (eq (canvas-overlay-output widget) (%canvas-output-output state))
+       (when (eq (overlay-output widget) (%canvas-output-output state))
          (destructuring-bind (x y width height) geometry
            (multiple-value-bind (canvas-x canvas-y) (%world-to-canvas state x y)
              (multiple-value-bind (screen-x screen-y) (%canvas-to-screen state canvas-x canvas-y)
                (let ((zoom (%canvas-output-zoom state)))
-                 (unless (and (= screen-x (canvas-overlay-x widget))
-                              (= screen-y (canvas-overlay-y widget))
-                              (= (* zoom width) (canvas-overlay-width widget))
-                              (= (* zoom height) (canvas-overlay-height widget)))
+                 (unless (and (= screen-x (overlay-x widget))
+                              (= screen-y (overlay-y widget))
+                              (= (* zoom width) (overlay-width widget))
+                              (= (* zoom height) (overlay-height widget)))
                    (%damage-overlay world widget)
-                   (setf (canvas-overlay-x widget) screen-x
-                         (canvas-overlay-y widget) screen-y
-                         (canvas-overlay-width widget) (* zoom width)
-                         (canvas-overlay-height widget) (* zoom height))
+                   (setf (overlay-x widget) screen-x
+                         (overlay-y widget) screen-y
+                         (overlay-width widget) (* zoom width)
+                         (overlay-height widget) (* zoom height))
                    (%damage-overlay world widget))))))))
      (%meta-spatial-widgets world))
     (%meta-sync-object-controls world state)
@@ -280,11 +269,11 @@
       (%meta-property widget "standalone" (not (null (%meta-standalone world)))))))
 
 (defun %meta-transient-ui-active-p (world)
-  (or (and (%meta-menu world) (%overlay-input-enabled-p (%meta-menu world)))
+  (or (and (%meta-menu world) (overlay-input-enabled-p (%meta-menu world)))
       (loop for view being the hash-values of (%meta-views world)
-            thereis (or (and (%meta-view-panel view) (%overlay-input-enabled-p (%meta-view-panel view)))
+            thereis (or (and (%meta-view-panel view) (overlay-input-enabled-p (%meta-view-panel view)))
                         (and (%meta-view-window-controls view)
-                             (%overlay-input-enabled-p (%meta-view-window-controls view)))))))
+                             (overlay-input-enabled-p (%meta-view-window-controls view)))))))
 
 (defun %meta-dismiss-transient-ui (world)
   (%meta-dismiss-menu world)
@@ -314,7 +303,7 @@
          (state (if seat-state (%canvas-seat-output seat-state) (%first-output-state world)))
          (reuse-p (and state (%meta-menu world)
                        (eq (%meta-menu-kind world) (if group :group :canvas))
-                       (eq (canvas-overlay-output (%meta-menu world)) (%canvas-output-output state)))))
+                       (eq (overlay-output (%meta-menu world)) (%canvas-output-output state)))))
     (when state
       (setf (%meta-menu-target world) (%meta-focused-object world seat)
             (%meta-menu-group world) group)
@@ -356,8 +345,8 @@
 
 (defun %meta-position-context (world state)
   (let ((widget (%meta-menu world)))
-    (when (and widget (canvas-overlay-visible-p widget)
-               (eq (canvas-overlay-output widget) (%canvas-output-output state)))
+    (when (and widget (overlay-visible-p widget)
+               (eq (overlay-output widget) (%canvas-output-output state)))
       (multiple-value-bind (canvas-x canvas-y)
           (%world-to-canvas state
                             (first (%meta-menu-anchor world))
@@ -382,7 +371,7 @@
          (focused (%meta-focused-object world (and seat (%canvas-seat-seat seat))))
          (now (%now))
          (blocked (or (null seat) (%meta-hover-suppressed-p world state) (%meta-group-drag world)
-                      (and (%meta-menu world) (%overlay-input-enabled-p (%meta-menu world)))
+                      (and (%meta-menu world) (overlay-input-enabled-p (%meta-menu world)))
                       (and seat (%canvas-seat-operation seat))
                       (< now (%meta-view-hover-after view))))
          (candidate
@@ -446,8 +435,9 @@
 (defun %meta-new-note (world &optional group content geometry)
   (let* ((seat-state (%meta-seat world *meta-action-seat*))
          (state (or (and seat-state (%canvas-seat-output seat-state)) (%first-output-state world)))
-         (widget (%create-agent-widget
+         (widget (ataxia.world:create-agent-widget
                   'meta-note world ""
+                  :component-factory #'ataxia.world.slint:make-slint-component
                   :source-path "ataxia-builtin:note"
                   :component-name "MetaworldNote" :output (%canvas-output-output state)
                   :width 430d0 :height 320d0 :layer 20)))

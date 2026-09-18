@@ -48,6 +48,7 @@
    (input-devices :initform (make-hash-table :test #'eq)
                   :reader seat-input-devices)
    (keyboard :initform nil :accessor %seat-keyboard)
+   (implicit-pointer-grab :initform nil :accessor %seat-implicit-pointer-grab)
    (cursor-request :initform nil :accessor %seat-cursor-request))
   (:documentation "Stable seat identity owning one real Runtime wlr-seat."))
 
@@ -66,6 +67,8 @@
    (source-box :initform #(0d0 0d0 0d0 0d0) :accessor %surface-source-box)
    (buffer-transform :initform 0 :accessor %surface-buffer-transform)
    (damage :initform nil :accessor %surface-damage)
+   (opaque-region :initform nil :accessor %surface-opaque-region)
+   (frame-callback-p :initform nil :accessor %surface-frame-callback-p)
    (render-source :initform nil :accessor %surface-render-source)
    (protocol-token :initform nil :accessor %surface-protocol-token)
    (output-membership :initform (make-hash-table :test #'eq)

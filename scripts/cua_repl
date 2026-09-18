@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+script_path=$(readlink -f "${BASH_SOURCE[0]}")
+ataxia_root=$(cd "$(dirname "$script_path")/.." && pwd)
+if [[ -n "${ATAXIA_CUA_NODE:-}" ]]; then
+  node_bin=$ATAXIA_CUA_NODE
+elif command -v node >/dev/null 2>&1; then
+  node_bin=$(command -v node)
+elif [[ -x "$HOME/.local/share/ataxia-cua/node/bin/node" ]]; then
+  node_bin="$HOME/.local/share/ataxia-cua/node/bin/node"
+else
+  echo 'cua_repl requires Node.js 22 or newer. Set ATAXIA_CUA_NODE to its executable.' >&2
+  exit 1
+fi
+exec "$node_bin" "$ataxia_root/sdk/computer-use/cli.mjs" "$@"

@@ -25,7 +25,7 @@ The backend is deliberately separate from `make all`. The library is
 `build/libataxia-rmlui-native.so`; `ATAXIA_RMLUI_NATIVE` can override that path.
 
 ```lisp
-(asdf:load-system "ataxia-rmlui/infinite")
+(asdf:load-system "ataxia-rmlui")
 
 ;; Run creation and all later component operations on the World owner thread.
 (ataxia.sly-control:agent-apply
@@ -42,10 +42,11 @@ The backend is deliberately separate from `make all`. The library is
  :refresh :world-managed)
 ```
 
-An RmlUi widget is the same `agent-widget` host used for Slint, so existing
-lookup, configuration, removal, event history, and event-stream functions work.
-`make-agent-widget` continues to create Slint components. Worlds other than
-Infinite World can load just `ataxia-rmlui` and host the drawable themselves.
+An RmlUi widget uses the same `ataxia.world:agent-widget` class as Slint, so
+lookup, configuration, removal, event history, and event-stream functions work
+through `ataxia.world`. `ataxia.world.slint:make-agent-widget` creates Slint
+components. Both engines work with any World implementing the shared UI host
+protocol; see [World services](WORLD-SERVICES.md).
 
 ## Example
 
@@ -55,7 +56,7 @@ a gradient, rounded corners, shadows, hover transitions, and a finite animation.
 buttons without JavaScript.
 
 ```lisp
-(asdf:load-system "ataxia-rmlui/infinite")
+(asdf:load-system "ataxia-rmlui")
 (load (asdf:system-relative-pathname "ataxia-rmlui" "examples/rmlui-panel.lisp"))
 (ataxia.sly-control:agent-apply
  (lambda (kernel world)
@@ -87,7 +88,7 @@ syntaxes differ from CSS; refer to the
 | Operation | Behavior |
 | --- | --- |
 | `make-rmlui-component` | Create a drawable/interactable from `:source`, `:source-path`, logical size, and scale |
-| `make-rmlui-widget` | Host it in Infinite World/Metaworld; accepts the usual widget geometry/options |
+| `make-rmlui-widget` | Attach it to a World implementing the UI host protocol; accepts the usual widget geometry/options |
 | `set-rmlui-property component id value` | Set escaped text, or the value of a form control, by element ID; strings, numbers, and booleans are accepted |
 | `set-rmlui-model component name value` | Set a string, number, or boolean in the component's `state` data model |
 | `rmlui-model-value component name` | Read its current string representation, including form edits |
@@ -132,9 +133,9 @@ flowchart TB
 `src/world/ui.lisp` defines small optional operations for raster scale, resize,
 destruction, invalidation, properties, callbacks, and engine deadlines. Both
 adapters implement them. Toolkit-specific document operations remain in their
-own packages. Infinite World's widget host and resolution policy, and Metaworld's spatial
-widget sizing, use these
-operations rather than Slint-specific calls.
+own packages. `src/world/overlays.lisp` and `widgets.lisp` define shared overlay
+and widget ownership. Each World implements hosting, compositing, and resolution
+policy; Metaworld also owns its spatial widget sizing.
 
 Each RmlUi component owns a context, document, queued events, and render
 interface. The C++ bridge exports a versioned C ABI. Lisp resolves symbols through
@@ -162,7 +163,13 @@ size limits apply to both engines.
 `ui-next-update-delay` returns milliseconds until work is due, or NIL. RmlUi's
 relative next-update delay is converted to an absolute monotonic deadline after
 an update, avoiding repeated postponement. Slint's global timers are serviced
-once per World scheduling pass.
+once per World scheduling pass, followed by `ui-dispatch-callbacks` for each
+visible component. Callback delivery does not require a rendered frame. The
+Slint adapter exposes each component's redraw request so a global timer only
+wakes outputs whose UI changed. A timer deadline is serviced before requesting
+frames; a zero component delay means that component needs rendering now.
+Property mutations and input first advance Slint's clock so an animation starts
+at the new event even after a long idle period.
 
 Visible continuous animations are paced by output frames. The existing event
 loop timer tracks the earliest finite deadline across components, and disarms

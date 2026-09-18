@@ -14,6 +14,11 @@
   (set-slint-callback component name function))
 (defmethod ataxia.world:ui-service-key ((component slint-component)) :slint)
 (defmethod ataxia.world:ui-service ((component slint-component)) (update-slint-timers))
+(defmethod ataxia.world:ui-dispatch-callbacks ((component slint-component))
+  (poll-slint-callbacks component))
 (defmethod ataxia.world:ui-next-update-delay ((component slint-component))
-  (let ((delay (slint-next-timer-milliseconds)))
-    (unless (= delay #xffffffffffffffff) delay)))
+  (if (slint-component-needs-redraw-p component) 0
+      (let ((delay (slint-next-timer-milliseconds)))
+        ;; A global timer may change no pixels, or only another component.
+        ;; Service it on the timer source before deciding which outputs draw.
+        (unless (= delay #xffffffffffffffff) (max 1 delay)))))

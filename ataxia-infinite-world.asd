@@ -12,7 +12,9 @@
   ((:module "src/worlds/infinite"
     :components
     ((:file "packages")
+     (:file "ui-compat")
      (:file "model")
+     (:file "occlusion")
      (:file "renderer")
      (:file "resolution")
      (:file "world")
@@ -21,4 +23,5 @@
      (:file "agent-ui")
      (:file "services")
      (:file "launcher")
+     (:file "desktop")
      (:file "main")))))

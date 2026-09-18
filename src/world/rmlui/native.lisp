@@ -5,7 +5,7 @@
 
 (in-package #:ataxia.world.rmlui.raw)
 
-(defconstant +expected-abi+ 1)
+(defconstant +expected-abi+ 2)
 
 (defun library-path ()
   (or (uiop:getenv "ATAXIA_RMLUI_NATIVE")
@@ -141,3 +141,6 @@
   (component :pointer) (name :string))
 (%define-native-call ("ataxia_rmlui_component_modifier_mask" %modifier-mask) :boolean
   (component :pointer) (mask :int))
+(%define-native-call ("ataxia_rmlui_clipboard_text" %clipboard-text) :string)
+(%define-native-call ("ataxia_rmlui_clipboard_revision" %clipboard-revision) :uint64)
+(%define-native-call ("ataxia_rmlui_clipboard_set" %clipboard-set) :boolean (text :string))

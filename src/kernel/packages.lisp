@@ -24,6 +24,8 @@
    #:drawable-surface-height
    #:drawable-surface-texture-coordinates
    #:drawable-surface-render-source
+   #:drawable-surface-opaque-region
+   #:drawable-surface-frame-callback-p
    #:drawable-surface-presentation-token
    #:drawable-surfaces
    #:drawable-local-bounds
@@ -204,6 +206,7 @@
    #:world-cursor-axis
    #:world-key-event
    #:world-seat-cursor-request
+   #:world-seat-selection-changed
    #:world-client-request
    #:world-graphics-attached
    #:world-render
@@ -233,6 +236,7 @@
    #:frame-result-target-token
    #:frame-result-damage
    #:frame-result-presentation-tokens
+   #:frame-result-callback-tokens
    #:frame-result-complete-p
    #:frame-result-world-cookie
    #:output-presentation
@@ -274,7 +278,9 @@
    #:restart-world
    #:create-logical-seat
    #:destroy-logical-seat
+   #:register-input-device
    #:assign-input-device
    #:clear-wayland-focus
    #:request-output-frame
-   #:set-wayland-surface-output-membership))
+   #:set-wayland-surface-output-membership
+   #:complete-wayland-surface-frame))

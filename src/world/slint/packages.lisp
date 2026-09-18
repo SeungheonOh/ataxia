@@ -7,8 +7,10 @@
   (:use #:cl #:cffi))
 
 (defpackage #:ataxia.world.slint
-  (:use #:cl)
+  (:use #:cl #:ataxia.world)
   (:export
+   #:make-agent-widget
+   #:show-notification
    #:slint-component
    #:make-slint-component
    #:destroy-slint-component
@@ -22,6 +24,7 @@
    #:detach-slint-component-graphics
    #:render-slint-component
    #:slint-component-active-p
+   #:slint-component-needs-redraw-p
    #:set-slint-property
    #:set-slint-callback
    #:remove-slint-callback

@@ -15,4 +15,5 @@
      (:file "component")
      (:file "render")
      (:file "input")
-     (:file "ui")))))
+     (:file "ui")
+     (:file "widgets")))))

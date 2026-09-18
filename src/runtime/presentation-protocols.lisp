@@ -105,6 +105,25 @@
    (%object-pointer surface) (%object-pointer output))
   surface)
 
+(defun surface-has-frame-callbacks-p (surface)
+  (%ensure-live surface)
+  (ataxia.runtime.raw:%surface-has-frame-callbacks (%object-pointer surface)))
+
+(defun surface-opaque-region (surface)
+  "Copy committed, surface-local opaque rectangles; retain no native pointers.
+Cap metadata at 32 rectangles. Omitting excess opaque coverage only reduces
+culling, while using a bounding box could incorrectly hide transparent pixels."
+  (%ensure-live surface)
+  (cffi:with-foreign-object (rectangles :int32 (* 32 4))
+    (let ((count (ataxia.runtime.raw:%surface-opaque-rectangles
+                  (%object-pointer surface) rectangles 32)))
+      (loop for index below (min count 32) for offset = (* index 4)
+            collect (make-damage-rectangle
+                     (cffi:mem-aref rectangles :int32 offset)
+                     (cffi:mem-aref rectangles :int32 (+ offset 1))
+                     (cffi:mem-aref rectangles :int32 (+ offset 2))
+                     (cffi:mem-aref rectangles :int32 (+ offset 3)))))))
+
 (defun surface-content-layout (surface)
   "Return logical size, normalized source box, and wl_output transform."
   (%ensure-live surface)

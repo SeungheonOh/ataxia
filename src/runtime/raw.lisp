@@ -5,7 +5,7 @@
 
 (in-package #:ataxia.runtime.raw)
 
-(defconstant +expected-glue-abi+ 12)
+(defconstant +expected-glue-abi+ 15)
 (defparameter +expected-wlroots-version+ "0.20.2")
 
 (define-foreign-library libwayland-server
@@ -132,6 +132,11 @@
 (defcfun ("wlr_seat_set_keyboard" %wlr-seat-set-keyboard) :void
   (seat :pointer)
   (keyboard :pointer))
+(defcfun ("wlr_seat_pointer_has_grab" %wlr-seat-pointer-has-grab) :bool
+  (seat :pointer))
+(defcfun ("wlr_seat_pointer_surface_has_focus" %wlr-seat-pointer-surface-has-focus) :bool
+  (seat :pointer)
+  (surface :pointer))
 (defcfun ("wlr_seat_pointer_notify_enter" %wlr-seat-pointer-notify-enter)
     :void
   (seat :pointer)
@@ -223,6 +228,18 @@
   "ataxia_seat_event_request_set_cursor" seat)
 (define-signal-binding %seat-event-request-start-drag
   "ataxia_seat_event_request_start_drag" seat)
+(define-signal-binding %seat-event-request-set-selection
+  "ataxia_seat_event_request_set_selection" seat)
+(define-signal-binding %seat-event-set-selection "ataxia_seat_event_set_selection" seat)
+(defcfun ("ataxia_seat_selection_mime_count" %seat-selection-mime-count) :uint32 (seat :pointer))
+(defcfun ("ataxia_seat_selection_mime" %seat-selection-mime) :string (seat :pointer) (index :uint32))
+;; C99 bool is one byte; :boolean reads an int and can turn false into true.
+(defcfun ("ataxia_seat_selection_receive" %seat-selection-receive) :bool (seat :pointer) (mime :string) (fd :int))
+(defcfun ("ataxia_seat_clipboard_owned" %seat-clipboard-owned) :bool (seat :pointer))
+(defcfun ("ataxia_seat_set_clipboard_text" %seat-set-clipboard-text) :bool (seat :pointer) (text :pointer) (length :size))
+(defcfun ("ataxia_seat_apply_selection_request" %seat-apply-selection-request) :void
+  (seat :pointer)
+  (event :pointer))
 (define-signal-binding %drag-event-destroy
   "ataxia_drag_event_destroy" drag)
 (defcfun ("ataxia_seat_pointer_drag_active" %seat-pointer-drag-active) :boolean
@@ -426,6 +443,10 @@
   (rectangle-capacity :uint32))
 (defcfun ("ataxia_surface_current_transform" %surface-current-transform)
     :uint32
+  (surface :pointer))
+(defcfun ("ataxia_surface_opaque_rectangles" %surface-opaque-rectangles) :uint32
+  (surface :pointer) (rectangles :pointer) (rectangle-capacity :uint32))
+(defcfun ("ataxia_surface_has_frame_callbacks" %surface-has-frame-callbacks) :boolean
   (surface :pointer))
 (defcfun ("ataxia_surface_buffer_source_box" %surface-buffer-source-box)
     :boolean

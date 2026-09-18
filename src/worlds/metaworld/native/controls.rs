@@ -1,14 +1,12 @@
-//! Fixed controls are compiled by build.rs. Arbitrary agent widgets still use
-//! the interpreter. Both remain owned by the compositor thread.
+//! Optional compiled Metaworld controls. The generic engine owns their lifetime.
 use slint::{ComponentHandle, PlatformError};
-use slint_interpreter::{ComponentInstance, Value};
+use slint_interpreter::Value;
 
 mod ui {
     slint::include_modules!();
 }
 
 pub enum Instance {
-    Dynamic(ComponentInstance),
     Header(ui::SubworldHeader),
     Toolbar(ui::MetaworldToolbar),
     GroupControls(ui::SubworldControls),
@@ -60,7 +58,6 @@ impl Instance {
 
     pub fn show(&self) -> Result<(), PlatformError> {
         match self {
-            Self::Dynamic(ui) => ui.show(),
             Self::Header(ui) => ui.show(),
             Self::Toolbar(ui) => ui.show(),
             Self::GroupControls(ui) => ui.show(),
@@ -72,9 +69,6 @@ impl Instance {
 
     pub fn set_property(&self, name: &str, value: Value) -> Result<(), String> {
         match (self, name, value) {
-            (Self::Dynamic(ui), name, value) => {
-                return ui.set_property(name, value).map_err(|e| e.to_string())
-            }
             (Self::Header(ui), "caption", Value::String(value)) => ui.set_caption(value),
             (Self::Header(ui), "active", Value::Bool(value)) => ui.set_active(value),
             (Self::Toolbar(ui), "caption", Value::String(value)) => ui.set_caption(value),
@@ -116,9 +110,6 @@ impl Instance {
         callback: impl Fn(&[Value]) -> Value + 'static,
     ) -> Result<(), String> {
         match (self, name) {
-            (Self::Dynamic(ui), name) => {
-                return ui.set_callback(name, callback).map_err(|e| e.to_string())
-            }
             (Self::Header(ui), "enter") => ui.on_enter(move || {
                 callback(&[]);
             }),

@@ -141,7 +141,6 @@ void main() {
   (let ((renderer (%make-canvas-renderer)))
     (handler-case
         (progn
-          (%ensure-shadow-program renderer)
           (setf (%canvas-renderer-solid-program renderer)
                 (ataxia.world.gles:make-gles-program
                  +canvas-vertex-shader+ +solid-fragment-shader+
@@ -328,9 +327,8 @@ rotation, output transform, fractional scale and window resizing."
           (push (min 16 (max 1 (ceiling footprint))) counts)))
       (values (nreverse vectors) (nreverse counts)))))
 
-(defun %draw-surface
-    (renderer state surface x y width height opacity effect seed
-     &optional canvas-p orientation-anchor)
+(defun %draw-surface-quad
+    (renderer surface positions buffer-width buffer-height opacity effect seed)
   (let* ((source (ataxia.kernel:drawable-surface-render-source surface))
          (target (ataxia.kernel:render-source-gles-target source))
          (external-p (= target ataxia.world.gles:+texture-external-oes+))
@@ -340,19 +338,12 @@ rotation, output transform, fractional scale and window resizing."
                (%canvas-renderer-texture-program renderer))))
     (unless program
       (error "The GLES renderer cannot sample texture target 0x~X." target))
-    (let* ((uv (%source-uv surface))
-           (positions (cond
-                       (orientation-anchor
-                        (%oriented-screen-quad
-                         state (car orientation-anchor) (cdr orientation-anchor)
-                         x y width height))
-                       (canvas-p (%canvas-quad state x y width height))
-                       (t (%screen-quad state x y width height)))))
+    (let ((uv (%source-uv surface)))
       (%bind-vertices renderer (%quad-vertices positions uv))
       (ataxia.world.gles:gles-use-program program)
       (multiple-value-bind (vectors counts)
           (%surface-minification-filter positions uv
-                                        (%canvas-output-buffer-width state) (%canvas-output-buffer-height state)
+                                        buffer-width buffer-height
                                         (ataxia.kernel:render-source-width source)
                                         (ataxia.kernel:render-source-height source))
         (ataxia.world.gles:gles-uniform-2f program "u_filter_x" (caar vectors) (cdar vectors))
@@ -372,6 +363,28 @@ rotation, output transform, fractional scale and window resizing."
       (ataxia.world.gles:gles-uniform-1f program "u_seed" seed)
       (ataxia.world.gles:call-with-gles-linear-filter
        target (lambda () (ataxia.world.gles:gles-draw-triangles 6))))))
+
+(defvar *canvas-draw-clip* nil)
+
+(defun %draw-surface
+    (renderer state surface x y width height opacity effect seed
+     &optional canvas-p orientation-anchor)
+  (let* ((positions
+           (cond (orientation-anchor
+                  (%oriented-screen-quad state (car orientation-anchor) (cdr orientation-anchor) x y width height))
+                 (canvas-p (%canvas-quad state x y width height))
+                 (t (%screen-quad state x y width height))))
+         (bw (%canvas-output-buffer-width state)) (bh (%canvas-output-buffer-height state))
+         (clip *canvas-draw-clip*))
+    ;; A window can have offscreen or covered popups/subsurfaces even when its
+    ;; enclosing bounds are visible. Do not submit those quads or presentation tokens.
+    (when (or (null clip)
+              (and (< (* .5d0 bw (1+ (reduce #'min positions :key #'car))) (ataxia.world:rectangle-right clip))
+                   (> (* .5d0 bw (1+ (reduce #'max positions :key #'car))) (ataxia.world:rectangle-x clip))
+                   (< (* .5d0 bh (1+ (reduce #'min positions :key #'cdr))) (ataxia.world:rectangle-bottom clip))
+                   (> (* .5d0 bh (1+ (reduce #'max positions :key #'cdr))) (ataxia.world:rectangle-y clip))))
+      (%draw-surface-quad renderer surface positions bw bh opacity effect seed)
+      t)))
 
 (defun %draw-window-shadow (renderer state window)
   (multiple-value-bind (x y width height)
@@ -394,52 +407,18 @@ rotation, output transform, fractional scale and window resizing."
       (ataxia.world.gles:gles-draw-triangles 6))))
 
 (defun %draw-window (renderer state window tokens)
-  (let ((application (canvas-window-application window)))
-    (multiple-value-bind (root-x root-y root-width root-height)
-        (ataxia.kernel:drawable-local-bounds application)
-      (when (and (plusp root-width) (plusp root-height))
-        (multiple-value-bind (x y width height)
-            (%window-canvas-geometry state window)
-          (%draw-window-shadow renderer state window)
-          (multiple-value-bind (surfaces revision)
-              (ataxia.kernel:drawable-surfaces application)
-            (declare (ignore revision))
-            (map nil
-                 (lambda (surface)
-                   (let* ((surface-x
-                            (+ x (* width
-                                    (/ (- (ataxia.kernel:drawable-surface-local-x surface)
-                                          root-x)
-                                       root-width))))
-                          (surface-y
-                            (+ y (* height
-                                    (/ (- (ataxia.kernel:drawable-surface-local-y surface)
-                                          root-y)
-                                       root-height))))
-                          (surface-width
-                            (* width
-                               (/ (ataxia.kernel:drawable-surface-width surface)
-                                  root-width)))
-                          (surface-height
-                            (* height
-                               (/ (ataxia.kernel:drawable-surface-height surface)
-                                  root-height)))
-                          (token
-                            (ataxia.kernel:drawable-surface-presentation-token surface)))
-                     (%draw-surface
-                      renderer state surface
-                      surface-x surface-y surface-width surface-height
-                      (%window-opacity window)
-                      (canvas-window-effect window)
-                      (coerce (mod (ataxia.kernel:object-id application) 997)
-                              'double-float)
-                      t)
-                     (when token (pushnew token tokens :test #'eq))))
-                 surfaces))))))
+  (%map-window-surfaces
+   state window
+   (lambda (surface x y width height)
+     (when (%draw-surface renderer state surface x y width height
+                          (%window-opacity window) (canvas-window-effect window)
+                          (coerce (mod (ataxia.kernel:object-id (canvas-window-application window)) 997) 'double-float) t)
+       (let ((token (ataxia.kernel:drawable-surface-presentation-token surface)))
+         (when token (pushnew token tokens :test #'eq))))))
   tokens)
 
 (defun %draw-overlay (renderer state overlay tokens)
-  (let ((component (canvas-overlay-component overlay)))
+  (let ((component (overlay-component overlay)))
     (multiple-value-bind (root-x root-y root-width root-height)
         (ataxia.kernel:drawable-local-bounds component)
       (when (and (plusp root-width) (plusp root-height))
@@ -448,42 +427,45 @@ rotation, output transform, fractional scale and window resizing."
           (declare (ignore revision))
           (map nil
                (lambda (surface)
-                 (let* ((x (+ (canvas-overlay-x overlay)
-                              (* (canvas-overlay-width overlay)
+                 (let* ((x (+ (overlay-x overlay)
+                              (* (overlay-width overlay)
                                  (/ (- (ataxia.kernel:drawable-surface-local-x surface)
                                        root-x)
                                     root-width))))
-                        (y (+ (canvas-overlay-y overlay)
-                              (* (canvas-overlay-height overlay)
+                        (y (+ (overlay-y overlay)
+                              (* (overlay-height overlay)
                                  (/ (- (ataxia.kernel:drawable-surface-local-y surface)
                                        root-y)
                                     root-height))))
-                        (width (* (canvas-overlay-width overlay)
+                        (width (* (overlay-width overlay)
                                   (/ (ataxia.kernel:drawable-surface-width surface)
                                      root-width)))
-                        (height (* (canvas-overlay-height overlay)
+                        (height (* (overlay-height overlay)
                                    (/ (ataxia.kernel:drawable-surface-height surface)
                                       root-height)))
                         (token (ataxia.kernel:drawable-surface-presentation-token surface)))
-                   (%draw-surface
-                    renderer state surface x y width height
-                    (canvas-overlay-opacity overlay) 0d0
-                    (coerce (mod (sxhash overlay) 997) 'double-float))
-                   (when token (pushnew token tokens :test #'eq))))
+                   (when (%draw-surface
+                          renderer state surface x y width height
+                          (overlay-opacity overlay) 0d0
+                          (coerce (mod (sxhash overlay) 997) 'double-float))
+                     (when token (pushnew token tokens :test #'eq)))))
                surfaces)))))
   tokens)
 
+(defvar *canvas-seat-cursor-tints* (make-hash-table :test #'eq :weakness :key))
+
 (defun %draw-seat-cursor (renderer state seat-state tokens)
-  (let ((cursor (%canvas-seat-cursor-surface seat-state))
+  (let ((tint (gethash (%canvas-seat-seat seat-state) *canvas-seat-cursor-tints*))
+        (cursor (%canvas-seat-cursor-surface seat-state))
         (x (%canvas-seat-x seat-state))
         (y (%canvas-seat-y seat-state)))
-    (if (and cursor (eq (ataxia.kernel:object-state cursor) :live))
+    (if (and (null tint) cursor (eq (ataxia.kernel:object-state cursor) :live))
         (multiple-value-bind (surfaces revision)
             (ataxia.kernel:drawable-surfaces cursor)
           (declare (ignore revision))
           (map nil
                (lambda (surface)
-                 (%draw-surface
+                 (when (%draw-surface
                   renderer state surface
                   (+ (- x (%canvas-seat-cursor-hotspot-x seat-state))
                      (ataxia.kernel:drawable-surface-local-x surface))
@@ -491,10 +473,10 @@ rotation, output transform, fractional scale and window resizing."
                      (ataxia.kernel:drawable-surface-local-y surface))
                   (ataxia.kernel:drawable-surface-width surface)
                   (ataxia.kernel:drawable-surface-height surface)
-                  1d0 0d0 0d0 nil (cons x y))
+                        1d0 0d0 0d0 nil (cons x y))
                  (let ((token
                          (ataxia.kernel:drawable-surface-presentation-token surface)))
-                   (when token (pushnew token tokens :test #'eq))))
+                   (when token (pushnew token tokens :test #'eq)))))
                surfaces))
         (progn
           (%draw-solid-triangle
@@ -507,7 +489,7 @@ rotation, output transform, fractional scale and window resizing."
            renderer state
            (list (cons x y) (cons x (+ y 24d0))
                  (cons (+ x 17d0) (+ y 16d0)))
-           '(0.96d0 0.98d0 1d0 1d0) (cons x y))))
+           (or tint '(0.96d0 0.98d0 1d0 1d0)) (cons x y))))
     tokens))
 
 (defgeneric %draw-world-background (world renderer output-state))
@@ -518,46 +500,36 @@ rotation, output transform, fractional scale and window resizing."
 (defun %render-canvas
     (renderer output-state windows overlays seats damage-region damage-debug-p
      &optional world)
-  ;; Coverage is constant within a frame. Pointer damage can contain several
-  ;; rectangles; compute each object's transformed bounds once, not per clip.
-  (let ((tokens nil)
-        (window-coverage (loop for window in windows when (%window-visible-p window)
-                               collect (cons window (%window-buffer-coverage output-state window))))
-        (overlay-coverage (loop for overlay in overlays
-                                when (%overlay-visible-on-state-p overlay output-state)
-                                  collect (cons overlay (%overlay-buffer-coverage output-state overlay)))))
+  (let ((tokens nil) (plan (%canvas-paint-plan output-state windows overlays seats)))
     (ataxia.world.gles:gles-reset-state)
-    (when damage-debug-p
-      (ataxia.world.gles:gles-clear 0.55d0 0.015d0 0.08d0 1d0))
+    (when damage-debug-p (ataxia.world.gles:gles-clear 0.55d0 0.015d0 0.08d0 1d0))
     (ataxia.world.gles:gles-set-scissor-enabled t)
+    ;; Preserve paint order within every damaged rectangle. In particular,
+    ;; overlapping damage must not accumulate alpha by painting a layer twice
+    ;; without reconstructing its background first.
     (dolist (damage damage-region)
-      (multiple-value-bind (x y width damage-height)
-          (ataxia.world:rectangle-pixel-bounds
-           damage
-           (%canvas-output-buffer-width output-state)
-           (%canvas-output-buffer-height output-state))
-        (ataxia.world.gles:gles-set-scissor x y width damage-height)
-        (ataxia.world.gles:gles-clear 0.03d0 0.036d0 0.05d0 1d0)
-        (%draw-grid renderer output-state)
-        (%draw-world-background world renderer output-state)
-        (dolist (entry overlay-coverage)
-          (when (and (%overlay-below-windows-p (car entry))
-                     (ataxia.world:region-intersects-p (cdr entry) (list damage)))
-            (setf tokens (%draw-overlay renderer output-state (car entry) tokens))))
-        (dolist (entry window-coverage)
-          (when (ataxia.world:region-intersects-p (cdr entry) (list damage))
-            (setf tokens (%draw-window renderer output-state (car entry) tokens))))
-        (dolist (entry overlay-coverage)
-          (when (and (not (%overlay-below-windows-p (car entry)))
-                     (ataxia.world:region-intersects-p (cdr entry) (list damage)))
-            (setf tokens (%draw-overlay renderer output-state (car entry) tokens))))
-        (dolist (seat-state seats)
-          (when (eq output-state (%canvas-seat-output seat-state))
-            (setf tokens
-                  (%draw-seat-cursor renderer output-state seat-state tokens))))))
+      (dolist (entry plan)
+        (destructuring-bind (kind object visible) entry
+          (dolist (piece visible)
+            (let ((*canvas-draw-clip* (ataxia.world:rectangle-intersection damage piece)))
+              (when *canvas-draw-clip*
+                (multiple-value-bind (x y width height)
+                    (ataxia.world:rectangle-pixel-bounds
+                     *canvas-draw-clip* (%canvas-output-buffer-width output-state)
+                     (%canvas-output-buffer-height output-state))
+                  (when (and (plusp width) (plusp height))
+                    (ataxia.world.gles:gles-set-scissor x y width height)
+                    (ecase kind
+                      (:background
+                       (ataxia.world.gles:gles-clear 0.03d0 0.036d0 0.05d0 1d0)
+                       (%draw-grid renderer output-state)
+                       (%draw-world-background world renderer output-state))
+                      (:window (setf tokens (%draw-window renderer output-state object tokens)))
+                      (:overlay (setf tokens (%draw-overlay renderer output-state object tokens)))
+                      (:cursor (setf tokens (%draw-seat-cursor renderer output-state object tokens))))))))))))
     (ataxia.world.gles:gles-set-scissor-enabled nil)
     (ataxia.world.gles:gles-disable-attribute 0)
     (ataxia.world.gles:gles-disable-attribute 1)
     (ataxia.world.gles:gles-flush)
     (ataxia.world.gles:gles-check-error "infinite canvas frame")
-    (coerce (nreverse tokens) 'vector)))
+    (values (coerce (nreverse tokens) 'vector) (%canvas-plan-callbacks output-state plan))))

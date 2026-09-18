@@ -7,8 +7,10 @@
   (:use #:cl #:cffi))
 
 (defpackage #:ataxia.world.rmlui
-  (:use #:cl)
+  (:use #:cl #:ataxia.world)
   (:export
+   #:call-with-preserved-graphics-state
+   #:rmlui-widget #:widget-cache #:cache-widget-value #:set-widget-text #:set-widget-style #:short-ui-text
    #:rmlui-component
    #:make-rmlui-widget
    #:make-rmlui-component

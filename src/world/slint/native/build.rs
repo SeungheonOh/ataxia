@@ -1,3 +1,5 @@
 fn main() {
-    slint_build::compile("builtins.slint").expect("compile Metaworld controls");
+    #[cfg(feature = "metaworld-controls")]
+    slint_build::compile("../../../worlds/metaworld/native/controls.slint")
+        .expect("compile optional Metaworld controls");
 }

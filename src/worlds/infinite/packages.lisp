@@ -2,6 +2,52 @@
 
 (defpackage #:ataxia.infinite-world
   (:use #:cl)
+  (:import-from #:ataxia.world
+   #:ui-host
+   #:ui-overlay
+   #:make-overlay
+   #:overlay-component
+   #:overlay-output
+   #:overlay-x
+   #:overlay-y
+   #:overlay-width
+   #:overlay-height
+   #:overlay-layer
+   #:overlay-visible-p
+   #:overlay-opacity
+   #:overlay-visibility-changed
+   #:overlay-output-changed
+   #:destroy-overlay
+   #:overlay-input-enabled-p
+   #:world-outputs
+   #:world-overlays
+   #:add-overlay
+   #:remove-overlay
+   #:show-overlay
+   #:hide-overlay
+   #:damage-overlay
+   #:request-overlay-update
+   #:monotonic-time
+   #:output-logical-size
+   #:require-world-output
+   #:create-agent-widget
+   #:agent-widget
+   #:agent-widget-world
+   #:agent-widget-id
+   #:agent-widget-event
+   #:agent-widget-event-sequence
+   #:agent-widget-event-name
+   #:agent-widget-event-value
+   #:agent-widget-event-timestamp
+   #:find-agent-widget
+   #:list-agent-widgets
+   #:remove-agent-widget
+   #:configure-agent-widget
+   #:set-agent-widget-property
+   #:bind-agent-widget-event
+   #:agent-widget-events
+)
+  (:import-from #:ataxia.world.slint #:make-agent-widget #:show-notification)
   (:export
    #:infinite-world
    #:make-infinite-world

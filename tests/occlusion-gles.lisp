@@ -1,0 +1,161 @@
+;;;; Compare the optimized compositor with an unculled reference on real GLES.
+(load (merge-pathnames "support.lisp" *load-truename*))
+(in-package #:ataxia.infinite-world)
+
+(defclass occlusion-test-app (ataxia.kernel:wayland-application) ())
+(defmethod ataxia.kernel:drawable-local-bounds ((app occlusion-test-app))
+  (values 0 0 64 64))
+
+(defun occlusion-test-texture (color &optional holes)
+  (cffi:with-foreign-objects ((name :uint) (pixels :uchar (* 64 64 4)))
+    (dotimes (y 64)
+      (dotimes (x 64)
+        (loop for value in (if (and holes (<= 24 x 39) (<= 24 y 39)) '(0 0 0 0) color)
+              for channel from 0 do
+                (setf (cffi:mem-aref pixels :uchar (+ (* 4 (+ x (* y 64))) channel)) value))))
+    (cffi:foreign-funcall "glGenTextures" :int 1 :pointer name :void)
+    (cffi:foreign-funcall "glBindTexture" :uint #x0DE1 :uint (cffi:mem-ref name :uint) :void)
+    (cffi:foreign-funcall "glTexImage2D" :uint #x0DE1 :int 0 :int #x1908 :int 64 :int 64
+                          :int 0 :uint #x1908 :uint #x1401 :pointer pixels :void)
+    (dolist (parameter '(#x2801 #x2800))
+      (cffi:foreign-funcall "glTexParameteri" :uint #x0DE1 :uint parameter :int #x2601 :void))
+    (dolist (parameter '(#x2802 #x2803))
+      (cffi:foreign-funcall "glTexParameteri" :uint #x0DE1 :uint parameter :int #x812F :void))
+    (cffi:mem-ref name :uint)))
+
+(defun occlusion-test-quad (texture alpha opaque &key (x 0) (y 0) (width 64) (height 64) callback)
+  (make-instance 'ataxia.kernel::wayland-drawable-surface
+    :local-x x :local-y y :width width :height height
+    :texture-coordinates #(0d0 0d0 1d0 0d0 0d0 1d0 1d0 1d0)
+    :opaque-region opaque :frame-callback-p (not (null callback)) :presentation-token callback
+    :render-source (make-instance 'ataxia.kernel::wayland-render-source
+                     :width 64 :height 64 :gles-target #x0DE1 :gles-name texture
+                     :has-alpha-p alpha :generation 1)))
+
+(defun occlusion-test-window (id quad x y width height)
+  (let* ((app (make-instance 'occlusion-test-app :id id))
+         (window (make-instance 'canvas-window :application app :x x :y y :width width :height height)))
+    (setf (ataxia.kernel::%application-drawable-surfaces app) (vector quad)
+          (%canvas-window-mapped-p window) t)
+    window))
+
+(let* ((world (make-infinite-world))
+       (kernel (ataxia.kernel:create-kernel world :backend :headless :headless-width 160 :headless-height 120)))
+  (unwind-protect
+       (ataxia.runtime:call-with-egl-context
+        (ataxia.runtime:runtime-egl (ataxia.kernel:kernel-runtime kernel))
+        (lambda ()
+          (let* ((renderer (%create-canvas-renderer))
+                 (output (make-instance 'ataxia.kernel:kernel-output :width 160 :height 120 :scale 1d0 :transform 0))
+                 (state (%make-canvas-output output))
+                 (full (list (ataxia.world:make-rectangle 0 0 160 120)))
+                 (opaque (list (ataxia.kernel:make-frame-damage-rectangle 0 0 64 64)))
+                 (holes (mapcar (lambda (r) (apply #'ataxia.kernel:make-frame-damage-rectangle r))
+                                '((0 0 64 24) (0 40 64 24) (0 24 24 16) (40 24 24 16))))
+                 (textures (list (occlusion-test-texture '(210 25 30 255))
+                                 (occlusion-test-texture '(20 80 225 255))
+                                 (occlusion-test-texture '(20 80 225 255) t)))
+                 (lower (occlusion-test-window 1 (occlusion-test-quad (first textures) nil opaque :callback :lower) 35d0 35d0 30d0 25d0))
+                 (upper (occlusion-test-window 2 (occlusion-test-quad (second textures) nil opaque :callback :upper) 15d0 15d0 90d0 75d0))
+                 (offscreen (occlusion-test-window 3 (occlusion-test-quad (first textures) nil opaque :callback :offscreen) 500d0 500d0 64d0 64d0))
+                 (windows (list lower upper offscreen))
+                 (original-opacity (symbol-function '%window-opaque-region))
+                 (original-draw (symbol-function '%draw-surface-quad))
+                 (draws nil) (checks 0))
+            (setf (%canvas-output-buffer-width state) 160 (%canvas-output-buffer-height state) 120)
+            (cffi:with-foreign-objects ((target :uint) (fbo :uint))
+              (unwind-protect
+                   (progn
+                     (cffi:foreign-funcall "glGenTextures" :int 1 :pointer target :void)
+                     (cffi:foreign-funcall "glBindTexture" :uint #x0DE1 :uint (cffi:mem-ref target :uint) :void)
+                     (cffi:foreign-funcall "glTexImage2D" :uint #x0DE1 :int 0 :int #x1908 :int 160 :int 120
+                                           :int 0 :uint #x1908 :uint #x1401 :pointer (cffi:null-pointer) :void)
+                     (cffi:foreign-funcall "glGenFramebuffers" :int 1 :pointer fbo :void)
+                     (cffi:foreign-funcall "glBindFramebuffer" :uint #x8D40 :uint (cffi:mem-ref fbo :uint) :void)
+                     (cffi:foreign-funcall "glFramebufferTexture2D" :uint #x8D40 :uint #x8CE0 :uint #x0DE1
+                                           :uint (cffi:mem-ref target :uint) :int 0 :void)
+                     (assert (= #x8CD5 (cffi:foreign-funcall "glCheckFramebufferStatus" :uint #x8D40 :uint)))
+                     (cffi:foreign-funcall "glViewport" :int 0 :int 0 :int 160 :int 120 :void)
+                     (setf (symbol-function '%draw-surface-quad)
+                           (lambda (r surface &rest args)
+                             (push surface draws) (apply original-draw r surface args)))
+                     (labels ((pixels ()
+                                (let ((result (make-array (* 160 120 4) :element-type '(unsigned-byte 8))))
+                                  (sb-sys:with-pinned-objects (result)
+                                    (cffi:foreign-funcall "glReadPixels" :int 0 :int 0 :int 160 :int 120
+                                                          :uint #x1908 :uint #x1401 :pointer (sb-sys:vector-sap result) :void))
+                                  result))
+                              (render (&optional (region full))
+                                (setf draws nil)
+                                (%render-canvas renderer state windows nil nil region nil))
+                              (compare (label &optional (region full))
+                                (render region)
+                                (let ((actual (pixels)))
+                                  (unwind-protect
+                                       (progn
+                                         (setf (symbol-function '%window-opaque-region)
+                                               (lambda (&rest args) (declare (ignore args)) nil))
+                                         (render)
+                                         (let* ((expected (pixels))
+                                                (difference (loop for a across actual for b across expected maximize (abs (- a b)))))
+                                           (assert (<= difference 1) () "~A differs by ~D" label difference)))
+                                    (setf (symbol-function '%window-opaque-region) original-opacity)))
+                                (incf checks)))
+                       (multiple-value-bind (presented callbacks) (render)
+                         (assert (equalp presented #(:upper)))
+                         (assert (equalp callbacks #(:upper))))
+                       (assert (not (member (aref (ataxia.kernel:drawable-surfaces (canvas-window-application lower)) 0) draws)))
+                       (assert (not (member (aref (ataxia.kernel:drawable-surfaces (canvas-window-application offscreen)) 0) draws)))
+                       (compare :fully-covered)
+                       (setf (canvas-window-x lower) 5d0)
+                       (compare :partly-covered)
+                       (setf (canvas-window-opacity upper) .65d0)
+                       (compare :translucent-window)
+                       (setf (canvas-window-opacity upper) 1d0 (canvas-window-effect upper) .7d0)
+                       (compare :effect)
+                       (setf (canvas-window-effect upper) 0d0
+                             (ataxia.kernel::%application-drawable-surfaces (canvas-window-application upper))
+                             (vector (occlusion-test-quad (third textures) t holes :callback :upper)))
+                       (compare :transparent-hole)
+                       (dolist (zoom '(0.3d0 0.7d0 1.3d0))
+                         (setf (%canvas-output-zoom state) zoom)
+                         (compare (list :minification zoom)))
+                       (setf (%canvas-output-zoom state) 1d0)
+                       (dotimes (transform 8)
+                         (setf (ataxia.kernel:output-transform output) transform
+                               (%canvas-output-transform state) transform (ataxia.kernel:output-scale output) 1.25d0)
+                         (compare (list :transform transform)))
+                       (setf (ataxia.kernel:output-transform output) 0 (%canvas-output-transform state) 0
+                             (ataxia.kernel:output-scale output) 1d0
+                             (%canvas-output-rotation state) .3d0)
+                       (compare :camera-rotation)
+                       (setf (%canvas-output-rotation state) 0d0)
+                       ;; Root is offscreen, but its popup extends onto the output.
+                       (setf (ataxia.kernel::%application-drawable-surfaces (canvas-window-application offscreen))
+                             (vector (occlusion-test-quad (second textures) nil opaque :x -500 :y -500 :callback :popup)))
+                       (compare :offroot-popup)
+                       (multiple-value-bind (presented callbacks) (render)
+                         (assert (find :popup presented)) (assert (find :popup callbacks)))
+                       ;; Two overlapping repair rectangles must reconstruct alpha in order.
+                       (setf (canvas-window-opacity upper) .5d0)
+                       (compare :overlapping-damage (append full (list (ataxia.world:make-rectangle 20 20 80 65))))
+                       ;; Moving an occluder reveals the latest underlying texture.
+                       (setf (canvas-window-opacity upper) 1d0
+                             (canvas-window-x lower) 35d0 (%canvas-window-hidden-p offscreen) t)
+                       (render)
+                       (setf (ataxia.kernel::%application-drawable-surfaces (canvas-window-application lower))
+                             (vector (occlusion-test-quad (second textures) nil opaque :callback :lower)))
+                       (let ((old (%window-buffer-coverage state upper)))
+                         (setf (canvas-window-x upper) 95d0)
+                         (compare :reveal (list old (%window-buffer-coverage state upper)))))
+                     (ataxia.world.gles:gles-check-error "occlusion comparisons")
+                     (format t "PASS: ~D GLES pixel comparisons; covered/offscreen submissions and callbacks culled; visible popup and reveal preserved.~%" checks))
+                (setf (symbol-function '%window-opaque-region) original-opacity
+                      (symbol-function '%draw-surface-quad) original-draw)
+                (%destroy-canvas-renderer renderer)
+                (cffi:foreign-funcall "glDeleteFramebuffers" :int 1 :pointer fbo :void)
+                (cffi:foreign-funcall "glDeleteTextures" :int 1 :pointer target :void)
+                (dolist (texture textures)
+                  (setf (cffi:mem-ref target :uint) texture)
+                  (cffi:foreign-funcall "glDeleteTextures" :int 1 :pointer target :void)))))))
+    (ataxia.kernel:destroy-kernel kernel :occlusion-test)))

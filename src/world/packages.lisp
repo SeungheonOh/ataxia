@@ -1,11 +1,97 @@
 ;;;; Packages for reusable World-side mechanisms.
 ;;;;
-;;;; These packages are implementation libraries. They do not receive Kernel
-;;;; callbacks and never constitute another compositor layer.
+;;;; These packages provide protocols and optional services. Concrete Worlds
+;;;; retain scene, rendering, and input policy ownership.
 
 (defpackage #:ataxia.world
   (:use #:cl)
   (:export
+   #:attach-world-service #:detach-world-service #:world-service
+   #:service-quiescing #:service-output-added #:service-output-changed
+   #:service-output-removing #:service-object-removing #:service-object-changed
+   #:service-seat-removing
+   #:service-before-render #:service-after-render
+   #:service-pointer-button #:service-key-event
+   #:world-supports-p
+   #:require-world-capabilities
+   #:world-windows
+   #:window-application
+   #:find-world-window
+   #:world-window-visible-p
+   #:window-output-bounds
+   #:window-local-to-output
+   #:output-to-window-local
+   #:world-target-at
+   #:world-seats
+   #:world-seat-output
+   #:world-seat-focus
+   #:world-seat-previous-focus
+   #:focus-world-target
+   #:world-pointer-position
+   #:world-active-operation-p
+   #:agent-seat-p
+   #:seat-focus-allowed-p
+   #:seat-raises-focused-window-p
+   #:present-agent-cursor
+   #:world-seat-on-output
+   #:request-world-capture
+   #:capture-window-pixels
+   #:control-world-window
+   #:world-application-catalog
+   #:launch-world-application
+   #:world-shell-state
+   #:world-shell-action
+   #:navigate-world-desktop
+   #:world-output-work-area #:world-output-work-area-changed #:service-output-insets
+   #:service-selection-changed #:request-clipboard-text #:set-clipboard-text
+   #:world-desktop-state #:world-layout-schema #:validate-world-layout
+   #:capture-world-layout #:restore-world-layout #:apply-world-layout
+   #:ui-host
+   #:ui-overlay
+   #:make-overlay
+   #:overlay-component
+   #:overlay-output
+   #:overlay-x
+   #:overlay-y
+   #:overlay-width
+   #:overlay-height
+   #:overlay-layer
+   #:overlay-visible-p
+   #:overlay-opacity
+   #:overlay-visibility-changed
+   #:overlay-output-changed
+   #:destroy-overlay
+   #:overlay-input-enabled-p
+   #:world-outputs
+   #:world-overlays
+   #:add-overlay
+   #:remove-overlay
+   #:show-overlay
+   #:hide-overlay
+   #:damage-overlay
+   #:request-overlay-update
+   #:monotonic-time
+   #:output-logical-size
+   #:require-world-output
+   #:create-agent-widget
+   #:position-widget
+   #:expire-agent-widget
+   #:agent-widget
+   #:agent-widget-world
+   #:agent-widget-id
+   #:agent-widget-event
+   #:agent-widget-event-sequence
+   #:agent-widget-event-name
+   #:agent-widget-event-value
+   #:agent-widget-event-timestamp
+   #:find-agent-widget
+   #:list-agent-widgets
+   #:remove-agent-widget
+   #:configure-agent-widget
+   #:set-agent-widget-property
+   #:bind-agent-widget-event
+   #:agent-widget-events
+   #:parse-compositor-options
    #:ui-raster-scale
    #:ui-resize
    #:ui-destroy
@@ -14,7 +100,9 @@
    #:ui-set-callback
    #:ui-service-key
    #:ui-service
+   #:ui-dispatch-callbacks
    #:ui-next-update-delay
+   #:transform-normalized-point
    #:rectangle
    #:make-rectangle
    #:rectangle-x
@@ -25,11 +113,14 @@
    #:rectangle-bottom
    #:rectangle-pixel-bounds
    #:rectangle-empty-p
+   #:rectangle-area
    #:rectangle-intersection
    #:rectangle-union
    #:normalize-region
    #:clip-region
    #:region-intersects-p
+   #:subtract-region
+   #:coalesce-damage-region
    #:region-to-frame-damage
    #:frame-damage-to-region
    #:application-binding

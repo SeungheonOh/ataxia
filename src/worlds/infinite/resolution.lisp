@@ -17,7 +17,7 @@
                    desired current-scale))))
 
 (defun %prepare-overlay-resolution (world state overlay)
-  (let ((component (canvas-overlay-component overlay)))
+  (let ((component (overlay-component overlay)))
     (when (ataxia.world:ui-raster-scale component)
       (let* ((renderer (%world-renderer world))
              (limit (or (gethash renderer *overlay-texture-limits*)
@@ -29,8 +29,8 @@
              (height (nth-value 3 (ataxia.kernel:drawable-local-bounds component)))
              (current (ataxia.world:ui-raster-scale component))
              (scale (%overlay-raster-scale
-                     width height (max 1d0 (canvas-overlay-width overlay))
-                     (max 1d0 (canvas-overlay-height overlay))
+                     width height (max 1d0 (overlay-width overlay))
+                     (max 1d0 (overlay-height overlay))
                      (ataxia.kernel:output-scale (%canvas-output-output state)) current limit)))
         (unless (= current scale)
           (ataxia.world:ui-resize component width height :scale scale)

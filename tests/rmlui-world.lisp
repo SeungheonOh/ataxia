@@ -42,6 +42,22 @@
                        (ataxia.runtime:update-event-loop-timer source 400))
                       (1
                        (assert (not (ataxia.kernel:drawable-active-p (canvas-overlay-component rml))))
+                       ;; A settled widget reused by unrelated client frames must
+                       ;; not capture GLES state, allocate, or enter native rendering.
+                       (let* ((component (canvas-overlay-component rml))
+                              (saved (symbol-function 'ataxia.world.rmlui::call-with-preserved-graphics-state))
+                              (revision (ataxia.world.rmlui::%component-revision component)))
+                         (unwind-protect
+                              (progn
+                                (setf (symbol-function 'ataxia.world.rmlui::call-with-preserved-graphics-state)
+                                      (lambda (function) (declare (ignore function))
+                                        (error "A clean RmlUi component touched GLES state.")))
+                                (dotimes (index 100)
+                                  (multiple-value-bind (damage active)
+                                      (ataxia.world.rmlui:render-rmlui-component component)
+                                    (assert (not damage)) (assert (not active))))
+                                (assert (= revision (ataxia.world.rmlui::%component-revision component))))
+                           (setf (symbol-function 'ataxia.world.rmlui::call-with-preserved-graphics-state) saved)))
                        (setf baseline frames start-cpu (get-internal-run-time) start-time (%now))
                        (incf phase)
                        (ataxia.runtime:update-event-loop-timer source 400))
@@ -52,10 +68,20 @@
                                                                     internal-time-units-per-second elapsed)))))
                        (assert (zerop (- frames baseline)))
                        (configure-agent-widget world rml :width 320d0 :height 200d0)
-                       (remove-agent-widget world rml)
                        (incf phase)
                        (ataxia.runtime:update-event-loop-timer source 100))
                       (3
+                       ;; A resize after the clean fast path still redraws and
+                       ;; reallocates the texture before the widget is retired.
+                       (let ((component (canvas-overlay-component rml)))
+                         (assert (> frames baseline))
+                         (let ((scale (ataxia.world.rmlui:rmlui-component-scale component)))
+                           (assert (= (round (* 320 scale)) (ataxia.world.rmlui::%component-texture-width component)))
+                           (assert (= (round (* 200 scale)) (ataxia.world.rmlui::%component-texture-height component)))))
+                       (remove-agent-widget world rml)
+                       (incf phase)
+                       (ataxia.runtime:update-event-loop-timer source 100))
+                      (4
                        (assert (= 1 (length (list-agent-widgets world))))
                        (assert (eq slint (first (list-agent-widgets world))))
                        (ataxia.runtime:update-event-loop-timer source 0)))

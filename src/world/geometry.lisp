@@ -26,6 +26,9 @@
   (or (<= (rectangle-width rectangle) 0)
       (<= (rectangle-height rectangle) 0)))
 
+(defun rectangle-area (rectangle)
+  (* (max 0 (rectangle-width rectangle)) (max 0 (rectangle-height rectangle))))
+
 (defun rectangle-intersection (left right)
   (let* ((x (max (rectangle-x left) (rectangle-x right)))
          (y (max (rectangle-y left) (rectangle-y right)))
@@ -98,6 +101,33 @@
           (rectangle-intersection rectangle candidate))
         region))
 
+(defun subtract-region (region occluders &key (rectangle-limit 64))
+  "Subtract proven opaque rectangles, without enlarging them.
+If fragmentation exceeds RECTANGLE-LIMIT, return the original visible region:
+extra drawing is safe, whereas discarding an uncovered pixel is not. NIL disables
+the limit. The second value says whether subtraction finished exactly."
+  (let ((remaining region))
+    (dolist (occluder occluders (values remaining t))
+      (let ((next nil))
+        (dolist (rectangle remaining)
+          (let ((overlap (rectangle-intersection rectangle occluder)))
+            (if (null overlap)
+                (push rectangle next)
+                (let ((x (rectangle-x rectangle)) (y (rectangle-y rectangle))
+                      (right (rectangle-right rectangle)) (bottom (rectangle-bottom rectangle))
+                      (ix (rectangle-x overlap)) (iy (rectangle-y overlap))
+                      (ir (rectangle-right overlap)) (ib (rectangle-bottom overlap)))
+                  ;; Disjoint strips: top/bottom span the original width, and
+                  ;; left/right span only the intersection's height.
+                  (dolist (piece (list (make-rectangle x y (- right x) (- iy y))
+                                       (make-rectangle x ib (- right x) (- bottom ib))
+                                       (make-rectangle x iy (- ix x) (- ib iy))
+                                       (make-rectangle ir iy (- right ir) (- ib iy))))
+                    (unless (rectangle-empty-p piece) (push piece next))))))
+          (when (and rectangle-limit (> (length next) rectangle-limit))
+            (return-from subtract-region (values region nil))))
+        (setf remaining (nreverse next))))))
+
 (defun region-to-frame-damage (region width height)
   (mapcar
    (lambda (rectangle)
@@ -116,3 +146,15 @@
       (ataxia.kernel:frame-damage-rectangle-width rectangle)
       (ataxia.kernel:frame-damage-rectangle-height rectangle)))
    damage))
+
+(defun transform-normalized-point (transform x y)
+  (case transform
+    (0 (values x y))
+    (1 (values (- 1d0 y) x))
+    (2 (values (- 1d0 x) (- 1d0 y)))
+    (3 (values y (- 1d0 x)))
+    (4 (values (- 1d0 x) y))
+    (5 (values (- 1d0 y) (- 1d0 x)))
+    (6 (values x (- 1d0 y)))
+    (7 (values y x))
+    (otherwise (values x y))))

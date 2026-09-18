@@ -112,6 +112,9 @@
 (defun set-slint-property (component name value)
   "Set a public string, number, or boolean property and invalidate COMPONENT."
   (check-type name string)
+  ;; An event-driven World can leave Slint's animation clock asleep for minutes.
+  ;; Start transitions at this mutation, not at the previous rendered frame.
+  (update-slint-timers)
   (let ((native (%live-native component)))
     (ataxia.world.slint.raw::check-result
      (etypecase value
@@ -164,3 +167,7 @@
 
 (defun slint-component-active-p (component)
   (ataxia.world.slint.raw::%component-active-p (%live-native component)))
+
+(defun slint-component-needs-redraw-p (component)
+  "Whether this component has requested a new texture since its last render."
+  (ataxia.world.slint.raw::%component-needs-redraw-p (%live-native component)))

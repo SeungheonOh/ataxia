@@ -239,9 +239,9 @@
   control)
 
 (defun start-sly-control (kernel &key (port 4005))
-  "Expose KERNEL through SLYNK on localhost and PORT."
+  "Install the owner queue, optionally exposing SLYNK on localhost and PORT."
   (check-type kernel ataxia.kernel:kernel)
-  (check-type port (integer 1 65535))
+  (check-type port (or null (integer 1 65535)))
   (when *sly-control*
     (error "An Ataxia SLY control plane is already running."))
   (multiple-value-bind (read-fd write-fd) (sb-posix:pipe)
@@ -264,8 +264,9 @@
                    (lambda (source file-descriptor mask)
                      (%control-ready
                       control source file-descriptor mask))))
-            (slynk:create-server
-             :port port :interface "localhost" :style :spawn :dont-close t)
+            (when port
+              (slynk:create-server
+               :port port :interface "localhost" :style :spawn :dont-close t))
             control)
         (serious-condition (condition)
           (when (%sly-control-event-source control)
@@ -289,7 +290,7 @@
         (ataxia.runtime:remove-event-loop-source
          (%sly-control-event-source control))
         (setf (%sly-control-event-source control) nil))
-      (ignore-errors (slynk:stop-server (sly-control-port control)))
+      (when (sly-control-port control) (ignore-errors (slynk:stop-server (sly-control-port control))))
       (ignore-errors (sb-posix:close (%sly-control-read-fd control)))
       (ignore-errors (sb-posix:close (%sly-control-write-fd control)))
       (setf (sly-control-state control) :stopped))

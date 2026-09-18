@@ -1,0 +1,13 @@
+<rml><head><title>Counter</title><style>
+body { margin:0; width:100%; height:100%; font-family:DejaVu Sans; color:#24282d; background:#fff; }
+main { display:block; padding:32px; }
+h1 { font-size:24px; margin-bottom:24px; }
+#counter { display:block; font-size:48px; margin-bottom:24px; }
+button { display:inline-block; padding:12px 20px; margin-right:8px; background:#eaf0ff; color:#244ebc; }
+button:hover { background:#dce7ff; }
+input { display:block; padding:12px; margin-top:24px; border:1px #d4d8dc; }
+#result { display:block; margin-top:12px; }
+</style></head><body><main><h1>Counter</h1><div id="counter">0</div>
+<button id="decrement">−</button><button id="increment">+</button><button id="reset">Reset</button>
+<input id="input" type="text" placeholder="Try typing here"/><div id="result"/>
+</main></body></rml>

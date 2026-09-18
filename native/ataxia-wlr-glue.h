@@ -13,7 +13,7 @@
 #include <stdint.h>
 
 #define ATAXIA_WLR_GLUE_API __attribute__((visibility("default")))
-#define ATAXIA_WLR_GLUE_ABI_VERSION 12u
+#define ATAXIA_WLR_GLUE_ABI_VERSION 15u
 
 struct wl_signal;
 struct wlr_allocator;
@@ -38,6 +38,7 @@ struct wlr_renderer;
 struct wlr_seat;
 struct wlr_seat_pointer_request_set_cursor_event;
 struct wlr_seat_request_start_drag_event;
+struct wlr_seat_request_set_selection_event;
 struct wlr_subsurface;
 struct wlr_surface;
 struct wlr_texture;
@@ -56,6 +57,14 @@ struct wlr_xdg_toplevel_decoration_v1;
 struct wlr_pointer_constraint_v1;
 struct wlr_pointer_constraints_v1;
 struct ataxia_listener;
+
+ATAXIA_WLR_GLUE_API struct wl_signal *ataxia_seat_event_set_selection(struct wlr_seat *seat);
+ATAXIA_WLR_GLUE_API uint32_t ataxia_seat_selection_mime_count(struct wlr_seat *seat);
+ATAXIA_WLR_GLUE_API const char *ataxia_seat_selection_mime(struct wlr_seat *seat, uint32_t index);
+/* RECEIVE always consumes fd, including on failure. */
+ATAXIA_WLR_GLUE_API bool ataxia_seat_selection_receive(struct wlr_seat *seat, const char *mime, int fd);
+ATAXIA_WLR_GLUE_API bool ataxia_seat_clipboard_owned(struct wlr_seat *seat);
+ATAXIA_WLR_GLUE_API bool ataxia_seat_set_clipboard_text(struct wlr_seat *seat, const char *text, size_t length);
 
 typedef void (*ataxia_listener_callback)(uintptr_t cookie, void *data);
 
@@ -247,6 +256,10 @@ ATAXIA_WLR_GLUE_API struct wl_signal *ataxia_seat_event_request_set_cursor(
 	struct wlr_seat *seat);
 ATAXIA_WLR_GLUE_API struct wl_signal *ataxia_seat_event_request_start_drag(
 	struct wlr_seat *seat);
+ATAXIA_WLR_GLUE_API struct wl_signal *ataxia_seat_event_request_set_selection(
+	struct wlr_seat *seat);
+ATAXIA_WLR_GLUE_API void ataxia_seat_apply_selection_request(
+	struct wlr_seat *seat, const struct wlr_seat_request_set_selection_event *event);
 ATAXIA_WLR_GLUE_API bool ataxia_seat_pointer_drag_active(
 	const struct wlr_seat *seat);
 ATAXIA_WLR_GLUE_API uint32_t ataxia_seat_pointer_button_press_count(
@@ -303,6 +316,10 @@ ATAXIA_WLR_GLUE_API int32_t ataxia_surface_current_buffer_height(
 ATAXIA_WLR_GLUE_API uint32_t ataxia_surface_effective_damage_rectangles(
 	struct wlr_surface *surface, int32_t *rectangles,
 	uint32_t rectangle_capacity);
+ATAXIA_WLR_GLUE_API uint32_t ataxia_surface_opaque_rectangles(
+	struct wlr_surface *surface, int32_t *rectangles,
+	uint32_t rectangle_capacity);
+ATAXIA_WLR_GLUE_API bool ataxia_surface_has_frame_callbacks(struct wlr_surface *surface);
 ATAXIA_WLR_GLUE_API uint32_t ataxia_surface_current_transform(
 	const struct wlr_surface *surface);
 ATAXIA_WLR_GLUE_API bool ataxia_surface_buffer_source_box(

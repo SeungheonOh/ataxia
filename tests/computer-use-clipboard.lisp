@@ -1,0 +1,143 @@
+;;;; Clipboard data follows the seat which supplied its input serial.
+(load (merge-pathnames "support.lisp" *load-truename*))
+(asdf:load-system "ataxia-computer-use/metaworld")
+(in-package #:ataxia.infinite-world)
+
+(defvar *clipboard-request-trace* nil)
+(defvar *clipboard-ignore-next* nil)
+(defmethod ataxia.runtime:seat-request-set-selection :around ((kernel ataxia.kernel:kernel) request)
+  (push request *clipboard-request-trace*)
+  (if *clipboard-ignore-next*
+      (setf *clipboard-ignore-next* nil)
+      (call-next-method)))
+
+(let* ((world (make-metaworld :state-file nil))
+       (kernel (ataxia.kernel:create-kernel world :backend :headless :headless-width 1100 :headless-height 800))
+       (runtime (ataxia.kernel:kernel-runtime kernel))
+       (directory (merge-pathnames (format nil "ataxia-clipboard-~A/" (ataxia.computer-use:random-token)) (uiop:temporary-directory)))
+       (clients nil) (driver nil) (failure nil) (complete nil) (control nil)
+       (first nil) (second nil) (sequences (make-hash-table)))
+  (labels ((owner-call (function)
+             (ataxia.sly-control:agent-inspect
+              (lambda (k w) (declare (ignore k w)) (funcall function)) :timeout 3d0))
+           (launch (title &optional option)
+             (let ((client (uiop:launch-program
+                            (append (list "env") (when option (list option))
+                                    (list (format nil "WAYLAND_DISPLAY=~A" (ataxia.runtime:runtime-socket-name runtime))
+                                          (format nil "ATAXIA_TEST_TITLE=~A" title)
+                                          (namestring (asdf:system-relative-pathname "ataxia-computer-use" "build/computer-use-client"))
+                                          (namestring (merge-pathnames (format nil "~A.log" title) directory))))
+                            :output :interactive :error-output :interactive)))
+               (push client clients) client))
+           (request (session op &rest fields)
+             (let ((reply (ataxia.computer-use::%request
+                           (append (list :op op :token (ataxia.computer-use::computer-session-token session)
+                                         :sequence (1+ (gethash session sequences 0))) fields))))
+               (when (getf reply :session)
+                 (setf (gethash session sequences) (getf (getf reply :session) :sequence)))
+               (assert (eq t (getf reply :ok)) () "Clipboard request failed: ~S" reply)
+               reply))
+           (window (title)
+             (loop repeat 100
+                   for match = (owner-call
+                                (lambda () (find-if
+                                            (lambda (w) (and (ataxia.computer-use::%computer-window-allowed-p first w)
+                                                             (equal title (ataxia.kernel:application-title (canvas-window-application w)))))
+                                            (%world-stacking world))))
+                   when match return (ataxia.kernel:object-id (canvas-window-application match))
+                   do (sleep .025d0) finally (error "No window ~A" title)))
+           (copy-from (session source)
+             (request session "batch" :capture :false :actions
+                      (vector (list :op "focus" :window source) '(:op "key" :key "F1")
+                              (list :op "wait-window" :window source :title
+                                    (format nil "Clipboard offered on agent-~D" (ataxia.computer-use::computer-session-id session)) :timeout 1d0))))
+           (paste-into (session target &optional empty)
+             (request session "batch" :capture :false :actions
+                      (vector (list :op "focus" :window target) '(:op "wait-stable" :settle .05d0)
+                              '(:op "key" :key "F3")
+                              (list :op "wait-window" :window target :title
+                                    (format nil "Clipboard ~A on agent-~D" (if empty "empty" "received") (ataxia.computer-use::computer-session-id session))
+                                    :timeout 1d0))))
+           (last-paste (seat-name)
+             (find-if (lambda (line) (uiop:string-prefix-p (format nil "clipboard ~A " seat-name) line))
+                      (uiop:read-file-lines (merge-pathnames "Sink.log" directory)) :from-end t))
+           (expired-request-rejected ()
+             (owner-call
+              (lambda ()
+                (assert *clipboard-request-trace*)
+                (assert (handler-case
+                            (progn (ataxia.runtime:accept-seat-selection-request (first *clipboard-request-trace*)) nil)
+                          (ataxia.runtime:native-call-failed () t)))))))
+    (unwind-protect
+         (progn
+           (sb-posix:mkdir directory #o700)
+           (ataxia.kernel:start-kernel kernel)
+           (setf control (ataxia.sly-control:start-sly-control kernel :port 4007))
+           (slynk:stop-server 4007)
+           (ataxia.computer-use:enable world :start-server nil)
+           (dolist (name '("First clipboard agent" "Second clipboard agent"))
+             (ataxia.computer-use:request-on-owner world (list :op "connect" :name name :purpose "Verify clipboard seat isolation")))
+           (setf first (first (ataxia.computer-use::computer-controller-sessions (ataxia.computer-use::%computer-controller world)))
+                 second (second (ataxia.computer-use::computer-controller-sessions (ataxia.computer-use::%computer-controller world))))
+           (ataxia.computer-use:activate-session first) (ataxia.computer-use:activate-session second)
+           (let ((source-client (launch "Source")))
+             (launch "Sink")
+             (setf driver
+                   (sb-thread:make-thread
+                    (lambda ()
+                      (handler-case
+                          (let ((source (window "Source")) (sink (window "Sink")))
+                            (copy-from first source)
+                            (paste-into first sink)
+                            (assert (equal "clipboard agent-1 Clipboard from Source on agent-1 · λ🙂" (last-paste "agent-1")))
+                            (expired-request-rejected)
+                            ;; The second seat has no offer from the first one.
+                            (paste-into second sink t)
+                            (copy-from second source)
+                            (paste-into second sink)
+                            (assert (equal "clipboard agent-2 Clipboard from Source on agent-2 · λ🙂" (last-paste "agent-2")))
+                            (paste-into first sink)
+                            (assert (equal "clipboard agent-1 Clipboard from Source on agent-1 · λ🙂" (last-paste "agent-1")))
+                            ;; Even an unaccepted request expires at callback
+                            ;; return; its borrowed native event cannot escape.
+                            (owner-call (lambda () (setf *clipboard-ignore-next* t)))
+                            (copy-from first source)
+                            (expired-request-rejected)
+                            (owner-call (lambda () (assert (null *clipboard-ignore-next*))))
+                            (paste-into first sink)
+                            ;; A request using another seat's serial is rejected
+                            ;; by wlroots before the compositor accepts selection.
+                            (launch "Wrong seat" "ATAXIA_TEST_CLIPBOARD_SEAT=agent-2")
+                            (let ((before (owner-call (lambda () (length *clipboard-request-trace*)))))
+                              (copy-from first (window "Wrong seat"))
+                              (owner-call (lambda () (assert (= before (length *clipboard-request-trace*))))))
+                            (paste-into second sink)
+                            (assert (equal "clipboard agent-2 Clipboard from Source on agent-2 · λ🙂" (last-paste "agent-2")))
+                            ;; Destroying the source clears both seats' offers.
+                            (uiop:terminate-process source-client)
+                            (sleep .15d0)
+                            (paste-into first sink t)
+                            (paste-into second sink t)
+                            (request first "disconnect")
+                            (copy-from second sink)
+                            (paste-into second sink)
+                            (assert (equal "clipboard agent-2 Clipboard from Sink on agent-2 · λ🙂" (last-paste "agent-2")))
+                            (request second "disconnect")
+                            (setf complete t))
+                        (error (cause) (setf failure cause)))
+                      (ignore-errors (owner-call (lambda () (ataxia.kernel:request-kernel-stop kernel :checks-complete)))))
+                    :name "Computer-use clipboard checks")))
+           (ataxia.kernel:run-kernel kernel :run-for 15d0)
+           (when failure (error failure))
+           (assert complete)
+           (assert (eq :running (ataxia.kernel:kernel-world-status kernel)))
+           (format t "PASS: native clipboard transfer, Unicode, independent seats, wrong-seat serial rejection, callback lifetime, source destruction and session cleanup.~%"))
+      (when (and driver (sb-thread:thread-alive-p driver))
+        (sb-thread:join-thread driver :timeout 1d0 :default nil)
+        (when (sb-thread:thread-alive-p driver) (ignore-errors (sb-thread:terminate-thread driver))))
+      (ignore-errors (ataxia.computer-use:disable world))
+      (dolist (state (%seat-states world)) (%focus-target world state nil))
+      (when control (ataxia.sly-control:stop-sly-control control))
+      (dolist (client clients) (ignore-errors (uiop:terminate-process client)))
+      (ataxia.kernel:destroy-kernel kernel :clipboard-complete)
+      (uiop:delete-directory-tree directory :validate t :if-does-not-exist :ignore))))

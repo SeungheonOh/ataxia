@@ -235,6 +235,13 @@
   "Render pending Slint work directly into its texture and return local damage."
   (unless (slint-component-graphics-attached-p component)
     (error "Slint component graphics are not attached."))
+  ;; Reuse a settled texture when another drawable wakes this output. The
+  ;; native dirty flag includes resize, input, property and timer changes.
+  (unless (slint-component-needs-redraw-p component)
+    (poll-slint-callbacks component)
+    (return-from render-slint-component
+      (values nil (or (slint-component-needs-redraw-p component)
+                      (slint-component-active-p component)))))
   (let* ((native (%live-native component))
          (width (ataxia.world.slint.raw::%component-width native))
          (height (ataxia.world.slint.raw::%component-height native)))

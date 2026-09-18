@@ -1091,6 +1091,7 @@
       (when geometry-changed-p
         (ataxia.world:damage-reset-output (%world-damage world) output)))
     (%reap-retired-components world)
+    (%service-ui-engines world)
     (dolist (object (%scene-object-sequence world))
       (when (and (%object-visible-p object)
                  (%object-on-output-p world object state timestamp))

@@ -405,7 +405,17 @@
              (remhash key (%runtime-output-table runtime)))))
         (backend-new-output (%runtime-sink runtime) runtime output)))))
 
-(defun %handle-new-input (runtime pointer)
+(defun adopt-input-device (runtime pointer)
+  "Wrap a caller-owned wlr_input_device and install ordinary Runtime listeners.
+The caller retains native allocation/destruction and chooses its logical seat
+through Kernel registration. This does not announce a backend device."
+  (%assert-runtime-live runtime :adopt-input-device)
+  (%require-pointer pointer :adopt-input-device)
+  (when (gethash (%pointer-key pointer) (%runtime-input-table runtime))
+    (error "Input device is already adopted by this Runtime."))
+  (%handle-new-input runtime pointer :announce-p nil))
+
+(defun %handle-new-input (runtime pointer &key (announce-p t))
   (let ((key (%pointer-key pointer)))
     (unless (gethash key (%runtime-input-table runtime))
       (let* ((type-code (ataxia.runtime.raw:%input-device-type pointer))
@@ -442,7 +452,8 @@
           (wlr-pointer (%install-pointer-signals input-device))
           (wlr-keyboard (%install-keyboard-signals input-device))
           (wlr-input-device nil))
-        (backend-new-input (%runtime-sink runtime) runtime input-device)))))
+        (when announce-p (backend-new-input (%runtime-sink runtime) runtime input-device))
+        input-device))))
 
 (defun %install-pointer-signals (pointer)
   (%install-pointer-gesture-signals pointer)
@@ -944,6 +955,58 @@
        (%invalidate-native-object drag)))
     drag))
 
+(defun %attach-seat-selection-listener (seat)
+  ;; Kept separate to support adding this mechanism to existing live seats.
+  (unless (find :seat-request-set-selection (%native-listeners seat)
+                :key #'%subscription-signal-name)
+    (%attach-object-signal
+     seat :seat-request-set-selection
+     (ataxia.runtime.raw:%seat-event-request-set-selection (%object-pointer seat))
+     (lambda (event-pointer)
+       (let ((request (%make-seat-selection-request :seat seat :event-pointer event-pointer)))
+         (unwind-protect
+              (seat-request-set-selection (%runtime-sink (%native-runtime seat)) request)
+           (setf (seat-selection-request-event-pointer request) nil))))))
+  (unless (find :seat-set-selection (%native-listeners seat) :key #'%subscription-signal-name)
+    (%attach-object-signal seat :seat-set-selection
+      (ataxia.runtime.raw:%seat-event-set-selection (%object-pointer seat))
+      (lambda (event) (declare (ignore event))
+        (seat-selection-changed (%runtime-sink (%native-runtime seat)) seat))))
+  seat)
+
+(defun seat-selection-mime-types (seat)
+  (%ensure-live seat)
+  (loop for i below (min 256 (ataxia.runtime.raw:%seat-selection-mime-count (%object-pointer seat)))
+        collect (ataxia.runtime.raw:%seat-selection-mime (%object-pointer seat) i)))
+(defun seat-selection-receive (seat mime fd)
+  "Transfer the selected MIME to FD, consuming FD even on failure."
+  (%ensure-live seat)
+  (ataxia.runtime.raw:%seat-selection-receive (%object-pointer seat) mime fd))
+(defun seat-clipboard-owned-p (seat)
+  (%ensure-live seat)
+  (ataxia.runtime.raw:%seat-clipboard-owned (%object-pointer seat)))
+(defun seat-set-clipboard-text (seat text)
+  (%ensure-live seat)
+  (check-type text string)
+  (let ((bytes (babel:string-to-octets text :encoding :utf-8)))
+    (cffi:with-pointer-to-vector-data (data bytes)
+      (unless (ataxia.runtime.raw:%seat-set-clipboard-text (%object-pointer seat) data (length bytes))
+        (error "Could not own the text clipboard."))))
+  text)
+
+(defun accept-seat-selection-request (request)
+  "Accept once during this request's synchronous callback, on its original seat."
+  (check-type request seat-selection-request)
+  (let* ((seat (seat-selection-request-seat request))
+         (event (seat-selection-request-event-pointer request)))
+    (%assert-runtime-live (%native-runtime seat) :accept-seat-selection-request)
+    (unless event
+      (error 'native-call-failed :name :accept-seat-selection-request
+             :detail "The selection request was already accepted or its callback has ended."))
+    (setf (seat-selection-request-event-pointer request) nil)
+    (ataxia.runtime.raw:%seat-apply-selection-request (%object-pointer seat) event))
+  request)
+
 (defun create-seat (runtime name)
   (%assert-runtime-live runtime :create-seat)
   (check-type name string)
@@ -996,6 +1059,7 @@
            :origin (%adopt-core-surface runtime origin-pointer)
            :serial
            (ataxia.runtime.raw:%seat-drag-request-serial event-pointer))))))
+    (%attach-seat-selection-listener seat)
     (%attach-object-signal
      seat :seat-destroy
      (ataxia.runtime.raw:%seat-event-destroy pointer)
@@ -1057,6 +1121,21 @@
     (ataxia.runtime.raw:%wlr-seat-set-keyboard
      (%object-pointer seat) (ataxia.runtime.raw:null-pointer)))
   seat)
+
+(defun seat-pointer-has-grab-p (seat)
+  "Whether a protocol grab has replaced the default pointer handler."
+  (check-type seat wlr-seat)
+  (%assert-runtime-live (%native-runtime seat) :seat-pointer-has-grab-p)
+  (ataxia.runtime.raw:%wlr-seat-pointer-has-grab (%object-pointer seat)))
+
+(defun seat-pointer-surface-has-focus-p (seat surface)
+  (check-type seat wlr-seat)
+  (check-type surface wlr-surface)
+  (let ((runtime (%native-runtime seat)))
+    (%assert-runtime-live runtime :seat-pointer-surface-has-focus-p)
+    (%assert-object-runtime runtime surface :seat-pointer-surface-has-focus-p)
+    (ataxia.runtime.raw:%wlr-seat-pointer-surface-has-focus
+     (%object-pointer seat) (%object-pointer surface))))
 
 (defun seat-pointer-notify-enter (seat surface surface-x surface-y)
   (check-type surface wlr-surface)

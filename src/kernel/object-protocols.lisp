@@ -30,9 +30,11 @@
    (texture-coordinates
     :initarg :texture-coordinates
     :reader drawable-surface-texture-coordinates)
-   (render-source :initarg :render-source :reader drawable-surface-render-source))
+   (render-source :initarg :render-source :reader drawable-surface-render-source)
+   (opaque-region :initarg :opaque-region :initform nil :reader drawable-surface-opaque-region)
+   (frame-callback-p :initarg :frame-callback-p :initform nil :reader drawable-surface-frame-callback-p))
   (:documentation
-   "Immutable origin-neutral textured quad. Texture coordinates are normalized U/V pairs in top-left, top-right, bottom-left, bottom-right order."))
+   "Immutable origin-neutral textured quad. Texture coordinates are normalized U/V pairs in top-left, top-right, bottom-left, bottom-right order. Opaque regions contain FRAME-DAMAGE-RECTANGLEs relative to this quad's own origin, excluding LOCAL-X/Y; NIL makes no opacity guarantee."))
 
 (defgeneric drawable-surface-presentation-token (surface)
   (:documentation

@@ -1,84 +1,65 @@
 <rml><head><title>Ataxia status bar</title><style>
-body { margin:0; width:100%; height:100%; font-family:DejaVu Sans; font-size:12dp; color:#dee5ef; }
-div { display:block; }
-#bar { position:absolute; left:12dp; right:12dp; top:8dp; height:56dp; box-sizing:border-box;
- display:flex; align-items:center; gap:16dp; padding:8dp 12dp;
- background:#161c28f5; border:1dp #343e50; border-radius:18dp;
- box-shadow:#0006 0dp 5dp 10dp 2dp; animation:0.45s cubic-out 1 arrive; }
-button { display:block; box-sizing:border-box; color:#aab6ca; background:transparent; border-radius:10dp;
- height:36dp; line-height:36dp; text-align:center; padding:0 10dp;
- transition:background-color 0.18s cubic-out, color 0.18s cubic-out, transform 0.22s cubic-out; }
-button:hover { background:#303b50; color:#f4f8ff; transform:translateY(-2dp); }
-button:active { transform:scale(0.94); background:#3a4861; }
-#home { display:flex; align-items:center; gap:10dp; padding:0 8dp; flex-shrink:0; }
-#mark { width:26dp; height:26dp; border-radius:8dp; decorator:linear-gradient(135deg,#b2f6dd,#6eb8ca); color:#122b2e; font-size:17dp; font-weight:bold; line-height:26dp; }
-#brand { font-size:11dp; letter-spacing:2dp; color:#f0f5fd; }
-.separator { width:1dp; height:22dp; background:#343e50; flex-shrink:0; }
-#context { display:flex; align-items:center; flex-shrink:0; gap:3dp; }
-#group { max-width:145dp; overflow:hidden; white-space:nowrap; color:#e2e9f5; font-weight:bold; }
-.arrow { font-size:19dp; width:25dp; padding:0; }
-#workspaces { display:flex; position:relative; background:#0e1420; padding:3dp; height:32dp; border-radius:12dp; flex-shrink:0; }
-.workspace { width:32dp; height:32dp; line-height:32dp; padding:0; position:relative; color:#8391a9; }
-.workspace.selected { color:#bcf4df; font-weight:bold; }
-#selection { transform:translateX(0dp); position:absolute; top:3dp; left:3dp; width:32dp; height:32dp; background:#29483f; border:1dp #487665; box-sizing:border-box; border-radius:9dp; transition:transform 0.32s cubic-out, opacity 0.2s; }
+body { margin:0; width:100%; height:100%; font-family:DejaVu Sans; font-size:12dp; color:#24282d; }
+div { display:block; box-sizing:border-box; }
+#bar { position:absolute; left:0; right:0; top:0; height:44dp; box-sizing:border-box;
+ display:flex; align-items:center; gap:10dp; padding:5dp 12dp 6dp; background:#ffffff; border-top:1dp #d4d8dc; }
+button { display:block; box-sizing:border-box; height:32dp; line-height:32dp; padding:0 10dp;
+ color:#424950; background:transparent; text-align:center; }
+button:hover { background:#f0f2f4; color:#24282d; }
+button:active { background:#e3e7eb; }
+#home { flex-shrink:0; font-weight:bold; }
+#mark { display:none; }
+#brand { line-height:32dp; }
+.separator { width:1dp; height:20dp; background:#d4d8dc; flex-shrink:0; }
+#context { display:flex; align-items:center; min-width:60dp; flex-shrink:1; }
+#group { max-width:285dp; overflow:hidden; white-space:nowrap; color:#244ebc; background:#f1f5ff; }
+.arrow { display:none; }
+#workspaces { display:none; }
+.workspace { width:30dp; height:32dp; line-height:32dp; padding:0; color:#626a73; }
+.workspace.selected { color:#244ebc; background:#eaf0ff; font-weight:bold; }
+#selection, #focus-label, #apps, #power-note { display:none; }
 #focus { flex:1; min-width:0; overflow:hidden; white-space:nowrap; }
-#focus-label { font-size:9dp; letter-spacing:1.4dp; color:#74849e; margin-bottom:3dp; }
-#title { font-size:12dp; color:#c7d1e1; overflow:hidden; white-space:nowrap; }
-#right { display:flex; align-items:center; gap:16dp; margin-left:auto; flex-shrink:0; }
-#apps { color:#8e9db5; white-space:nowrap; }
-#power { padding:0 7dp; display:flex; align-items:center; gap:7dp; color:#b6d9ca; white-space:nowrap; }
-#battery { position:relative; width:22dp; height:11dp; padding:2dp; border:1dp #6c9d8b; border-radius:3dp; }
-#charge { height:100%; width:75%; border-radius:1dp; background:#93dfba; transition:width 0.4s cubic-out; }
-#battery-tip { position:absolute; right:-4dp; top:3dp; width:2dp; height:7dp; background:#6c9d8b; border-radius:1dp; }
-#power-copy { text-align:left; line-height:15dp; }
-#power-note { font-size:9dp; color:#8296a7; font-weight:normal; }
-#power-symbol { color:#aaf0cf; font-size:15dp; line-height:20dp; }
-#bar.low #charge { background:#edbd68; }
-#bar.low #power, #bar.low #power-symbol { color:#edbd68; }
-#bar.critical #charge { background:#f17c89; }
-#bar.critical #power, #bar.critical #power-symbol { color:#f17c89; }
-#bar.charging #charge { background:#93e9be; }
-#bar.plugged #power-symbol { color:#93e9be; }
-#clock { line-height:36dp; padding:0 8dp; color:#eef3fb; font-size:14dp; font-weight:bold; }
-#date { color:#8292ad; font-size:11dp; white-space:nowrap; }
-#bar.compact { gap:10dp; }
-.compact #focus, .compact #apps, .compact #date { display:none; }
-#bar.narrow { gap:6dp; padding:8dp; }
-.narrow #power-note, .narrow #power-text, .narrow #brand, .narrow .separator, .narrow #group { display:none; }
-#bar.tiny #home { padding:0 2dp; }
-#bar.tiny #context { display:none; }
-#bar.tiny #right { gap:0; }
-#bar.tiny .workspace, #bar.tiny #selection { width:26dp; }
-#bar.tiny #clock { font-size:12dp; padding:0 4dp; }
-#bar.position-0 #selection { transform:translateX(0dp); }
-#bar.tiny.position-0 #selection { transform:translateX(0dp); }
-#bar.position-1 #selection { transform:translateX(32dp); }
-#bar.tiny.position-1 #selection { transform:translateX(26dp); }
-#bar.position-2 #selection { transform:translateX(64dp); }
-#bar.tiny.position-2 #selection { transform:translateX(52dp); }
-#bar.position-3 #selection { transform:translateX(96dp); }
-#bar.tiny.position-3 #selection { transform:translateX(78dp); }
-#bar.position-4 #selection { transform:translateX(128dp); }
-#bar.tiny.position-4 #selection { transform:translateX(104dp); }
-#bar.position-5 #selection { transform:translateX(160dp); }
-#bar.tiny.position-5 #selection { transform:translateX(130dp); }
-#bar.position-6 #selection { transform:translateX(192dp); }
-#bar.tiny.position-6 #selection { transform:translateX(156dp); }
-#bar.position-7 #selection { transform:translateX(224dp); }
-#bar.tiny.position-7 #selection { transform:translateX(182dp); }
-#bar.position-8 #selection { transform:translateX(256dp); }
-#bar.tiny.position-8 #selection { transform:translateX(208dp); }
-@keyframes arrive { from { opacity:0; transform:translateY(12dp); } to { opacity:1; transform:translateY(0dp); } }
+#title { line-height:32dp; color:#626a73; overflow:hidden; white-space:nowrap; }
+#right { display:flex; align-items:center; gap:6dp; margin-left:auto; flex-shrink:0; }
+#audio, #clipboard { padding:0 7dp; }
+#media { display:none; max-width:180dp; overflow:hidden; white-space:nowrap; padding:0 8dp; color:#35664f; }
+#power { padding:0 6dp; display:flex; align-items:center; gap:8dp; white-space:nowrap; }
+#battery { position:relative; width:22dp; height:12dp; padding:2dp; border:1dp #626a73; }
+#charge { height:100%; width:75%; background:#626a73; }
+#battery-tip { position:absolute; right:-4dp; top:3dp; width:2dp; height:4dp; background:#626a73; }
+#power-copy { line-height:32dp; }
+#power-symbol { color:#35664f; font-size:14dp; line-height:32dp; }
+#bar.low #charge { background:#9a651b; }
+#bar.low #power { color:#9a651b; }
+#bar.critical #charge { background:#ad343f; }
+#bar.critical #power { color:#ad343f; }
+#clock { line-height:32dp; color:#24282d; white-space:nowrap; }
+#date { color:#626a73; white-space:nowrap; }
+#bar.has-media #media { display:block; }
+#bar.compact { gap:8dp; }
+.compact #focus, .compact #date, #bar.compact #media { display:none; }
+#bar.narrow { gap:8dp; padding-left:8dp; padding-right:8dp; }
+.narrow #power-text, .narrow .separator { display:none; }
+.narrow #group { max-width:220dp; padding:0 7dp; }
+#bar.tiny { gap:4dp; padding-left:4dp; padding-right:4dp; }
+#bar.tiny #group { max-width:90dp; font-size:11dp; }
+#bar.tiny #right { gap:2dp; }
+#bar.tiny #home { padding:0 6dp; }
+#assistant { display:none; height:28dp; line-height:28dp; padding:0 8dp; font-size:11dp; background:#eaf0ff; color:#244ebc; }
+#bar.tiny #apps, #bar.tiny #clock, #bar.tiny #clipboard { display:none; }
+#bar.tiny #audio { max-width:38dp; overflow:hidden; white-space:nowrap; font-size:11dp; }
 </style></head><body>
 <div id="bar">
- <button id="home"><div id="mark">a</div><div id="brand">ATAXIA</div></button>
+ <button id="home"><div id="mark">a</div><div id="brand">Apps</div></button>
  <div class="separator"/>
- <div id="context"><button id="previous" class="arrow">‹</button><button id="group">Overview</button><button id="next" class="arrow">›</button></div>
+ <div id="context"><button id="previous" class="arrow">‹</button><button id="group">Overview / Workspaces ▾</button><button id="next" class="arrow">›</button></div>
  <div id="workspaces"><div id="selection"/>
  <button id="ws1" class="workspace selected">1</button><button id="ws2" class="workspace">2</button><button id="ws3" class="workspace">3</button>
  <button id="ws4" class="workspace">4</button><button id="ws5" class="workspace">5</button><button id="ws6" class="workspace">6</button>
  <button id="ws7" class="workspace">7</button><button id="ws8" class="workspace">8</button><button id="ws9" class="workspace">9</button></div>
- <div id="focus"><div id="focus-label">IN FOCUS</div><div id="title">Your space, at a glance.</div></div>
- <div id="right"><div id="apps">0 apps</div><button id="power"><div id="battery"><div id="charge"/><div id="battery-tip"/></div><div id="power-symbol">↯</div><div id="power-copy"><div id="power-text">AC</div><div id="power-note">Plugged in</div></div></button>
+ <div id="focus"><div id="focus-label">IN FOCUS</div><div id="title">Desktop</div></div>
+ <div id="right"><button id="assistant">Assistant</button><div id="apps">0 apps</div>
+ <button id="media">Media</button><button id="audio">♪</button><button id="clipboard">▤</button>
+ <button id="power"><div id="battery"><div id="charge"/><div id="battery-tip"/></div><div id="power-symbol">↯</div><div id="power-copy"><div id="power-text">AC</div><div id="power-note">Plugged in</div></div></button>
  <div class="separator"/><div id="date">THU, SEP 10</div><div id="clock">12:00</div></div>
 </div></body></rml>

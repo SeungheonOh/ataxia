@@ -91,6 +91,10 @@
 (defgeneric world-seat-cursor-request (world seat request)
   (:documentation "Report a validated client cursor-surface request using stable Kernel objects."))
 
+(defgeneric world-seat-selection-changed (world seat)
+  (:documentation "The clipboard selection changed on SEAT; selection data stays in Runtime.")
+  (:method ((world world) seat) (declare (ignore world seat))))
+
 (defgeneric world-client-request (world object request)
   (:documentation "Let WORLD decide a typed client policy request."))
 

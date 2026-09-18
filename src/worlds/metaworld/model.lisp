@@ -125,7 +125,7 @@
 (defun %meta-mapped-p (object)
   (etypecase object
     (canvas-window (%canvas-window-mapped-p object))
-    (agent-widget (member object (world-overlays (%agent-widget-world object))))))
+    (agent-widget (member object (world-overlays (agent-widget-world object))))))
 
 (defvar *meta-workspace-counts* (make-hash-table :test #'eq :weakness :key))
 (defvar *meta-workspace-focus* (make-hash-table :test #'eq :weakness :key))
@@ -158,6 +158,8 @@
    (lambda (member)
      (and (or (null workspace) (= workspace (subworld-member-workspace member)))
           (%meta-mapped-p (subworld-member-object member))
+          (not (and (typep (subworld-member-object member) 'canvas-window)
+                    (%canvas-window-minimized-p (subworld-member-object member))))
           (or include-floating (not (subworld-member-floating-p member)))))
    (subworld-members group)))
 

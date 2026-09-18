@@ -183,6 +183,10 @@
    #:%seat-event-destroy
    #:%seat-event-request-set-cursor
    #:%seat-event-request-start-drag
+   #:%seat-event-request-set-selection
+   #:%seat-event-set-selection #:%seat-selection-mime-count #:%seat-selection-mime
+   #:%seat-selection-receive #:%seat-clipboard-owned #:%seat-set-clipboard-text
+   #:%seat-apply-selection-request
    #:%drag-event-destroy
    #:%seat-pointer-drag-active
    #:%seat-pointer-button-press-count
@@ -197,6 +201,8 @@
    #:%seat-drag-request-serial
    #:%wlr-data-device-manager-create
    #:%wlr-seat-set-keyboard
+   #:%wlr-seat-pointer-has-grab
+   #:%wlr-seat-pointer-surface-has-focus
    #:%wlr-seat-pointer-notify-enter
    #:%wlr-seat-pointer-notify-clear-focus
    #:%wlr-seat-pointer-notify-motion
@@ -222,6 +228,8 @@
    #:%surface-current-buffer-width
    #:%surface-current-buffer-height
    #:%surface-effective-damage-rectangles
+   #:%surface-opaque-rectangles
+   #:%surface-has-frame-callbacks
    #:%surface-current-transform
    #:%surface-buffer-source-box
    #:%xdg-decoration-manager-event-new-toplevel
@@ -446,6 +454,7 @@
    #:create-xkb-context
    #:create-xkb-keymap
    #:set-keyboard-keymap
+   #:adopt-input-device
    #:set-keyboard-keymap-from-names
    #:set-keyboard-repeat-info
    #:keyboard-keysyms
@@ -526,6 +535,8 @@
    #:seat-drag-request-drag
    #:seat-drag-request-origin
    #:seat-drag-request-serial
+   #:seat-selection-request
+   #:seat-selection-request-seat
    #:wlr-xdg-shell
    #:wlr-xdg-surface
    #:wlr-xdg-toplevel
@@ -629,6 +640,9 @@
    #:seat-destroying
    #:seat-request-set-cursor
    #:seat-request-start-drag
+   #:seat-request-set-selection
+   #:seat-selection-changed #:seat-selection-mime-types #:seat-selection-receive
+   #:seat-clipboard-owned-p #:seat-set-clipboard-text
    #:surface-committed
    #:surface-mapped
    #:surface-unmapped
@@ -679,6 +693,8 @@
    #:notify-surface-preferred-scale
    #:mark-surface-textured-on-output
    #:surface-content-layout
+   #:surface-opaque-region
+   #:surface-has-frame-callbacks-p
    #:create-desktop-shell-protocols
    #:runtime-xdg-decoration-manager
    #:runtime-xdg-decorations
@@ -699,6 +715,8 @@
    #:set-seat-name
    #:set-seat-keyboard
    #:clear-seat-keyboard
+   #:seat-pointer-has-grab-p
+   #:seat-pointer-surface-has-focus-p
    #:seat-pointer-notify-enter
    #:seat-pointer-notify-clear-focus
    #:seat-pointer-notify-motion
@@ -710,6 +728,7 @@
    #:seat-pointer-drag-active-p
    #:seat-pointer-button-press-count
    #:seat-start-pointer-drag
+   #:accept-seat-selection-request
    #:destroy-drag
    #:seat-keyboard-notify-key
    #:seat-keyboard-notify-modifiers

@@ -41,7 +41,7 @@
    #:launch-world-application
    #:world-shell-state
    #:world-shell-action
-   #:navigate-world-desktop
+   #:navigate-world-viewport
    #:world-output-work-area #:world-output-work-area-changed #:service-output-insets
    #:service-selection-changed #:request-clipboard-text #:set-clipboard-text
    #:world-desktop-state #:world-layout-schema #:validate-world-layout

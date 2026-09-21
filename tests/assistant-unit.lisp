@@ -51,7 +51,7 @@
   (assistant-test-rejects (lambda () (ataxia.assistant::%assistant-unbase64 bad))))
 (let* ((tools (ataxia.assistant::%assistant-tool-specs (make-metaworld :state-file nil)))
        (decoded (ataxia.computer-use.wire:decode (ataxia.computer-use.wire:encode tools) :max-depth 32)))
-  (assert (= 9 (length decoded)))
+  (assert (= 10 (length decoded)))
   (loop for tool across decoded do (assert (gethash "inputSchema" tool)) (assert (equal "function" (gethash "type" tool)))))
 
 (let* ((world (make-metaworld :state-file nil))

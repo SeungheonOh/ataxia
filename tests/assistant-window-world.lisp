@@ -37,6 +37,8 @@
                                (preview (gethash (getf first :preview) (ataxia.assistant::assistant-controller-previews controller)))
                                (other (gethash (getf second :preview) (ataxia.assistant::assistant-controller-previews controller))))
                           ;; Project scope cannot control a client it does not own.
+                          (rejects (lambda () (ataxia.assistant::%assistant-run-tool controller "ataxia_viewport"
+                                                (ataxia.assistant::%assistant-object "output" 1 "action" "pan" "dx" 1 "dy" 0 "revision" 1))))
                           (owner (lambda () (remhash (getf second :preview) (ataxia.assistant::assistant-controller-previews controller))))
                           (rejects (lambda () (action other-id "close")))
                           (owner (lambda () (setf (gethash (getf second :preview) (ataxia.assistant::assistant-controller-previews controller)) other)))
@@ -57,6 +59,18 @@
                                    (setf (ataxia.assistant::assistant-controller-scope controller) :desktop)
                                    (ataxia.assistant::%assistant-grant controller)
                                    (%focus-target world (first (%seat-states world)) (window other-id))))
+                          ;; The viewport tool uses assistant revisions and the same native grant.
+                          (let* ((arguments
+                                   (owner (lambda ()
+                                            (ataxia.assistant::%assistant-object
+                                             "output" (ataxia.kernel:object-id (first (ataxia.world:world-outputs world)))
+                                             "action" "set" "x" -2000 "y" 500 "zoom" .75d0 "rotation" .2d0
+                                             "revision" (ataxia.assistant::%assistant-layout-revision controller)))))
+                                 (result (ataxia.assistant::%assistant-run-tool controller "ataxia_viewport" arguments)))
+                            (assert (equalp #(-2000d0 500d0 .75d0 .2d0) (getf (aref (getf result :outputs) 0) :camera)))
+                            (rejects (lambda () (ataxia.assistant::%assistant-run-tool controller "ataxia_viewport" arguments)))
+                            (owner (lambda ()
+                                     (assert (eq (window other-id) (%canvas-seat-focused (first (%seat-states world))))))))
                           ;; Minimized windows stay out of both tilers after another layout pass.
                           (dolist (kind '(:niri :hyprland))
                             (owner (lambda ()
@@ -114,7 +128,7 @@
                           (assert (uiop:process-alive-p (ataxia.assistant::assistant-preview-process other)))
                           (rejects (lambda () (action id "close")))
                           (assert (uiop:process-alive-p (ataxia.assistant::assistant-preview-process other)))
-                          (format t "PASS: native window close, minimize/restore, both tilers, canvas maximize/fullscreen, focus preservation, scopes and stale plans/IDs.~%")
+                          (format t "PASS: native window controls, viewport tool and revisions, both tilers, focus preservation, scopes and stale plans/IDs.~%")
                           (setf done t))
                       (error (cause) (setf failure cause done t))))
                   :name "Assistant window controls test"))

@@ -1,4 +1,4 @@
-;;;; An unrelated World supplies its own layout language and workspace policy.
+;;;; An unrelated World supplies its own layout language and viewport implementation.
 (load (merge-pathnames "system-support.lisp" *load-truename*))
 (asdf:load-system "ataxia-computer-use")
 
@@ -11,13 +11,13 @@
   ((kernel :accessor ataxia.kernel:world-kernel)
    (outputs :initarg :outputs :reader world-outputs)
    (position :initform 0 :accessor desktop-position)
-   (workspace :initform 1 :accessor desktop-workspace)))
+   (camera :initform 0 :accessor desktop-camera)))
 (defmethod world-supports-p ((world desktop-world) capability)
-  (member capability '(:desktop :layout :shell-navigation)))
+  (member capability '(:desktop :layout :viewport-navigation)))
 (defmethod world-active-operation-p ((world desktop-world)) nil)
 (defmethod world-desktop-state ((world desktop-world))
   (list :windows (vector (list :id 42 :title "Fixture" :position (desktop-position world)))
-        :outputs #() :workspace (desktop-workspace world)))
+        :outputs #() :camera (desktop-camera world)))
 (defmethod world-layout-schema ((world desktop-world))
   (values (ataxia.computer-use.wire:decode
            "{\"type\":\"object\",\"properties\":{\"op\":{\"enum\":[\"position\"]},\"value\":{\"type\":\"integer\"}}}")
@@ -34,13 +34,11 @@
   (declare (ignore ids))
   (loop for operation across operations do
     (setf (desktop-position world) (gethash "value" operation))))
-(defmethod navigate-world-desktop ((world desktop-world) output action &key group workspace)
+(defmethod navigate-world-viewport ((world desktop-world) output action &key x y dx dy zoom rotation width height window padding)
+  (declare (ignore y dx dy zoom rotation width height window padding))
   (assert (member output (world-outputs world)))
-  (assert (eq action :workspace))
-  (assert (null group))
-  ;; This World has more workspaces than Metaworld, and no subworld groups.
-  (assert (typep workspace '(integer 1 100)))
-  (setf (desktop-workspace world) workspace))
+  (assert (eq action :set))
+  (setf (desktop-camera world) x))
 
 (let* ((output (make-instance 'ataxia.kernel:kernel-output :id 1))
        (world (make-instance 'desktop-world :outputs (list output)))
@@ -75,9 +73,9 @@
              (assert (= 75 (desktop-position world)))
              (cu::%computer-desktop-action first "layout-undo" (list :undo undo))
              (assert (zerop (desktop-position world)))))
-         (cu::%computer-desktop-action first "navigate"
-           (list :revision (revision first) :action "workspace" :group nil :workspace 42))
-         (assert (= 42 (desktop-workspace world)))
+         (cu::%computer-desktop-action first "viewport"
+           (list :revision (revision first) :action "set" :output 1 :x -4200))
+         (assert (= -4200 (desktop-camera world)))
          (assert (not (eq (cu::computer-session-desktop-state first)
                          (cu::computer-session-desktop-state second))))
          ;; No native seat was allocated; exercise session-owned state cleanup.
@@ -86,4 +84,4 @@
          (assert (null (cu::computer-session-desktop-state first)))
          (assert (cu::computer-session-desktop-state second)))
     (detach-world-service world :computer-use)))
-(format t "PASS: host-defined layout operations and workspace 42; preview/apply/Undo, isolated session state and cleanup.~%")
+(format t "PASS: host-defined layout operations and explicit viewport navigation; preview/apply/Undo, isolated session state and cleanup.~%")

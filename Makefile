@@ -175,6 +175,7 @@ test-qol: test-xwayland test-screencast test-drag
 test-computer-use: computer-use $(BUILD_DIR)/computer-use-client
 	sbcl --noinform --disable-debugger --script tests/computer-use-boundaries.lisp
 	sbcl --noinform --disable-debugger --script tests/computer-use-desktop.lisp
+	WLR_RENDERER=gles2 LD_LIBRARY_PATH='$(abspath $(BUILD_DIR)):$(PREFIX)/lib:$(LD_LIBRARY_PATH)' sbcl --noinform --disable-debugger --eval '(sb-int:set-floating-point-modes :traps nil)' --script tests/world-viewport-navigation.lisp
 	sbcl --noinform --disable-debugger --script tests/computer-use-json.lisp
 	sbcl --noinform --disable-debugger --script tests/computer-use-png.lisp
 	python3 tests/computer-use-gles.py

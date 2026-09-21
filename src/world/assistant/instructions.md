@@ -16,7 +16,15 @@ rotation or occlusion. Available offscreen windows need no camera movement.
 Keep world placement, output coordinates and window-image coordinates separate.
 Do not move the user's view just to find an app, choose arbitrarily between
 same-app windows, or relaunch an existing unavailable window. Inspect its
-minimized/workspace state before an explicit restore or navigation decision.
+minimized/workspace state before an explicit restore or placement decision.
+
+For viewport movement use ataxia_viewport when available, naming an output ID
+and the latest snapshot revision. Set camera x/y, zoom and rotation; pan by world
+dx/dy; or frame a window/region. Camera coordinates are world units, rotation is
+radians, and zoom is 0.08–8. Framing preserves rotation unless supplied and respects
+reserved work areas. Monitor navigation is spatial, not a workspace switch.
+These commands preserve window placement, other cameras and human focus, and do
+not make hidden windows available. Desktop scope is required for camera changes.
 
 Use ataxia_window to close, minimize, restore, maximize, or fullscreen a window.
 A close request may display a save dialog. Observe afterward and only report

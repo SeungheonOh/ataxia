@@ -4,7 +4,7 @@
 (in-package #:ataxia.world)
 
 (defgeneric world-supports-p (world capability)
-  (:documentation "Advertised service capabilities: :UI, :DESKTOP, :WINDOW-CAPTURE, :LAYOUT, :LAUNCHER, :SHELL-NAVIGATION. Unsupported optional tools must not be advertised.")
+  (:documentation "Advertised service capabilities: :UI, :DESKTOP, :WINDOW-CAPTURE, :LAYOUT, :LAUNCHER, :SHELL-NAVIGATION, :VIEWPORT-NAVIGATION. Unsupported optional tools must not be advertised.")
   (:method (world capability) (declare (ignore world capability)) nil))
 
 (defun require-world-capabilities (world &rest capabilities)
@@ -90,11 +90,11 @@
 (defgeneric world-shell-action (world output seat action &optional destination)
   (:documentation "Handle :OVERVIEW, :PREVIOUS, :NEXT, :WORKSPACE, :SELECT-WORKSPACE or :REMOVE-WORKSPACE (group-id workspace-number), and :REMOVE-SUBWORLD (group-id). Removal retains applications; the World chooses their destination."))
 
-(defgeneric navigate-world-desktop (world output action &key group workspace)
-  (:documentation "Validate and perform a data-only :WORKSPACE or :OVERVIEW request on OUTPUT. The World owns destination validation and human-seat selection; reject before changing any state.")
-  (:method (world output action &key group workspace)
-    (declare (ignore world output action group workspace))
-    (error "This World does not implement desktop navigation.")))
+(defgeneric navigate-world-viewport (world output action &key x y dx dy zoom rotation width height window padding)
+  (:documentation "Validate then change only OUTPUT's camera: :SET, :PAN, :FRAME-WINDOW or :FRAME-REGION. X/Y are world camera origins; DX/DY are world deltas; ROTATION is radians; PADDING is output logical pixels. WINDOW is a stable application ID. Framing never changes window placement, visibility policy or human focus. Reject before mutation.")
+  (:method (world output action &key x y dx dy zoom rotation width height window padding)
+    (declare (ignore world output action x y dx dy zoom rotation width height window padding))
+    (error "This World does not implement viewport navigation.")))
 
 (defgeneric request-clipboard-text (world seat callback)
   (:documentation "Return true if an asynchronous seat-local clipboard read was accepted. Invoke CALLBACK with copied text or NIL on the owner thread.")

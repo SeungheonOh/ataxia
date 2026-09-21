@@ -3,9 +3,9 @@ import { options, requireThat, observationOptions } from './common.mjs';
 // All desktop changes use the same native token, serial queue, and revocation gate.
 export function desktopMethods(native, emitter) {
   let last, lastToken;
-  const remember = reply => {
+  const remember = (reply, invalidate = true) => {
     if (reply.desktop) { last = structuredClone(reply.desktop); lastToken = native.transport.token; }
-    for (const target of native.targets.values()) { target.ax.invalidate(); target.imageStale = Boolean(target.image) || target.imageStale; target.image = null; }
+    if (invalidate) for (const target of native.targets.values()) { target.ax.invalidate(); target.imageStale = Boolean(target.image) || target.imageStale; target.image = null; }
     return reply;
   };
   const snapshot = async () => {
@@ -45,6 +45,13 @@ export function desktopMethods(native, emitter) {
     observationOptions(opts);
     return native.run(async () => { const state = await snapshot(); if (opts.emit !== false) emitter.write(state); return state; });
   };
+  const viewport = (output, action, fields, opts) => {
+    requireThat(Number.isSafeInteger(output) && output > 0, 'invalid-output', 'Choose an output ID from getWorld().');
+    for (const [key, value] of Object.entries(fields)) requireThat(Number.isFinite(value), 'invalid-viewport', `${key} must be a finite number.`);
+    return native.run(async () => remember(await native.transport.send('viewport', {
+      action, output, ...fields, revision: await basis(opts),
+    }), false));
+  };
   return {
     getWorld,
     getDesktop: getWorld,
@@ -82,13 +89,27 @@ export function desktopMethods(native, emitter) {
       requireThat(['close', 'minimize', 'restore', 'maximize', 'fullscreen'].includes(action), 'invalid-action', 'Use close, minimize, restore, maximize or fullscreen.');
       return native.run(async () => remember(await native.transport.send('window', { window: id, action, revision: await basis(opts) })));
     },
-    async switchWorkspace(group, workspace, opts = {}) {
-      requireThat((group === null || Number.isSafeInteger(group)) && Number.isSafeInteger(workspace) && workspace >= 1,
-        'invalid-workspace', 'Use a group ID (or null) and a positive workspace number supported by this World.');
-      return native.run(async () => remember(await native.transport.send('navigate', { action: 'workspace', group, workspace, revision: await basis(opts) })));
+    async setViewport(output, camera, opts = {}) {
+      options(camera, ['x', 'y', 'zoom', 'rotation']);
+      requireThat(Object.keys(camera).length > 0, 'invalid-viewport', 'Supply x, y, zoom or rotation.');
+      return viewport(output, 'set', camera, opts);
     },
-    async overview(opts = {}) {
-      return native.run(async () => remember(await native.transport.send('navigate', { action: 'overview', revision: await basis(opts) })));
+    async panViewport(output, delta, opts = {}) {
+      options(delta, ['dx', 'dy']);
+      requireThat(Number.isFinite(delta.dx) && Number.isFinite(delta.dy), 'invalid-viewport', 'Supply dx and dy in world units.');
+      return viewport(output, 'pan', delta, opts);
+    },
+    async frameWindow(output, window, opts = {}) {
+      options(opts, ['revision', 'padding', 'rotation']);
+      requireThat(Number.isSafeInteger(window) && window > 0, 'invalid-window', 'Choose a window ID from getWorld().');
+      const { revision, ...framing } = opts;
+      return viewport(output, 'frame-window', { window, ...framing }, { revision });
+    },
+    async frameRegion(output, region, opts = {}) {
+      options(region, ['x', 'y', 'width', 'height']); options(opts, ['revision', 'padding', 'rotation']);
+      requireThat(['x', 'y', 'width', 'height'].every(key => Number.isFinite(region[key])), 'invalid-viewport', 'Supply a world rectangle: x, y, width, height.');
+      const { revision, ...framing } = opts;
+      return viewport(output, 'frame-region', { ...region, ...framing }, { revision });
     },
   };
 }

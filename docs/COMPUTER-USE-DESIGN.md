@@ -60,14 +60,13 @@ scene structures. World quiescence closes sessions and detaches the service.
 Layout operations and their JSON schema come from the World. The portable
 service checks transport size and scalar data; the World validates the meaning
 of the entire plan before mutation. Metaworld adds workspace/column/floating
-metadata to its own snapshots. `navigate-world-desktop` owns destination
-validation and human-seat selection. The portable service has no nine-workspace
+metadata to its own snapshots. `navigate-world-viewport` owns camera validation, region fitting and output-specific view policy; it requires no human seat on the target monitor. The portable service has no nine-workspace
 limit or group-membership assumptions.
 
 The JavaScript `arrange` API carries any advertised layout operation. Its
 `moveWindow` and `setFloating` helpers construct `place-window` operations and
 require that schema. They are conveniences for compatible Worlds, not a
-universal window-manager implementation. Worlds with ungrouped workspaces can accept `switchWorkspace(null, number)`.
+universal window-manager implementation. Camera navigation is a separate `:viewport-navigation` capability, implemented by plain Infinite World as well as Metaworld.
 The client cannot enable missing host capabilities.
 
 ## Generic lower-layer mechanisms retained
@@ -102,8 +101,7 @@ The portable CUA transaction layer passes those fields through without requiring
 native window handles from hosts that only provide layout snapshots. Window-mode
 discovery spans all mapped applications; World visibility policy still controls
 input eligibility. An offscreen window does not need to be selected while visible
-first. The selected output anchors viewport capture and navigation, not the scope
-of window-local content access. No change to these rules adds Kernel/Runtime CUA APIs.
+first. The session output anchors viewport capture, not the scope of window-local content access. Each navigation command names its target output explicitly. No change to these rules adds Kernel/Runtime CUA APIs.
 
 Desktop actions use the same sequence, pause, expiry, and busy checks as native
 input. They call explicit World methods; synthetic key input remains application

@@ -91,9 +91,10 @@ try {
   await assert.rejects(cua.ataxia.getDesktop({ emit: false }), error => error.code === 'session-paused');
   await assert.rejects(cua.ataxia.getWorld({ emit: false }), error => error.code === 'session-paused');
   await assert.rejects(cua.ataxia.captureViewport({ emit: false }), error => error.code === 'session-paused');
+  await assert.rejects(cua.ataxia.panViewport(initialWorld.output, { dx: 1, dy: 1 }), error => error.code === 'session-paused');
   await assert.rejects(cua.ataxia.moveWindow(windows[0].id, { workspace: 3 }), error => error.code === 'session-paused');
   assert.equal((await request(nativeConnection.socket, { op: 'desktop', token: nativeConnection.token })).error, 'not-active');
-  assert.equal((await request(nativeConnection.socket, { op: 'navigate', action: 'overview', revision: 1,
+  assert.equal((await request(nativeConnection.socket, { op: 'viewport', action: 'pan', output: initialWorld.output, dx: 1, dy: 1, revision: 1,
     token: nativeConnection.token, sequence: (await cua.ataxia.status()).sequence + 1 })).error, 'not-active');
   assert.equal((await cua.ataxia.connect()).state, 'paused');
   await mark('resume'); await until(async () => (await cua.ataxia.status()).state === 'active');
@@ -102,13 +103,14 @@ try {
   await assert.rejects(cua.listApps({ emit: false }), error => error.code === 'session-paused');
   await mark('resume'); await until(async () => (await cua.ataxia.status()).state === 'active');
   await cua.ataxia.getDesktop({ emit: false });
+  // Read application content while its widgets are alive; GTK disposal clears text.
+  const actual = JSON.parse(await fs.readFile(path.join(directory, 'ui.json')));
+  assert.match(actual.name, /Pasted/); assert.equal(actual.amount, 42); assert.equal(actual.expanded, true); assert.match(actual.notes, /second world end/);
   await cua.ataxia.windowAction(windows[0].id, 'close');
   await until(async () => !(await cua.ataxia.getDesktop({ emit: false })).windows.some(w => w.id === windows[0].id));
   await mark('stop'); await until(async () => (await cua.ataxia.status()).state === 'closed');
   await assert.rejects(cua.listApps({ emit: false }), error => error.code === 'session-closed');
   await assert.rejects(cua.ataxia.getDesktop({ emit: false }), error => error.code === 'session-closed');
   assert.equal((await cua.ataxia.connect()).state, 'closed');
-  const actual = JSON.parse(await fs.readFile(path.join(directory, 'ui.json')));
-  assert.match(actual.name, /Pasted/); assert.equal(actual.amount, 42); assert.equal(actual.expanded, true); assert.match(actual.notes, /second world end/);
   console.log('PASS: real GTK accessibility, stable indices, diffs, Unicode selection/input, values, secondary actions, seat-local paste, captures, automatic activation, pause/resume, pause all and disconnect.', cua.ataxia.metrics());
 } finally { await cua[Symbol.asyncDispose](); }

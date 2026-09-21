@@ -98,6 +98,13 @@ controls that window directly; it never needs to move the human camera. `getApp`
 requires explicit window selection when multiple windows match, and does not
 launch another process just because the existing window is unavailable.
 
+`setViewport(outputId, {x, y, zoom, rotation})`, `panViewport(outputId, {dx, dy})`,
+`frameWindow(outputId, windowId)` and `frameRegion(outputId, rectangle)` provide
+spatial navigation on an explicit monitor. They preserve other cameras, window
+placement, human focus, and window-local observations. They work on Infinite
+World without Metaworld groups. The old workspace/overview CUA navigation methods
+are removed. See the [camera reference](../skills/ataxia-computer-use/references/desktop.md#explicit-viewport-navigation).
+
 `captureViewport()` captures only the session output's current view and restores
 the prior input view; `captureDesktop()` is its alias. Captures identify their
 output/window, coordinate space, dimensions and popup origin. Native app methods

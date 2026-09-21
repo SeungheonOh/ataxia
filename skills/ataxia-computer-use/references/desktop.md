@@ -1,6 +1,6 @@
 # Ataxia desktop operations
 
-Use this reference for window placement, floating/tiling, groups, workspaces, shell navigation, and native window controls. CUA pointer/key actions control application content. The `cua.ataxia` desktop methods below operate through World APIs. Synthetic keys bypass World shortcut dispatch; desktop captures do not grant control of shell chrome. Changing `settle` changes observation timing only.
+Use this reference for window placement, floating/tiling, optional layout containers, viewport navigation, and native window controls. CUA pointer/key actions control application content. The `cua.ataxia` desktop methods below operate through World APIs. Synthetic keys bypass World shortcut dispatch; desktop captures do not grant control of shell chrome. Changing `settle` changes observation timing only.
 
 ## Coordinates and viewports
 
@@ -20,6 +20,36 @@ session's output and restores its prior input view; its result names the output
 and coordinate space. It never captures the entire unbounded canvas. For app
 content, use that window's screenshot, including its popups, instead.
 
+## Explicit viewport navigation
+
+Each call requires an output ID from `getWorld().outputs`, even if only one
+monitor is connected. Commands change only that camera and use the last observed
+World revision. They do not move windows, change human focus, or switch workspaces.
+
+```javascript
+await cua.ataxia.setViewport(outputId, { x: -1200, y: 500, zoom: 0.75, rotation: 0 });
+await cua.ataxia.panViewport(outputId, { dx: 400, dy: -100 });
+await cua.ataxia.frameWindow(outputId, windowId, { padding: 40 });
+await cua.ataxia.frameRegion(outputId, { x: -500, y: 200, width: 1200, height: 800 });
+await cua.ataxia.getWorld();
+```
+
+`setViewport` accepts any nonempty subset of x/y/zoom/rotation. X/y match the
+snapshot's camera origin in world units, before rotation about the output center.
+Zoom is 0.08–8; changing zoom alone preserves the center's world position.
+Rotation is radians in [-2π, 2π]. Pan dx/dy are world-axis deltas, independent of
+zoom and rotation. Framing preserves rotation unless an option overrides it,
+and fits the rectangle inside the output's reserved work area with 32 logical
+pixels of padding by default. Oversized regions and impossible padding are
+rejected before moving the camera. Coordinates are bounded to ±1e9 world units.
+
+`frameWindow` requires an available window. Hidden/minimized windows remain in
+discovery; decide separately whether to restore or change their placement.
+Free camera navigation exits that output's fitted group view, without changing
+any group's selected workspace. Camera moves preserve window-local screenshot
+coordinates and accessibility state. `switchWorkspace` and the old CUA `overview`
+method have been removed; navigate to spatial targets instead.
+
 ## Native JavaScript runtime
 
 Use these methods through `cua_repl`. Desktop operations are subject to the active session, Pause, Disconnect, expiry, request sequencing, and human-drag checks. `getWorld()` reports the whole current World, including hidden/minimized windows and each group's local workspaces. Native `listWindows()` lists mapped windows independently of the current viewport, with `available` and `on-output` flags; unavailable windows are discoverable but cannot receive input. Use `getWorld()` for membership and arrangement. `getDesktop()` is the compatibility alias for this structured observation.
@@ -38,8 +68,9 @@ await cua.ataxia.getWorld();
 | Move or resize a native window | `moveWindow(windowId, {group?, workspace?, floating?, x?, y?, width?, height?})` |
 | Float/tile a group member | `setFloating(windowId, true)` / `setFloating(windowId, false)` |
 | Close/minimize/restore/maximize/fullscreen | `windowAction(windowId, action)` |
-| Show a particular group/workspace on the session's output | `switchWorkspace(groupId, workspaceNumber)` |
-| Show the Metaworld overview on that output | `overview()` |
+| Set camera position, zoom or rotation | `setViewport(outputId, {x?, y?, zoom?, rotation?})` |
+| Pan along world axes | `panViewport(outputId, {dx, dy})` |
+| Fit an available window or world rectangle | `frameWindow(outputId, windowId, {padding?, rotation?})` / `frameRegion(outputId, {x, y, width, height}, {padding?, rotation?})` |
 | Apply several group/window operations as one arrangement | `arrange(operations, {revision?})` |
 | Validate now, apply later | `previewLayout(operations, {revision?})`, then `applyLayout(plan.plan)` |
 | Undo the most recent arrangement | `undoLayout(result.undo)` |
@@ -61,7 +92,7 @@ await cua.ataxia.getWorld();
 
 Plans and Undo belong to one native session, expire after 120 seconds, and cannot be replayed. At most eight unapplied plans are retained. Applying a layout validates the whole plan, captures the prior layout, and rolls back on failure. Undo refuses to overwrite later desktop changes. Explicit window controls clear earlier plans and Undo; closing an application cannot be undone. Grouped maximize/fullscreen follows Metaworld's group expansion policy.
 
-`moveWindow(id, {workspace: 2})` preserves the observed group. `group: null` moves to the shared canvas, which has no numbered workspaces. `setFloating` requires group membership. Moving to a hidden workspace does not switch the user's view; call `switchWorkspace` only when the task requests navigation or input requires that workspace to be visible. Desktop operations do not require an application to bind a new input seat.
+`moveWindow(id, {workspace: 2})` preserves the observed group. `group: null` moves to the shared canvas, which has no numbered workspaces. `setFloating` requires group membership. Moving to a hidden workspace makes the window unavailable for input; framing does not change that visibility policy. Group workspace fields describe optional layout membership, not monitor destinations. Desktop operations do not require an application to bind a new input seat.
 
 Use `await cua.ataxia.capabilities()` to check `native.desktop.layout` and
 `native.desktop.navigation`. `moveWindow` and `setFloating` require an advertised
@@ -72,6 +103,8 @@ Lisp APIs to perform the action.
 ## Desktop tools, when exposed
 
 The built-in Ataxia assistant exposes the following tools. They are not methods on `cua.ataxia` and are not automatically available through the `cua_repl` MCP server. Use them only if they are present in the current tool list.
+
+The `ataxia_viewport` tool exposes the same `set`, `pan`, `frame-window`, and `frame-region` actions with explicit `output` and snapshot `revision`, when supported. It requires Desktop scope.
 
 1. Call `ataxia_desktop_snapshot` for window IDs, group IDs, workspace membership, and the current layout revision. It includes minimized windows.
 2. Pass that revision and an `operations` array to `ataxia_layout_preview`. For Metaworld, use the operations below. Other Worlds may advertise a different schema.

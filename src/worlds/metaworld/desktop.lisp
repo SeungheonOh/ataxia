@@ -59,22 +59,18 @@
 (defmethod ataxia.world:world-active-operation-p ((world metaworld))
   (or (%meta-group-drag world) (call-next-method)))
 
-(defmethod ataxia.world:navigate-world-desktop
-    ((world metaworld) output action &key group workspace)
-  (unless (member output (ataxia.world:world-outputs world))
-    (error "The navigation output is no longer connected."))
-  (ecase action
-    (:workspace
-     (unless (and (integerp group) (find group (metaworld-subworlds world) :key #'subworld-id))
-       (error "Choose an existing Metaworld group."))
-     (unless (typep workspace '(integer 1 9))
-       (error "Metaworld workspaces are numbered 1 through 9.")))
-    (:overview))
-  (let ((seat (ataxia.world:world-seat-on-output world output)))
-    (unless seat (error "There is no human seat on this output for navigation."))
-    (if (eq action :workspace)
-        (ataxia.world:world-shell-action world output seat :select-workspace (list group workspace))
-        (ataxia.world:world-shell-action world output seat :overview))))
+(defmethod %desktop-viewport-camera ((world metaworld) state)
+  (%desktop-camera world state))
+(defmethod %desktop-viewport-geometry ((world metaworld) window)
+  (%desktop-object-geometry world window))
+(defmethod %apply-desktop-viewport ((world metaworld) state camera)
+  ;; Free camera navigation exits this output's fitted group view. It never
+  ;; changes group membership, the selected group workspace, or human focus.
+  (%meta-cancel-motion world state :metaworld-camera)
+  (let ((view (%meta-view-for-state world state)))
+    (setf (%meta-view-active view) nil (%meta-view-parent-camera view) nil))
+  (setf (%meta-save-needed-p world) t)
+  (call-next-method))
 
 (defun %desktop-restore-window (world window)
   (let ((group (object-subworld world window)))

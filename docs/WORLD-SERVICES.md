@@ -90,7 +90,8 @@ stable Kernel application and returns `nil` for non-window targets.
 | Capture | `request-world-capture`, `capture-window-pixels` |
 | Window controls | `control-world-window`, `world-active-operation-p` |
 | Optional launcher | `world-application-catalog`, `launch-world-application` |
-| Optional navigation | `world-shell-state`, `world-shell-action`, `navigate-world-desktop` |
+| Optional shell navigation | `world-shell-state`, `world-shell-action` |
+| Optional camera navigation | `navigate-world-viewport` (`:viewport-navigation`) |
 
 `world-output-work-area` returns output-local logical x, y, width and height.
 Attached services reserve edges through `service-output-insets` (left, top, right,
@@ -98,9 +99,7 @@ bottom); overlapping reservations use the maximum on each edge. Call
 `world-output-work-area-changed` after adding or removing a reservation so the
 World can refit its active layout. Fullscreen remains a separate policy.
 
-`navigate-world-desktop` validates data-only navigation requests before mutation.
-The concrete World chooses valid destinations, workspace limits, and the human
-seat on the selected output. Shared CUA code does not interpret those rules.
+`navigate-world-viewport` validates data-only camera requests before mutation: set, pan, frame a window, or frame a world rectangle on an explicit output. World owns projection, work-area fitting, motion cancellation and view policy. It does not require a human seat on that output or change window placement/focus. Shell workspace navigation remains separate.
 
 `world-shell-state` supplies the existing workspace entries for each group,
 including empty pages, with `:removable` flags on groups and workspaces. The shell
@@ -141,7 +140,7 @@ the service; unsupported Worlds fail before allocating resources. See the
 Advertise implemented capabilities through `world-supports-p`. The shell needs
 `:ui` and `:desktop`; computer use and the assistant also need `:window-capture`.
 Enable fails immediately when required capabilities are absent. `:launcher`,
-`:shell-navigation`, and `:layout` are optional.
+`:shell-navigation`, `:viewport-navigation`, and `:layout` are optional.
 
 `world-desktop-state` has a generic window/output observation. Override it for
 additional state such as groups, workspaces, or cameras. Return copied data with

@@ -39,6 +39,14 @@
        (%assistant-object "window" integer "action" (%assistant-schema "string" "enum" #("close" "minimize" "restore" "maximize" "fullscreen"))) #("window" "action"))
          (%assistant-tool-spec "ataxia_desktop_snapshot" "Read structured state across the infinite World: stable window IDs, availability, placement, groups/workspaces and independent monitor cameras, plus the layout revision. Includes minimized and hidden-workspace windows. World geometry is not screenshot or click coordinates; each monitor is only a viewport."
                           (%assistant-object)))
+        (when (world-supports-p world :viewport-navigation)
+          (list (%assistant-tool-spec "ataxia_viewport"
+                 "Change one explicit monitor camera: set x/y world origin, zoom (0.08–8), rotation in radians; pan by world dx/dy; frame-window by stable window ID; or frame-region by world x/y/width/height. Framing preserves rotation unless supplied and fits the work area with padding (32 logical pixels by default). Does not move windows, switch workspaces, restore hidden windows or change human focus. Requires Desktop scope and the latest snapshot revision."
+                 (%assistant-object "revision" integer "output" integer
+                   "action" (%assistant-schema "string" "enum" #("set" "pan" "frame-window" "frame-region"))
+                   "x" number "y" number "dx" number "dy" number "zoom" number "rotation" number
+                   "width" number "height" number "window" integer "padding" number)
+                 #("revision" "output" "action"))))
         (when operation
           (list
            (%assistant-tool-spec "ataxia_layout_preview"
@@ -121,6 +129,23 @@
                   (and (getf action :mode) (not (equal "window" (getf action :mode))))
                   (member (getf action :op) '("launch" "wait-window") :test #'equal))
           (error "This task is limited to the selected application."))))))
+(defun %assistant-control-viewport (controller arguments)
+  (%assistant-require-task controller)
+  (unless (getf (assistant-controller-grant controller) :layout)
+    (error "Viewport navigation requires Desktop scope."))
+  (%assistant-layout-idle controller)
+  (unless (eql (gethash "revision" arguments) (%assistant-layout-revision controller))
+    (error "The World changed. Read a fresh snapshot before moving its camera."))
+  (let* ((session (assistant-controller-session controller))
+         (request (cu:decode-request arguments)))
+    (unless session (error "This task has no computer-use session."))
+    (setf (getf request :op) "viewport"
+          (getf request :token) (cu:computer-session-token session)
+          (getf request :sequence) (1+ (cu:computer-session-sequence session))
+          (getf request :revision) (getf (cu::%computer-desktop-snapshot session) :revision))
+    (cu:request-on-owner (assistant-controller-world controller) request)
+    (%assistant-layout-snapshot controller)))
+
 (defun %assistant-run-tool (controller name arguments)
   (unless (hash-table-p arguments) (error "Tool arguments must be an object."))
   (%assistant-owner controller (lambda () (%assistant-require-task controller)))
@@ -143,6 +168,8 @@
      (%assistant-owner controller (lambda () (%assistant-layout-snapshot controller))))
     ((equal name "ataxia_window")
      (%assistant-owner controller (lambda () (%assistant-control-window controller arguments))))
+    ((equal name "ataxia_viewport")
+     (%assistant-owner controller (lambda () (%assistant-control-viewport controller arguments))))
     ((equal name "ataxia_layout_preview")
      (%assistant-owner controller (lambda () (%assistant-layout-preview controller arguments))))
     ((equal name "ataxia_layout_apply")
@@ -174,6 +201,7 @@
     (%assistant-state controller :activity
       (or (cdr (assoc name '(("ataxia_observe" . "Looking at the application") ("ataxia_act" . "Using the application")
                             ("ataxia_desktop_snapshot" . "Checking the desktop") ("ataxia_window" . "Updating the application window")
+                            ("ataxia_viewport" . "Moving the monitor viewport")
                             ("ataxia_layout_preview" . "Planning the arrangement")
                             ("ataxia_layout_apply" . "Arranging the desktop") ("ataxia_layout_undo" . "Restoring the arrangement")
                             ("ataxia_ui_preview" . "Opening the app preview") ("ataxia_ui_update" . "Updating the app preview")) :test #'equal)) name))

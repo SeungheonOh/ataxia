@@ -59,6 +59,8 @@ export type LayoutValue = string | number | boolean | null;
 export type LayoutOperation = { op: string; [key: string]: LayoutValue };
 export type MetaworldLayoutOperation = Omit<Placement, 'group'> & { op: 'create-group' | 'configure-group' | 'remove-group' | 'place-window'; group?: number | string | null; window?: number; ref?: string; name?: string; policy?: 'niri' | 'dwindle' | 'master' };
 export type DesktopChangeOptions = { revision?: number };
+export type ViewportCamera = { x?: number; y?: number; zoom?: number; rotation?: number };
+export type FrameOptions = DesktopChangeOptions & { padding?: number; rotation?: number };
 export type LayoutPreview = { plan: string; revision: number; operations: LayoutOperation[] };
 export type DesktopResult = { ok: true; session: NativeSession; desktop: DesktopState; undo?: string };
 export interface AtaxiaExtensions {
@@ -77,8 +79,10 @@ export interface AtaxiaExtensions {
   moveWindow(id: number, placement: Placement, options?: DesktopChangeOptions): Promise<DesktopResult>;
   setFloating(id: number, floating: boolean, options?: DesktopChangeOptions): Promise<DesktopResult>;
   windowAction(id: number, action: 'close' | 'minimize' | 'restore' | 'maximize' | 'fullscreen', options?: DesktopChangeOptions): Promise<DesktopResult>;
-  switchWorkspace(group: number | null, workspace: number, options?: DesktopChangeOptions): Promise<DesktopResult>;
-  overview(options?: DesktopChangeOptions): Promise<DesktopResult>;
+  setViewport(output: number, camera: ViewportCamera, options?: DesktopChangeOptions): Promise<DesktopResult>;
+  panViewport(output: number, delta: { dx: number; dy: number }, options?: DesktopChangeOptions): Promise<DesktopResult>;
+  frameWindow(output: number, window: number, options?: FrameOptions): Promise<DesktopResult>;
+  frameRegion(output: number, region: { x: number; y: number; width: number; height: number }, options?: FrameOptions): Promise<DesktopResult>;
   batch(actions: BatchAction[], options?: { capture?: boolean; settle?: number }): Promise<Record<string, unknown>>;
   /** Capture only the session output's current camera; leaves its view unchanged. */
   captureViewport(options?: ObservationOptions): Promise<Capture>;

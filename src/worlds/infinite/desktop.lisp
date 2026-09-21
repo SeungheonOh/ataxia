@@ -2,7 +2,7 @@
 (in-package #:ataxia.infinite-world)
 
 (defmethod ataxia.world:world-supports-p ((world infinite-world) capability)
-  (not (null (member capability '(:ui :desktop :launcher)))))
+  (not (null (member capability '(:ui :desktop :launcher :viewport-navigation)))))
 
 (defmethod ataxia.world:world-windows ((world infinite-world))
   (%world-stacking world))
@@ -105,7 +105,9 @@
 (defmethod ataxia.world:world-active-operation-p ((world infinite-world))
   (some (lambda (state)
           (and (not (ataxia.world:agent-seat-p (%canvas-seat-seat state)))
-               (%canvas-seat-operation state)))
+               (or (%canvas-seat-operation state)
+                   (gethash (%canvas-seat-seat state) (%world-view-shifts world))
+                   (gethash state *canvas-gestures*))))
         (%seat-states world)))
 
 (defmethod ataxia.world:world-output-work-area-changed ((world infinite-world) output)

@@ -9,14 +9,17 @@ paste, desktop snapshots, layout preview/apply/Undo, window controls, and
 navigation; see the [desktop API](../skills/ataxia-computer-use/references/desktop.md).
 These operations use the same native session and honor pause, disconnect, expiry,
 and sequence checks. Desktop mutations require the observed revision (or a plan/Undo
-token tied to it). A desktop snapshot covers the whole current World; navigation
-affects the session's selected output.
+token tied to it). A desktop snapshot covers the whole current World; camera navigation explicitly names the output to change.
+
+CUA navigation uses `setViewport`, `panViewport`, `frameWindow`, and `frameRegion`,
+with an explicit monitor ID. X/y and pan deltas are world units; rotation is radians.
+Framing respects the output work area and leaves window placement and focus alone.
 
 ## Native protocol
 
 An agent connects to the World and starts active immediately. A selected output
-anchors its activity UI, explicit viewport captures and navigation; it does not
-limit window discovery or window-local control to that monitor.
+anchors its activity UI and viewport captures. Camera commands explicitly select
+their output; window discovery and local control span the World.
 Ataxia shows its name, activity, and current view. Connecting automatically creates
 a separate Wayland seat, keyboard, pointer, colored cursor, and cursor label.
 The human pointer and keyboard retain their own seat and focus.

@@ -8,7 +8,7 @@
 (in-package #:ataxia.test.assistant-infinite)
 (assert (not (find-class (find-symbol "METAWORLD" :ataxia.infinite-world) nil)))
 (setf assistant::*assistant-command*
-      (list "env" "ATAXIA_EXPECTED_TOOLS=6" "sbcl" "--noinform" "--disable-debugger" "--script"
+      (list "env" "ATAXIA_EXPECTED_TOOLS=7" "sbcl" "--noinform" "--disable-debugger" "--script"
             (namestring (asdf:system-relative-pathname "ataxia-assistant" "tests/assistant-mock-codex.lisp"))))
 
 (let* ((world (ataxia.infinite-world:make-infinite-world))

@@ -23,7 +23,7 @@
            (result id (obj "data" (vector (fixture-model "fixture-fast" "low" t)) "nextCursor" nil))
            (result id (obj "data" (vector (fixture-model "fixture-default" "medium" t)) "nextCursor" "page2"))))
       ((equal method "thread/start")
-       (assert (= (parse-integer (or (uiop:getenv "ATAXIA_EXPECTED_TOOLS") "9"))
+       (assert (= (parse-integer (or (uiop:getenv "ATAXIA_EXPECTED_TOOLS") "10"))
                   (length (gethash "dynamicTools" (gethash "params" message)))))
        (result id (obj "thread" (obj "id" "fixture-thread") "model" "fixture-default" "reasoningEffort" "medium")))
       ((equal method "turn/start")

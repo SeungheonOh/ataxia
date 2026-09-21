@@ -50,6 +50,7 @@ static wl_display *display;
 static wl_compositor *compositor;
 static xdg_wm_base *shell;
 static wl_surface *surface;
+static wl_callback *pending_frame;
 static wl_egl_window *egl_window;
 static EGLDisplay egl_display;
 static EGLSurface egl_surface;
@@ -78,6 +79,10 @@ static void configure_top(void *, xdg_toplevel *, int32_t w, int32_t h, wl_array
 }
 static void close_top(void *, xdg_toplevel *) { running = false; }
 static const xdg_toplevel_listener top_listener = {configure_top, close_top, nullptr, nullptr};
+static void frame_done(void *, wl_callback *callback, uint32_t) {
+    wl_callback_destroy(callback); pending_frame = nullptr;
+}
+static const wl_callback_listener frame_listener = {frame_done};
 static void pointer_enter(void *data, wl_pointer *, uint32_t, wl_surface *, wl_fixed_t x, wl_fixed_t y) {
     auto *s = static_cast<Seat *>(data); s->x = wl_fixed_to_double(x); s->y = wl_fixed_to_double(y);
     if (component) ataxia_rmlui_component_pointer_motion(component, s->x, s->y);
@@ -258,18 +263,27 @@ int main(int argc, char **argv) {
         egl_window = wl_egl_window_create(surface, width, height);
         egl_surface = eglCreateWindowSurface(egl_display, config, reinterpret_cast<EGLNativeWindowType>(egl_window), nullptr);
         require(egl_surface != EGL_NO_SURFACE && eglMakeCurrent(egl_display, egl_surface, egl_surface, context), "Cannot create EGL window");
+        // Pace rendering with our own callback, keeping Wayland dispatch live
+        // when a monitor pans away and the compositor withholds frame callbacks.
+        require(eglSwapInterval(egl_display, 0), "Cannot configure preview frame scheduling");
         require(ataxia_rmlui_set_asset_root(root.c_str()), ataxia_rmlui_last_error());
         require(ataxia_rmlui_initialize(), ataxia_rmlui_last_error());
         std::string input;
         while (running) {
             events();
-            if (component && (dirty || ataxia_rmlui_component_next_update(component) == 0)) {
+            if (component && !pending_frame && (dirty || ataxia_rmlui_component_next_update(component) == 0)) {
                 require(ataxia_rmlui_component_render(component), ataxia_rmlui_last_error());
+                pending_frame = wl_surface_frame(surface);
+                wl_callback_add_listener(pending_frame, &frame_listener, nullptr);
                 require(eglSwapBuffers(egl_display, egl_surface), "Cannot present preview"); dirty = false;
             }
-            while (wl_display_prepare_read(display) != 0) require(wl_display_dispatch_pending(display) >= 0, "Wayland disconnected");
+            while (wl_display_prepare_read(display) != 0) {
+                require(wl_display_dispatch_pending(display) >= 0, "Wayland disconnected");
+                if (!running) break;
+            }
+            if (!running) break;
             wl_display_flush(display);
-            double next = component ? ataxia_rmlui_component_next_update(component) : -1;
+            double next = component && !pending_frame ? ataxia_rmlui_component_next_update(component) : -1;
             // Sleep until the actual UI deadline; input wakes poll independently.
             int timeout = next < 0 ? -1 : static_cast<int>(std::clamp(std::ceil(next), 1.0, double(INT_MAX)));
             pollfd fds[] = {{wl_display_get_fd(display), POLLIN, 0}, {STDIN_FILENO, POLLIN, 0}};
@@ -287,6 +301,7 @@ int main(int argc, char **argv) {
                 }
             }
         }
+        if (pending_frame) wl_callback_destroy(pending_frame);
         if (component) { ataxia_rmlui_component_detach_graphics(component); ataxia_rmlui_component_destroy(component); }
         eglMakeCurrent(egl_display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
         eglDestroySurface(egl_display, egl_surface); eglDestroyContext(egl_display, context); eglTerminate(egl_display);

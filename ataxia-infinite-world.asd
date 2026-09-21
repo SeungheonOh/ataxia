@@ -25,6 +25,7 @@
      (:file "services")
      (:file "launcher")
      (:file "desktop")
+     (:file "viewport")
      (:file "main")))))
 
 (asdf:defsystem "ataxia-infinite-world/capture"

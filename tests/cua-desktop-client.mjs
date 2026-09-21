@@ -55,9 +55,35 @@ export async function exerciseDesktop(cua, directory, mark, until, id) {
   await assert.rejects(cua.ataxia.moveWindow(id, { workspace: 5 }), error => /Injected layout failure/.test(error.message));
   assert.equal(win(await observe()).workspace, 2);
 
-  result = await cua.ataxia.switchWorkspace(group, 2);
-  assert.equal(result.desktop.outputs.find(o => o.id === result.desktop.output).group, group);
-  assert.equal(result.desktop.groups.find(g => g.id === group).workspace, 2);
+  // Camera controls explicitly target either monitor, even one without a human seat.
+  await cua.ataxia.windowAction(id, 'minimize');
+  state = await observe();
+  const firstOutput = state.outputs[0], secondOutput = state.outputs[1];
+  const frameBefore = state.outputs;
+  await assert.rejects(cua.ataxia.frameWindow(secondOutput.id, id), error => error.code === 'invalid-navigation');
+  assert.deepEqual((await observe()).outputs, frameBefore, 'Minimized windows cannot be revealed by a camera command');
+  await cua.ataxia.windowAction(id, 'restore');
+  const positions = (await observe()).windows.map(w => [w.id, w.geometry]);
+  result = await cua.ataxia.setViewport(secondOutput.id, { x: -4200, y: 1800, zoom: .5, rotation: .3 });
+  assert.deepEqual(result.desktop.outputs.find(o => o.id === secondOutput.id).camera, [-4200, 1800, .5, .3]);
+  assert.deepEqual(result.desktop.outputs.find(o => o.id === firstOutput.id), firstOutput);
+  assert.deepEqual(result.desktop.windows.map(w => [w.id, w.geometry]), positions);
+  result = await cua.ataxia.panViewport(secondOutput.id, { dx: 75, dy: -90 });
+  assert.deepEqual(result.desktop.outputs.find(o => o.id === secondOutput.id).camera, [-4125, 1710, .5, .3]);
+  const beforeBad = result.desktop.outputs;
+  await assert.rejects(cua.ataxia.setViewport(secondOutput.id, { zoom: 0 }), error => error.code === 'invalid-navigation');
+  await assert.rejects(cua.ataxia.panViewport(999999, { dx: 1, dy: 1 }), error => error.code === 'invalid-output');
+  assert.deepEqual((await observe()).outputs, beforeBad);
+  const staleCamera = (await observe()).revision;
+  await cua.ataxia.frameRegion(secondOutput.id, { x: -700, y: 900, width: 600, height: 400 }, { rotation: Math.PI / 3, padding: 24 });
+  await assert.rejects(cua.ataxia.panViewport(secondOutput.id, { dx: 1, dy: 0 }, { revision: staleCamera }), error => error.code === 'desktop-changed');
+  await observe();
+  // Membership changes remain layout operations, not camera navigation.
+  await cua.ataxia.moveWindow(id, { workspace: 1 });
+  await until(async () => win(await observe()).available);
+  result = await cua.ataxia.frameWindow(secondOutput.id, id, { rotation: 0 });
+  assert.equal(result.desktop.groups.find(g => g.id === group).workspace, 1);
+  assert.deepEqual(result.desktop.outputs.find(o => o.id === firstOutput.id), firstOutput);
   result = await cua.ataxia.windowAction(id, 'minimize'); assert.equal(win(result.desktop).minimized, true);
   assert.equal(win(result.desktop).available, false);
   assert.equal((await cua.ataxia.listWindows({ emit: false })).find(w => w.id === id).available, false);
@@ -68,10 +94,7 @@ export async function exerciseDesktop(cua, directory, mark, until, id) {
   result = await cua.ataxia.windowAction(id, 'restore'); assert.equal(win(result.desktop).fullscreen, false);
   result = await cua.ataxia.windowAction(id, 'fullscreen'); assert.equal(win(result.desktop).fullscreen, true);
   await cua.ataxia.windowAction(id, 'restore');
-  result = await cua.ataxia.overview();
-  assert.equal(result.desktop.outputs.find(o => o.id === result.desktop.output).group, null);
-
-  // Keep the target visible for later application observations.
-  await cua.ataxia.switchWorkspace(group, 2);
-  console.log('PASS: Metaworld desktop snapshots, group creation, workspace movement, floating/tiling, revision conflicts, session-owned plans, rollback, Undo, navigation and window controls.');
+  result = await cua.ataxia.frameWindow(secondOutput.id, id);
+  assert.equal(result.desktop.outputs.find(o => o.id === secondOutput.id).group, null);
+  console.log('PASS: World layouts and controls, explicit per-output pan/zoom/rotation/framing, unchanged other camera and window placement, hidden-window rejection, revisions and Undo.');
 }

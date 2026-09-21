@@ -5,7 +5,7 @@ export function desktopMethods(native, emitter) {
   let last, lastToken;
   const remember = reply => {
     if (reply.desktop) { last = structuredClone(reply.desktop); lastToken = native.transport.token; }
-    for (const target of native.targets.values()) { target.ax.invalidate(); target.image = null; }
+    for (const target of native.targets.values()) { target.ax.invalidate(); target.imageStale = Boolean(target.image) || target.imageStale; target.image = null; }
     return reply;
   };
   const snapshot = async () => {
@@ -17,7 +17,7 @@ export function desktopMethods(native, emitter) {
     options(opts, ['revision']);
     if (!last || lastToken !== native.transport.token) await snapshot();
     const revision = opts.revision ?? last.revision;
-    requireThat(Number.isSafeInteger(revision) && revision > 0, 'invalid-revision', 'Use a revision from getDesktop().');
+    requireThat(Number.isSafeInteger(revision) && revision > 0, 'invalid-revision', 'Use a revision from getWorld().');
     return revision;
   };
   const actions = operations => {
@@ -36,16 +36,18 @@ export function desktopMethods(native, emitter) {
     const revision = await basis(opts);
     requireThat(last.capabilities.layout && last['layout-schema']?.properties?.op?.enum?.includes('place-window'),
       'unsupported-operation', 'This World does not implement place-window. Use its advertised layout schema.');
-    requireThat(revision === last.revision, 'desktop-changed', 'Read getDesktop() before deriving window placement for that revision.');
+    requireThat(revision === last.revision, 'desktop-changed', 'Read getWorld() before deriving window placement for that revision.');
     const window = last.windows.find(w => w.id === id);
-    requireThat(window, 'window-not-found', 'Choose a window ID from getDesktop().');
+    requireThat(window, 'window-not-found', 'Choose a window ID from getWorld().');
     return { window, revision };
   };
+  const getWorld = async (opts = {}) => {
+    observationOptions(opts);
+    return native.run(async () => { const state = await snapshot(); if (opts.emit !== false) emitter.write(state); return state; });
+  };
   return {
-    async getDesktop(opts = {}) {
-      observationOptions(opts);
-      return native.run(async () => { const state = await snapshot(); if (opts.emit !== false) emitter.write(state); return state; });
-    },
+    getWorld,
+    getDesktop: getWorld,
     async previewLayout(operations, opts = {}) {
       return native.run(async () => { const { plan, revision, operations: validated } = await preview(operations, opts); return { plan, revision, operations: validated }; });
     },

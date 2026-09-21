@@ -27,8 +27,8 @@ export interface Target {
   typeText(text: string): Promise<void>;
   performSecondaryAction(elementIndex: number, action: string): Promise<void>;
 }
-export type AppInfo = { id: string; displayName?: string; lastUsedDate?: string; useCount?: number; isRunning?: boolean };
-export interface App extends Target {}
+export type AppInfo = { id: string; displayName?: string; lastUsedDate?: string; useCount?: number; isRunning?: boolean; windowIds?: number[] };
+export interface App extends Target { readonly windowId: number }
 export type BrowserInfo = { id: string; name?: string; family?: string; type?: 'iab' | 'extension' | 'cdp'; profileName?: string; metadata?: { extensionInstanceId?: string; codexSessionId?: string } };
 export type BrowserTabInfo = { id: string; providerTabId?: string; title?: string; url?: string };
 export interface Browser { readonly browserId: string; documentation(): Promise<string> }
@@ -50,12 +50,14 @@ export interface Tab extends Target {
   markHandoff(): Promise<void>;
 }
 export type NativeSession = { id: number; name: string; state: 'pending' | 'active' | 'paused' | 'disconnected' | string; sequence: number; busy: boolean; output: number; view: 'window' | 'desktop'; window?: number; message?: string };
-export type WindowInfo = { id: number; pid?: number; title: string; 'app-id': string; x: number; y: number; width: number; height: number; selected?: boolean; 'origin-x'?: number; 'origin-y'?: number };
+export type WindowInfo = { id: number; pid?: number; title: string; 'app-id': string; x: number; y: number; width: number; height: number; selected?: boolean; available: boolean; 'on-output': boolean; 'coordinate-space': 'window-local'; 'origin-x': number; 'origin-y': number; input: { pointer: boolean; keyboard: boolean } };
 export type BatchAction = { op: 'focus' | 'view' | 'move' | 'button' | 'scroll' | 'key' | 'type' | 'paste' | 'launch' | 'wait-window' | 'wait-stable'; [key: string]: unknown };
-export type Capture = { path: string; width: number; height: number; 'coordinate-width': number; 'coordinate-height': number; bytes: Uint8Array };
-export type DesktopWindow = { id: number; title: string; 'app-id': string; group?: number | null; workspace?: number | null; floating?: boolean; column?: number | null; geometry?: number[]; minimized?: boolean; maximized?: boolean; fullscreen?: boolean; visible?: boolean };
+export type Capture = { path: string; width: number; height: number; 'coordinate-width': number; 'coordinate-height': number; 'coordinate-space': 'window-local' | 'output-local'; 'origin-x': number; 'origin-y': number; view: 'window' | 'desktop'; window: number | null; output: number; timestamp: number; bytes: Uint8Array };
+export type DesktopWindow = { id: number; title: string; 'app-id': string; group?: number | null; workspace?: number | null; floating?: boolean; column?: number | null; geometry?: number[]; minimized?: boolean; maximized?: boolean; fullscreen?: boolean; visible?: boolean; available?: boolean; 'on-outputs'?: number[] };
 export type DesktopGroup = { id: number; name: string; policy: string; workspace: number; 'workspace-count': number; members: { window: number; workspace: number; floating: boolean; column: number }[]; [key: string]: unknown };
-export type DesktopState = { revision: number; generation: number; world: string; output: number; windows: DesktopWindow[]; groups?: DesktopGroup[]; outputs: { id: number; group?: number | null; camera?: number[]; [key: string]: unknown }[]; capabilities: { snapshot: boolean; layout: boolean; navigation: boolean; scope: 'world'; 'native-shortcuts': false; 'window-actions': string[] }; 'layout-schema': Record<string, unknown> | null; 'layout-description': string | null };
+export type WorldState = { revision: number; generation: number; world: string; 'coordinate-space'?: 'world'; output: number; windows: DesktopWindow[]; groups?: DesktopGroup[]; outputs: { id: number; name?: string; group?: number | null; camera?: [x: number, y: number, zoom: number, rotationRadians: number]; position?: [x: number, y: number]; size?: [width: number, height: number]; [key: string]: unknown }[]; capabilities: { snapshot: boolean; layout: boolean; navigation: boolean; scope: 'world'; 'native-shortcuts': false; 'window-actions': string[] }; 'layout-schema': Record<string, unknown> | null; 'layout-description': string | null };
+/** Compatibility name for the structured World observation, never a screenshot. */
+export type DesktopState = WorldState;
 export type Placement = { group?: number | null; workspace?: number; floating?: boolean; x?: number; y?: number; width?: number; height?: number };
 export type LayoutValue = string | number | boolean | null;
 /** Operations are defined by the active World's layout-schema. */
@@ -70,6 +72,8 @@ export interface AtaxiaExtensions {
   capabilities(): Promise<Record<string, unknown>>;
   listWindows(options?: ObservationOptions): Promise<WindowInfo[]>;
   getWindow(id: number): Promise<App>;
+  getWorld(options?: ObservationOptions): Promise<WorldState>;
+  /** Compatibility alias for getWorld(). */
   getDesktop(options?: ObservationOptions): Promise<DesktopState>;
   previewLayout(operations: LayoutOperation[], options?: DesktopChangeOptions): Promise<LayoutPreview>;
   applyLayout(plan: string): Promise<DesktopResult>;
@@ -81,6 +85,9 @@ export interface AtaxiaExtensions {
   switchWorkspace(group: number | null, workspace: number, options?: DesktopChangeOptions): Promise<DesktopResult>;
   overview(options?: DesktopChangeOptions): Promise<DesktopResult>;
   batch(actions: BatchAction[], options?: { capture?: boolean; settle?: number }): Promise<Record<string, unknown>>;
+  /** Capture only the session output's current camera; leaves its view unchanged. */
+  captureViewport(options?: ObservationOptions): Promise<Capture>;
+  /** Compatibility alias for captureViewport(). */
   captureDesktop(options?: ObservationOptions): Promise<Capture>;
   tabMarks(): { browserId: string; id: string; mark: 'deliverable' | 'handoff' }[];
   metrics(): { nativeRequests: number; browserRequests: number };
@@ -117,12 +124,13 @@ export class ComputerTransport {
 
 - `connect` creates an active native session automatically; a paused session can be resumed through the activity panel. `status` exposes its current state. `disconnect` releases it.
 - `capabilities` reports protocol and provider availability without creating or approving a native session.
-- `listWindows` and `getWindow` choose an individual native window for application input/capture. They do not raise it, move it, or switch the user's workspace. Native input uses the active agent seat and its offscreen view.
+- `getWorld` returns structured World state; `getDesktop` is its compatibility alias. Window placement and each monitor camera are distinct from application-local input coordinates. See the [coordinate reference](desktop.md#coordinates-and-viewports).
+- `listWindows` discovers mapped windows across the World, including unavailable windows. `getWindow` selects an available window without raising it, moving it, or switching the user's workspace. Selection and target operations explicitly use window view. `getApp` rejects ambiguous matches with candidate IDs and does not relaunch an already mapped but unavailable app.
 - `batch` runs up to 16 data-only Ataxia actions with one sequence number; optional capture and settle use compositor frame stability. The existing protocol remains available to other clients. This is sequential execution, not a transaction: a later failure can leave earlier actions applied.
-- `captureDesktop` takes a desktop overview then restores the session's selected window view; refresh accessibility indices afterwards.
+- `captureViewport` (`captureDesktop` alias) captures the session output's current camera, then restores the prior input view. Its metadata names the output and logical coordinate space. It does not show the entire World or move any camera. Refresh accessibility indices afterwards.
 - `tabMarks` reports deliverable/handoff tabs, and `metrics` counts native/CDP transport requests in this adapter.
 
-For window placement, floating/tiling, groups, workspaces, shell navigation, and native window close/minimize/restore/maximize/fullscreen, use [Ataxia desktop operations](desktop.md). They are exposed as `getDesktop`, `moveWindow`, `setFloating`, `windowAction`, `switchWorkspace`, `overview`, `arrange`, `previewLayout`, `applyLayout`, and `undoLayout` on `cua.ataxia`. Native keys bypass World shortcuts, and native pointers cannot operate World chrome; `captureDesktop` and `settle: 0` do not change that routing.
+For window placement, floating/tiling, groups, workspaces, shell navigation, and native window close/minimize/restore/maximize/fullscreen, use [Ataxia desktop operations](desktop.md). They are exposed as `getWorld` (`getDesktop` alias), `moveWindow`, `setFloating`, `windowAction`, `switchWorkspace`, `overview`, `arrange`, `previewLayout`, `applyLayout`, and `undoLayout` on `cua.ataxia`. Native keys bypass World shortcuts, and native pointers cannot operate World chrome; `captureViewport` (`captureDesktop` alias) and `settle: 0` do not change that routing.
 
 ### Continuously updating applications
 
@@ -133,13 +141,13 @@ When a known application's animation prevents settling, capture its current fram
 ```javascript
 // windowId comes from a fresh cua.ataxia.listWindows() result.
 var frame = await cua.ataxia.batch(
-  [{ op: 'focus', window: windowId }], { capture: true, settle: 0 });
+  [{ op: 'view', mode: 'window', window: windowId }], { capture: true, settle: 0 });
 nodeRepl.write({ completed: frame.completed, image: frame.image });
 await nodeRepl.emitImage(new Uint8Array(
   await (await import('node:fs/promises')).readFile(frame.image.path)));
 ```
 
-The image path is returned by the capture API. Use screenshot coordinates only after observing that image; reacquire accessibility state before reusing element indices. Skipping the settle wait can capture an intermediate frame. It does not make desktop shortcuts work.
+The image path is returned by the capture API. This low-level capture does not update an `App` binding's screenshot basis. For subsequent binding coordinate actions, use that binding's `getScreenshot()`; for raw `batch` movement, convert image pixels using the returned coordinate dimensions. Reacquire accessibility state before reusing element indices. Skipping the settle wait can capture an intermediate frame. It does not make desktop shortcuts work.
 
 ## Provider boundaries
 

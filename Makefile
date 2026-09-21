@@ -195,6 +195,7 @@ $(BUILD_DIR)/cua-clipboard-native-test: tests/cua-clipboard-native.c $(BUILD_DIR
 test-cua: computer-use $(BUILD_DIR)/cua-clipboard-native-test
 	LD_LIBRARY_PATH='$(abspath $(BUILD_DIR)):$(PREFIX)/lib:$(LD_LIBRARY_PATH)' ./$(BUILD_DIR)/cua-clipboard-native-test
 	$(ATAXIA_CUA_NODE) tests/cua-desktop-sdk.mjs
+	$(ATAXIA_CUA_NODE) tests/cua-world-sdk.mjs
 	$(ATAXIA_CUA_NODE) tests/cua-mcp.mjs
 	$(ATAXIA_CUA_NODE) tests/cua-browser.mjs
 	ATAXIA_CUA_NODE='$(ATAXIA_CUA_NODE)' WLR_RENDERER=gles2 LD_LIBRARY_PATH='$(abspath $(BUILD_DIR)):$(PREFIX)/lib:$(LD_LIBRARY_PATH)' dbus-run-session -- sbcl --noinform --disable-debugger --eval '(sb-int:set-floating-point-modes :traps nil)' --script tests/cua-world.lisp

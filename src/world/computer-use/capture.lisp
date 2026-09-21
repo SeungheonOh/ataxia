@@ -141,6 +141,11 @@
           (%computer-png-chunk stream "IEND" #()))))
     (list :path (namestring (computer-capture-path ticket)) :width width :height height
           :coordinate-width lw :coordinate-height lh :timestamp (computer-capture-timestamp ticket)
+          :coordinate-space (if (eq :window (computer-capture-mode ticket)) "window-local" "output-local")
+          :output (when (computer-capture-session ticket)
+                    (ataxia.kernel:object-id (computer-session-output (computer-capture-session ticket))))
+          :origin-x (if (computer-capture-bounds ticket) (first (computer-capture-bounds ticket)) 0)
+          :origin-y (if (computer-capture-bounds ticket) (second (computer-capture-bounds ticket)) 0)
           :view (string-downcase (symbol-name (computer-capture-mode ticket)))
           :window (when (computer-capture-window ticket) (ataxia.kernel:object-id (window-application (computer-capture-window ticket)))))))
 (defun %computer-finish-capture (ticket)

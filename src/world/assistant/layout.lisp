@@ -5,9 +5,13 @@
   ;; Target geometry makes a transaction stable while its presentation animates.
   (let* ((state (ataxia.world:world-desktop-state (assistant-controller-world controller)))
          (semantic (copy-tree state)))
-    ;; Client title updates do not invalidate a layout transaction.
+    ;; Client titles and transient presentation do not invalidate placement.
     (setf (getf semantic :windows)
-          (map 'vector (lambda (window) (let ((copy (copy-list window))) (remf copy :title) copy)) (getf state :windows)))
+          (map 'vector (lambda (window)
+                         (let ((copy (copy-list window)))
+                           (dolist (field '(:title :visible :available :on-outputs)) (remf copy field))
+                           copy))
+               (getf state :windows)))
     (let ((fingerprint (ataxia.computer-use.wire:encode semantic)))
     (unless (equal fingerprint (assistant-controller-fingerprint controller))
       (incf (assistant-controller-revision controller))

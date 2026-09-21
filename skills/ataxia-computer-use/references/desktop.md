@@ -2,21 +2,39 @@
 
 Use this reference for window placement, floating/tiling, groups, workspaces, shell navigation, and native window controls. CUA pointer/key actions control application content. The `cua.ataxia` desktop methods below operate through World APIs. Synthetic keys bypass World shortcut dispatch; desktop captures do not grant control of shell chrome. Changing `settle` changes observation timing only.
 
+## Coordinates and viewports
+
+For Infinite World and Metaworld, `coordinate-space: "world"` labels placement.
+Window `geometry` is `[x, y, width, height]` in world units; it is not a pointer
+coordinate. Each output supplies physical `position`, logical `size`, and a
+`camera` of `[worldX, worldY, zoom, rotationRadians]`. Multiple outputs can show
+different or overlapping regions of the same canvas. In Metaworld these geometry
+and camera fields describe intended destinations while animations settle.
+
+`available` means World allows selecting the window independently of a monitor.
+`on-outputs` lists viewport intersections, without resolving occlusion. Neither
+an empty `on-outputs` list nor `on-output: false` in `listWindows()` means closed.
+Minimized/hidden-workspace windows remain in the inventory; inspect their flags
+before deciding to restore or navigate. `captureViewport()` captures only the
+session's output and restores its prior input view; its result names the output
+and coordinate space. It never captures the entire unbounded canvas. For app
+content, use that window's screenshot, including its popups, instead.
+
 ## Native JavaScript runtime
 
-Use these methods through `cua_repl`. Desktop operations are subject to the active session, Pause, Disconnect, expiry, request sequencing, and human-drag checks. `getDesktop()` reports the whole current World, including hidden/minimized windows and each group's local workspaces. Native application `listWindows()` remains the list of eligible input/capture targets; use `getDesktop()` for arrangement.
+Use these methods through `cua_repl`. Desktop operations are subject to the active session, Pause, Disconnect, expiry, request sequencing, and human-drag checks. `getWorld()` reports the whole current World, including hidden/minimized windows and each group's local workspaces. Native `listWindows()` lists mapped windows independently of the current viewport, with `available` and `on-output` flags; unavailable windows are discoverable but cannot receive input. Use `getWorld()` for membership and arrangement. `getDesktop()` is the compatibility alias for this structured observation.
 
 ```javascript
-var desktop = await cua.ataxia.getDesktop();
+var desktop = await cua.ataxia.getWorld();
 // Select windowId and groupId from that observation for the user's task.
 var moved = await cua.ataxia.moveWindow(windowId, { group: groupId, workspace: 2 });
 await cua.ataxia.setFloating(windowId, true);
-await cua.ataxia.getDesktop();
+await cua.ataxia.getWorld();
 ```
 
 | Intent | `cua.ataxia` method |
 | --- | --- |
-| Inspect groups, windows, placement, output views and supported operations | `getDesktop({emit?: boolean})` |
+| Inspect groups, windows, placement, output views and supported operations | `getWorld({emit?: boolean})` |
 | Move or resize a native window | `moveWindow(windowId, {group?, workspace?, floating?, x?, y?, width?, height?})` |
 | Float/tile a group member | `setFloating(windowId, true)` / `setFloating(windowId, false)` |
 | Close/minimize/restore/maximize/fullscreen | `windowAction(windowId, action)` |
@@ -34,12 +52,12 @@ var result = await cua.ataxia.arrange([
   {op: 'place-window', window: firstWindowId, group: 'destination', workspace: 1},
   {op: 'place-window', window: secondWindowId, group: 'destination', workspace: 2}
 ]);
-await cua.ataxia.getDesktop();
+await cua.ataxia.getWorld();
 // Later, only if the task calls for reverting and the desktop has not changed:
 // await cua.ataxia.undoLayout(result.undo);
 ```
 
-`getDesktop` emits by default. Changes return their resulting `desktop` and, for arrangements, `undo`; they do not emit automatically. Each successful change updates the runtime's observed revision, so sequential changes can use their preceding result. If no desktop has been observed in this session, a convenience operation first reads it. Once observed, the runtime rejects intervening layout changes with `desktop-changed`; it never automatically rebases an old plan. Explicit `revision` options use the revision from a relevant `getDesktop` result.
+`getWorld` emits by default. Changes return their resulting `desktop` and, for arrangements, `undo`; they do not emit automatically. Each successful change updates the runtime's observed revision, so sequential changes can use their preceding result. If no desktop has been observed in this session, a convenience operation first reads it. Once observed, the runtime rejects intervening layout changes with `desktop-changed`; it never automatically rebases an old plan. Explicit `revision` options use the revision from a relevant `getWorld` result.
 
 Plans and Undo belong to one native session, expire after 120 seconds, and cannot be replayed. At most eight unapplied plans are retained. Applying a layout validates the whole plan, captures the prior layout, and rolls back on failure. Undo refuses to overwrite later desktop changes. Explicit window controls clear earlier plans and Undo; closing an application cannot be undone. Grouped maximize/fullscreen follows Metaworld's group expansion policy.
 

@@ -112,6 +112,10 @@
           :title (or (ataxia.kernel:application-title app) "")
           :app-id (or (ataxia.kernel:application-app-id app) "")
           :visible (if (world-window-visible-p world window) t :false)
+          :available (if (world-window-visible-p world window) t :false)
+          :on-outputs (coerce (loop for output in (world-outputs world)
+                                   when (world-window-visible-p world window output)
+                                     collect (ataxia.kernel:object-id output)) 'vector)
           :outputs
           (coerce
            (loop for output in (world-outputs world)

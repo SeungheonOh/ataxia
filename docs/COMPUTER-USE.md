@@ -14,7 +14,9 @@ affects the session's selected output.
 
 ## Native protocol
 
-An agent connects to applications on one output and starts active immediately.
+An agent connects to the World and starts active immediately. A selected output
+anchors its activity UI, explicit viewport captures and navigation; it does not
+limit window discovery or window-local control to that monitor.
 Ataxia shows its name, activity, and current view. Connecting automatically creates
 a separate Wayland seat, keyboard, pointer, colored cursor, and cursor label.
 The human pointer and keyboard retain their own seat and focus.
@@ -30,12 +32,17 @@ Window view is the default. Select an application with `focus`; captures contain
 that application's surfaces, including popups and subsurfaces. Pointer coordinates
 are local to the image, independent of desktop position, zoom, rotation, and other
 windows. Focus does not raise the application or change human focus. A selected
-window remains accessible when covered or moved offscreen. When an application
+window can be selected initially even when covered, offscreen, or on another monitor.
+When an application
 unmaps or closes, Ataxia clears the target and screenshot; the agent must explicitly
 select another window. Closing during movement, typing, or held input pauses the
-session. New selections must be on the selected output.
+session. Mapped minimized/hidden-workspace windows remain discoverable with
+`available: false`; restoring or navigating to them is a separate World action.
 
-Use explicit `desktop` view for tasks spanning applications and their arrangement.
+Use `getWorld()` for structured arrangement and `getWindow(id)` for app content.
+Explicit `desktop` view and `captureViewport()` show only the selected monitor's
+current camera; they are not an overview of the infinite World. SDK target methods
+always select window view, including after a low-level viewport operation.
 An agent cannot
 click World chrome, the application menu, or its own session controls; synthetic
 keys bypass World shortcuts. Application launch is limited to desktop IDs from

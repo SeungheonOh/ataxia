@@ -27,7 +27,7 @@ export function createCua(configuration = {}) {
     getBrowser: opts => browsers.select(opts), listBrowsers: opts => browsers.list(opts),
     createBrowserTab: async (id, url, opts) => (await browsers.get(id)).create(url, opts),
     getTab: (id, opts) => browsers.getTab(id, opts), listTabs: opts => browsers.listTabs(opts),
-    // Separate namespace: extensions never change the supplied Codex method shapes.
+    // World/window operations are primary; legacy names remain compatible aliases.
     ataxia: {
       async connect(opts = {}) {
         options(opts, ['name', 'purpose', 'output']);
@@ -38,7 +38,7 @@ export function createCua(configuration = {}) {
       async capabilities() {
         let server;
         try { server = await native.transport.raw({ op: 'capabilities' }); } catch (error) { server = { available: false, error: error.message }; }
-        return { interface: 'codex-cua', native: server, browser: { providers: ['cdp'], ...{ htmlPaste: 'focused-contenteditable', markdownPaste: 'source' } },
+        return { interface: 'ataxia-cua', native: server, browser: { providers: ['cdp'], ...{ htmlPaste: 'focused-contenteditable', markdownPaste: 'source' } },
           extensions: Object.keys(cua.ataxia) };
       },
       async listWindows(opts = {}) { observationOptions(opts); const { windows } = await native.inventory(); if (opts.emit !== false) emitter.write(windows); return windows; },
@@ -48,20 +48,25 @@ export function createCua(configuration = {}) {
         options(opts, ['capture', 'settle']); requireThat(Array.isArray(actions), 'invalid-batch', 'Use an array of Ataxia protocol actions.');
         return native.run(() => native.transport.batch(actions, opts));
       },
-      async captureDesktop(opts = {}) {
+      async captureViewport(opts = {}) {
         observationOptions(opts);
         return native.run(async () => {
           const previous = (await native.transport.status()).session;
           try {
             const reply = await native.transport.batch([{ op: 'view', mode: 'desktop' }], { capture: true });
             const fs = await import('node:fs/promises'), bytes = new Uint8Array(await fs.readFile(reply.image.path));
-            if (opts.emit !== false) emitter.emitImage({ bytes, mimeType: 'image/png' }); return { ...reply.image, bytes };
+            if (opts.emit !== false) {
+              emitter.write(`Viewport on output ${reply.image.output ?? previous.output} · ${reply.image.width}×${reply.image.height} screenshot pixels · only this monitor's current camera, not the whole World`);
+              emitter.emitImage({ bytes, mimeType: 'image/png' });
+            }
+            return { ...reply.image, bytes };
           } finally {
             if (previous.view === 'window') await native.transport.send('view', { mode: 'window', ...(previous.window ? { window: previous.window } : {}) });
             for (const target of native.targets.values()) target.ax.invalidate();
           }
         });
       },
+      captureDesktop: opts => cua.ataxia.captureViewport(opts),
       tabMarks() { return [...browsers.instances.values()].flatMap(b => [...b.marks].map(([id, mark]) => ({ browserId: b.browserId, id: `${b.browserId}:${id}`, mark }))); },
       metrics() { return { nativeRequests: native.transport.requests, browserRequests: [...browsers.instances.values()].reduce((n, b) => n + (b.connection?.requests ?? 0), 0) }; },
       async disconnect() { await native.close(); },

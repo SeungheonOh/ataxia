@@ -21,7 +21,7 @@
 
 (defmethod ataxia.world:world-desktop-state ((world metaworld))
   (let ((groups (metaworld-subworlds world)))
-    (list :groups
+    (list :coordinate-space "world" :groups
           (coerce (loop for group in groups collect
             (list :id (subworld-id group) :name (subworld-name group)
                   :policy (if (eq :niri (subworld-kind group)) "niri" (string-downcase (symbol-name (subworld-layout group))))
@@ -55,6 +55,10 @@
                   :fullscreen (if (or (and group (eq window (subworld-fullscreen group)))
                                       (eq :fullscreen (%canvas-window-expanded-state window))) t :false)
                   :maximized (if (eq :maximized (%canvas-window-expanded-state window)) t :false)
+                  :available (if (ataxia.world:world-window-visible-p world window) t :false)
+                  :on-outputs (coerce (loop for output in (ataxia.world:world-outputs world)
+                                           when (ataxia.world:world-window-visible-p world window output)
+                                             collect (ataxia.kernel:object-id output)) 'vector)
                   :visible (if (and (%canvas-window-mapped-p window)
                                     (not (%canvas-window-minimized-p window))
                                     (%canvas-window-input-enabled-p window)) t :false))) 'vector)

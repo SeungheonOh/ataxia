@@ -14,11 +14,12 @@
        (kernel (ataxia.kernel:create-kernel world :backend :headless :headless-width 1000 :headless-height 760))
        (runtime (ataxia.kernel:kernel-runtime kernel))
        (directory (merge-pathnames (format nil "ataxia-cua-test-~A/" (ataxia.computer-use:random-token)) (uiop:temporary-directory)))
-       (client nil) (checks nil) (control nil))
+       (client nil) (checks nil) (control nil) (offscreen-ready nil))
   (labels ((path (name) (namestring (merge-pathnames name directory)))
            (source (name) (namestring (asdf:system-relative-pathname "ataxia-computer-use" name)))
            (ui-action (name)
-             (let* ((panel (first (ataxia.computer-use::computer-controller-panels (ataxia.computer-use::%computer-controller world))))
+             (let* ((panel (find-if #'overlay-visible-p
+                                   (ataxia.computer-use::computer-controller-panels (ataxia.computer-use::%computer-controller world))))
                     (component (overlay-component panel)))
                (assert (overlay-visible-p panel))
                (funcall (gethash name (ataxia.world.rmlui::%component-callbacks component)) component "")
@@ -28,6 +29,8 @@
            (sb-posix:mkdir directory #o700)
            (format t "CUA fixture directory: ~A~%" directory)
            (ataxia.kernel:start-kernel kernel)
+           (ataxia.runtime.raw:%wlr-headless-add-output
+            (ataxia.runtime::%object-pointer (ataxia.runtime:runtime-backend runtime)) 800 900)
            (setf control (ataxia.sly-control:start-sly-control kernel :port 4007))
            (slynk:stop-server 4007)
            (ataxia.computer-use:enable world :socket (path "computer-use.sock"))
@@ -36,6 +39,15 @@
                          :output (path "checks.log") :error-output :output))
            (let ((timer (ataxia.runtime:add-event-loop-timer runtime
                           (lambda (timer)
+                            (when (and (not offscreen-ready) (find-if #'%window-visible-p (%world-stacking world)))
+                              ;; Discover this window before ever selecting it, outside
+                              ;; both monitor viewports. CUA must not navigate to it.
+                              (let ((window (find-if #'%window-visible-p (%world-stacking world))))
+                                (setf (canvas-window-x window) -5000d0 (canvas-window-y window) -4000d0
+                                      offscreen-ready t)
+                                (dolist (output (%output-states world)) (%full-damage world output))
+                                (with-open-file (out (path "offscreen-ready") :direction :output)
+                                  (write-line "ready" out))))
                             (dolist (action '(("resume" . "resume0") ("pause" . "pause0") ("pause-all" . "pause-all") ("stop" . "stop0")))
                               (when (probe-file (path (car action))) (delete-file (path (car action))) (ui-action (cdr action))))
                             (when (probe-file (path "fail-layout"))

@@ -39,21 +39,25 @@
   (when (typep app 'ataxia.kernel:wayland-application)
     (let ((root (ataxia.kernel:application-root-surface app)))
       (when root (surface-client-pid (ataxia.kernel:surface-runtime-object root))))))
-(defun %computer-windows (session)
-  (when (%computer-window-view-p session)
+(defun %computer-windows (session &optional (mode (computer-view-mode (computer-session-view session))))
+  (when (eq mode :window)
     (return-from %computer-windows
       (coerce (loop for window in (world-windows (computer-session-world session))
-                    when (%computer-window-allowed-p session window) collect
+                    for application = (window-application window)
+                    when (and application (eq :live (ataxia.kernel:object-state application))
+                              (ataxia.kernel:application-mapped-p application)) collect
                     (let ((app (window-application window)) (bounds (%computer-window-bounds window)))
                       (list :id (ataxia.kernel:object-id app) :pid (%computer-application-pid app) :title (or (ataxia.kernel:application-title app) "")
                             :app-id (or (ataxia.kernel:application-app-id app) "")
+                            :coordinate-space "window-local"
+                            :available (if (world-window-visible-p (computer-session-world session) window) t :false)
                             :x 0 :y 0 :origin-x (first bounds) :origin-y (second bounds) :width (third bounds) :height (fourth bounds)
                             :selected (if (eq window (computer-view-window (computer-session-view session))) t :false)
                             :on-output (if (%computer-window-on-output-p session window) t :false)
                             :input (%computer-window-input-data session window)))) 'vector)))
   (let ((world (computer-session-world session)) (output (computer-session-output session)))
     (coerce (loop for window in (world-windows world)
-                  when (%computer-window-allowed-p session window) collect
+                  when (%computer-window-on-output-p session window) collect
                   (multiple-value-bind (x y width height) (window-output-bounds world window output)
                     (let ((app (window-application window)))
                       (list :id (ataxia.kernel:object-id app) :pid (%computer-application-pid app) :title (or (ataxia.kernel:application-title app) "")
@@ -116,7 +120,10 @@
           (list :ok t :session (%computer-session-data session) :desktop (%computer-desktop-snapshot session))))
       (when (equal op "observe")
         (return-from request-on-owner
-          (list :ok t :session (%computer-session-data session) :windows (%computer-windows session)
+          (list :ok t :session (%computer-session-data session)
+                :windows (%computer-windows session
+                           (if (getf request :mode) (%computer-view-mode (getf request :mode))
+                               (computer-view-mode (computer-session-view session))))
                 :applications (coerce (mapcar (lambda (entry) (list :id (getf entry :id) :name (getf entry :name)))
                                               (world-application-catalog world (computer-session-output session))) 'vector))))
       (when (equal op "target")
@@ -185,7 +192,8 @@
            (%computer-log session "Scrolled application")))
         ((equal op "focus")
          (let ((window (find (getf request :window) (world-windows world) :key (lambda (w) (ataxia.kernel:object-id (window-application w))))))
-           (unless (%computer-window-allowed-p session window) (%computer-reject "target-blocked" "Choose a visible application on the approved output."))
+           (unless (%computer-window-allowed-p session window)
+             (%computer-reject "target-blocked" "Window is unavailable in this view. Inspect getWorld() for its state."))
            (%computer-focus session window) (%computer-log session "Focused application")))
         ((equal op "key")
          (unless (%computer-window-allowed-p session (computer-input-state-focused state)) (%computer-reject "no-focus" "Focus or click an application first."))

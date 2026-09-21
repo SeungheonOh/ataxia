@@ -96,6 +96,15 @@ Synthetic device creation is also an optional World module.
 Each session owns its separate seat, input state, selected view, desktop
 revision, pending plans, and Undo. Desktop state is stored directly in the session structure. Close releases it with the rest of the session.
 
+World observations are structured inventories, not monitor captures. Worlds report
+window availability and viewport intersections alongside their own placement data.
+The portable CUA transaction layer passes those fields through without requiring
+native window handles from hosts that only provide layout snapshots. Window-mode
+discovery spans all mapped applications; World visibility policy still controls
+input eligibility. An offscreen window does not need to be selected while visible
+first. The selected output anchors viewport capture and navigation, not the scope
+of window-local content access. No change to these rules adds Kernel/Runtime CUA APIs.
+
 Desktop actions use the same sequence, pause, expiry, and busy checks as native
 input. They call explicit World methods; synthetic key input remains application
 input and cannot accidentally invoke desktop shortcuts. Navigation intentionally

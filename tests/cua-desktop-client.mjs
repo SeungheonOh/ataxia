@@ -5,7 +5,7 @@ import { createCua } from '../sdk/computer-use/index.mjs';
 
 export async function exerciseDesktop(cua, directory, mark, until, id) {
   const win = state => state.windows.find(w => w.id === id);
-  const observe = () => cua.ataxia.getDesktop({ emit: false });
+  const observe = () => cua.ataxia.getWorld({ emit: false });
   let state = await observe();
   assert(state.capabilities.layout); assert(state.capabilities.navigation);
   assert.equal(state.capabilities['native-shortcuts'], false);
@@ -59,6 +59,10 @@ export async function exerciseDesktop(cua, directory, mark, until, id) {
   assert.equal(result.desktop.outputs.find(o => o.id === result.desktop.output).group, group);
   assert.equal(result.desktop.groups.find(g => g.id === group).workspace, 2);
   result = await cua.ataxia.windowAction(id, 'minimize'); assert.equal(win(result.desktop).minimized, true);
+  assert.equal(win(result.desktop).available, false);
+  assert.equal((await cua.ataxia.listWindows({ emit: false })).find(w => w.id === id).available, false);
+  await assert.rejects(cua.ataxia.getWindow(id), error => error.code === 'window-unavailable');
+  await assert.rejects(cua.getApp('ataxia.cua-test'), error => error.code === 'window-unavailable');
   result = await cua.ataxia.windowAction(id, 'restore'); assert.equal(win(result.desktop).minimized, false);
   result = await cua.ataxia.windowAction(id, 'maximize'); assert.equal(win(result.desktop).fullscreen, true);
   result = await cua.ataxia.windowAction(id, 'restore'); assert.equal(win(result.desktop).fullscreen, false);

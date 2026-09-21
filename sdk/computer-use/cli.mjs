@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { createInterface } from 'node:readline';
 import { CuaRepl } from './repl.mjs';
+import { toolDescription } from './guidance.mjs';
 import { sleep, requireThat } from './common.mjs';
 
 const args = process.argv.slice(2), sessionAt = args.indexOf('--session');
@@ -79,7 +80,7 @@ async function daemon() {
   process.once('SIGTERM', stop); process.once('SIGINT', stop);
 }
 const tool = {
-  name: 'cua_repl', description: 'Persistent JavaScript for Ataxia application and browser interaction. Globals: cua, nodeRepl.write(value), nodeRepl.emitImage(image). Native keys bypass desktop shortcuts and cannot move, float or switch windows; use cua.ataxia.getDesktop(), moveWindow(), setFloating(), windowAction(), switchWorkspace() and arrange(). Desktop changes check the observed revision and support layout Undo. App/tab acquisition and observations emit automatically. Await all actions; then getAXState before making another application decision. Do not write observation return values again. Only emitted content is returned; JavaScript expression values are suppressed. Native sessions start automatically; the Agent sessions panel provides pause, resume and disconnect controls.',
+  name: 'cua_repl', description: toolDescription,
   inputSchema: { type: 'object', properties: { code: { type: 'string' }, timeout_ms: { type: 'integer', minimum: 100, maximum: 60000, default: 30000 } }, required: ['code'], additionalProperties: false },
 };
 async function mcp() {

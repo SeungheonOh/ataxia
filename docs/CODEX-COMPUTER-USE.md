@@ -1,6 +1,9 @@
-# Codex-compatible computer use
+# Ataxia computer use
 
-Ataxia implements the JavaScript `cua` interface supplied with the Computer Use skill. This is a Linux adapter for that interface, not an implementation of OpenAI's hosted computer-use tool or its internal browser providers. The existing data-only Unix socket API remains supported.
+Ataxia's JavaScript `cua` API is centered on stable windows and an infinite World.
+Each monitor is an independent camera; its screenshot cannot represent all apps
+or their placement. The familiar app/tab methods remain compatible with the
+supplied Computer Use interface. The existing data-only Unix socket API remains supported.
 
 The JavaScript client is in `sdk/computer-use/`; `index.d.ts` describes the complete public surface. The native host is an optional World service; each World supplies its desktop and capture implementation. See [ownership and integration](COMPUTER-USE-DESIGN.md). `scripts/cua_repl` exposes persistent JavaScript as an MCP tool or CLI. The agent skill is in `skills/ataxia-computer-use/` and includes the supplied confirmation policy.
 
@@ -10,14 +13,14 @@ Build with `make computer-use`. Native applications require Python 3 with PyGObj
 
 ```bash
 scripts/cua_repl --session work <<'JS'
-await cua.getState();
+await cua.ataxia.getWorld();
 JS
 ```
 
 The first native request creates an active session automatically. Ataxia's **Agent sessions** panel displays activity and provides **Pause**, **Resume**, **Disconnect**, and **Pause all**. Human takeover, session expiry, and explicit stop controls still apply. The adapter does not automatically resume a paused session.
 
 ```javascript
-var app = await cua.getApp('an-id-from-listApps');
+var app = await cua.ataxia.getWindow(windowId); // choose an ID from getWorld()
 // Use actual indices from the emitted tree:
 await app.setValue(12, 'hello');
 await app.click(18);
@@ -87,7 +90,29 @@ On this Ubuntu machine the downloaded Chromium is blocked by AppArmor's user-nam
 
 ## Ataxia additions
 
-`cua.ataxia` provides `connect`, `status`, `capabilities`, `listWindows`, `getWindow`, `batch`, `captureDesktop`, `tabMarks`, `metrics`, and `disconnect` without changing the supplied method signatures. The native protocol provides an active-session-checked `target` query with a compositor-verified client PID, window capture origins, seat-local paste, desktop snapshots, revision-checked layout preview/apply/Undo, window controls, and navigation. The generic `arrange` method accepts the active World's advertised layout language. `moveWindow` and `setFloating` require its `place-window` schema, as implemented by Metaworld. Workspace limits come from the World. Automatic native AX observations tolerate continued updates without replaying input; explicit stability waits remain strict. The optional World-owned `libataxia-cua.so` supplies the native client and clipboard queries.
+`getWorld()` reports windows, membership, intended world geometry and separate
+output cameras. `getDesktop()` remains its structured-state alias. `listWindows()`
+discovers mapped windows outside every viewport, and reports target availability
+separately from intersection with the session output. `getWindow(id)` captures and
+controls that window directly; it never needs to move the human camera. `getApp`
+requires explicit window selection when multiple windows match, and does not
+launch another process just because the existing window is unavailable.
+
+`captureViewport()` captures only the session output's current view and restores
+the prior input view; `captureDesktop()` is its alias. Captures identify their
+output/window, coordinate space, dimensions and popup origin. Native app methods
+always select window view. Pointer actions reject a stale screenshot after a
+resize or popup-bounds change instead of applying old pixels to new geometry.
+
+The remaining `cua.ataxia` operations include `connect`, `status`, `capabilities`,
+`batch`, `tabMarks`, `metrics`, and `disconnect`. The native protocol provides an
+active-session-checked `target` query with a compositor-verified client PID,
+seat-local paste, revision-checked layout preview/apply/Undo, window controls and
+navigation. `arrange` accepts the active World's layout language; `moveWindow` and
+`setFloating` require its `place-window` schema. Workspace limits belong to World.
+Automatic AX observations tolerate continued updates; explicit stability waits
+remain strict. The optional World-owned `libataxia-cua.so` supplies native client
+and clipboard queries.
 
 Native semantic actions validate the active selected target against the compositor before and after AT-SPI operations and reject stale/detached elements. The human clipboard is preserved by using a separate clipboard source on the agent's Wayland seat. Clipboard writes are asynchronous with bounded transfers and timeouts. Browser automation is scoped to the configured provider; it does not inherit Ataxia's native-session state. The skill's consequential-action policy applies to both.
 

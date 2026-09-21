@@ -21,10 +21,30 @@ try {
   assert.equal((await cua.ataxia.connect()).state, 'active');
   await cua.listApps({ emit: false });
   await mark('launch');
+  await until(async () => fs.stat(path.join(directory, 'offscreen-ready')).then(() => true, () => false));
   const windows = await until(async () => { const w = await cua.ataxia.listWindows({ emit: false }); return w.length ? w : false; });
   assert(windows[0].pid > 0);
+  assert.equal(windows[0]['on-output'], false); assert.equal(windows[0].available, true);
+  assert.equal(windows[0]['coordinate-space'], 'window-local');
+  const initialWorld = await cua.ataxia.getWorld({ emit: false });
+  assert.equal(initialWorld.outputs.length, 2); assert.equal(initialWorld['coordinate-space'], 'world');
+  assert.deepEqual(initialWorld.windows[0]['on-outputs'], []);
+  assert(initialWorld.windows[0].geometry[0] < -1000);
+  // Window APIs recover their own coordinate space after an explicit viewport view.
+  await cua.ataxia.batch([{ op: 'view', mode: 'desktop' }]);
+  assert((await cua.ataxia.listWindows({ emit: false })).some(w => w.id === windows[0].id));
   const app = await cua.getApp('ataxia.cua-test');
+  assert.equal(app.windowId, windows[0].id); assert.equal((await cua.ataxia.status()).view, 'window');
+  const viewportInventory = await request(nativeConnection.socket, { op: 'observe', mode: 'desktop', token: nativeConnection.token });
+  assert(!viewportInventory.windows.some(w => w.id === app.windowId));
+  assert.equal((await cua.ataxia.status()).view, 'window');
   assert.equal(await cua.ataxia.getWindow(windows[0].id), app);
+  const viewport = await cua.ataxia.captureViewport({ emit: false });
+  assert.equal(viewport.view, 'desktop'); assert.equal(viewport['coordinate-space'], 'output-local');
+  assert.equal(viewport.output, initialWorld.output);
+  assert.equal((await cua.ataxia.status()).view, 'window');
+  assert.deepEqual((await cua.ataxia.getWorld({ emit: false })).outputs, initialWorld.outputs);
+  console.log('PASS: two independent output views, initial offscreen discovery and selection, viewport/window capture separation, unchanged human cameras.');
   let state = await app.getAXState({ disableDiffing: true, emit: false }); console.log(state);
   assert.match(state, /Name/); assert(!state.includes('Accessibility unavailable'));
   const name = index(state, 'text', 'Name');
@@ -49,6 +69,8 @@ try {
   await app.pressKey('ctrl+a'); await app.paste('Pasted · λ🙂\nsecond line', { format: 'text' });
   state = await app.getAXState({ emit: false }); assert.match(state, /Pasted/);
   const image = await app.getScreenshot({ emit: false }); assert.equal(Buffer.from(image).subarray(1, 4).toString(), 'PNG');
+  assert.equal(app.image.view, 'window'); assert.equal(app.image.window, app.windowId);
+  assert.equal(app.image['coordinate-space'], 'window-local');
   await fs.writeFile(path.join(directory, 'native.png'), image);
   await assert.rejects(app.click(name), error => error.code === 'stale-element');
   const both = await app.getAXStateAndScreenshot({ emit: false }); assert.match(both.state, /Accessibility tree/); assert(both.screenshot.length > 100);
@@ -67,6 +89,8 @@ try {
   await assert.rejects(app.setValue(name, 'Must not happen'), error => ['session-paused', 'not-active', 'stale-element'].includes(error.code));
   await assert.rejects(cua.listApps({ emit: false }), error => error.code === 'session-paused');
   await assert.rejects(cua.ataxia.getDesktop({ emit: false }), error => error.code === 'session-paused');
+  await assert.rejects(cua.ataxia.getWorld({ emit: false }), error => error.code === 'session-paused');
+  await assert.rejects(cua.ataxia.captureViewport({ emit: false }), error => error.code === 'session-paused');
   await assert.rejects(cua.ataxia.moveWindow(windows[0].id, { workspace: 3 }), error => error.code === 'session-paused');
   assert.equal((await request(nativeConnection.socket, { op: 'desktop', token: nativeConnection.token })).error, 'not-active');
   assert.equal((await request(nativeConnection.socket, { op: 'navigate', action: 'overview', revision: 1,

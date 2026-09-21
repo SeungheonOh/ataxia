@@ -28,7 +28,7 @@
        (append
         (list
          (%assistant-tool-spec "ataxia_observe"
-       "Observe approved applications. Select window by its stable ID for a window-local PNG and input coordinates. capture defaults true; without a selected window only the window list is returned. The token and sequence are managed by Ataxia."
+       "Discover approved mapped applications across the World, including offscreen windows. Select an available window by stable ID for its own PNG and local input coordinates, independent of monitor cameras or occlusion. Unavailable windows remain in discovery; inspect their World state. capture defaults true; without a selected window only the window list is returned. The token and sequence are managed by Ataxia."
        (%assistant-object "window" integer "capture" boolean))
          (%assistant-tool-spec "ataxia_act"
        "Execute 1–16 native input actions in order and return a settled screenshot. Observe a window before input. Key names are XKB names, e.g. Return; modifiers are Control_L, Shift_L, Alt_L, Super_L. Window coordinates apply to the last image. This seat cannot invoke desktop shortcuts or click World controls. Human takeover pauses the session."
@@ -37,7 +37,7 @@
          (%assistant-tool-spec "ataxia_window"
        "Control an application window by its stable ID from observe or desktop_snapshot. Actions: close, minimize, restore, maximize, fullscreen. Close sends the normal application close request; it has no Undo and may open a save dialog, so verify afterward. Restore unminimizes and exits maximized/fullscreen presentation. Maximize and fullscreen follow the current World's placement policy. Application scope permits only its selected window; Project scope permits only this assistant's previews."
        (%assistant-object "window" integer "action" (%assistant-schema "string" "enum" #("close" "minimize" "restore" "maximize" "fullscreen"))) #("window" "action"))
-         (%assistant-tool-spec "ataxia_desktop_snapshot" "Read desktop windows, outputs and any layout details provided by the current World, including the layout revision. Includes minimized windows so they can be restored or closed."
+         (%assistant-tool-spec "ataxia_desktop_snapshot" "Read structured state across the infinite World: stable window IDs, availability, placement, groups/workspaces and independent monitor cameras, plus the layout revision. Includes minimized and hidden-workspace windows. World geometry is not screenshot or click coordinates; each monitor is only a viewport."
                           (%assistant-object)))
         (when operation
           (list
@@ -127,10 +127,9 @@
   (cond
     ((equal name "ataxia_observe")
      (let ((window (gethash "window" arguments)))
-       (when window
-         (%assistant-check-action-scope controller (vector (list :op "view" :window window :mode "window")))
-         (%assistant-cu-call controller (list :op "view" :mode "window" :window window)))
-       (let ((result (%assistant-cu-call controller (list :op "observe"))))
+       (%assistant-check-action-scope controller (vector (list :op "view" :window window :mode "window")))
+       (%assistant-cu-call controller (list :op "view" :mode "window" :window window))
+       (let ((result (%assistant-cu-call controller (list :op "observe" :mode "window"))))
          (unless (eq :false (gethash "capture" arguments t))
            (when (getf (getf result :session) :window)
              (setf (getf result :image) (getf (%assistant-cu-call controller (list :op "capture")) :image))))

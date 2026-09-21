@@ -3,6 +3,7 @@ import path from 'node:path';
 import { AXState } from './ax-state.mjs';
 import { AccessibilityHelper } from './helper.mjs';
 import { ComputerTransport } from './transport.mjs';
+import { nativeGuidance } from './guidance.mjs';
 import { CuaError, clickOptions, direction, observationOptions, options, pages, parseKey, point, requireThat, selectionOptions, text, sleep } from './common.mjs';
 
 const normalize = value => value.toLowerCase().replace(/\.desktop$/, '');
@@ -15,17 +16,17 @@ export class NativeProvider {
   documentation() {
     if (!this.documented) {
       this.documented = true;
-      this.emitter.write('Ataxia native apps: actions use the active agent seat and target application content. Keys bypass World shortcuts; Super+Shift+number, Super+V and Alt+Tab cannot manage Ataxia windows. Pointer input cannot operate World chrome. Use cua.ataxia.getDesktop(), moveWindow(), setFloating(), windowAction(), switchWorkspace() and arrange() for native desktop management. Layout changes use observed revisions and return Undo tokens. Automatic AX observations return a current snapshot if the app keeps updating; explicit wait-stable batches still report timeouts. getWindow/focus select an input and capture target without raising the window or switching the human workspace. Accessibility indices belong to the latest tree for this window. Screenshot coordinates are image pixels; before a screenshot they are window-local logical pixels. Native paste uses the agent clipboard and preserves the human clipboard. Unsupported accessibility actions can use screenshots and pointer/key input. Refresh state after actions; no caller sleep is needed.');
+      this.emitter.write(nativeGuidance);
     }
   }
-  async inventory() { return this.run(() => this.transport.read('observe')); }
+  async inventory() { return this.run(() => this.transport.read('observe', { mode: 'window' })); }
   appRecords(inventory) {
     const apps = new Map();
     for (const a of inventory.applications ?? []) apps.set(normalize(a.id), { id: a.id, displayName: a.name, isRunning: false });
     for (const w of inventory.windows ?? []) {
       const id = w['app-id'] || `window:${w.id}`, key = normalize(id);
       const entry = apps.get(key) ?? { id, displayName: id };
-      entry.isRunning = true; apps.set(key, entry);
+      entry.isRunning = true; (entry.windowIds ??= []).push(w.id); apps.set(key, entry);
     }
     for (const app of apps.values()) Object.assign(app, this.usage.get(normalize(app.id)));
     return [...apps.values()];
@@ -37,7 +38,7 @@ export class NativeProvider {
   async getApp(query) {
     text(query, 'app', 1024); requireThat(query.length > 0, 'invalid-app', 'Supply an app ID, display name or installed desktop-file path.');
     return this.run(async () => {
-      let inventory = await this.transport.read('observe');
+      let inventory = await this.transport.read('observe', { mode: 'window' });
       const apps = this.appRecords(inventory);
       let metadata = [];
       try { metadata = await this.helper.call('desktop-info', { ids: (inventory.applications ?? []).map(a => a.id) }); }
@@ -57,13 +58,17 @@ export class NativeProvider {
         // unrelated newly opened window when its app identity does not match.
         const deadline = Date.now() + 10_000;
         do {
-          inventory = await this.transport.read('observe'); windows = inventory.windows.filter(matchesWindow);
+          inventory = await this.transport.read('observe', { mode: 'window' }); windows = inventory.windows.filter(matchesWindow);
           if (!windows.length) await sleep(100);
         } while (!windows.length && Date.now() < deadline);
         const fresh = windows.filter(w => !before.has(w.id)); if (fresh.length) windows = fresh;
       }
       requireThat(windows.length, 'app-window-unavailable', 'The app has no eligible window. Use cua.ataxia.listWindows() to inspect its runtime app ID.');
-      const window = windows.find(w => w.selected) ?? windows[0], target = this.binding(window, app.id);
+      if (windows.length > 1) throw new CuaError('ambiguous-window', 'This app has multiple windows. Choose a stable ID with cua.ataxia.getWindow(id).',
+        { windows: windows.map(w => ({ id: w.id, title: w.title, available: w.available, 'on-output': w['on-output'] })) });
+      const window = windows[0];
+      this.requireAvailable(window);
+      const target = this.binding(window, app.id);
       this.documentation();
       const old = this.usage.get(normalize(app.id)); this.usage.set(normalize(app.id), { useCount: (old?.useCount ?? 0) + 1, lastUsedDate: new Date().toISOString() });
       await target._getAXState({}); return target;
@@ -74,11 +79,16 @@ export class NativeProvider {
     if (!target) { target = new NativeTarget(this, window.id, appId); this.targets.set(window.id, target); }
     return target;
   }
+  requireAvailable(window) {
+    if (window.available === false) throw new CuaError('window-unavailable',
+      'This window is minimized or hidden by World policy. Inspect getWorld(); restore or navigate only when the task calls for it.', { window });
+  }
   async getWindow(id) {
     requireThat(Number.isSafeInteger(id), 'invalid-window', 'Use a window ID from cua.ataxia.listWindows().');
     return this.run(async () => {
-      const inventory = await this.transport.read('observe'), window = inventory.windows.find(w => w.id === id);
+      const inventory = await this.transport.read('observe', { mode: 'window' }), window = inventory.windows.find(w => w.id === id);
       requireThat(window, 'window-not-found', 'That window is not available in the active session.');
+      this.requireAvailable(window);
       this.documentation();
       const target = this.binding(window); await target._getAXState({}); return target;
     });
@@ -92,11 +102,18 @@ export class NativeTarget {
   _fields() { return { token: this.provider.transport.token, socket: this.provider.transport.socket, window: this.windowId }; }
   async _select(settle = false, capture = false, actions = []) {
     const reply = await this.provider.transport.batch([
-      { op: 'focus', window: this.windowId }, ...actions,
+      { op: 'view', mode: 'window', window: this.windowId }, ...actions,
       ...(settle && !capture ? [{ op: 'wait-stable', window: this.windowId, timeout: 2, settle: .15 }] : []),
     ], { capture });
     this.window = reply.windows?.find(w => w.id === this.windowId) ?? this.window;
-    if (reply.image) this.image = reply.image;
+    if (reply.image) {
+      requireThat(reply.image.view === 'window' && reply.image.window === this.windowId,
+        'capture-target-mismatch', 'The capture did not belong to this window. Observe again.');
+      this.image = reply.image; this.imageStale = false;
+    }
+    else if (this.image && this.window &&
+      (this.image['coordinate-width'] !== this.window.width || this.image['coordinate-height'] !== this.window.height ||
+       this.image['origin-x'] !== this.window['origin-x'] || this.image['origin-y'] !== this.window['origin-y'])) this.imageStale = true;
     return reply;
   }
   async _snapshot(disableDiffing = false) {
@@ -117,7 +134,7 @@ export class NativeTarget {
       // Acquisition/observation may see a video or continuously repainting app.
       // The focus already completed; read current state without replaying input.
       if (error.code !== 'wait-timeout' || error.details?.completed !== 1) throw error;
-      const inventory = await this.provider.transport.read('observe');
+      const inventory = await this.provider.transport.read('observe', { mode: 'window' });
       this.window = inventory.windows.find(window => window.id === this.windowId);
       requireThat(this.window, 'window-not-found', 'The observed window disappeared while updating.');
       updating = true;
@@ -128,6 +145,7 @@ export class NativeTarget {
   getAXState(opts = {}) { return this._run(() => this._getAXState(opts)); }
   async _imageBytes(image) {
     requireThat(image?.path, 'capture-failed', 'No screenshot was returned.');
+    requireThat(image.view === 'window' && image.window === this.windowId, 'capture-target-mismatch', 'The capture did not belong to this window. Observe again.');
     const stat = await fs.stat(image.path);
     requireThat(stat.isFile() && stat.size <= 24 * 1024 * 1024, 'invalid-image', 'Screenshot exceeds its size limit.');
     return new Uint8Array(await fs.readFile(image.path));
@@ -137,7 +155,11 @@ export class NativeTarget {
     return this._run(async () => {
       const reply = await this._select(true, true), bytes = await this._imageBytes(reply.image);
       this.ax.invalidate();
-      if (opts.emit !== false) this.provider.emitter.emitImage({ bytes, mimeType: 'image/png' }); return bytes;
+      if (opts.emit !== false) {
+        this.provider.emitter.write(`Window ${this.windowId} · ${JSON.stringify(this.window?.title ?? '')} · ${reply.image.width}×${reply.image.height} screenshot pixels (window content and popups)`);
+        this.provider.emitter.emitImage({ bytes, mimeType: 'image/png' });
+      }
+      return bytes;
     });
   }
   getAXStateAndScreenshot(opts = {}) {
@@ -154,6 +176,7 @@ export class NativeTarget {
       const p = await this.provider.helper.call('point', { ...this._fields(), element: element.key }); return [p.x, p.y];
     }
     const [x, y] = point(target);
+    requireThat(!this.imageStale, 'stale-screenshot', 'Window geometry changed. Capture this window again before using screenshot coordinates.');
     // Screenshot coordinates are pixels in the most recent image. Before any
     // screenshot, coordinates are window-local logical pixels.
     if (this.image) return [x * this.image['coordinate-width'] / this.image.width, y * this.image['coordinate-height'] / this.image.height];

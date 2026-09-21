@@ -1,35 +1,32 @@
 <rml><head><title>Ataxia applications</title><style>
-body { margin:0; width:100%; height:100%; color:#24282d; font-family:DejaVu Sans; font-size:13dp; }
+body { margin:0; width:100%; height:100%; font-size:13dp; }
 div { display:block; box-sizing:border-box; }
-#panel { position:absolute; left:0; right:0; top:0; bottom:0; padding:16dp; background:#ffffff; border:1dp #d4d8dc;
+#panel { position:absolute; left:0; right:0; top:0; bottom:0; padding:16dp; border:2dp var(--ink);
  display:flex; flex-direction:column; gap:12dp; overflow-y:auto; }
 #heading { display:flex; align-items:center; justify-content:space-between; height:28dp; flex-shrink:0; }
 #eyebrow { display:none; }
 #hello { font-size:15dp; font-weight:bold; }
-button { display:block; box-sizing:border-box; color:#424950; background:transparent; height:28dp; line-height:28dp; padding:0 8dp; text-align:center; }
-button:hover { background:#f0f2f4; color:#24282d; }
-button:active { background:#e3e7eb; }
+button { display:block; box-sizing:border-box; height:28dp; line-height:28dp; padding:0 8dp; text-align:center; }
 #close { font-size:18dp; width:28dp; padding:0; }
 #search { display:block; box-sizing:border-box; width:100%; height:36dp; padding:9dp 10dp; font-size:13dp;
- font-family:DejaVu Sans; color:#24282d; background:#f7f8f9; border:1dp #d4d8dc; flex-shrink:0; }
-#search:focus { border-color:#365dc0; }
+ border:2dp var(--ink); flex-shrink:0; }
+#search:focus { border-color:var(--ink); }
 #section { display:flex; align-items:center; justify-content:space-between; height:16dp; flex-shrink:0; }
-#section-name { color:#626a73; font-size:11dp; }
-#count { color:#626a73; font-size:11dp; }
+#section-name { font-size:11dp; }
+#count { font-size:11dp; }
 #grid { display:flex; flex-direction:column; gap:2dp; flex:1; min-height:250dp; flex-shrink:0; }
 .app { width:100%; flex-shrink:0; height:40dp; display:flex; align-items:center; gap:12dp; padding:0 10dp; }
-.app.selected { background:#eaf0ff; color:#244ebc; }
-.icon { width:24dp; height:24dp; color:#626a73; background:#f0f2f4; font-size:12dp; line-height:24dp; text-align:center; flex-shrink:0; }
+.icon { width:24dp; height:24dp; font-size:12dp; line-height:24dp; text-align:center; flex-shrink:0; }
 .name { flex:1; height:40dp; line-height:40dp; text-align:left; overflow:hidden; white-space:nowrap; font-size:13dp; }
-#empty { display:none; color:#626a73; padding:16dp 0; }
-#footer { display:flex; align-items:center; gap:4dp; border-top:1dp #d4d8dc; padding-top:8dp; flex-shrink:0; }
-#page { white-space:nowrap; flex-shrink:0; color:#626a73; font-size:11dp; margin-left:auto; }
+#empty { display:none; padding:16dp 0; }
+#footer { display:flex; align-items:center; gap:4dp; border-top:1dp var(--ink); padding-top:8dp; flex-shrink:0; }
+#page { white-space:nowrap; flex-shrink:0; font-size:11dp; margin-left:auto; }
 #prev, #next { font-size:18dp; width:28dp; padding:0; }
-#hint { color:#626a73; font-size:10dp; }
+#hint { font-size:10dp; }
 #panel.small { padding:12dp; gap:10dp; }
 .small #hint { display:none; }
-</style></head><body data-model="state">
-<div id="panel"><div id="heading"><div><div id="eyebrow">ATAXIA / YOUR APPS</div><div id="hello">Applications</div></div><button id="close">×</button></div>
+</style><link type="text/rcss" href="../theme.rcss"/></head><body class="shell shell-menu" data-model="state">
+<div id="panel"><div id="heading"><div><div id="eyebrow">ATAXIA / YOUR APPS</div><div id="hello">Applications</div></div><div class="title-rule"/><button id="close">×</button></div>
 <input id="search" type="text" data-value="query" autofocus="autofocus" placeholder="Search applications…" />
 <div id="section"><div id="section-name">Installed</div><div id="count">All applications</div></div>
 <div id="grid">
@@ -40,5 +37,5 @@ button:active { background:#e3e7eb; }
 <button id="app4" class="app tone1"><div id="icon4" class="icon">A</div><div id="name4" class="name">Application</div></button>
 <button id="app5" class="app tone2"><div id="icon5" class="icon">A</div><div id="name5" class="name">Application</div></button>
 <div id="empty">No applications match your search.</div></div>
-<div id="footer"><button id="overview">Overview</button><button id="power">Power</button><div id="page">1 / 1</div><button id="prev">‹</button><button id="next">›</button></div>
-<div id="hint">↑ ↓ Select   Enter Open   Esc Close</div></div></body></rml>
+<div id="footer" class="ruled"><div class="dash-rule"/><button id="overview">Overview</button><button id="power">Power</button><div id="page">1 / 1</div><button id="prev">‹</button><button id="next">›</button></div>
+<div id="hint">↑ ↓ Select Enter Open Esc Close</div></div></body></rml>

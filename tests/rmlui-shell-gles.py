@@ -1,11 +1,13 @@
 """Native renders of the application and battery popups, including text search."""
 from pathlib import Path
 exec(compile((Path(__file__).parent / 'rmlui-gles.py').read_text(), str(Path(__file__).parent / 'rmlui-gles.py'), 'exec'))
+for face in ['DejaVuSansMono.ttf', 'DejaVuSansMono-Bold.ttf', 'DejaVuSansMono-Oblique.ttf', 'DejaVuSansMono-BoldOblique.ttf']:
+    ok(api('load_font', C.c_bool, C.c_char_p)(f'/usr/share/fonts/truetype/dejavu/{face}'.encode()))
 set_text=api('component_set_string',C.c_bool,P,C.c_char_p,C.c_char_p)
 for kind,width,height in [('menu',400,480),('menu',304,480),('power',340,500),('power',304,500),('power',304,340)]:
     bind_texture(0x0de1,tex);tex_image(0x0de1,0,0x1908,width,height,0,0x1908,0x1401,None)
     source=(root/f'src/world/rmlui/status-bar/{kind}.rml').read_bytes()
-    c=create(source,b'shell.rml',b'',width,height,1);ok(c);ok(attach(c,fbo))
+    c=create(source,str(root/f'src/world/rmlui/status-bar/{kind}.rml').encode(),b'',width,height,1);ok(c);ok(attach(c,fbo))
     if kind=='menu':
         ok(set_class(c,b'panel',b'small',width<360))
         ok(api('model_string',C.c_bool,P,C.c_char_p,C.c_char_p)(c,b'query',b''))
@@ -43,10 +45,10 @@ for kind,width,height in [('menu',400,480),('menu',304,480),('power',340,500),('
             ok(button(c,x,y,1,True));ok(button(c,x,y,1,False));ok(render(c))
         if height==500:
             assert count_callbacks(c)==0,'model initialization must not issue a brightness command'
-            click(width-31,334)
+            click(width-49,351)
             assert callback_name(c,0)==b'brightness-up', (kind,width,[(callback_name(c,i),api('component_callback_value',C.c_char_p,P,C.c_size_t)(c,i)) for i in range(count_callbacks(c))])
             clear(c)
-            click(width//2,334)
+            click(width//2,351)
             assert 45<int(float(model_value(c,b'brightness')))<65,model_value(c,b'brightness')
             assert callback_name(c,0)==b'model:brightness'
             clear(c)
@@ -55,14 +57,14 @@ for kind,width,height in [('menu',400,480),('menu',304,480),('power',340,500),('
             assert int(float(model_value(c,b'brightness')))==before+1
             assert callback_name(c,0)==b'model:brightness'
             clear(c)
-            click(width//2,421)
+            click(width//2,437)
             assert callback_name(c,0)==b'sleep'
             clear(c)
             ok(boolean(c,b'sleep_disabled',True));ok(render(c))
-            click(width//2,421)
+            click(width//2,437)
             assert count_callbacks(c)==0,('disabled sleep button dispatched a callback',[(callback_name(c,i),api('component_callback_value',C.c_char_p,P,C.c_size_t)(c,i)) for i in range(count_callbacks(c))])
             ok(boolean(c,b'brightness_disabled',True));ok(render(c))
-            click(width-31,334)
+            click(width-49,351)
             assert count_callbacks(c)==0,'disabled brightness button dispatched a callback'
         else:
             # A short output scrolls to the actual Sleep control.
@@ -72,7 +74,7 @@ for kind,width,height in [('menu',400,480),('menu',304,480),('power',340,500),('
             pixels=(C.c_ubyte*(width*height*4))();read(0,0,width,height,0x1908,0x1401,pixels)
             scrolled=Image.frombytes('RGBA',(width,height),bytes(pixels)).transpose(Image.Transpose.FLIP_TOP_BOTTOM)
             scrolled.save(root/'build/power-short-scrolled.png')
-            rows=[y for y in range(height) if scrolled.getpixel((60,y))[:3]==(240,242,244) and scrolled.getpixel((width-60,y))[:3]==(240,242,244)]
+            rows=[y for y in range(height) if scrolled.getpixel((60,y))[:3]==(22,22,22) and scrolled.getpixel((width-60,y))[:3]==(22,22,22)]
             assert len(rows)>=25,'sleep button is not reachable on the short panel'
             click(width//2,rows[len(rows)//2])
             assert callback_name(c,0)==b'sleep'

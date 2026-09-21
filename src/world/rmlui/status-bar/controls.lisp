@@ -160,7 +160,7 @@
              (osd (or existing
                       (setf (gethash output (shell-service-osds service))
                             (create-agent-widget 'shell-osd world (uiop:read-file-string path)
-                              :component-factory #'ataxia.world.rmlui:make-rmlui-component
+                              :component-factory #'ataxia.world.rmlui:make-shell-rmlui-component
                               :source-path (namestring path) :output output :width 340d0 :height 106d0 :layer 1400)))))
         (%paint-osd osd kind value detail :muted muted :error error)
         (setf (%osd-deadline osd) (+ (monotonic-time) 1.6d0))

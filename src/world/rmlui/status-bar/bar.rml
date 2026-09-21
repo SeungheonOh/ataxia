@@ -1,40 +1,34 @@
 <rml><head><title>Ataxia status bar</title><style>
-body { margin:0; width:100%; height:100%; font-family:DejaVu Sans; font-size:12dp; color:#24282d; }
+body { margin:0; width:100%; height:100%; font-size:12dp; }
 div { display:block; box-sizing:border-box; }
 #bar { position:absolute; left:0; right:0; top:0; height:44dp; box-sizing:border-box;
- display:flex; align-items:center; gap:10dp; padding:5dp 12dp 6dp; background:#ffffff; border-top:1dp #d4d8dc; }
+ display:flex; align-items:center; gap:10dp; padding:5dp 12dp 6dp; border-top:1dp var(--ink); }
 button { display:block; box-sizing:border-box; height:32dp; line-height:32dp; padding:0 10dp;
- color:#424950; background:transparent; text-align:center; }
-button:hover { background:#f0f2f4; color:#24282d; }
-button:active { background:#e3e7eb; }
+ text-align:center; }
 #home { flex-shrink:0; font-weight:bold; }
 #mark { display:none; }
 #brand { line-height:32dp; }
-.separator { width:1dp; height:20dp; background:#d4d8dc; flex-shrink:0; }
+.separator { width:1dp; height:20dp; flex-shrink:0; }
 #context { display:flex; align-items:center; min-width:60dp; flex-shrink:1; }
-#group { max-width:285dp; overflow:hidden; white-space:nowrap; color:#244ebc; background:#f1f5ff; }
+#group { max-width:285dp; overflow:hidden; white-space:nowrap; }
 .arrow { display:none; }
 #workspaces { display:none; }
-.workspace { width:30dp; height:32dp; line-height:32dp; padding:0; color:#626a73; }
-.workspace.selected { color:#244ebc; background:#eaf0ff; font-weight:bold; }
+.workspace { width:30dp; height:32dp; line-height:32dp; padding:0; }
+.workspace.selected { font-weight:bold; }
 #selection, #focus-label, #apps, #power-note { display:none; }
 #focus { flex:1; min-width:0; overflow:hidden; white-space:nowrap; }
-#title { line-height:32dp; color:#626a73; overflow:hidden; white-space:nowrap; }
+#title { line-height:32dp; overflow:hidden; white-space:nowrap; }
 #right { display:flex; align-items:center; gap:6dp; margin-left:auto; flex-shrink:0; }
 #audio, #clipboard { padding:0 7dp; }
-#media { display:none; max-width:180dp; overflow:hidden; white-space:nowrap; padding:0 8dp; color:#35664f; }
+#media { display:none; max-width:180dp; overflow:hidden; white-space:nowrap; padding:0 8dp; }
 #power { padding:0 6dp; display:flex; align-items:center; gap:8dp; white-space:nowrap; }
-#battery { position:relative; width:22dp; height:12dp; padding:2dp; border:1dp #626a73; }
-#charge { height:100%; width:75%; background:#626a73; }
-#battery-tip { position:absolute; right:-4dp; top:3dp; width:2dp; height:4dp; background:#626a73; }
+#battery { position:relative; width:22dp; height:12dp; padding:2dp; border:2dp var(--ink); }
+#charge { height:100%; width:75%; }
+#battery-tip { position:absolute; right:-4dp; top:3dp; width:2dp; height:4dp; }
 #power-copy { line-height:32dp; }
-#power-symbol { color:#35664f; font-size:14dp; line-height:32dp; }
-#bar.low #charge { background:#9a651b; }
-#bar.low #power { color:#9a651b; }
-#bar.critical #charge { background:#ad343f; }
-#bar.critical #power { color:#ad343f; }
-#clock { line-height:32dp; color:#24282d; white-space:nowrap; }
-#date { color:#626a73; white-space:nowrap; }
+#power-symbol { font-size:14dp; line-height:32dp; }
+#clock { line-height:32dp; white-space:nowrap; }
+#date { white-space:nowrap; }
 #bar.has-media #media { display:block; }
 #bar.compact { gap:8dp; }
 .compact #focus, .compact #date, #bar.compact #media { display:none; }
@@ -45,10 +39,10 @@ button:active { background:#e3e7eb; }
 #bar.tiny #group { max-width:90dp; font-size:11dp; }
 #bar.tiny #right { gap:2dp; }
 #bar.tiny #home { padding:0 6dp; }
-#assistant { display:none; height:28dp; line-height:28dp; padding:0 8dp; font-size:11dp; background:#eaf0ff; color:#244ebc; }
+#assistant { display:none; height:28dp; line-height:28dp; padding:0 8dp; font-size:11dp; }
 #bar.tiny #apps, #bar.tiny #clock, #bar.tiny #clipboard { display:none; }
 #bar.tiny #audio { max-width:38dp; overflow:hidden; white-space:nowrap; font-size:11dp; }
-</style></head><body>
+</style><link type="text/rcss" href="../theme.rcss"/></head><body class="shell shell-bar">
 <div id="bar">
  <button id="home"><div id="mark">a</div><div id="brand">Apps</div></button>
  <div class="separator"/>

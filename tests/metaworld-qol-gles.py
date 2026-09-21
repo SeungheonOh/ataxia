@@ -1,6 +1,8 @@
 """Render the actual RmlUi picker and indicator with the GLES adapter."""
 from pathlib import Path
 exec(compile((Path(__file__).parent / 'rmlui-gles.py').read_text(), str(Path(__file__).parent / 'rmlui-gles.py'), 'exec'))
+for face in ['DejaVuSansMono.ttf', 'DejaVuSansMono-Bold.ttf', 'DejaVuSansMono-Oblique.ttf', 'DejaVuSansMono-BoldOblique.ttf']:
+    ok(api('load_font', C.c_bool, C.c_char_p)(f'/usr/share/fonts/truetype/dejavu/{face}'.encode()))
 set_text=api('component_set_string',C.c_bool,P,C.c_char_p,C.c_char_p)
 attribute=api('component_set_attribute',C.c_bool,P,C.c_char_p,C.c_char_p,C.c_char_p,C.c_bool)
 register=api('component_register_callback',C.c_bool,P,C.c_char_p)

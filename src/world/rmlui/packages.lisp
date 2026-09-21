@@ -14,6 +14,7 @@
    #:rmlui-component
    #:make-rmlui-widget
    #:make-rmlui-component
+   #:make-shell-rmlui-component #:ensure-shell-fonts
    #:destroy-rmlui-component
    #:rmlui-component-width
    #:rmlui-component-height

@@ -30,4 +30,11 @@
 (check-component "test.slint"
                  "export component Test inherits Window { in property <string> caption; callback action(string); }"
                  '(("caption" . "dynamic")) '("action"))
+(dolist (name '("header" "toolbar" "group-controls" "canvas-menu" "note"))
+  ;; Source interpretation is also used for live visual updates while existing
+  ;; component pointers retain their original native library instance.
+  (let ((path (asdf:system-relative-pathname "ataxia-metaworld"
+                 (format nil "src/worlds/metaworld/~A.slint" name))))
+    (check-component (namestring path) (uiop:read-file-string path) nil nil)))
+(check-component "ataxia-view-shift.slint" +view-shift-ui-source+ nil nil)
 (format t "Slint built-in interfaces and dynamic fallback passed.~%")

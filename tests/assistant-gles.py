@@ -1,6 +1,8 @@
 """Exercise the shipping panel using the real native renderer; no model or audio."""
 from pathlib import Path
 exec(compile((Path(__file__).parent / 'rmlui-gles.py').read_text(), __file__, 'exec'))
+for face in ['DejaVuSansMono.ttf', 'DejaVuSansMono-Bold.ttf', 'DejaVuSansMono-Oblique.ttf', 'DejaVuSansMono-BoldOblique.ttf']:
+    ok(api('load_font', C.c_bool, C.c_char_p)(f'/usr/share/fonts/truetype/dejavu/{face}'.encode()))
 set_text = api('component_set_string', C.c_bool, P, C.c_char_p, C.c_char_p)
 model = api('model_string', C.c_bool, P, C.c_char_p, C.c_char_p)
 import subprocess
@@ -21,7 +23,7 @@ def capture(c, width, height, name):
 def component(source, width, height):
     bind_texture(0x0de1, tex)
     tex_image(0x0de1, 0, 0x1908, width, height, 0, 0x1908, 0x1401, None)
-    c = create((root/f'src/world/assistant/{source}.rml').read_bytes(), b'assistant.rml', b'', width, height, 1)
+    c = create((root/f'src/world/assistant/{source}.rml').read_bytes(), str(root/f'src/world/assistant/{source}.rml').encode(), b'', width, height, 1)
     ok(c); ok(attach(c, fbo))
     return c
 
@@ -64,7 +66,7 @@ for width, height in [(800, 600), (304, 640)]:
     field_x += 10
     bands=[]
     for y in range(y0,y1):
-        if im.getpixel((field_x,y))[:3] == (247,248,249):
+        if im.getpixel((field_x,y))[:3] == (238,238,234):
             if not bands or y > bands[-1][-1]+1: bands.append([])
             bands[-1].append(y)
     bands=[b for b in bands if len(b)>20]
@@ -83,4 +85,4 @@ for width, height in [(800, 600), (304, 640)]:
     assert all(n in names for n in [b'model-field:change',b'effort-field:change',b'fast',b'settings-done',b'settings-backdrop']),names
     ok(api('component_focus',C.c_bool,P,C.c_bool)(c,False));ok(render(c));assert delay(c)<0,delay(c)
     ok(detach(c));destroy(c)
-print('PASS: light assistant and centered settings modal, narrow/wide, keyboard selectors, Fast, dismiss controls and idle rendering.')
+print('PASS: workstation assistant and centered settings modal, narrow/wide, keyboard selectors, Fast, dismiss controls and idle rendering.')

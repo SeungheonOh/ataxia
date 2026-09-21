@@ -1,11 +1,13 @@
 """Agent cards at desktop and narrow widths, with active and paused controls."""
 from pathlib import Path
 exec(compile((Path(__file__).parent / 'rmlui-gles.py').read_text(), str(Path(__file__).parent / 'rmlui-gles.py'), 'exec'))
+for face in ['DejaVuSansMono.ttf', 'DejaVuSansMono-Bold.ttf', 'DejaVuSansMono-Oblique.ttf', 'DejaVuSansMono-BoldOblique.ttf']:
+    ok(api('load_font', C.c_bool, C.c_char_p)(f'/usr/share/fonts/truetype/dejavu/{face}'.encode()))
 set_text = api('component_set_string', C.c_bool, P, C.c_char_p, C.c_char_p)
 for width, height, paused in [(380, 245, False), (304, 245, True)]:
     bind_texture(0x0de1, tex)
     tex_image(0x0de1, 0, 0x1908, width, height, 0, 0x1908, 0x1401, None)
-    c = create((root / 'src/world/computer-use/panel.rml').read_bytes(), b'agents.rml', b'', width, height, 1)
+    c = create((root / 'src/world/computer-use/panel.rml').read_bytes(), str(root/'src/world/computer-use/panel.rml').encode(), b'', width, height, 1)
     ok(c); ok(attach(c, fbo))
     ok(style(c, b'panel', b'box-sizing', b'border-box'))
     ok(style(c, b'panel', b'width', f'{width}dp'.encode()))
@@ -24,7 +26,7 @@ for width, height, paused in [(380, 245, False), (304, 245, True)]:
     im = Image.frombytes('RGBA', (width, height), bytes(pixels)).transpose(Image.Transpose.FLIP_TOP_BOTTOM)
     im.save(root / f'build/agent-panel-{width}.png')
     assert im.getpixel((width - 1, height // 2))[3] == 255, 'panel border missing'
-    assert im.getpixel((width - 2, height // 2))[:3] == (255, 255, 255)
+    assert im.getpixel((width - 3, height // 2))[:3] == (255, 255, 255)
     assert delay(c) < 0, 'agent panel must settle'
     ok(detach(c)); destroy(c)
 print('PASS: active/narrow paused agent cards, unclipped bounds, settled UI.')

@@ -1,21 +1,18 @@
 <rml><head><title>Clipboard history</title><style>
-body { margin:0; width:100%; height:100%; font-family:DejaVu Sans; font-size:12dp; color:#24282d; }
+body { margin:0; width:100%; height:100%; font-size:12dp; }
 div { display:block; box-sizing:border-box; }
-#panel { width:100%; height:100%; padding:16dp; border:1dp #c9ced4; background:#fff; display:flex; flex-direction:column; gap:12dp; }
+#panel { width:100%; height:100%; padding:16dp; border:2dp var(--ink); display:flex; flex-direction:column; gap:12dp; }
 #header { display:flex; align-items:center; justify-content:space-between; flex-shrink:0; }
 #title { font-size:18dp; font-weight:bold; }
-button { display:block; box-sizing:border-box; padding:8dp 10dp; background:#f0f3f7; color:#424950; }
-button:hover, button:focus { background:#e5ecf8; }
-#close { background:transparent; }
-#search { display:block; width:100%; box-sizing:border-box; height:34dp; padding:8dp; background:#f4f6f8; border:1dp #d4d8dc; flex-shrink:0; }
-#search:focus { border-color:#355fd0; }
+button { display:block; box-sizing:border-box; padding:8dp 10dp; }
+#search { display:block; width:100%; box-sizing:border-box; height:34dp; padding:8dp; border:2dp var(--ink); flex-shrink:0; }
+#search:focus { border-color:var(--ink); }
 #list { flex:1; min-height:0; overflow-y:auto; }
 .item { width:100%; height:44dp; margin-bottom:5dp; text-align:left; overflow:hidden; }
-.item.selected { color:#244ebc; background:#eaf0ff; border-left:3dp #355fd0; }
-#empty { color:#626a73; line-height:20dp; padding:12dp 0; }
+.item.selected { border-left:3dp var(--ink); }
+#empty { line-height:20dp; padding:12dp 0; }
 #footer { flex-shrink:0; }
 #paging { display:flex; align-items:center; justify-content:space-between; gap:8dp; }
-#count, #page { color:#626a73; }
-#hint { font-size:11dp; color:#626a73; line-height:16dp; margin-top:10dp; }
-scrollbarvertical { width:5dp; } scrollbarvertical sliderbar { background:#d4d8dc; }
-</style></head><body data-model="state"><div id="panel"><div id="header"><div id="title">Clipboard</div><button id="close">Close</button></div><input id="search" type="text" data-value="query" placeholder="Search recent text…" autofocus="autofocus"/><div id="count">0 recent items</div><div id="list"><button id="app0" class="item"/><button id="app1" class="item"/><button id="app2" class="item"/><button id="app3" class="item"/><button id="app4" class="item"/><button id="app5" class="item"/><div id="empty">Copy text in an app to keep it here.<br/>History lasts for this desktop session.</div></div><div id="footer"><div id="paging"><button id="prev">‹</button><div id="page">1 / 1</div><button id="next">›</button><button id="clear">Clear history</button></div><div id="hint">Choose an item, then paste in your app.<br/>Ctrl + Super + V · ↑ ↓ and Enter · Esc to close</div></div></div></body></rml>
+#hint { font-size:11dp; line-height:16dp; margin-top:10dp; }
+scrollbarvertical { width:5dp; }
+</style><link type="text/rcss" href="../theme.rcss"/></head><body class="shell shell-clipboard" data-model="state"><div id="panel"><div id="header"><div id="title">Clipboard</div><div class="title-rule"/><button id="close">Close</button></div><input id="search" type="text" data-value="query" placeholder="Search recent text…" autofocus="autofocus"/><div id="count">0 recent items</div><div id="list"><button id="app0" class="item"/><button id="app1" class="item"/><button id="app2" class="item"/><button id="app3" class="item"/><button id="app4" class="item"/><button id="app5" class="item"/><div id="empty">Copy text in an app to keep it here.<br/>History lasts for this desktop session.</div></div><div id="footer" class="ruled"><div class="dash-rule"/><div id="paging"><button id="prev">‹</button><div id="page">1 / 1</div><button id="next">›</button><button id="clear">Clear history</button></div><div id="hint">Choose an item, then paste in your app.<br/>Ctrl + Super + V · ↑ ↓ and Enter · Esc to close</div></div></div></body></rml>

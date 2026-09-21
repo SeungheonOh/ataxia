@@ -1,0 +1,18 @@
+// Match src/world/rmlui/theme.rcss for the remaining legacy World widgets.
+export global Workstation {
+    out property <color> ink: #161616;
+    out property <color> paper: #ffffff;
+    out property <color> field: #eeeeea;
+    out property <color> muted: #50504c;
+    out property <color> danger: #8c2020;
+}
+
+export component DashRule inherits Rectangle {
+    height: 4px;
+    background: transparent;
+    clip: true;
+    for dash in ceil(self.width / 10px): Rectangle {
+        x: dash * 10px; width: 6px; height: 4px;
+        background: Workstation.ink;
+    }
+}

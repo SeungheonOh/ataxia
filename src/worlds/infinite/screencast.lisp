@@ -23,8 +23,9 @@
   (multiple-value-bind (ow oh) (%output-logical-size state)
     (ataxia.world:create-agent-widget 'ataxia.world.rmlui:rmlui-widget
       (share-controller-world controller) (or source (%share-source file))
-      :source-path (format nil "ataxia-share-~A.rml" file)
-      :component-factory (or factory #'ataxia.world.rmlui:make-rmlui-component)
+      :source-path (namestring (asdf:system-relative-pathname "ataxia-screencast"
+                                (format nil "src/world/screencast/~A.rml" file)))
+      :component-factory (or factory #'ataxia.world.rmlui:make-shell-rmlui-component)
       :output (%canvas-output-output state) :width (min width ow) :height (min height oh)
       :x (max 0d0 (/ (- ow width) 2d0)) :y (max 0d0 (/ (- oh height) 2d0)) :layer layer)))
 
@@ -103,7 +104,7 @@
     (multiple-value-bind (width height) (%output-logical-size state)
       (let ((region (%share-widget controller "region" state width height :layer 5100
                       :factory (lambda (&rest args)
-                                 (change-class (apply #'ataxia.world.rmlui:make-rmlui-component args)
+                                 (change-class (apply #'ataxia.world.rmlui:make-shell-rmlui-component args)
                                                'share-region-component :controller controller)))))
         (setf (share-controller-region controller) region)
         (when (share-controller-seat controller) (%focus-target world (share-controller-seat controller) region))))))

@@ -9,7 +9,7 @@
 (defun %computer-widget (class world file output width height layer)
   (let ((path (asdf:system-relative-pathname "ataxia-computer-use" (concatenate 'string "src/world/computer-use/" file))))
     (create-agent-widget class world (uiop:read-file-string path)
-                          :source-path (namestring path) :output output :component-factory #'ataxia.world.rmlui:make-rmlui-component
+                          :source-path (namestring path) :output output :component-factory #'ataxia.world.rmlui:make-shell-rmlui-component
                           :width width :height height :layer layer)))
 (defun %computer-create-panel (world output)
   (let* ((controller (%computer-controller world))

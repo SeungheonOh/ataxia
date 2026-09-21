@@ -100,6 +100,20 @@ test-rmlui-world: all rmlui
 .PHONY: test-rmlui-status-bar test-rmlui-status-bar-world
 test-rmlui-status-bar: all rmlui
 	python3 tests/rmlui-status-bar-gles.py
+
+.PHONY: test-shell-theme
+test-shell-theme: all rmlui
+	python3 tests/shell-theme-gles.py
+	python3 tests/rmlui-status-bar-gles.py
+	python3 tests/rmlui-shell-gles.py
+	python3 tests/assistant-gles.py
+	python3 tests/computer-use-gles.py
+	python3 tests/metaworld-qol-gles.py
+
+.PHONY: test-view-shift-idle
+test-view-shift-idle: all
+	WLR_RENDERER=gles2 LD_LIBRARY_PATH='$(abspath $(BUILD_DIR)):$(PREFIX)/lib:$(LD_LIBRARY_PATH)' sbcl --noinform --disable-debugger --eval '(sb-int:set-floating-point-modes :traps nil)' --script tests/view-shift-idle.lisp
+
 test-rmlui-status-bar-world: all rmlui
 	WLR_RENDERER=gles2 LD_LIBRARY_PATH='$(abspath $(BUILD_DIR)):$(PREFIX)/lib:$(LD_LIBRARY_PATH)' sbcl --noinform --disable-debugger --eval '(sb-int:set-floating-point-modes :traps nil)' --script tests/rmlui-status-bar-world.lisp
 

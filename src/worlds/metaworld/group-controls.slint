@@ -1,3 +1,4 @@
+import { Workstation } from "theme.slint";
 import { MetaButton } from "controls.slint";
 
 export component SubworldControls inherits Window {
@@ -8,18 +9,18 @@ export component SubworldControls inherits Window {
     in property <bool> standalone: false;
     callback action(string);
     callback rename(string);
-    Rectangle { border-width: 1px; border-color: #d4d8dc; border-radius: 0px; background: #ffffff; }
+    Rectangle { border-width: 2px; border-color: Workstation.ink; border-radius: 0px; background: Workstation.paper; }
     VerticalLayout {
         padding: 8px;
         spacing: 6px;
         HorizontalLayout {
             spacing: 6px;
             Rectangle {
-                border-width: 0px; border-radius: 0px; background: #f7f8f9;
+                border-width: 0px; border-radius: 0px; background: Workstation.field;
                 TextInput {
                     x: 7px; y: 6px; width: parent.width - 14px; height: parent.height - 12px;
-                    text <=> root.world-name; single-line: true; color: #24282d;
-                    selection-background-color: #cbd7e8; font-size: 14px;
+                    text <=> root.world-name; single-line: true; color: Workstation.ink;
+                    selection-background-color: Workstation.field; font-size: 14px;
                     edited => { root.rename(self.text); }
                     accepted => { root.action("dismiss"); }
                 }

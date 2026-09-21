@@ -1,35 +1,32 @@
 <rml><head><title>Agent sessions</title><style>
-body { margin:0; width:100%; height:100%; font-family:DejaVu Sans; color:#24282d; font-size:12dp; }
+body { margin:0; width:100%; height:100%; font-size:12dp; }
 div { display:block; box-sizing:border-box; }
-#panel { position:absolute; left:0; top:0; padding:0; overflow-y:auto; border:1dp #d4d8dc; background:#ffffff; }
+#panel { position:absolute; left:0; top:0; padding:0; overflow-y:auto; border:2dp var(--ink); }
 #content { padding:16dp; }
 #header { display:flex; align-items:center; gap:8dp; height:28dp; }
 #icon { display:none; }
 #heading { font-weight:bold; font-size:14dp; }
 #pause-all { margin-left:auto; flex-shrink:0; }
-button { display:block; box-sizing:border-box; height:28dp; line-height:28dp; padding:0 10dp; color:#424950; background:#f0f2f4; font-size:12dp; text-align:center; }
-button:hover { background:#e3e7eb; } button:active { background:#d4d8dc; }
-#empty { color:#626a73; margin-top:12dp; font-size:12dp; }
-.card { display:none; margin-top:16dp; padding-top:16dp; border-top:1dp #d4d8dc; }
+button { display:block; box-sizing:border-box; height:28dp; line-height:28dp; padding:0 10dp; font-size:12dp; text-align:center; }
+#empty { margin-top:12dp; font-size:12dp; }
+.card { display:none; margin-top:16dp; padding-top:16dp; border-top:1dp var(--ink); }
 .title { display:flex; align-items:center; gap:8dp; }
-.dot { width:6dp; height:6dp; background:#35664f; }
+.dot { width:6dp; height:6dp; }
 .name { flex:1; min-width:0; font-weight:bold; font-size:13dp; overflow:hidden; white-space:nowrap; }
-.state { margin-left:auto; flex-shrink:0; font-size:11dp; color:#626a73; }
-.detail { color:#424950; font-size:12dp; min-height:16dp; margin-top:8dp; }
-.scope { color:#626a73; font-size:11dp; margin-top:8dp; }
+.state { margin-left:auto; flex-shrink:0; font-size:11dp; }
+.detail { font-size:12dp; min-height:16dp; margin-top:8dp; }
+.scope { font-size:11dp; margin-top:8dp; }
 .actions { display:flex; gap:8dp; margin-top:12dp; }
-.resume { background:#eaf0ff; color:#244ebc; }
-.stop { color:#ad343f; }
 scrollbarvertical { width:6dp; margin-left:5dp; }
-scrollbarvertical sliderbar { background:#aeb5bd; min-height:20dp; }
+scrollbarvertical sliderbar { min-height:20dp; }
 scrollbarvertical sliderarrowinc, scrollbarvertical sliderarrowdec { height:0; }
-#hint { color:#626a73; font-size:11dp; margin-top:16dp; }
-</style></head><body><div id="panel"><div id="content">
-<div id="header"><div id="icon">↗</div><div id="heading">Agent sessions</div><button id="pause-all">Pause all</button></div>
+#hint { font-size:11dp; margin-top:16dp; }
+</style><link type="text/rcss" href="../rmlui/theme.rcss"/></head><body class="shell computer-use-panel"><div id="panel"><div id="content">
+<div id="header"><div id="icon">↗</div><div id="heading">Agent sessions</div><div class="title-rule"/><button id="pause-all">Pause all</button></div>
 <div id="empty">Agents appear here when they connect.</div>
-<div id="card0" class="card"><div class="title"><div id="dot0" class="dot"/><div id="name0" class="name">Agent</div><div id="state0" class="state">ACTIVE</div></div><div id="detail0" class="detail"/><div id="scope0" class="scope"/><div class="actions"><button id="resume0" class="resume">Resume</button><button id="pause0">Pause</button><button id="stop0" class="stop">Disconnect</button></div></div>
-<div id="card1" class="card"><div class="title"><div id="dot1" class="dot"/><div id="name1" class="name">Agent</div><div id="state1" class="state">ACTIVE</div></div><div id="detail1" class="detail"/><div id="scope1" class="scope"/><div class="actions"><button id="resume1" class="resume">Resume</button><button id="pause1">Pause</button><button id="stop1" class="stop">Disconnect</button></div></div>
-<div id="card2" class="card"><div class="title"><div id="dot2" class="dot"/><div id="name2" class="name">Agent</div><div id="state2" class="state">ACTIVE</div></div><div id="detail2" class="detail"/><div id="scope2" class="scope"/><div class="actions"><button id="resume2" class="resume">Resume</button><button id="pause2">Pause</button><button id="stop2" class="stop">Disconnect</button></div></div>
-<div id="card3" class="card"><div class="title"><div id="dot3" class="dot"/><div id="name3" class="name">Agent</div><div id="state3" class="state">ACTIVE</div></div><div id="detail3" class="detail"/><div id="scope3" class="scope"/><div class="actions"><button id="resume3" class="resume">Resume</button><button id="pause3">Pause</button><button id="stop3" class="stop">Disconnect</button></div></div>
+<div id="card0" class="card ruled"><div class="dash-rule"/><div class="title"><div id="dot0" class="dot"/><div id="name0" class="name">Agent</div><div id="state0" class="state">ACTIVE</div></div><div id="detail0" class="detail"/><div id="scope0" class="scope"/><div class="actions"><button id="resume0" class="resume">Resume</button><button id="pause0">Pause</button><button id="stop0" class="stop">Disconnect</button></div></div>
+<div id="card1" class="card ruled"><div class="dash-rule"/><div class="title"><div id="dot1" class="dot"/><div id="name1" class="name">Agent</div><div id="state1" class="state">ACTIVE</div></div><div id="detail1" class="detail"/><div id="scope1" class="scope"/><div class="actions"><button id="resume1" class="resume">Resume</button><button id="pause1">Pause</button><button id="stop1" class="stop">Disconnect</button></div></div>
+<div id="card2" class="card ruled"><div class="dash-rule"/><div class="title"><div id="dot2" class="dot"/><div id="name2" class="name">Agent</div><div id="state2" class="state">ACTIVE</div></div><div id="detail2" class="detail"/><div id="scope2" class="scope"/><div class="actions"><button id="resume2" class="resume">Resume</button><button id="pause2">Pause</button><button id="stop2" class="stop">Disconnect</button></div></div>
+<div id="card3" class="card ruled"><div class="dash-rule"/><div class="title"><div id="dot3" class="dot"/><div id="name3" class="name">Agent</div><div id="state3" class="state">ACTIVE</div></div><div id="detail3" class="detail"/><div id="scope3" class="scope"/><div class="actions"><button id="resume3" class="resume">Resume</button><button id="pause3">Pause</button><button id="stop3" class="stop">Disconnect</button></div></div>
 <div id="hint">Ctrl + Alt + Esc pauses every agent.</div>
 </div></div></body></rml>

@@ -1,24 +1,27 @@
+import { Workstation, DashRule } from "theme.slint";
 export component MetaworldNote inherits Window {
     background: transparent;
     in-out property <string> content: "";
     callback edited(string);
     callback close();
     forward-focus: editor;
-    Rectangle { border-width: 1px; border-color: #d4d8dc; border-radius: 0px; background: #ffffff; }
-    Text { x: 12px; y: 8px; text: "Note"; font-family: "DejaVu Sans"; font-size: 10px; color: #626a73; }
+    Rectangle { border-width: 2px; border-color: Workstation.ink; border-radius: 0px; background: Workstation.paper; }
+    DashRule { x: 55px; y: 13px; width: parent.width - 94px; }
+    Text { x: 12px; y: 8px; text: "Note"; font-family: "DejaVu Sans Mono"; font-size: 10px; color: Workstation.muted; }
     close-area := TouchArea {
         x: parent.width - 30px; y: 0px; width: 30px; height: 28px;
         clicked => { root.close(); }
-        Text { text: parent.has-hover ? "×" : ""; color: #626a73; horizontal-alignment: center; vertical-alignment: center; }
+        Text { text: "×"; color: Workstation.muted; horizontal-alignment: center; vertical-alignment: center; }
     }
     editor := TextInput {
         x: 12px; y: 30px; width: parent.width - 24px; height: parent.height - 42px;
         text <=> root.content;
-        color: #24282d;
-        font-family: "DejaVu Sans";
+        color: Workstation.ink;
+        font-family: "DejaVu Sans Mono";
         font-size: 15px;
         wrap: word-wrap;
-        selection-background-color: #cbd7e8;
+        selection-background-color: Workstation.ink;
+        selection-foreground-color: Workstation.paper;
         edited => { root.edited(self.text); }
     }
 }

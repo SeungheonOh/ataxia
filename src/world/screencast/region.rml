@@ -1,6 +1,6 @@
 <rml><head><title>Select canvas region</title><style>
-body { margin:0; width:100%; height:100%; background:#24282d18; font-family:DejaVu Sans; font-size:13dp; }
+body { margin:0; width:100%; height:100%; font-size:13dp; }
 div { display:block; box-sizing:border-box; }
-#instruction { position:absolute; left:20%; top:20dp; width:60%; padding:14dp; text-align:center; color:#24282d; background:#ffffff; border:1dp #d4d8dc; }
-#rectangle { position:absolute; background:#244ebc18; border:2dp #244ebc; display:none; }
-</style></head><body><div id="rectangle"/><div id="instruction">Drag to select a canvas region · Escape to cancel</div></body></rml>
+#instruction { position:absolute; left:20%; top:20dp; width:60%; padding:14dp; text-align:center; border:2dp var(--ink); }
+#rectangle { position:absolute; border:2dp var(--ink); display:none; }
+</style><link type="text/rcss" href="../rmlui/theme.rcss"/></head><body class="shell screencast-region"><div id="rectangle"><div class="edge horizontal top"/><div class="edge horizontal bottom"/><div class="edge vertical left"/><div class="edge vertical right"/></div><div id="instruction">Drag to select a canvas region · Escape to cancel</div></body></rml>

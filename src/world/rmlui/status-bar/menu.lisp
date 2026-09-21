@@ -113,7 +113,7 @@
                          (ecase kind (:apps "menu") (:power "power") (:spaces "workspaces")
                                      (:media "media") (:clipboard "clipboard")))))
          (popup (create-agent-widget 'rmlui-shell-popup world (uiop:read-file-string path)
-                                      :component-factory #'ataxia.world.rmlui:make-rmlui-component
+                                      :component-factory #'ataxia.world.rmlui:make-shell-rmlui-component
                                       :source-path (namestring path) :output (overlay-output bar)
                                       :width 400d0 :height 480d0 :layer 1300)))
     (setf (%shell-popup-kind popup) kind (%shell-popup-bar popup) bar (%bar-popup bar) popup)

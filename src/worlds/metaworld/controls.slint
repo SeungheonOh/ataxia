@@ -1,3 +1,4 @@
+import { Workstation } from "theme.slint";
 export component MetaButton inherits Rectangle {
     in property <string> label;
     in property <bool> selected: false;
@@ -7,13 +8,11 @@ export component MetaButton inherits Rectangle {
     callback activate();
     min-width: 30px;
     preferred-height: 30px;
-    border-width: focus.has-focus ? 1px : 0px;
-    border-color: #365dc0;
+    border-width: 2px;
+    border-color: Workstation.ink;
     border-radius: 0px;
-    background: touch.pressed ? #dce3ec : root.selected ? #eaf0ff : touch.has-hover ? #f0f2f4 : transparent;
-    animate background { duration: 120ms; easing: cubic-bezier(0.2, 0, 0.2, 1); }
-    opacity: root.enabled ? 1 : 0.38;
-    animate opacity { duration: 120ms; easing: cubic-bezier(0.2, 0, 0.2, 1); }
+    background: touch.pressed ? #444440 : root.selected || touch.has-hover || focus.has-focus ? Workstation.ink : Workstation.paper;
+    opacity: root.enabled ? 1 : 0.55;
     accessible-role: button;
     accessible-label: root.label;
     forward-focus: focus;
@@ -21,13 +20,12 @@ export component MetaButton inherits Rectangle {
         x: root.align-left ? 10px : 0px;
         width: parent.width - (root.align-left ? 20px : 0px);
         text: root.label;
-        color: root.quiet-danger && touch.has-hover ? #ad343f : root.selected ? #244ebc : #24282d;
-        font-family: "DejaVu Sans";
+        color: root.selected || touch.has-hover || focus.has-focus ? Workstation.paper : root.quiet-danger ? Workstation.danger : Workstation.ink;
+        font-family: "DejaVu Sans Mono";
         font-size: 12px;
         horizontal-alignment: root.align-left ? left : center;
         vertical-alignment: center;
         overflow: elide;
-        animate color { duration: 120ms; easing: cubic-bezier(0.2, 0, 0.2, 1); }
     }
     focus := FocusScope {
         enabled: root.enabled;

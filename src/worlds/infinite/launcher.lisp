@@ -18,14 +18,15 @@
 
     height: 44px;
     visible: root.enabled;
-    background: touch.pressed ? #e3e7eb : root.selected ? #eaf0ff : touch.has-hover ? #f0f2f4 : #ffffff;
+    background: touch.pressed ? #444440 : root.selected || touch.has-hover ? #161616 : #ffffff;
     Text {
         x: 14px;
         y: 0px;
         width: parent.width - 28px;
         height: parent.height;
         text: root.title;
-        color: root.selected ? #244ebc : #24282d;
+        color: root.selected || touch.has-hover ? #ffffff : #161616;
+        font-family: \"DejaVu Sans Mono\";
         font-size: 13px;
         font-weight: 400;
         vertical-alignment: center;
@@ -69,8 +70,8 @@ export component AtaxiaLauncher inherits Window {
         y: 0px;
         width: parent.width;
         height: parent.height;
-        border-width: 1px;
-        border-color: #d4d8dc;
+        border-width: 2px;
+        border-color: #161616;
         background: #ffffff;
 
         search-box := Rectangle {
@@ -78,17 +79,19 @@ export component AtaxiaLauncher inherits Window {
             y: 12px;
             width: parent.width - 24px;
             height: 48px;
-            border-width: 1px;
-            border-color: #d4d8dc;
-            background: #f7f8f9;
+            border-width: 2px;
+            border-color: #161616;
+            background: #eeeeea;
             editor := TextInput {
                 x: 14px;
                 y: 7px;
                 width: parent.width - 28px;
                 height: parent.height - 14px;
                 text <=> root.query;
-                color: #24282d;
-                selection-background-color: #eaf0ff;
+                color: #161616;
+                selection-background-color: #161616;
+                selection-foreground-color: #ffffff;
+                font-family: \"DejaVu Sans Mono\";
                 font-size: 13px;
                 single-line: true;
                 edited => { root.search(self.text); }
@@ -132,7 +135,8 @@ export component AtaxiaLauncher inherits Window {
             height: 269px;
             visible: root.result-count == 0;
             text: \"No matches\";
-            color: #626a73;
+            color: #50504c;
+            font-family: \"DejaVu Sans Mono\";
             font-size: 13px;
             horizontal-alignment: center;
             vertical-alignment: center;

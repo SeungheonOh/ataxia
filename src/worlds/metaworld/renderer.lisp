@@ -23,8 +23,8 @@ void main() {
   float level = log2(112.0 / (96.0 * u_zoom));
   float spacing = 96.0 * exp2(floor(level));
   float marks = mix(reticle(world, spacing), reticle(world, spacing * 2.0), fract(level));
-  vec3 base = vec3(0.970);
-  gl_FragColor = vec4(mix(base, vec3(0.68), marks * 0.36), 1.0);
+  vec3 base = vec3(0.84);
+  gl_FragColor = vec4(mix(base, vec3(0.28), marks * 0.60), 1.0);
 }")
 
 (defmethod %world-grid-shader ((world metaworld))

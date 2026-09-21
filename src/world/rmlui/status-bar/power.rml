@@ -1,42 +1,35 @@
 <rml><head><title>Battery and power</title><style>
-body { margin:0; width:100%; height:100%; font-family:DejaVu Sans; color:#24282d; font-size:13dp; }
+body { margin:0; width:100%; height:100%; font-size:13dp; }
 div { display:block; box-sizing:border-box; }
-#panel { position:absolute; left:0; right:0; top:0; bottom:0; padding:16dp; background:#ffffff; border:1dp #d4d8dc; }
+#panel { position:absolute; left:0; right:0; top:0; bottom:0; padding:16dp; border:2dp var(--ink); }
 #content { position:absolute; left:16dp; right:16dp; top:44dp; bottom:16dp; overflow-y:auto; }
 #heading { display:flex; align-items:center; justify-content:space-between; height:28dp; font-size:15dp; font-weight:bold; }
-.button { display:block; box-sizing:border-box; width:28dp; height:28dp; line-height:28dp; text-align:center; font-size:18dp; color:#424950; background:transparent; }
-.button:hover, .button:focus { background:#edf0f3; }
-.button:disabled { color:#92989f; }
+.button { display:block; box-sizing:border-box; width:28dp; height:28dp; line-height:28dp; text-align:center; font-size:18dp; }
 #summary { display:flex; align-items:center; gap:16dp; margin-top:16dp; }
-#big-battery { width:58dp; height:28dp; padding:4dp; position:relative; border:1dp #626a73; }
-#tip { position:absolute; right:-5dp; top:8dp; width:3dp; height:10dp; background:#626a73; }
-#fill { width:70%; height:100%; background:#626a73; }
+#big-battery { width:58dp; height:28dp; padding:4dp; position:relative; border:2dp var(--ink); }
+#tip { position:absolute; right:-5dp; top:8dp; width:3dp; height:10dp; }
+#fill { width:70%; height:100%; }
 #percent { font-size:28dp; }
 #state { margin-top:14dp; font-size:13dp; font-weight:bold; }
-#estimate { margin-top:6dp; font-size:12dp; color:#626a73; }
-#details { margin-top:16dp; padding-top:14dp; border-top:1dp #d4d8dc; }
-.row { display:flex; justify-content:space-between; margin-bottom:10dp; color:#626a73; font-size:12dp; }
-.value { color:#24282d; }
-#note, .hint { color:#626a73; font-size:11dp; line-height:16dp; }
-.section { margin-top:16dp; padding-top:14dp; border-top:1dp #d4d8dc; }
+#estimate { margin-top:6dp; font-size:12dp; }
+#details { margin-top:16dp; padding-top:14dp; border-top:1dp var(--ink); }
+.row { display:flex; justify-content:space-between; margin-bottom:10dp; font-size:12dp; }
+#note, .hint { font-size:11dp; line-height:16dp; }
+.section { margin-top:16dp; padding-top:14dp; border-top:1dp var(--ink); }
 .label { font-weight:bold; }
 #brightness-controls { display:flex; align-items:center; gap:10dp; margin:8dp 0; }
-#brightness-controls .button { flex-shrink:0; background:#f0f2f4; }
+#brightness-controls .button { flex-shrink:0; }
 #brightness { flex:1; height:28dp; }
-#brightness slidertrack { height:4dp; margin-top:12dp; background:#d4d8dc; }
-#brightness sliderbar { width:12dp; height:20dp; margin-top:4dp; background:#626a73; border-radius:4dp; }
-#brightness:focus sliderbar { background:#24282d; }
+#brightness slidertrack { height:4dp; margin-top:12dp; }
+#brightness sliderbar { width:12dp; height:20dp; margin-top:4dp; }
 #brightness:disabled { opacity:0.4; }
-#sleep { width:100%; height:34dp; line-height:34dp; background:#f0f2f4; font-size:13dp; font-weight:bold; margin-bottom:8dp; }
-#sleep:hover, #sleep:focus { background:#dfe4e9; }
-#panel.low #fill { background:#9a651b; } #panel.low #percent { color:#9a651b; }
-#panel.critical #fill { background:#ad343f; } #panel.critical #percent { color:#ad343f; }
-scrollbarvertical { width:5dp; } scrollbarvertical sliderbar { background:#d4d8dc; }
-</style></head><body data-model="state"><div id="panel">
-<div id="heading"><div>Battery &amp; power</div><input class="button" id="close" type="button" value="×"/></div>
+#sleep { width:100%; height:34dp; line-height:34dp; font-size:13dp; font-weight:bold; margin-bottom:8dp; }
+scrollbarvertical { width:5dp; }
+</style><link type="text/rcss" href="../theme.rcss"/></head><body class="shell shell-power" data-model="state"><div id="panel">
+<div id="heading"><div>Battery &amp; power</div><div class="title-rule"/><input class="button" id="close" type="button" value="×"/></div>
 <div id="content"><div id="summary"><div id="big-battery"><div id="fill"/><div id="tip"/></div><div id="percent">100%</div></div>
 <div id="state">Fully charged</div><div id="estimate">Connected to power</div>
-<div id="details"><div class="row"><div>Battery health</div><div id="health" class="value">Unavailable</div></div>
+<div id="details" class="ruled"><div class="dash-rule"/><div class="row"><div>Battery health</div><div id="health" class="value">Unavailable</div></div>
 <div class="row"><div>Charge cycles</div><div id="cycles" class="value">Unavailable</div></div>
 <div class="row"><div>Power source</div><div id="source" class="value">AC adapter</div></div></div>
 <div id="note">Estimates adapt to your current power usage.</div>

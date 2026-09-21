@@ -91,7 +91,7 @@
 (defun %bar-create (world output)
   (let* ((path (asdf:system-relative-pathname "ataxia-rmlui" "src/world/rmlui/status-bar/bar.rml"))
          (bar (create-agent-widget 'rmlui-status-bar world (uiop:read-file-string path)
-                                   :component-factory #'ataxia.world.rmlui:make-rmlui-component
+                                   :component-factory #'ataxia.world.rmlui:make-shell-rmlui-component
                                    :source-path (namestring path) :output output
                                    :width 1000d0 :height 44d0 :layer 1150)))
     (dolist (entry '(("home" . :menu) ("power" . :power) ("group" . :spaces)

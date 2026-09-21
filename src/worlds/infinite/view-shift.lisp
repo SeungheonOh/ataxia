@@ -26,9 +26,9 @@
     private property <length> distance: sqrt(root.delta-x * root.delta-x
                                              + root.delta-y * root.delta-y) * 1px;
     private property <angle> direction: atan2(root.delta-y, root.delta-x);
-    private property <int> ant-phase: (animation-tick() / 180ms).mod(2);
-    private property <color> ink: #16140f;
-    private property <color> paper: #eee9dc;
+    // Static stipple: camera motion, not decoration, schedules frames.
+    private property <color> ink: #161616;
+    private property <color> paper: #ffffff;
 
     tether := Rectangle {
         x: root.anchor-left;
@@ -47,7 +47,7 @@
         }
 
         for dash[index] in 192: Rectangle {
-            x: (2 + index * 8 + root.ant-phase * 4) * 1px;
+            x: (2 + index * 8) * 1px;
             y: 1px;
             width: 4px;
             height: 1px;
@@ -69,7 +69,7 @@
             y: 1px;
             width: 2px;
             height: 2px;
-            background: (index + root.ant-phase).mod(2) == 0
+            background: index.mod(2) == 0
                         ? root.paper : root.ink;
         }
     }

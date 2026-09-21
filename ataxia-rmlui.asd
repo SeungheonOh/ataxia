@@ -5,7 +5,8 @@
   :depends-on ("ataxia-world" "cffi")
   :serial t
   :components ((:module "src/world/rmlui"
-                :components ((:file "packages") (:file "native") (:file "component")
+                :components ((:file "packages") (:file "native") (:file "component") (:file "theme")
+                             (:static-file "theme.rcss")
                              (:file "render") (:file "input") (:file "ui") (:file "widgets") (:file "widget-cache")))))
 (asdf:defsystem "ataxia-rmlui/infinite"
   :description "RmlUi widgets in Infinite World and Metaworld"

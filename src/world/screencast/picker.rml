@@ -1,26 +1,19 @@
 <rml><head><title>Share a source</title><style>
-body { margin:0; width:100%; height:100%; font-family:DejaVu Sans; font-size:13dp; color:#24282d; }
+body { margin:0; width:100%; height:100%; font-size:13dp; }
 div { display:block; box-sizing:border-box; }
 .action { box-sizing:border-box; }
-#panel { overflow-y:auto; position:absolute; left:0; top:0; right:0; bottom:0; padding:20dp; background:#ffffff; border:1dp #d4d8dc; }
+#panel { overflow-y:auto; position:absolute; left:0; top:0; right:0; bottom:0; padding:20dp; border:2dp var(--ink); }
 h1 { display:block; margin:0 0 8dp; font-size:18dp; font-weight:bold; }
-#app { color:#626a73; height:34dp; overflow:hidden; }
-#sources { height:212dp; overflow-y:auto; margin-top:12dp; margin-bottom:10dp; border-top:1dp #e4e7eb; border-bottom:1dp #e4e7eb; }
-.action { display:block; width:100%; height:38dp; padding:9dp 10dp; text-align:left; background:#ffffff; color:#424950; }
-.action:hover, .action:focus { background:#f0f2f4; color:#24282d; }
-.action:active { background:#e3e7eb; }
-.action.selected { background:#eaf0ff; color:#244ebc; }
-#region { background:#f1f5ff; color:#244ebc; }
-#region:hover { background:#e3ebff; }
-#selection { color:#626a73; margin:8dp 0; height:34dp; font-size:12dp; overflow:hidden; }
+#app { height:34dp; overflow:hidden; }
+#sources { height:212dp; overflow-y:auto; margin-top:12dp; margin-bottom:10dp; border-top:1dp var(--ink); border-bottom:1dp var(--ink); }
+.action { display:block; width:100%; height:38dp; padding:9dp 10dp; text-align:left; }
+#selection { margin:8dp 0; height:34dp; font-size:12dp; overflow:hidden; }
 #footer { display:flex; gap:10dp; }
-#footer .action { width:50%; text-align:center; background:#f0f2f4; }
-#footer #share { color:#244ebc; background:#eaf0ff; }
-#footer #share:disabled { color:#9ca3ad; background:#f3f4f6; }
-#privacy { color:#626a73; font-size:11dp; margin-top:10dp; }
-scrollbarvertical { width:6dp; } scrollbarvertical sliderbar { background:#c5cbd2; }
-</style></head><body><div id="panel"><h1>Choose what to share</h1><div id="app">Screen sharing request</div>
-<input class="action" type="button" id="region" value="Select a region of the canvas"/><div id="sources"><!-- sources --></div>
+#footer .action { width:50%; text-align:center; }
+#privacy { font-size:11dp; margin-top:10dp; }
+scrollbarvertical { width:6dp; }
+</style><link type="text/rcss" href="../rmlui/theme.rcss"/></head><body class="shell screencast-picker"><div id="panel"><div class="share-heading"><h1>Share a source</h1><div class="title-rule"/></div><div id="app">Screen sharing request</div>
+<input class="action" type="button" id="region" value="Draw a canvas region"/><div id="sources"><!-- sources --></div>
 <div id="selection">Choose an application or draw a canvas region.</div>
 <div id="footer"><input class="action" type="button" id="cancel" value="Cancel"/><input class="action" type="button" id="share" disabled="disabled" value="Share"/></div>
 <div id="privacy">Only the selected source is shared. Stop sharing at any time.</div></div></body></rml>

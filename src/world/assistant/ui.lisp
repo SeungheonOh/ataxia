@@ -31,7 +31,7 @@
     (unless dialog
       (let ((path (asdf:system-relative-pathname "ataxia-assistant" "src/world/assistant/settings.rml")))
         (setf dialog (create-agent-widget 'assistant-settings-dialog world (uiop:read-file-string path)
-                       :component-factory #'ataxia.world.rmlui:make-rmlui-component :source-path (namestring path)
+                       :component-factory #'ataxia.world.rmlui:make-shell-rmlui-component :source-path (namestring path)
                        :output (overlay-output panel) :width 420d0 :height 420d0 :layer 1500)
               (assistant-controller-settings-dialog controller) dialog))
       (%assistant-bind-model-picker controller dialog)
@@ -296,7 +296,7 @@
         (%assistant-load-fonts)
         (let ((path (asdf:system-relative-pathname "ataxia-assistant" "src/world/assistant/panel.rml")))
           (setf panel (create-agent-widget 'assistant-panel world (uiop:read-file-string path)
-                      :component-factory #'ataxia.world.rmlui:make-rmlui-component :source-path (namestring path)
+                      :component-factory #'ataxia.world.rmlui:make-shell-rmlui-component :source-path (namestring path)
                       :output output :width 480d0 :height 760d0 :layer 1400)
                 (assistant-controller-panel controller) panel))
         (ataxia.world.rmlui:set-rmlui-model (overlay-component panel) "message" "")

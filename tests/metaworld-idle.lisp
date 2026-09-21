@@ -26,12 +26,7 @@
          (assert (<= 600 (%meta-maintenance-delay world) 601))
          (setf clock 12d0)
          (assert (zerop (%meta-maintenance-delay world)))
-         (setf (%meta-chrome-window-since chrome) clock)
-         (assert (<= 450 (%meta-maintenance-delay world) 451))
-         (setf clock 13d0 (%meta-view-window-controls-until view) 13.55d0)
-         (assert (zerop (%meta-maintenance-delay world)))
-         (setf (%meta-chrome-window-since chrome) nil)
-         (assert (<= 550 (%meta-maintenance-delay world) 551))
+         (setf clock 13d0)
          (setf (slot-value world 'state-file) #P"/tmp/ataxia-idle-test.sexp"
                (%meta-last-save world) 12.8d0)
          (assert (<= 300 (%meta-maintenance-delay world) 301))

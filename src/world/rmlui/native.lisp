@@ -125,6 +125,8 @@
   (component :pointer) (id :string) (name :string) (enabled :boolean))
 (%define-native-call ("ataxia_rmlui_component_set_style" %set-style) :boolean
   (component :pointer) (id :string) (name :string) (value :string))
+(%define-native-call ("ataxia_rmlui_component_set_attribute" %set-attribute) :boolean
+  (component :pointer) (id :string) (name :string) (value :string) (present :boolean))
 (%define-native-call ("ataxia_rmlui_load_font" %load-font) :boolean (path :string))
 (%define-native-call ("ataxia_rmlui_component_reload" %reload) :boolean
   (component :pointer) (source :string) (path :string))

@@ -1,6 +1,6 @@
 # RmlUi status bar
 
-An optional, full-width light bar at the bottom of each desktop World output. It
+A full-width light bar at the bottom of each desktop World output. It
 shows named workspace navigation, the focused window, audio volume, media, clipboard, battery/AC state, and local date and time. Metaworld supplies subworld and workspace navigation. It is 44 logical pixels high, with square controls, a single
 baseline, opaque white backing and a one-pixel top border. Selection changes
 immediately; the bar has no decorative animation or shadow.
@@ -9,6 +9,10 @@ The bar reserves its height through the World work-area protocol, keeping worksp
 content above it. Removing the bar restores the full output area.
 
 ## Enable
+
+Metaworld enables the bar by default on desktop backends, independently of the
+assistant. Use `--no-status-bar` to omit it, or `--status-bar` to enable it in a
+headless session. The portable World service can also be enabled explicitly:
 
 Build the optional native engine with `make rmlui`, then load:
 
@@ -25,8 +29,8 @@ On the World owner thread, with a World implementing the UI and desktop protocol
 
 Enabling again replaces existing bars, timers, clipboard transfers and system workers. New outputs receive a bar;
 output removal destroys its component. World quiescence removes the maintenance
-timers, event sources, queued actions, clipboard history, feedback overlays and all bars. This is opt-in per World; enabling it in a live session does
-not change startup configuration. Fresh processes require native glue ABI 15, RmlUi ABI 2 and Slint ABI 5 (`make all rmlui`). Do not replace native handles underneath existing UI components in a running image.
+timers, event sources, queued actions, clipboard history, feedback overlays and all bars. Manually enabling it in another World does
+not change that World's startup configuration. Fresh processes require native glue ABI 15, RmlUi ABI 2 and Slint ABI 5 (`make all rmlui`). Do not replace native handles underneath existing UI components in a running image.
 
 ## Controls and layout
 
@@ -70,8 +74,7 @@ media title and date. Below 680 it hides battery text and separators. Below 380,
 the location label is shortened and the clock/clipboard button are hidden to keep
 workspace, audio and power controls reachable; the clipboard shortcut still works.
 Workspace and media panels scroll on short outputs. The RML uses `dp`, with logical-width classes computed by Lisp so display
-scale does not change the breakpoints. The bar overlays the canvas; it does not
-reserve window-layout space.
+scale does not change the breakpoints.
 
 The clock and battery share one wakeup per minute while the power panel is closed.
 Opening power details refreshes immediately, then at most 30 seconds apart,

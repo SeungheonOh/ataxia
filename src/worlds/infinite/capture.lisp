@@ -1,4 +1,4 @@
-;;;; Infinite World capture backend. Loaded by ataxia-computer-use/infinite-world.
+;;;; Shared offscreen capture backend for computer use and screen sharing.
 (in-package #:ataxia.infinite-world)
 
 (defmethod ataxia.world:world-supports-p :around ((world infinite-world) capability)
@@ -24,9 +24,8 @@
              (cffi:foreign-funcall "glActiveTexture" :uint #x84C0 :void)
              (cffi:foreign-funcall "glBindTexture" :uint #x8D65 :uint (cffi:mem-ref external :int) :void))
            (unless (zerop discard) (cffi:foreign-funcall "glEnable" :uint #x8C89 :void))))))))
-(defun %render-window-capture-pixels (world window bounds width height pixels)
-  "Draw and read one window while the caller preserves the compositor's GL state."
-  (destructuring-bind (left top logical-width logical-height) bounds
+(defun %render-capture-pixels (width height pixels draw)
+  "Draw into an isolated target. Caller preserves the compositor's GL state."
     (cffi:with-foreign-objects ((texture :uint) (framebuffer :uint) (vao :uint))
       (setf (cffi:mem-ref texture :uint) 0
             (cffi:mem-ref framebuffer :uint) 0
@@ -59,18 +58,7 @@
              (cffi:foreign-funcall "glEnable" :uint #x0BE2 :void)
              (cffi:foreign-funcall "glBlendEquation" :uint #x8006 :void)
              (cffi:foreign-funcall "glBlendFunc" :uint 1 :uint #x0303 :void)
-             (loop for surface across (ataxia.kernel:drawable-surfaces (canvas-window-application window)) do
-               (let* ((x (- (ataxia.kernel:drawable-surface-local-x surface) left))
-                      (y (- (ataxia.kernel:drawable-surface-local-y surface) top))
-                      (w (ataxia.kernel:drawable-surface-width surface))
-                      (h (ataxia.kernel:drawable-surface-height surface))
-                      (positions
-                        (mapcar (lambda (point)
-                                  (cons (- (* 2d0 (/ (car point) logical-width)) 1d0)
-                                        (- (* 2d0 (/ (cdr point) logical-height)) 1d0)))
-                                (list (cons x y) (cons (+ x w) y)
-                                      (cons x (+ y h)) (cons (+ x w) (+ y h))))))
-                 (%draw-surface-quad (%world-renderer world) surface positions width height 1d0 0d0 0d0)))
+             (funcall draw)
              (cffi:foreign-funcall "glBindBuffer" :uint #x88EB :uint 0 :void)
              (dolist (store '((#x0D05 . 1) (#x0D02 . 0) (#x0D04 . 0) (#x0D03 . 0)))
                (cffi:foreign-funcall "glPixelStorei" :uint (car store) :int (cdr store) :void))
@@ -80,8 +68,63 @@
              (ataxia.world.gles:gles-check-error "agent window capture"))
         (cffi:foreign-funcall "glDeleteVertexArrays" :int 1 :pointer vao :void)
         (cffi:foreign-funcall "glDeleteFramebuffers" :int 1 :pointer framebuffer :void)
-        (cffi:foreign-funcall "glDeleteTextures" :int 1 :pointer texture :void)))))
+        (cffi:foreign-funcall "glDeleteTextures" :int 1 :pointer texture :void))))
 
+(defun %draw-captured-surface (world surface x y w h logical-width logical-height width height &optional (rotation 0d0))
+  (let ((positions
+          (mapcar (lambda (point)
+                    (let ((px (- (* (cos rotation) (car point)) (* (sin rotation) (cdr point))))
+                          (py (+ (* (sin rotation) (car point)) (* (cos rotation) (cdr point)))))
+                      (cons (- (* 2d0 (/ px logical-width)) 1d0)
+                            (- (* 2d0 (/ py logical-height)) 1d0))))
+                  (list (cons x y) (cons (+ x w) y) (cons x (+ y h)) (cons (+ x w) (+ y h))))))
+    (%draw-surface-quad (%world-renderer world) surface positions width height 1d0 0d0 0d0)))
+
+(defun %render-window-capture-pixels (world window bounds width height pixels)
+  (destructuring-bind (left top logical-width logical-height) bounds
+    (%render-capture-pixels width height pixels
+      (lambda ()
+        (loop for surface across (ataxia.kernel:drawable-surfaces (canvas-window-application window)) do
+          (%draw-captured-surface world surface
+            (- (ataxia.kernel:drawable-surface-local-x surface) left)
+            (- (ataxia.kernel:drawable-surface-local-y surface) top)
+            (ataxia.kernel:drawable-surface-width surface) (ataxia.kernel:drawable-surface-height surface)
+            logical-width logical-height width height))))))
+
+(defgeneric %map-region-widgets (world function)
+  (:documentation "Visit spatial content only; consent UI and shell chrome are excluded.")
+  (:method (world function) (declare (ignore world function))))
+
+(defun %draw-captured-widget (world component x y width height left top logical-width logical-height pixel-width pixel-height rotation)
+  (multiple-value-bind (rx ry rw rh) (ataxia.kernel:drawable-local-bounds component)
+    (when (and (plusp rw) (plusp rh))
+      (loop for surface across (ataxia.kernel:drawable-surfaces component) do
+        (%draw-captured-surface world surface
+          (+ (- x left) (* width (/ (- (ataxia.kernel:drawable-surface-local-x surface) rx) rw)))
+          (+ (- y top) (* height (/ (- (ataxia.kernel:drawable-surface-local-y surface) ry) rh)))
+          (* width (/ (ataxia.kernel:drawable-surface-width surface) rw))
+          (* height (/ (ataxia.kernel:drawable-surface-height surface) rh))
+          logical-width logical-height pixel-width pixel-height rotation)))))
+
+(defun %capture-canvas-region (world bounds width height pixels &optional (rotation 0d0))
+  "Capture a fixed oriented world rectangle; exclude private shell overlays."
+  (destructuring-bind (left top logical-width logical-height) bounds
+    (let ((projection (%make-canvas-output nil)))
+      (setf (%canvas-output-camera-x projection) (coerce left 'double-float)
+            (%canvas-output-camera-y projection) (coerce top 'double-float))
+      (%call-with-window-capture-state world
+        (lambda ()
+          (%render-capture-pixels width height pixels
+            (lambda ()
+              ;; Stacking is back-to-front, just like the desktop paint plan.
+              (dolist (window (%world-stacking world))
+                (when (%window-visible-p window)
+                  (%map-window-surfaces projection window
+                    (lambda (surface x y w h)
+                      (%draw-captured-surface world surface x y w h logical-width logical-height width height rotation)))))
+              (%map-region-widgets world
+                (lambda (component x y w h)
+                  (%draw-captured-widget world component x y w h left top logical-width logical-height width height rotation))))))))))
 
 (defmethod ataxia.world:capture-window-pixels
     ((world infinite-world) window bounds width height pixels)

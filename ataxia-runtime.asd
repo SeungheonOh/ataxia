@@ -20,6 +20,7 @@
      (:file "listeners")
      (:file "gestures")
      (:file "runtime")
+     (:file "drag")
      (:file "event-loop")
      (:file "subsurface")
      (:file "input")

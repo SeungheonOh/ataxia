@@ -34,4 +34,5 @@
    #:load-rmlui-font
    #:set-rmlui-class
    #:set-rmlui-style
+   #:set-rmlui-attribute
    #:reload-rmlui-component))

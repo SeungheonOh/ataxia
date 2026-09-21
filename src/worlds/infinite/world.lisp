@@ -413,6 +413,22 @@
   world)
 
 (defun %cursor-buffer-coverage (state seat-state)
+  (append (%drag-icon-buffer-coverage state seat-state)
+          (%cursor-only-buffer-coverage state seat-state)))
+
+(defun %drag-icon-buffer-coverage (state seat-state)
+  (let ((icon (ataxia.kernel:seat-drag-icon (%canvas-seat-seat seat-state)))
+        (x (%canvas-seat-x seat-state)) (y (%canvas-seat-y seat-state)))
+    (when icon
+      (loop for surface across (ataxia.kernel:drawable-surfaces icon)
+            collect (%screen-rectangle-to-buffer
+                     state
+                     (+ x (ataxia.kernel:drawable-surface-local-x surface))
+                     (+ y (ataxia.kernel:drawable-surface-local-y surface))
+                     (ataxia.kernel:drawable-surface-width surface)
+                     (ataxia.kernel:drawable-surface-height surface) 2d0)))))
+
+(defun %cursor-only-buffer-coverage (state seat-state)
   (let ((cursor (%canvas-seat-cursor-surface seat-state))
         (x (%canvas-seat-x seat-state))
         (y (%canvas-seat-y seat-state)))
@@ -671,8 +687,9 @@
          (+ local-y (* (/ (- position-y target-y) height) local-height)))))))
 
 (defun %captured-pointer-target (seat-state)
-  (loop for target being the hash-values of (%canvas-seat-buttons seat-state)
-        when (and target (not (eq target :world))) return target))
+  (unless (ataxia.kernel:seat-pointer-drag-active-p (%canvas-seat-seat seat-state))
+    (loop for target being the hash-values of (%canvas-seat-buttons seat-state)
+          when (and target (not (eq target :world))) return target)))
 
 (defun %target-accepts-position-p (world seat-state state target)
   (multiple-value-bind (local-x local-y)
@@ -765,12 +782,7 @@
                  (ataxia.kernel:cursor-motion-input-delta-y input))
               (incf (%canvas-seat-x seat-state) delta-x)
               (incf (%canvas-seat-y seat-state) delta-y)))
-        (setf (%canvas-seat-x seat-state)
-              (max 0d0 (min (- width least-positive-double-float)
-                            (%canvas-seat-x seat-state)))
-              (%canvas-seat-y seat-state)
-              (max 0d0 (min (- height least-positive-double-float)
-                            (%canvas-seat-y seat-state))))))))
+        (%route-seat-output seat-state)))))
 
 (defun %move-operation (world seat-state operation)
   (let* ((state (%canvas-seat-output seat-state))
@@ -927,10 +939,13 @@
            surfaces))))
 
 (defun %update-cursor-membership (seat-state)
-  (let ((cursor (%canvas-seat-cursor-surface seat-state)))
-    (when (and cursor (eq (ataxia.kernel:object-state cursor) :live))
+  (dolist (drawable (list (%canvas-seat-cursor-surface seat-state)
+                          (ataxia.kernel:seat-drag-icon (%canvas-seat-seat seat-state))))
+    (when (and drawable
+               (or (typep drawable 'ataxia.kernel:drag-icon)
+                   (eq (ataxia.kernel:object-state drawable) :live)))
       (multiple-value-bind (surfaces revision)
-          (ataxia.kernel:drawable-surfaces cursor)
+          (ataxia.kernel:drawable-surfaces drawable)
         (declare (ignore revision))
         (map nil
              (lambda (surface)
@@ -1269,6 +1284,7 @@
           (%canvas-output-transform state)
           (ataxia.kernel:output-transform output)
           (gethash output (%world-outputs world)) state)
+    (%initialize-output-viewport world state)
     (%ensure-output-launcher world state)
     (%install-component-timer world)
     (dolist (seat-state (%seat-states world))
@@ -1327,22 +1343,36 @@
       (ataxia.world:damage-forget-output (%world-damage world) output)
       (dolist (seat-state (%seat-states world))
         (when (eq state (%canvas-seat-output seat-state))
-          (setf (%canvas-seat-output seat-state) (%first-output-state world))))))
+          (setf (%canvas-seat-output seat-state) (%first-output-state world))
+          (when (%canvas-seat-output seat-state)
+            (%route-seat-output seat-state)
+            (%update-cursor-membership seat-state)
+            (%request-output-state-frame world (%canvas-seat-output seat-state)))))))
   output)
 
 (defmethod ataxia.kernel:world-seat-added
     ((world infinite-world) seat)
   (let* ((state (%first-output-state world))
          (seat-state (%make-canvas-seat seat)))
-    (setf (%canvas-seat-output seat-state) state)
+    (setf (%canvas-seat-output seat-state) state
+          (%canvas-seat-world seat-state) world)
     (when state
       (multiple-value-bind (width height) (%output-logical-size state)
         (setf (%canvas-seat-x seat-state) (/ width 2d0)
               (%canvas-seat-y seat-state) (/ height 2d0))))
     (setf (gethash seat (%world-seats world)) seat-state)
+    (%update-cursor-membership seat-state)
     (%damage-cursor world seat-state)
     (%request-all-frames world))
   seat)
+
+(defmethod ataxia.kernel:world-seat-drag-icon-changed
+    ((world infinite-world) seat)
+  (let ((state (gethash seat (%world-seats world))))
+    (when state
+      (%damage-cursor world state)
+      (%update-cursor-membership state)
+      (%request-output-state-frame world (%canvas-seat-output state)))))
 
 (defmethod ataxia.kernel:world-seat-removing
     ((world infinite-world) seat)
@@ -1387,7 +1417,11 @@
              (pressed-p (eq (ataxia.kernel:cursor-button-input-state input)
                             :pressed))
              (buttons (%canvas-seat-buttons seat-state)))
-        (if pressed-p
+        (if (ataxia.kernel:seat-pointer-drag-active-p seat)
+            (progn
+              (ataxia.kernel:forward-pointer-drag-button seat input)
+              (unless pressed-p (remhash code buttons)))
+            (if pressed-p
             (let ((target
                     (or (%canvas-seat-hovered seat-state)
                         (%target-at-screen-point
@@ -1416,7 +1450,7 @@
                 ((typep target '(or canvas-window ui-overlay))
                  (%deliver-button-to-target
                   world seat-state target input :clamp-p t)))
-              (remhash code buttons)))
+              (remhash code buttons))))
         (%damage-cursor world seat-state)
         (%request-all-frames world))))
   input)

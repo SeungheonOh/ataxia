@@ -205,6 +205,11 @@
    #:world-cursor-button
    #:world-cursor-axis
    #:world-key-event
+   #:drag-icon
+   #:seat-drag-icon
+   #:seat-pointer-drag-active-p
+   #:forward-pointer-drag-button
+   #:world-seat-drag-icon-changed
    #:world-seat-cursor-request
    #:world-seat-selection-changed
    #:world-client-request

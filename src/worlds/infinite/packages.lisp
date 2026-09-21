@@ -104,5 +104,6 @@
    #:run-window-animation-hook
    #:animate-window
    #:set-output-camera
+   #:set-output-position
    #:pan-output-camera
    #:zoom-output-camera))

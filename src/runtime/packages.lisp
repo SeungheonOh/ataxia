@@ -639,6 +639,9 @@
    #:keyboard-repeat-info
    #:seat-destroying
    #:seat-request-set-cursor
+   #:drag-icon-surface
+   #:surface-commit-offset
+   #:drag-destroying
    #:seat-request-start-drag
    #:seat-request-set-selection
    #:seat-selection-changed #:seat-selection-mime-types #:seat-selection-receive

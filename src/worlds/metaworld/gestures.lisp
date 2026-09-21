@@ -11,8 +11,7 @@
         (when (eq :begin (ataxia.kernel:cursor-gesture-input-phase input))
           (%meta-cancel-motion world state :metaworld-camera))
         (let ((view (%meta-view-for-state world state)))
-          (setf (%meta-view-hover-after view) (+ (%now) .6d0)
-                (%meta-view-window-controls-until view) 0d0))))))
+          (setf (%meta-view-hover-after view) (+ (%now) .6d0)))))))
 
 (defmethod %canvas-gesture-owner ((world metaworld) seat)
   ;; Ownership is captured at BEGIN. Unsupported gestures remain consumed by

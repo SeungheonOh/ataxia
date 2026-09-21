@@ -22,7 +22,7 @@
            (setf control (ataxia.sly-control:start-sly-control kernel :port nil))
            (ataxia.world.shell:enable-rmlui-status-bar world)
            (setf controller (ataxia.assistant::%assistant-enable world :project (namestring (asdf:system-source-directory "ataxia-assistant"))))
-           (%meta-open-menu world (%canvas-seat-seat (first (%seat-states world))))
+           (%meta-present-ui world (%meta-toolbar world (%first-output-state world)) t)
            (key "a" '(:logo))
            (assert (ataxia.assistant::assistant-controller-panel controller))
            ;; Escape must win over the existing Metaworld dismiss shortcut.

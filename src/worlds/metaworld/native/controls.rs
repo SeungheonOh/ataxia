@@ -11,7 +11,6 @@ pub enum Instance {
     Toolbar(ui::MetaworldToolbar),
     GroupControls(ui::SubworldControls),
     CanvasMenu(ui::CanvasCreation),
-    WindowControls(ui::ObjectControls),
     Note(ui::MetaworldNote),
 }
 
@@ -40,13 +39,6 @@ impl Instance {
                     .map(Self::CanvasMenu)
                     .map_err(|e| e.to_string())
             }
-            "ataxia-builtin:window-controls"
-                if name.is_none() || name == Some("ObjectControls") =>
-            {
-                ui::ObjectControls::new()
-                    .map(Self::WindowControls)
-                    .map_err(|e| e.to_string())
-            }
             "ataxia-builtin:note" if name.is_none() || name == Some("MetaworldNote") => {
                 ui::MetaworldNote::new()
                     .map(Self::Note)
@@ -62,7 +54,6 @@ impl Instance {
             Self::Toolbar(ui) => ui.show(),
             Self::GroupControls(ui) => ui.show(),
             Self::CanvasMenu(ui) => ui.show(),
-            Self::WindowControls(ui) => ui.show(),
             Self::Note(ui) => ui.show(),
         }
     }
@@ -88,12 +79,6 @@ impl Instance {
             (Self::GroupControls(ui), "policy", Value::String(value)) => ui.set_policy(value),
             (Self::GroupControls(ui), "confirming", Value::Bool(value)) => ui.set_confirming(value),
             (Self::GroupControls(ui), "standalone", Value::Bool(value)) => ui.set_standalone(value),
-            (Self::WindowControls(ui), "owned", Value::Bool(value)) => ui.set_owned(value),
-            (Self::WindowControls(ui), "detachable", Value::Bool(value)) => {
-                ui.set_detachable(value)
-            }
-            (Self::WindowControls(ui), "niri", Value::Bool(value)) => ui.set_niri(value),
-            (Self::WindowControls(ui), "floating", Value::Bool(value)) => ui.set_floating(value),
             (Self::Note(ui), "content", Value::String(value)) => ui.set_content(value),
             _ => {
                 return Err(format!(
@@ -123,9 +108,6 @@ impl Instance {
                 callback(&[Value::String(value)]);
             }),
             (Self::CanvasMenu(ui), "action") => ui.on_action(move |value| {
-                callback(&[Value::String(value)]);
-            }),
-            (Self::WindowControls(ui), "action") => ui.on_action(move |value| {
                 callback(&[Value::String(value)]);
             }),
             (Self::Note(ui), "edited") => ui.on_edited(move |value| {

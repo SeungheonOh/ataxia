@@ -205,6 +205,8 @@
 (defgeneric seat-destroying (sink seat))
 (defgeneric seat-request-set-cursor (sink request))
 (defgeneric seat-request-start-drag (sink request))
+(defgeneric drag-destroying (sink drag)
+  (:method ((sink runtime-sink) drag) (declare (ignore sink drag))))
 (defgeneric seat-request-set-selection (sink request))
 (defgeneric seat-selection-changed (sink seat)
   (:method (sink seat) (declare (ignore sink seat))))

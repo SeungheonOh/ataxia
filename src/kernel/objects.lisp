@@ -49,7 +49,9 @@
                   :reader seat-input-devices)
    (keyboard :initform nil :accessor %seat-keyboard)
    (implicit-pointer-grab :initform nil :accessor %seat-implicit-pointer-grab)
-   (cursor-request :initform nil :accessor %seat-cursor-request))
+   (cursor-request :initform nil :accessor %seat-cursor-request)
+   (drag :initform nil :accessor %seat-drag)
+   (drag-icon :initform nil :accessor seat-drag-icon))
   (:documentation "Stable seat identity owning one real Runtime wlr-seat."))
 
 (defclass surface-node (kernel-object drawable)
@@ -63,6 +65,8 @@
    (mapped-p :initarg :mapped-p :initform nil :accessor surface-mapped-p)
    (commit-sequence :initarg :commit-sequence :initform 0
                     :accessor surface-commit-sequence)
+   (offset-x :initform 0 :accessor %surface-offset-x)
+   (offset-y :initform 0 :accessor %surface-offset-y)
    (application :initform nil :accessor %surface-application)
    (source-box :initform #(0d0 0d0 0d0 0d0) :accessor %surface-source-box)
    (buffer-transform :initform 0 :accessor %surface-buffer-transform)

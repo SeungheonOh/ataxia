@@ -10,8 +10,7 @@
 
 (asdf:defsystem "ataxia-computer-use/infinite-world"
   :description "Infinite World rendering backend for portable computer use"
-  :depends-on ("ataxia-computer-use" "ataxia-infinite-world")
-  :components ((:file "src/worlds/infinite/capture")))
+  :depends-on ("ataxia-computer-use" "ataxia-infinite-world/capture"))
 
 (asdf:defsystem "ataxia-computer-use/metaworld"
   :description "Computer use with Metaworld's desktop, layout and navigation policy"

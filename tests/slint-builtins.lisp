@@ -21,7 +21,6 @@
                 ("toolbar" (("caption" . "test") ("active" . t) ("standalone" . nil) ("workspace" . 2)) ("action"))
                 ("group-controls" (("world-name" . "test") ("policy" . "niri") ("confirming" . t) ("standalone" . nil)) ("action" "rename"))
                 ("canvas-menu" nil ("action"))
-                ("window-controls" (("owned" . t) ("detachable" . nil) ("niri" . t) ("floating" . nil)) ("action"))
                 ("note" (("content" . "test")) ("edited" "close"))))
   (let ((start (get-internal-real-time)))
     (dotimes (iteration 5)

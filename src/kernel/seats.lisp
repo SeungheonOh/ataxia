@@ -77,6 +77,8 @@
 (defun %retire-logical-seat (seat &key protocol-active-p)
   (when (eq (object-state seat) :live)
     (let ((kernel (object-kernel seat)))
+      (%set-seat-drag-icon seat nil)
+      (setf (%seat-drag seat) nil)
       (%call-world kernel world-seat-removing seat)
       (dolist (input-device
                 (loop for input-device being the hash-keys

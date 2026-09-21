@@ -169,6 +169,14 @@
    (ataxia.world.rmlui.raw::%set-class (%live-native component) id name (not (null enabled))) :set-class)
   (%notify-change component))
 
+(defun set-rmlui-attribute (component id name value)
+  "Set an element attribute; NIL removes it (including boolean attributes)."
+  (check-type value (or null string))
+  (ataxia.world.rmlui.raw::check-result
+   (ataxia.world.rmlui.raw::%set-attribute (%live-native component) id name (or value "") (not (null value)))
+   :set-attribute)
+  (%notify-change component))
+
 (defun set-rmlui-style (component id name value)
   "Set an inline RCSS property; ID empty selects the document body."
   (ataxia.world.rmlui.raw::check-result

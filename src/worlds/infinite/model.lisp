@@ -43,6 +43,8 @@
 
 (defstruct (%canvas-output (:constructor %make-canvas-output (output)))
   output
+  (layout-x 0d0 :type double-float)
+  (layout-y 0d0 :type double-float)
   (camera-x 0d0 :type double-float)
   (camera-y 0d0 :type double-float)
   (zoom 1d0 :type double-float)
@@ -54,7 +56,7 @@
   (transform 0 :type integer))
 
 (defstruct (%canvas-seat (:constructor %make-canvas-seat (seat)))
-  seat output
+  seat output world
   (x 0d0 :type double-float)
   (y 0d0 :type double-float)
   (buttons (make-hash-table :test #'eql))

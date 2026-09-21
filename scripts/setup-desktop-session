@@ -11,7 +11,18 @@ export XDG_CURRENT_DESKTOP=Ataxia XDG_SESSION_TYPE=wayland
 ataxia_portal_dir="${XDG_CONFIG_HOME:-$HOME/.config}/xdg-desktop-portal"
 mkdir -p "$ataxia_portal_dir"
 if [ ! -e "$ataxia_portal_dir/ataxia-portals.conf" ]; then
-    (set -C; printf '[preferred]\ndefault=gtk\n' > "$ataxia_portal_dir/ataxia-portals.conf")
+    (set -C; printf '[preferred]\ndefault=gtk\norg.freedesktop.impl.portal.ScreenCast=ataxia\n' > "$ataxia_portal_dir/ataxia-portals.conf")
+elif ! grep -q '^org.freedesktop.impl.portal.ScreenCast=' "$ataxia_portal_dir/ataxia-portals.conf"; then
+    printf 'org.freedesktop.impl.portal.ScreenCast=ataxia\n' >> "$ataxia_portal_dir/ataxia-portals.conf"
 fi
-dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE
+# The development checkout supplies its portal descriptor without requiring a
+# privileged installation. Preserve all installed backends in the search path.
+ataxia_share_data="${XDG_DATA_HOME:-$HOME/.local/share}/ataxia/portals"
+mkdir -p "$ataxia_share_data"
+for ataxia_descriptor in /usr/share/xdg-desktop-portal/portals/*.portal; do
+    [ ! -f "$ataxia_descriptor" ] || ln -sf "$ataxia_descriptor" "$ataxia_share_data/"
+done
+cp "$(dirname "$0")/../data/portals/ataxia.portal" "$ataxia_share_data/ataxia.portal"
+export XDG_DESKTOP_PORTAL_DIR="$ataxia_share_data"
+dbus-update-activation-environment --systemd WAYLAND_DISPLAY DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE XDG_DESKTOP_PORTAL_DIR
 systemctl --user restart xdg-desktop-portal-gtk.service xdg-desktop-portal.service

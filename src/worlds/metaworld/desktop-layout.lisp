@@ -71,6 +71,9 @@
                         for motion = (%meta-motion world state :metaworld-camera)
                         for view = (%meta-view-for-state world state) collect
             (list :id (ataxia.kernel:object-id (%canvas-output-output state))
+                  :name (ataxia.kernel:output-name (%canvas-output-output state))
+                  :position (vector (%canvas-output-layout-x state) (%canvas-output-layout-y state))
+                  :size (coerce (multiple-value-list (%output-logical-size state)) 'vector)
                   :group (and (%meta-view-active view) (subworld-id (%meta-view-active view)))
                   :camera (coerce (if motion
                                      (destructuring-bind (x y zoom rotation) (%meta-trajectory-destination motion)

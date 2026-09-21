@@ -21,12 +21,21 @@
            (ataxia.world.shell::enable-rmlui-status-bar world)
            (setf bar (find-if (lambda (x) (typep x 'ataxia.world.shell::rmlui-status-bar)) (world-overlays world))
                  seat (%canvas-seat-seat (first (%seat-states world))))
-           (ataxia.world.shell::%bar-action world bar :menu)
            (let ((timer (ataxia.runtime:add-event-loop-timer
                          (ataxia.kernel:kernel-runtime kernel)
                          (lambda (source)
                            (case phase
                              (0
+                              ;; Open Apps through the same World pointer route
+                              ;; as a human click, after the first rendered frame.
+                              (let ((seat-state (gethash seat (%world-seats world))))
+                                (ataxia.kernel:world-cursor-motion world seat
+                                  (ataxia.kernel:make-cursor-motion-input
+                                    :delta-x (- 35d0 (%canvas-seat-x seat-state))
+                                    :delta-y (- (+ (overlay-y bar) 20d0) (%canvas-seat-y seat-state))))
+                                (dolist (state '(:pressed :released))
+                                  (ataxia.kernel:world-cursor-button world seat
+                                    (ataxia.kernel:make-cursor-button-input :code 272 :state state))))
                               (assert (ataxia.world.shell::%bar-popup bar))
                               (assert (ataxia.world.shell::%shell-popup-entries (ataxia.world.shell::%bar-popup bar)))
                               (setf (ataxia.world.shell::%shell-popup-entries (ataxia.world.shell::%bar-popup bar)) (ataxia.world:world-application-catalog world (overlay-output bar)))

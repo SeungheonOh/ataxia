@@ -5,6 +5,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -20,6 +21,10 @@ static struct wl_subcompositor *subcompositor;
 static struct wl_data_device_manager *data_manager;
 static struct xdg_wm_base *shell;
 static struct wl_surface *surface;
+static struct wl_surface *drag_preview;
+static struct wl_callback *drag_frame;
+static int drag_dx, drag_dy;
+static void start_test_drag(void *seat_data, uint32_t serial);
 static struct xdg_toplevel *toplevel;
 static struct xdg_surface *root_xdg;
 static FILE *logfile;
@@ -33,6 +38,11 @@ static struct popup_window menu_popup, nested_popup;
 static double delayed_at, animation_at;
 static int delayed_step, animating, animation_frame;
 static int running = 1;
+static volatile sig_atomic_t repaint_requested;
+static void request_repaint(int signal_number) {
+  (void)signal_number;
+  repaint_requested = 1;
+}
 static double monotonic_seconds(void) {
   struct timespec now;
   clock_gettime(CLOCK_MONOTONIC, &now);
@@ -64,6 +74,7 @@ struct seat {
   struct wl_surface *pointer_surface;
   struct wl_data_device *data_device;
   struct wl_data_offer *selection;
+  struct wl_data_offer *drag_offer;
   int receive_fd;
   size_t received;
   char received_text[1024];
@@ -112,13 +123,33 @@ static void data_offer(void *data, struct wl_data_device *device, struct wl_data
 }
 static void data_enter(void *data, struct wl_data_device *device, uint32_t serial,
                        struct wl_surface *target, wl_fixed_t x, wl_fixed_t y, struct wl_data_offer *offer) {
-  (void)data; (void)device; (void)serial; (void)target; (void)x; (void)y; (void)offer;
+  (void)device; (void)target;
+  struct seat *s = data;
+  s->drag_offer = offer;
+  fprintf(logfile, "drag-enter %s %.1f %.1f\n", s->name, wl_fixed_to_double(x), wl_fixed_to_double(y));
+  fflush(logfile);
+  if (offer) {
+    wl_data_offer_accept(offer, serial, "text/plain;charset=utf-8");
+    wl_data_offer_set_actions(offer, WL_DATA_DEVICE_MANAGER_DND_ACTION_COPY,
+                             WL_DATA_DEVICE_MANAGER_DND_ACTION_COPY);
+  }
 }
 static void data_leave(void *data, struct wl_data_device *device) {
   (void)data; (void)device;
 }
 static void data_motion(void *data, struct wl_data_device *device, uint32_t time, wl_fixed_t x, wl_fixed_t y) {
   (void)data; (void)device; (void)time; (void)x; (void)y;
+}
+static void data_drop(void *data, struct wl_data_device *device) {
+  (void)device;
+  struct seat *s = data;
+  fprintf(logfile, "drag-drop %s\n", s->name);
+  fflush(logfile);
+  if (s->drag_offer) {
+    wl_data_offer_finish(s->drag_offer);
+    wl_data_offer_destroy(s->drag_offer);
+    s->drag_offer = NULL;
+  }
 }
 static void data_selection(void *data, struct wl_data_device *device, struct wl_data_offer *offer) {
   (void)device;
@@ -131,7 +162,7 @@ static void data_selection(void *data, struct wl_data_device *device, struct wl_
 }
 static const struct wl_data_device_listener data_listener = {
   .data_offer = data_offer, .enter = data_enter, .leave = data_leave,
-  .motion = data_motion, .drop = data_leave, .selection = data_selection
+  .motion = data_motion, .drop = data_drop, .selection = data_selection
 };
 static void bind_data_devices(void) {
   if (data_manager)
@@ -350,6 +381,8 @@ static void pointer_button(void *d, struct wl_pointer *p, uint32_t serial,
     fprintf(logfile, "button-surface %s %s %u\n", ((struct seat *)d)->name,
             (char *)wl_surface_get_user_data(target), state);
   fflush(logfile);
+  if (getenv("ATAXIA_TEST_DRAG") && button == 272 && state == WL_POINTER_BUTTON_STATE_PRESSED)
+    start_test_drag(d, serial);
 }
 static void pointer_axis(void *d, struct wl_pointer *p, uint32_t t,
                          uint32_t axis, wl_fixed_t value) {
@@ -486,10 +519,54 @@ static void paint(struct wl_surface *target, int width, int height,
   wl_shm_pool_destroy(pool);
   close(fd);
   munmap(pixels, size);
-  wl_surface_attach(target, buffer, 0, 0);
+  wl_surface_attach(target, buffer, target == drag_preview ? drag_dx : 0,
+                    target == drag_preview ? drag_dy : 0);
+  if (target == drag_preview) drag_dx = drag_dy = 0;
   wl_surface_damage(target, 0, 0, width, height);
   wl_surface_commit(target);
   wl_buffer_destroy(buffer);
+}
+/* Drag fixture uses the same protocol path as a GTK/Firefox tab preview.
+ * The first frame callback moves its origin and repaints while the pointer is idle. */
+static void drag_cleanup(void *data, struct wl_data_source *source) {
+  free(data);
+  wl_data_source_destroy(source);
+  if (drag_frame) wl_callback_destroy(drag_frame);
+  drag_frame = NULL;
+  if (drag_preview) wl_surface_destroy(drag_preview);
+  drag_preview = NULL;
+  fprintf(logfile, "drag-cleanup\n");
+  fflush(logfile);
+}
+static const struct wl_data_source_listener drag_source_listener = {
+  .target = source_target, .send = source_send, .cancelled = drag_cleanup,
+  .dnd_drop_performed = source_finished, .dnd_finished = drag_cleanup, .action = source_action
+};
+static void drag_repaint(void *data, struct wl_callback *callback, uint32_t time) {
+  (void)data; (void)time;
+  wl_callback_destroy(callback);
+  drag_frame = NULL;
+  drag_dx = 5; drag_dy = 3;
+  paint(drag_preview, 80, 50, 0xff48cf60);
+  fprintf(logfile, "drag-frame-painted\n");
+  fflush(logfile);
+}
+static const struct wl_callback_listener drag_frame_listener = {drag_repaint};
+static void start_test_drag(void *seat_data, uint32_t serial) {
+  struct seat *s = seat_data;
+  if (!s->data_device || drag_preview) return;
+  struct wl_data_source *source = wl_data_device_manager_create_data_source(data_manager);
+  wl_data_source_add_listener(source, &drag_source_listener, strdup("local drag fixture"));
+  wl_data_source_offer(source, "text/plain;charset=utf-8");
+  wl_data_source_set_actions(source, WL_DATA_DEVICE_MANAGER_DND_ACTION_COPY);
+  drag_preview = wl_compositor_create_surface(compositor);
+  wl_data_device_start_drag(s->data_device, source, surface, drag_preview, serial);
+  drag_dx = -12; drag_dy = -8;
+  drag_frame = wl_surface_frame(drag_preview);
+  wl_callback_add_listener(drag_frame, &drag_frame_listener, NULL);
+  paint(drag_preview, 80, 50, 0xffef6048);
+  fprintf(logfile, "drag-started\n");
+  fflush(logfile);
 }
 static void configure(void *d, struct xdg_surface *xdg, uint32_t serial) {
   (void)d;
@@ -600,6 +677,7 @@ int main(int argc, char **argv) {
   logfile = fopen(argv[1], "w");
   if (!logfile)
     return 3;
+  if (getenv("ATAXIA_TEST_REPAINT_SIGNAL")) signal(SIGUSR1, request_repaint);
   display = wl_display_connect(NULL);
   if (!display)
     return 4;
@@ -620,6 +698,12 @@ int main(int argc, char **argv) {
   double stop_at = monotonic_seconds() + lifetime;
   while (running && monotonic_seconds() < stop_at) {
     double now = monotonic_seconds();
+    if (repaint_requested) {
+      repaint_requested = 0;
+      paint(surface, 600, 360, 0xff48cf60);
+      fprintf(logfile, "signal-repaint\n");
+      fflush(logfile);
+    }
     for (struct seat *s = seats; s; s = s->next) {
       clipboard_read(s);
       if (s->bind_at > 0 && now >= s->bind_at) {

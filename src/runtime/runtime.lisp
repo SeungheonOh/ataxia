@@ -951,8 +951,10 @@ through Kernel registration. This does not announce a backend device."
      (ataxia.runtime.raw:%drag-event-destroy pointer)
      (lambda (data)
        (declare (ignore data))
-       (%retire-object-listeners drag :immediate-p t)
-       (%invalidate-native-object drag)))
+       (unwind-protect
+            (drag-destroying (%runtime-sink runtime) drag)
+         (%retire-object-listeners drag :immediate-p t)
+         (%invalidate-native-object drag))))
     drag))
 
 (defun %attach-seat-selection-listener (seat)

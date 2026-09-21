@@ -69,6 +69,7 @@
          collect
          (list :output (ataxia.kernel:output-name (%canvas-output-output state))
                :camera (%meta-camera state)
+               :position (list (%canvas-output-layout-x state) (%canvas-output-layout-y state))
                :parent (%meta-view-parent-camera view)
                :active (and (%meta-view-active view)
                             (subworld-id (%meta-view-active view)))))))
@@ -291,6 +292,10 @@
                        :key (lambda (entry) (getf entry :output)) :test #'equal))
          (view (%meta-view-for-state world state)))
     (when record
+      (let ((position (getf record :position)))
+        (when (and (listp position) (= 2 (length position))
+                   (every (lambda (n) (%meta-valid-number-p n -100000 100000)) position))
+          (set-output-position world (%canvas-output-output state) (first position) (second position))))
       (labels ((valid-camera-p (camera)
                  (and (listp camera) (= 4 (length camera))
                       (every #'%meta-valid-number-p camera)

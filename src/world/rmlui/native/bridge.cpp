@@ -506,6 +506,16 @@ API bool ataxia_rmlui_component_set_number(void *p, const char *n, double v) {
 API bool ataxia_rmlui_component_set_boolean(void *p, const char *n, bool v) {
     return ataxia_rmlui_component_set_string(p, n, v ? "true" : "false");
 }
+API bool ataxia_rmlui_component_set_attribute(void *p, const char *id, const char *name, const char *value, bool present) {
+    return checked([&] {
+        auto &c = component(p);
+        auto *e = c.doc->GetElementById(id);
+        require(e, "Element id does not exist");
+        if (present) e->SetAttribute(name, Rml::String(value));
+        else e->RemoveAttribute(name);
+        c.invalidate();
+    });
+}
 API bool ataxia_rmlui_component_set_class(void *p, const char *id, const char *name, bool enabled) {
     return checked([&] {
         auto &c = component(p);

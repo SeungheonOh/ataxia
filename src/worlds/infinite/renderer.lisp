@@ -455,6 +455,21 @@ rotation, output transform, fractional scale and window resizing."
 (defvar *canvas-seat-cursor-tints* (make-hash-table :test #'eq :weakness :key))
 
 (defun %draw-seat-cursor (renderer state seat-state tokens)
+  ;; Drag previews are seat-local surfaces, drawn above windows and below the
+  ;; pointer. Canvas zoom/rotation must not scale or rotate their content.
+  (let ((icon (ataxia.kernel:seat-drag-icon (%canvas-seat-seat seat-state)))
+        (x (%canvas-seat-x seat-state)) (y (%canvas-seat-y seat-state)))
+    (when icon
+      (loop for surface across (ataxia.kernel:drawable-surfaces icon) do
+        (when (%draw-surface
+               renderer state surface
+               (+ x (ataxia.kernel:drawable-surface-local-x surface))
+               (+ y (ataxia.kernel:drawable-surface-local-y surface))
+               (ataxia.kernel:drawable-surface-width surface)
+               (ataxia.kernel:drawable-surface-height surface)
+               1d0 0d0 0d0)
+          (let ((token (ataxia.kernel:drawable-surface-presentation-token surface)))
+            (when token (pushnew token tokens :test #'eq)))))))
   (let ((tint (gethash (%canvas-seat-seat seat-state) *canvas-seat-cursor-tints*))
         (cursor (%canvas-seat-cursor-surface seat-state))
         (x (%canvas-seat-x seat-state))

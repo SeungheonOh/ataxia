@@ -24,4 +24,5 @@
      (:file "wayland-objects")
      (:file "outputs")
      (:file "runtime-sink")
+     (:file "drag")
      (:file "gestures")))))

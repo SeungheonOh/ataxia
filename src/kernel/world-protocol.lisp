@@ -91,6 +91,10 @@
 (defgeneric world-seat-cursor-request (world seat request)
   (:documentation "Report a validated client cursor-surface request using stable Kernel objects."))
 
+(defgeneric world-seat-drag-icon-changed (world seat)
+  (:documentation "SEAT's drag drawable changed or disappeared; presentation is World policy.")
+  (:method ((world world) seat) (declare (ignore world seat))))
+
 (defgeneric world-seat-selection-changed (world seat)
   (:documentation "The clipboard selection changed on SEAT; selection data stays in Runtime.")
   (:method ((world world) seat) (declare (ignore world seat))))

@@ -43,8 +43,6 @@ are also supported; use `--help` to list them. Terminal creation requires `foot`
 - Click a group title to enter; click the active title again to leave. Drag the
   title to move the group and all of its objects, including inactive workspaces.
   Nearby groups move aside, keeping their complete footprints separate.
-- Hover a title to reveal its entry and context actions. Right-click empty
-  canvas to create a group or a note; right-click a group to edit its layout.
 - Hover near the top center for 350 ms to reveal navigation, workspace, and
   terminal actions. Navigation itself never opens the toolbar; it fades away
   after the pointer leaves.
@@ -56,11 +54,11 @@ are also supported; use `--help` to list them. Terminal creation requires `foot`
   half to choose the insertion side. Side and center drops create a separate
   column. Drop onto another workspace page to move the window to that page.
 - Hold Super and drag empty space inside a group to move it. Super + right-drag
-  on empty group space resizes the group; on a window, it resizes the window.
-- Hover the focused window's upper-right corner for 450 ms to reveal a small
-  icon bar with direct window actions. Hover or focus an icon for its label.
-  Click outside or press Escape to dismiss. Notes can be dragged by their upper
-  edge and reveal their close control on hover.
+  on empty group space resizes the group. Super + right-drag resizes a window.
+- An ordinary right-click inside an application reaches that application.
+  Custom context menus, experimental window piles and the upper-right hover bar
+  are removed. Apps and workspace navigation remain in the status bar.
+- Notes can be dragged by their upper edge and reveal their close control on hover.
 - Super + wheel zooms around the pointer. Middle-drag pans the canvas.
   Shift + wheel scrolls the active Niri layout horizontally.
 
@@ -68,6 +66,8 @@ The visual treatment is light monochrome: neutral paper, unobtrusive cross
 reticles, unboxed group names, and short screen-space dot–dash–dot boundaries.
 Reticle density blends across zoom levels rather than accumulating into a dense
 texture. Camera navigation and window rearrangement use short eased transitions.
+
+See [desktop integration](DESKTOP-QOL.md) for XWayland, screen sharing, and independent monitor viewports.
 
 ## Keyboard
 
@@ -78,8 +78,7 @@ Super is the Logo/Windows key (Command when captured by UTM).
 | Super + E | Enter the group under the pointer, or the focused object's group |
 | Super + Page Up / Page Down | Enter the previous / next group |
 | Super + M / Super + Escape | Leave; in the canvas, fit all objects; standalone: overview |
-| Super + comma | Open or dismiss contextual controls |
-| Escape | Dismiss an open context or window action menu |
+| Escape | Dismiss a shell popup or cancel a pending sharing request |
 | Super + Return | Create a terminal in the current group or the parent canvas |
 | Super + Shift + Return | Create a terminal below the focused Niri tile |
 | Super + Alt + Up / Down | Slide to the previous / next workspace page |
@@ -233,8 +232,8 @@ it without polling.
 
 Direct DRM startup queues `scripts/setup-desktop-session`. It publishes the
 Wayland socket to D-Bus/systemd activation and selects an Ataxia-specific GTK
-portal configuration, avoiding unavailable GNOME portal services. It preserves
-an existing `ataxia-portals.conf` and does nothing in nested sessions. Portal
+portal configuration, avoiding unavailable GNOME portal services. It preserves existing portal choices, adding the Ataxia ScreenCast backend only
+when no ScreenCast preference exists, and does nothing in nested sessions. Portal
 setup and application launch failures are logged to stderr.
 
 Native library installation uses atomic replacement. The Slint bridge resolves

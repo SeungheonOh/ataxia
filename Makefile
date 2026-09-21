@@ -8,7 +8,7 @@ PKG_CONFIG ?= pkg-config
 PKG_CONFIG_PATH := $(PREFIX)/lib/pkgconfig:$(PREFIX)/share/pkgconfig:$(PKG_CONFIG_PATH)
 BUILD_DIR := build
 GLUE := $(BUILD_DIR)/libataxia-wlr-glue.so
-SOURCE := native/ataxia-wlr-glue.c native/ataxia-clipboard.c
+SOURCE := native/ataxia-wlr-glue.c native/ataxia-clipboard.c native/ataxia-xwayland.c
 HEADER := native/ataxia-wlr-glue.h
 SLINT_MANIFEST := src/world/slint/native/Cargo.toml
 SLINT_LOCK := src/world/slint/native/Cargo.lock
@@ -25,7 +25,12 @@ LDLIBS += $(shell PKG_CONFIG_PATH='$(PKG_CONFIG_PATH)' $(PKG_CONFIG) --libs wlro
 
 .PHONY: all clean
 
-all: $(GLUE) $(SLINT_LIBRARY)
+all: $(BUILD_DIR)/libataxia-wlr-drag.so $(GLUE) $(SLINT_LIBRARY) $(BUILD_DIR)/libataxia-rmlui-native.so $(BUILD_DIR)/libataxia-screencast.so
+
+$(BUILD_DIR)/libataxia-wlr-drag.so: native/ataxia-drag.c
+	@mkdir -p $(BUILD_DIR)
+	$(CC) $(CFLAGS) -shared -o $@.pending $< $(LDLIBS)
+	mv $@.pending $@
 
 $(GLUE): $(SOURCE) $(HEADER)
 	@mkdir -p $(BUILD_DIR)
@@ -40,6 +45,15 @@ $(SLINT_LIBRARY): $(SLINT_MANIFEST) $(SLINT_LOCK) $(SLINT_SOURCE)
 
 clean:
 	rm -rf $(BUILD_DIR)
+
+# Prefer distro development packages. A locally extracted SDK can also live in
+# build/portal-deps; this does not change the compositor's runtime search path.
+PIPEWIRE_CFLAGS = $(shell pkg-config --cflags libpipewire-0.3 2>/dev/null || echo '-Ibuild/portal-deps/usr/include/pipewire-0.3 -Ibuild/portal-deps/usr/include/spa-0.2')
+PIPEWIRE_LIBS = $(shell pkg-config --libs libpipewire-0.3 2>/dev/null || echo '-l:libpipewire-0.3.so.0')
+$(BUILD_DIR)/libataxia-screencast.so: src/world/screencast/native.c
+	@mkdir -p $(BUILD_DIR)
+	$(CC) -O2 -g -std=gnu11 -fPIC -fvisibility=hidden -Wall -Wextra -shared -o $@.pending $< $(PIPEWIRE_CFLAGS) $(PIPEWIRE_LIBS) $$(pkg-config --cflags --libs gio-2.0 gio-unix-2.0)
+	mv $@.pending $@
 
 $(BUILD_DIR)/gesture-native-test: tests/gesture-native.c $(GLUE) $(HEADER)
 	$(CC) $(CFLAGS) -I. -o $@ tests/gesture-native.c -L$(BUILD_DIR) \
@@ -123,6 +137,31 @@ $(BUILD_DIR)/xdg-shell-client.c:
 	wayland-scanner private-code /usr/share/wayland-protocols/stable/xdg-shell/xdg-shell.xml $@
 $(BUILD_DIR)/computer-use-client: tests/computer-use-client.c $(BUILD_DIR)/xdg-shell-client.h $(BUILD_DIR)/xdg-shell-client.c
 	$(CC) -O2 -Wall -Wextra -I$(BUILD_DIR) -o $@ tests/computer-use-client.c $(BUILD_DIR)/xdg-shell-client.c $$(pkg-config --cflags --libs wayland-client xkbcommon)
+
+$(BUILD_DIR)/xwayland-client: tests/xwayland-client.c
+	$(CC) -O2 -Wall -Wextra -o $@ $< $$(pkg-config --cflags --libs x11)
+
+.PHONY: test-xwayland
+test-xwayland: all $(BUILD_DIR)/xwayland-client
+	WLR_RENDERER=gles2 LD_LIBRARY_PATH='$(abspath $(BUILD_DIR)):$(PREFIX)/lib:$(LD_LIBRARY_PATH)' sbcl --noinform --disable-debugger --eval '(sb-int:set-floating-point-modes :traps nil)' --script tests/xwayland-world.lisp
+
+.PHONY: test-drag
+test-drag: all $(BUILD_DIR)/computer-use-client $(BUILD_DIR)/libataxia-synthetic-input.so
+	WLR_RENDERER=gles2 LD_LIBRARY_PATH='$(abspath $(BUILD_DIR)):$(PREFIX)/lib:$(LD_LIBRARY_PATH)' sbcl --noinform --disable-debugger --eval '(sb-int:set-floating-point-modes :traps nil)' --script tests/drag-world.lisp
+
+.PHONY: test-screencast
+test-screencast: all $(BUILD_DIR)/computer-use-client
+	WLR_RENDERER=gles2 LD_LIBRARY_PATH='$(abspath $(BUILD_DIR)):$(PREFIX)/lib:$(LD_LIBRARY_PATH)' dbus-run-session -- sbcl --noinform --disable-debugger --eval '(sb-int:set-floating-point-modes :traps nil)' --script tests/screencast-world.lisp
+
+.PHONY: benchmark-desktop-idle
+benchmark-desktop-idle: all $(BUILD_DIR)/computer-use-client $(BUILD_DIR)/xwayland-client
+	WLR_RENDERER=gles2 LD_LIBRARY_PATH='$(abspath $(BUILD_DIR)):$(PREFIX)/lib:$(LD_LIBRARY_PATH)' dbus-run-session -- sbcl --noinform --disable-debugger --eval '(sb-int:set-floating-point-modes :traps nil)' --script tests/desktop-idle.lisp
+
+# Public portal tests need xdg-desktop-portal, Python GI/GStreamer and PipeWire.
+.PHONY: test-qol
+test-qol: test-xwayland test-screencast test-drag
+	python3 tests/metaworld-qol-gles.py
+	WLR_RENDERER=gles2 LD_LIBRARY_PATH='$(abspath $(BUILD_DIR)):$(PREFIX)/lib:$(LD_LIBRARY_PATH)' sbcl --noinform --disable-debugger --eval '(sb-int:set-floating-point-modes :traps nil)' --script tests/qol-world.lisp
 
 .PHONY: test-computer-use
 test-computer-use: computer-use $(BUILD_DIR)/computer-use-client

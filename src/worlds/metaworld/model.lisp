@@ -32,10 +32,11 @@
 (defclass meta-note (agent-widget)
   ((content :initform "" :accessor %meta-note-content)))
 
+
+
 (defstruct (%meta-view (:constructor %make-meta-view))
   active parent-camera (panel-until 0d0) panel
   (headers (make-hash-table :test #'eq))
-  window-controls window-target (window-controls-until 0d0)
   (last-camera nil) (last-focus nil) (hover-after 0d0))
 
 (defclass metaworld (infinite-world)
@@ -237,8 +238,7 @@
       (%meta-cancel-motion world state :metaworld-camera)
       (return-from %meta-transition-camera state))
     (let ((view (%meta-view-for-state world state)))
-      (setf (%meta-view-hover-after view) (+ (%now) 0.36d0)
-            (%meta-view-window-controls-until view) 0d0))
+      (setf (%meta-view-hover-after view) (+ (%now) 0.36d0)))
     (ataxia.world:cancel-animation (%world-animator world) state :touchpad-pan)
     (%meta-set-camera world state origin)
     ;; Animate the screen transform itself. A fresh pan/zoom follows a straight

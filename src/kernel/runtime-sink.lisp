@@ -322,14 +322,15 @@
 
 (defmethod ataxia.runtime:seat-request-start-drag
     ((kernel kernel) request)
-  (declare (ignore kernel))
   (let ((seat (ataxia.runtime:seat-drag-request-seat request))
         (drag (ataxia.runtime:seat-drag-request-drag request))
         (origin (ataxia.runtime:seat-drag-request-origin request))
         (serial (ataxia.runtime:seat-drag-request-serial request)))
     (if (ataxia.runtime:seat-validate-pointer-grab-serial
          seat origin serial)
-        (ataxia.runtime:seat-start-pointer-drag seat drag serial)
+        (progn
+          (ataxia.runtime:seat-start-pointer-drag seat drag serial)
+          (%start-seat-drag kernel seat drag))
         (ataxia.runtime:destroy-drag drag))))
 
 (defmethod ataxia.runtime:seat-request-set-selection ((kernel kernel) request)
@@ -352,6 +353,7 @@
   (let* ((surface (%ensure-surface-node kernel runtime-surface))
          (application (%surface-tree-application surface)))
     (%update-surface-node surface commit)
+    (%invalidate-surface-drag-icons kernel surface)
     (cond
       ((and application (eq (object-state application) :live))
        (%invalidate-application application))
@@ -368,6 +370,7 @@
     ;; A synchronized subsurface can commit its buffer while still unmapped,
     ;; then map when its parent commits. Retain the now-usable texture here too.
     (%update-surface-node surface nil)
+    (%invalidate-surface-drag-icons kernel surface)
     (when application
       (%invalidate-application application))))
 
@@ -377,6 +380,7 @@
          (application (%surface-tree-application surface)))
     (setf (surface-mapped-p surface) nil)
     (%release-surface-source surface)
+    (%invalidate-surface-drag-icons kernel surface)
     (when application
       (%invalidate-application application))))
 
@@ -384,6 +388,7 @@
     ((kernel kernel) runtime-surface)
   (let ((surface (gethash runtime-surface (%kernel-surface-table kernel))))
     (when surface
+      (%remove-destroyed-drag-surface kernel surface)
       (dolist (seat (kernel-seats kernel))
         (let ((request (%seat-cursor-request seat)))
           (when (and request
@@ -406,6 +411,7 @@
      (ataxia.runtime:subsurface-x subsurface)
      (ataxia.runtime:subsurface-y subsurface))
     (setf (gethash subsurface (%kernel-runtime-index kernel)) child)
+    (%invalidate-surface-drag-icons kernel child)
     (let ((application (%surface-tree-application parent)))
       (when application
         (%invalidate-application application)))))
@@ -416,6 +422,7 @@
     (when surface
       (setf (surface-local-x surface) (ataxia.runtime:subsurface-x subsurface)
             (surface-local-y surface) (ataxia.runtime:subsurface-y subsurface))
+      (%invalidate-surface-drag-icons kernel surface)
       (let ((application (%surface-tree-application surface)))
         (when application
           (%invalidate-application application))))))
@@ -425,6 +432,7 @@
   (let ((surface (%find-runtime-object kernel subsurface)))
     (when surface
       (remhash subsurface (%kernel-runtime-index kernel))
+      (%invalidate-surface-drag-icons kernel surface)
       (let ((application (%surface-tree-application surface)))
         (%detach-surface-node surface)
         (when application

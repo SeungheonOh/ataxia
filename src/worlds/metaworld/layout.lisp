@@ -241,7 +241,6 @@
              (or (eq object (%meta-menu world))
                  (loop for view being the hash-values of (%meta-views world)
                        thereis (or (eq object (%meta-view-panel view))
-                                   (eq object (%meta-view-window-controls view))
                                    (loop for header being the hash-values of (%meta-view-headers view)
                                          thereis (eq object header))))))
     (error "World controls cannot become subworld members."))

@@ -92,6 +92,10 @@
           (%runtime-damage-rectangles
            (ataxia.runtime:surface-opaque-region (surface-runtime-object surface)))))
   (when commit
+    (multiple-value-bind (dx dy)
+        (ataxia.runtime:surface-commit-offset (surface-runtime-object surface))
+      (incf (%surface-offset-x surface) dx)
+      (incf (%surface-offset-y surface) dy))
     (setf (surface-commit-sequence surface)
           (ataxia.runtime:surface-commit-sequence commit)
           (%surface-damage surface)
@@ -350,7 +354,9 @@
     (cursor-button-input (cursor-button-input-time-msec input))
     (cursor-axis-input (cursor-axis-input-time-msec input))))
 
-(defun %application-surface-at (application local-x local-y)
+(defgeneric %application-surface-at (application local-x local-y))
+
+(defmethod %application-surface-at ((application wayland-application) local-x local-y)
   (ataxia.runtime:xdg-surface-at
    (application-toplevel application) local-x local-y))
 

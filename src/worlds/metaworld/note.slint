@@ -7,13 +7,13 @@ export component MetaworldNote inherits Window {
     callback close();
     forward-focus: editor;
     Rectangle { border-width: 1px; border-color: Workstation.ink; border-radius: 0px; background: Workstation.paper; }
-    Text { x: 1px; y: 1px; text: "Note"; font-family: "DejaVu Sans Mono"; font-size: 14px; color: Workstation.muted; }
+    Text { x: 1px + Workstation.inset; y: 1px; text: "Note"; font-family: "DejaVu Sans Mono"; font-size: 14px; color: Workstation.muted; }
     MetaButton {
-        x: parent.width - 17px; y: 1px; width: 16px; height: 16px;
+        x: parent.width - 17px - Workstation.inset; y: 1px; width: 16px; height: 16px;
         label: "×"; activate => { root.close(); }
     }
     editor := TextInput {
-        x: 1px; y: 17px; width: parent.width - 2px; height: parent.height - 18px;
+        x: 1px + Workstation.inset; y: 17px; width: parent.width - 2px - 2 * Workstation.inset; height: parent.height - 18px;
         text <=> root.content;
         color: Workstation.ink;
         font-family: "DejaVu Sans Mono";

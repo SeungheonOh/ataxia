@@ -3,7 +3,7 @@
 body.shell {
  --ink:#161616; --paper:#ffffff; --field:#eeeeea; --muted:#50504c;
  --disabled:#73736e; --danger:#8c2020;
- --unit:0dp; --gap:8dp; --inset:0dp; --section:0dp;
+ --unit:0dp; --gap:8dp; --inset:8dp; --column-gap:16dp; --section:0dp;
  --control:16dp; --control-line:16dp; --field-height:18dp; --frame:1dp; --heading:14dp;
  font-family:DejaVu Sans Mono; color:var(--ink); line-height:16dp;
 }

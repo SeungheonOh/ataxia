@@ -1,12 +1,12 @@
 <rml><head><title>Ataxia applications</title><style>
 body { margin:0; width:100%; height:100%; font-size:13dp; }
 div { display:block; box-sizing:border-box; }
-#panel { width:100%; height:100%; padding:0; border:var(--frame) var(--ink); display:flex; flex-direction:column; gap:var(--section); }
+#panel { width:100%; height:100%; padding:0 var(--inset); border:var(--frame) var(--ink); display:flex; flex-direction:column; gap:var(--section); }
 #panel { overflow-y:auto; }
 #heading { display:flex; align-items:center; justify-content:space-between; gap:0 var(--gap); height:var(--control); flex-shrink:0; }
 #hello { font-size:var(--heading); font-weight:bold; }
 #close, #prev, #next { width:var(--control); padding:0; text-align:center; font-size:14dp; }
-#search { display:block; box-sizing:border-box; width:100%; height:var(--field-height); padding:0; font-size:13dp; border:var(--frame) var(--ink); flex-shrink:0; }
+#search { display:block; box-sizing:border-box; width:100%; height:var(--field-height); padding:0 var(--inset); font-size:13dp; border:var(--frame) var(--ink); flex-shrink:0; }
 #section { display:flex; align-items:center; justify-content:space-between; flex-shrink:0; font-size:11dp; }
 #grid { display:flex; flex-direction:column; flex:none; min-height:96dp; flex-shrink:0; }
 .app { width:100%; display:flex; align-items:center; text-align:left; }

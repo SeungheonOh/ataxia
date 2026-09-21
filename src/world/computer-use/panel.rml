@@ -3,7 +3,7 @@ body { margin:0; width:100%; height:100%; font-size:13dp; }
 div { display:block; box-sizing:border-box; }
 body { font-size:12dp; }
 #panel { position:absolute; left:0; top:0; overflow-y:auto; border:var(--frame) var(--ink); }
-#content { padding:0; }
+#content { padding:0 var(--inset); }
 #header { display:flex; align-items:center; gap:0 var(--gap); height:var(--control); }
 #heading { flex:1; min-width:0; font-weight:bold; font-size:var(--heading); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 #pause-all { font-size:11dp; }

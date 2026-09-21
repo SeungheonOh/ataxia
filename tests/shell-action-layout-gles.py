@@ -56,7 +56,7 @@ for name, height, ids in cases:
             # Match the World host's definite widths on the stacked layout.
             if width < 480:
                 for element in ['body', 'groups', 'workspaces', 'workspace-grid']:
-                    ok(style(c, element.encode(), b'width', f'{width-2}dp'.encode()))
+                    ok(style(c, element.encode(), b'width', f'{width-18}dp'.encode()))
         if name == 'computer-use/panel':
             for prop, value in [('width', f'{width}dp'), ('height', f'{height}dp')]:
                 ok(style(c, b'panel', prop.encode(), value.encode()))

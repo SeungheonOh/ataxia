@@ -75,17 +75,17 @@ export component AtaxiaLauncher inherits Window {
         background: #ffffff;
 
         search-box := Rectangle {
-            x: 1px;
+            x: 9px;
             y: 1px;
-            width: parent.width - 2px;
+            width: parent.width - 18px;
             height: 18px;
             border-width: 1px;
             border-color: #161616;
             background: #eeeeea;
             editor := TextInput {
-                x: 0px;
+                x: 9px;
                 y: 1px;
-                width: parent.width;
+                width: parent.width - 18px;
                 height: parent.height - 2px;
                 text <=> root.query;
                 color: #161616;
@@ -115,9 +115,9 @@ export component AtaxiaLauncher inherits Window {
         }
 
         VerticalLayout {
-            x: 1px;
+            x: 9px;
             y: 19px;
-            width: parent.width - 2px;
+            width: parent.width - 18px;
             height: 96px;
             spacing: 0px;
             LauncherRow { title: root.result-title-0; index: 0; enabled: root.result-count > 0; selected: root.selected-index == 0; activate(index) => { root.activate(index); } }
@@ -129,9 +129,9 @@ export component AtaxiaLauncher inherits Window {
         }
 
         Text {
-            x: 1px;
+            x: 9px;
             y: 19px;
-            width: parent.width - 2px;
+            width: parent.width - 18px;
             height: 96px;
             visible: root.result-count == 0;
             text: \"No matches\";

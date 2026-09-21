@@ -3,7 +3,7 @@ body { margin:0; width:100%; height:100%; font-size:13dp; }
 div { display:block; box-sizing:border-box; }
 #settings-layer { position:absolute; left:0; right:0; top:0; bottom:0; display:flex; align-items:center; justify-content:center; }
 #settings-backdrop { position:absolute; left:0; right:0; top:0; bottom:0; }
-#dialog { position:relative; z-index:1; width:420dp; max-width:94%; padding:0; border:var(--frame) var(--ink); }
+#dialog { position:relative; z-index:1; width:420dp; max-width:94%; padding:0 var(--inset); border:var(--frame) var(--ink); }
 #dialog-header, #speed-row, #dialog-actions { display:flex; align-items:center; gap:0 var(--gap); }
 #dialog-heading { font-size:var(--heading); font-weight:bold; }
 #settings-close { margin-left:auto; width:var(--control); padding:0; text-align:center; font-size:14dp; }
@@ -12,11 +12,11 @@ div { display:block; box-sizing:border-box; }
 .setting-label { font-size:12dp; font-weight:bold; margin-bottom:0; }
 #model-field, #effort-field { position:relative; width:100%; height:var(--field-height); }
 select { display:block; width:100%; height:var(--field-height); box-sizing:border-box; border:var(--frame) var(--ink); font-size:13dp; }
-select selectvalue { padding:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+select selectvalue { padding:0 var(--inset); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 select selectarrow { width:var(--control); }
 #model-chevron, #effort-chevron { position:absolute; top:0; right:var(--gap); pointer-events:none; }
 select selectbox { border:var(--frame) var(--ink); max-height:248dp; overflow-y:auto; z-index:20; }
-select option { display:block; padding:0; }
+select option { display:block; padding:0 var(--inset); }
 #models-load { margin-top:0; font-size:12dp; }
 #speed-copy { flex:1; min-width:0; }
 #speed-label { font-size:12dp; font-weight:bold; margin-bottom:0; }

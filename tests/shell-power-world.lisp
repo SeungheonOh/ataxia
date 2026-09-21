@@ -61,7 +61,7 @@
                         (0 (when (eql 40 (getf (getf (view) :backlight) :percent))
                              (assert (= 0 brightness-count))
                              (assert (equal "40%" (shown "brightness-value")))
-                             (click 331d0 138d0)
+                             (click 311d0 138d0)
                              (setf phase 1)))
                         (1 (when (ready)
                              (assert (= percentage 45))

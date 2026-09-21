@@ -1,10 +1,10 @@
 <rml><head><title>Clipboard history</title><style>
 body { margin:0; width:100%; height:100%; font-size:13dp; }
 div { display:block; box-sizing:border-box; }
-#panel { width:100%; height:100%; padding:0; border:var(--frame) var(--ink); display:flex; flex-direction:column; gap:var(--section); }
+#panel { width:100%; height:100%; padding:0 var(--inset); border:var(--frame) var(--ink); display:flex; flex-direction:column; gap:var(--section); }
 #header { display:flex; align-items:center; justify-content:space-between; gap:0 var(--gap); height:var(--control); flex-shrink:0; }
 #title { font-size:var(--heading); font-weight:bold; }
-#search { display:block; width:100%; box-sizing:border-box; height:var(--field-height); padding:0; border:var(--frame) var(--ink); flex-shrink:0; }
+#search { display:block; width:100%; box-sizing:border-box; height:var(--field-height); padding:0 var(--inset); border:var(--frame) var(--ink); flex-shrink:0; }
 #count { font-size:11dp; }
 #list { flex:1; min-height:0; overflow-y:auto; }
 .item { display:block; width:100%; text-align:left; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }

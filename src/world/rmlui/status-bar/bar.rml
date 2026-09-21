@@ -2,7 +2,7 @@
 body { margin:0; width:100%; height:100%; font-size:12dp; }
 div { display:block; box-sizing:border-box; }
 #bar { position:absolute; left:0; right:0; top:0; height:18dp; box-sizing:border-box;
- display:flex; align-items:center; gap:0 var(--gap); padding:0; border-top:1dp var(--ink); }
+ display:flex; align-items:center; gap:0 var(--gap); padding:0 var(--inset); border-top:1dp var(--ink); }
 button { height:var(--control); }
 #home { flex-shrink:0; font-weight:bold; }
 #mark { display:none; }
@@ -19,7 +19,7 @@ button { height:var(--control); }
 #right { display:flex; align-items:center; gap:0 var(--gap); margin-left:auto; flex-shrink:0; }
 #audio, #clipboard { padding:0; }
 #media { display:none; max-width:180dp; overflow:hidden; white-space:nowrap; padding:0; }
-#power { padding:0; display:flex; align-items:center; gap:8dp; white-space:nowrap; }
+#power { padding:0; display:flex; align-items:center; gap:0 var(--gap); white-space:nowrap; }
 #battery { position:relative; width:22dp; height:12dp; padding:0; border:1dp var(--ink); }
 #charge { height:100%; width:75%; }
 #battery-tip { position:absolute; right:-4dp; top:3dp; width:2dp; height:4dp; }
@@ -28,12 +28,12 @@ button { height:var(--control); }
 #clock { line-height:var(--control-line); white-space:nowrap; }
 #date { white-space:nowrap; }
 #bar.has-media #media { display:block; }
-#bar.compact { gap:8dp; }
+#bar.compact { gap:0 var(--gap); }
 .compact #focus, .compact #date, #bar.compact #media { display:none; }
 #bar.narrow { gap:0 var(--gap); }
 .narrow #power-text { display:none; }
 .narrow #context { flex-basis:220dp; }
-#bar.tiny { gap:0 var(--gap); padding:0; }
+#bar.tiny { gap:0 var(--gap); }
 #bar.tiny #context { flex-basis:72dp; }
 #bar.tiny #group { font-size:11dp; }
 #bar.tiny #right { gap:0 var(--gap); }

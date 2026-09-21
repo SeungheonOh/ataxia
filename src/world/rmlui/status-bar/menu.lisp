@@ -40,7 +40,7 @@
             ;; containing width on the stacked narrow layout.
             (dolist (id '("body" "groups" "workspaces" "workspace-grid"))
               (set-widget-style popup id "width"
-                (if (< width 480d0) (format nil "~Ddp" (max 1 (floor (- width 2d0))))
+                (if (< width 480d0) (format nil "~Ddp" (max 1 (floor (- width 18d0))))
                     (if (equal id "groups") "160dp" "auto"))))))))))
 (defun %bar-update-power-popup (popup power)
   (let ((capacity (getf power :capacity)) (health (getf power :health))

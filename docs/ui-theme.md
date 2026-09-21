@@ -12,9 +12,12 @@ the theme relative to its real source path and opts in with a `shell` body
 class. Use `ataxia.world.rmlui:make-shell-rmlui-component` to load the four
 DejaVu Sans Mono faces once. The generic factory hosts independently styled apps.
 
-- No panel inset or extra spacing above/below text. Use a 16 dp text line,
-  like terminal rows. Separate adjacent commands horizontally by one character
-  (8 dp); wrapped commands remain on consecutive lines.
+- Use an 8 dp horizontal gutter at panel and text-field edges, an 8 dp gap
+  between related commands, and 16 dp between independent columns. Apply the
+  same gutters at narrow widths; wrap or truncate content instead of changing
+  the spacing. Add the gutter once per container, not to each text action.
+- Keep 16 dp text rows with no extra padding above or below text. Wrapped
+  commands stay on consecutive lines. Use horizontal space for readability.
 - Actions are text, without an outline, resting fill or button padding.
   Invert foreground/background on hover, keyboard focus, press and selection;
   keep disabled text unfilled. Retain semantic buttons for keyboard activation.

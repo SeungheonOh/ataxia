@@ -1,12 +1,12 @@
 <rml><head><title>Workspaces</title><style>
 body { margin:0; width:100%; height:100%; font-size:13dp; }
 div { display:block; box-sizing:border-box; }
-#panel { width:100%; height:100%; padding:0; border:var(--frame) var(--ink); display:flex; flex-direction:column; gap:var(--section); }
+#panel { width:100%; height:100%; padding:0 var(--inset); border:var(--frame) var(--ink); display:flex; flex-direction:column; gap:var(--section); }
 #header { display:flex; align-items:center; justify-content:space-between; gap:0 var(--gap); height:var(--control); flex-shrink:0; }
 #title { font-size:var(--heading); font-weight:bold; }
 button { text-align:left; }
 #location { font-size:12dp; flex-shrink:0; }
-#body { flex:1; min-height:0; display:flex; gap:0 var(--gap); overflow:auto; }
+#body { flex:1; min-height:0; display:flex; gap:0 var(--column-gap); overflow:auto; }
 #groups { width:160dp; flex-shrink:0; }
 .group { margin-bottom:0; width:100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 #group-paging { display:flex; align-items:center; justify-content:space-between; margin-top:0; }

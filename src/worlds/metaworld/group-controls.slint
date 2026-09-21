@@ -11,12 +11,12 @@ export component SubworldControls inherits Window {
     callback rename(string);
     Rectangle { border-width: 1px; border-color: Workstation.ink; border-radius: 0px; background: Workstation.paper; }
     VerticalLayout {
-        padding: 1px;
+        padding: 1px; padding-left: 1px + Workstation.inset; padding-right: 1px + Workstation.inset;
         spacing: 0px;
         alignment: start;
         HorizontalLayout {
             height: 16px;
-            spacing: 8px;
+            spacing: Workstation.gap;
             Rectangle {
                 border-width: 0px; border-radius: 0px; background: Workstation.field;
                 TextInput {
@@ -32,14 +32,14 @@ export component SubworldControls inherits Window {
         }
         HorizontalLayout {
             height: 16px;
-            spacing: 8px;
+            spacing: Workstation.gap;
             MetaButton { label: "Columns"; selected: root.policy == "niri"; activate => { root.action("policy-niri"); } }
             MetaButton { label: "Dwindle"; selected: root.policy == "dwindle"; activate => { root.action("policy-dwindle"); } }
             MetaButton { label: "Master"; selected: root.policy == "master"; activate => { root.action("policy-master"); } }
         }
         HorizontalLayout {
             height: 16px;
-            spacing: 8px;
+            spacing: Workstation.gap;
             MetaButton { label: "New note"; activate => { root.action("note"); } }
             MetaButton { label: root.standalone ? "Canvas" : "Standalone"; activate => { root.action(root.standalone ? "mode-canvas" : "standalone"); } }
         }

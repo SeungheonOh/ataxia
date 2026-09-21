@@ -1,7 +1,7 @@
 <rml><head><title>Share a source</title><style>
 body { margin:0; width:100%; height:100%; font-size:13dp; }
 div { display:block; box-sizing:border-box; }
-#panel { width:100%; height:100%; padding:0; border:var(--frame) var(--ink); display:flex; flex-direction:column; gap:var(--section); }
+#panel { width:100%; height:100%; padding:0 var(--inset); border:var(--frame) var(--ink); display:flex; flex-direction:column; gap:var(--section); }
 #panel { overflow-y:auto; }
 .share-heading { height:var(--control); display:flex; align-items:center; flex-shrink:0; }
 h1 { display:block; margin:0; font-size:var(--heading); font-weight:bold; }

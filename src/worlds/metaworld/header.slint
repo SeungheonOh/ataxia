@@ -9,10 +9,10 @@ export component SubworldHeader inherits Window {
         accessible-role: button;
         accessible-label: root.active ? "Back to Metaworld" : "Enter " + root.caption;
         forward-focus: focus;
-        if root.active : Image { x: 0px; y: 0px; width: 16px; height: 16px; source: @image-url("icons/back.svg"); colorize: touch.has-hover || focus.has-focus ? Workstation.paper : Workstation.ink; }
+        if root.active : Image { x: Workstation.inset; y: 0px; width: 16px; height: 16px; source: @image-url("icons/back.svg"); colorize: touch.has-hover || focus.has-focus ? Workstation.paper : Workstation.ink; }
         Text {
-            x: root.active ? 16px : 0px;
-            width: max(0px, parent.width - self.x);
+            x: Workstation.inset + (root.active ? 16px + Workstation.gap : 0px);
+            width: max(0px, parent.width - self.x - Workstation.inset);
             text: root.caption; color: touch.has-hover || focus.has-focus ? Workstation.paper : Workstation.ink;
             font-family: "DejaVu Sans Mono"; font-size: 11px;
             vertical-alignment: center; overflow: elide;

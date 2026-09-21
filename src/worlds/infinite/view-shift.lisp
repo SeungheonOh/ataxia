@@ -21,119 +21,32 @@
     private property <float> delta-y: root.cursor-y - root.anchor-y;
     private property <length> anchor-left: root.anchor-x * 1px;
     private property <length> anchor-top: root.anchor-y * 1px;
-    private property <length> cursor-left: root.cursor-x * 1px;
-    private property <length> cursor-top: root.cursor-y * 1px;
     private property <length> distance: sqrt(root.delta-x * root.delta-x
                                              + root.delta-y * root.delta-y) * 1px;
     private property <angle> direction: atan2(root.delta-y, root.delta-x);
-    // Static stipple: camera motion, not decoration, schedules frames.
-    private property <color> ink: #161616;
-    private property <color> paper: #ffffff;
-
-    tether := Rectangle {
-        x: root.anchor-left;
-        y: root.anchor-top - 2px;
-        width: root.distance;
-        height: 4px;
-        background: transparent;
+    // Anchor, velocity direction and dead-zone boundary are the only marks.
+    // The contrasting backing keeps them visible over arbitrary client pixels.
+    Rectangle {
+        x: root.anchor-left; y: root.anchor-top - 1.5px;
+        width: root.distance; height: 3px; background: #ffffff;
         transform-rotation: root.direction;
-        transform-origin: { x: 0px, y: 2px };
-        visible: root.distance > 8px;
-
+        transform-origin: { x: 0px, y: 1.5px };
+        visible: root.distance > 4px;
+        Rectangle { y: 1px; width: parent.width; height: 1px; background: #161616; }
+    }
+    Rectangle {
+        x: root.anchor-left - 43px; y: root.anchor-top - 43px;
+        width: 86px; height: 86px; border-radius: 43px;
+        border-width: 3px; border-color: #ffffff; background: transparent;
         Rectangle {
-            width: parent.width;
-            height: 3px;
-            background: root.ink;
-        }
-
-        for dash[index] in 192: Rectangle {
-            x: (2 + index * 8) * 1px;
-            y: 1px;
-            width: 4px;
-            height: 1px;
-            background: root.paper;
-            visible: self.x < tether.width;
+            x: 1px; y: 1px; width: 84px; height: 84px; border-radius: 42px;
+            border-width: 1px; border-color: #161616; background: transparent;
         }
     }
-
-    for dot[index] in 32: dot-frame := Rectangle {
-        private property <angle> angle: index * 11.25deg;
-        x: root.anchor-left + 42px * cos(self.angle) - 2px;
-        y: root.anchor-top + 42px * sin(self.angle) - 2px;
-        width: 4px;
-        height: 4px;
-        background: root.ink;
-
-        Rectangle {
-            x: 1px;
-            y: 1px;
-            width: 2px;
-            height: 2px;
-            background: index.mod(2) == 0
-                        ? root.paper : root.ink;
-        }
-    }
-
-    pan-tag := Rectangle {
-        x: root.anchor-left - 11px;
-        y: root.anchor-top - 59px;
-        width: 22px;
-        height: 11px;
-        background: root.ink;
-
-        Text {
-            width: parent.width;
-            height: parent.height;
-            text: \"PAN\";
-            color: root.paper;
-            font-family: \"monospace\";
-            font-size: 8px;
-            font-weight: 700;
-            horizontal-alignment: center;
-            vertical-alignment: center;
-        }
-    }
-
-    anchor-handle := Rectangle {
-        x: root.anchor-left - 5px;
-        y: root.anchor-top - 5px;
-        width: 10px;
-        height: 10px;
-        background: root.ink;
-
-        Rectangle {
-            x: 2px;
-            y: 2px;
-            width: 6px;
-            height: 6px;
-            background: root.paper;
-
-            Rectangle {
-                x: 2px;
-                y: 2px;
-                width: 2px;
-                height: 2px;
-                background: root.ink;
-            }
-        }
-    }
-
-    cursor-handle := Rectangle {
-        x: root.cursor-left - 5px;
-        y: root.cursor-top - 5px;
-        width: 10px;
-        height: 10px;
-        background: root.ink;
-        transform-rotation: 45deg;
-        transform-origin: { x: 5px, y: 5px };
-
-        Rectangle {
-            x: 2px;
-            y: 2px;
-            width: 6px;
-            height: 6px;
-            background: root.paper;
-        }
+    Rectangle {
+        x: root.anchor-left - 3px; y: root.anchor-top - 3px;
+        width: 6px; height: 6px;
+        background: #161616; border-width: 1px; border-color: #ffffff;
     }
   }")
 

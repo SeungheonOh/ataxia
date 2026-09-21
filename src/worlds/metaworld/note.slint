@@ -1,20 +1,19 @@
-import { Workstation, DashRule } from "theme.slint";
+import { Workstation } from "theme.slint";
+import { MetaButton } from "controls.slint";
 export component MetaworldNote inherits Window {
     background: transparent;
     in-out property <string> content: "";
     callback edited(string);
     callback close();
     forward-focus: editor;
-    Rectangle { border-width: 2px; border-color: Workstation.ink; border-radius: 0px; background: Workstation.paper; }
-    DashRule { x: 55px; y: 13px; width: parent.width - 94px; }
-    Text { x: 12px; y: 8px; text: "Note"; font-family: "DejaVu Sans Mono"; font-size: 10px; color: Workstation.muted; }
-    close-area := TouchArea {
-        x: parent.width - 30px; y: 0px; width: 30px; height: 28px;
-        clicked => { root.close(); }
-        Text { text: "×"; color: Workstation.muted; horizontal-alignment: center; vertical-alignment: center; }
+    Rectangle { border-width: 1px; border-color: Workstation.ink; border-radius: 0px; background: Workstation.paper; }
+    Text { x: 12px; y: 20px; text: "Note"; font-family: "DejaVu Sans Mono"; font-size: 14px; color: Workstation.muted; }
+    MetaButton {
+        x: parent.width - 44px; y: 12px; width: 32px; height: 32px;
+        label: "×"; activate => { root.close(); }
     }
     editor := TextInput {
-        x: 12px; y: 30px; width: parent.width - 24px; height: parent.height - 42px;
+        x: 12px; y: 52px; width: parent.width - 24px; height: parent.height - 64px;
         text <=> root.content;
         color: Workstation.ink;
         font-family: "DejaVu Sans Mono";

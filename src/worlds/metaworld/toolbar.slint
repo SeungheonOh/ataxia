@@ -10,10 +10,10 @@ export component MetaworldToolbar inherits Window {
     in property <int> workspace: 1;
     private property <bool> compact: root.width < 440px;
     callback action(string);
-    Rectangle { border-width: 2px; border-color: Workstation.ink; border-radius: 0px; background: Workstation.paper; }
+    Rectangle { border-width: 1px; border-color: Workstation.ink; border-radius: 0px; background: Workstation.paper; }
     HorizontalLayout {
-        padding: 6px;
-        spacing: 4px;
+        padding: 6px; padding-left: 12px; padding-right: 12px;
+        spacing: 8px;
         if root.width >= 380px : Text {
             text: root.caption;
             color: Workstation.ink;

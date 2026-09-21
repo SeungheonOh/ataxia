@@ -13,7 +13,7 @@ for kind,width,height in [('menu',400,480),('menu',304,480),('power',340,500),('
         ok(api('model_string',C.c_bool,P,C.c_char_p,C.c_char_p)(c,b'query',b''))
         ok(api('component_register_callback',C.c_bool,P,C.c_char_p)(c,b'model:query'))
         for index,name in enumerate(['Firefox','Terminal','Emacs','Files','Calculator','Text Editor']):
-            ok(set_text(c,f'name{index}'.encode(),name.encode()));ok(set_text(c,f'icon{index}'.encode(),name[0].encode()))
+            ok(set_text(c,f'name{index}'.encode(),name.encode()))
     else:
         model=api('model_string',C.c_bool,P,C.c_char_p,C.c_char_p)
         boolean=api('model_boolean',C.c_bool,P,C.c_char_p,C.c_bool)
@@ -25,7 +25,7 @@ for kind,width,height in [('menu',400,480),('menu',304,480),('power',340,500),('
             ok(set_text(c,name.encode(),value.encode()))
         for name,value in [('brightness-value','45%'),('brightness-note','Display backlight'),('sleep-note','Suspend to memory. Press the power button to wake.')]:
             ok(set_text(c,name.encode(),value.encode()))
-        ok(style(c,b'fill',b'width',b'18%'));ok(set_class(c,b'panel',b'low',True))
+        ok(set_class(c,b'panel',b'low',True))
     for _ in range(30): time.sleep(.016);ok(render(c))
     pixels=(C.c_ubyte*(width*height*4))();bind_fbo(0x8d40,fbo);read(0,0,width,height,0x1908,0x1401,pixels)
     im=Image.frombytes('RGBA',(width,height),bytes(pixels)).transpose(Image.Transpose.FLIP_TOP_BOTTOM)
@@ -45,10 +45,10 @@ for kind,width,height in [('menu',400,480),('menu',304,480),('power',340,500),('
             ok(button(c,x,y,1,True));ok(button(c,x,y,1,False));ok(render(c))
         if height==500:
             assert count_callbacks(c)==0,'model initialization must not issue a brightness command'
-            click(width-49,351)
+            click(width-29,265)
             assert callback_name(c,0)==b'brightness-up', (kind,width,[(callback_name(c,i),api('component_callback_value',C.c_char_p,P,C.c_size_t)(c,i)) for i in range(count_callbacks(c))])
             clear(c)
-            click(width//2,351)
+            click(width//2,265)
             assert 45<int(float(model_value(c,b'brightness')))<65,model_value(c,b'brightness')
             assert callback_name(c,0)==b'model:brightness'
             clear(c)
@@ -57,14 +57,14 @@ for kind,width,height in [('menu',400,480),('menu',304,480),('power',340,500),('
             assert int(float(model_value(c,b'brightness')))==before+1
             assert callback_name(c,0)==b'model:brightness'
             clear(c)
-            click(width//2,437)
+            click(width//2,337)
             assert callback_name(c,0)==b'sleep'
             clear(c)
             ok(boolean(c,b'sleep_disabled',True));ok(render(c))
-            click(width//2,437)
+            click(width//2,337)
             assert count_callbacks(c)==0,('disabled sleep button dispatched a callback',[(callback_name(c,i),api('component_callback_value',C.c_char_p,P,C.c_size_t)(c,i)) for i in range(count_callbacks(c))])
             ok(boolean(c,b'brightness_disabled',True));ok(render(c))
-            click(width-49,351)
+            click(width-29,265)
             assert count_callbacks(c)==0,'disabled brightness button dispatched a callback'
         else:
             # A short output scrolls to the actual Sleep control.
@@ -75,8 +75,10 @@ for kind,width,height in [('menu',400,480),('menu',304,480),('power',340,500),('
             scrolled=Image.frombytes('RGBA',(width,height),bytes(pixels)).transpose(Image.Transpose.FLIP_TOP_BOTTOM)
             scrolled.save(root/'build/power-short-scrolled.png')
             rows=[y for y in range(height) if scrolled.getpixel((60,y))[:3]==(22,22,22) and scrolled.getpixel((width-60,y))[:3]==(22,22,22)]
-            assert len(rows)>=25,'sleep button is not reachable on the short panel'
-            click(width//2,rows[len(rows)//2])
+            # The 32 dp control has two one-pixel horizontal borders.
+            tops=[y for y in rows if y > 60 and y+31 in rows and y+31 < height-12]
+            assert tops,'sleep button is not reachable on the short panel'
+            click(width//2,tops[-1]+16)
             assert callback_name(c,0)==b'sleep'
     ok(detach(c));destroy(c)
 print('PASS: large/narrow/short power panels, brightness slider/buttons, sleep, disabled controls, search autofocus, and idle.')

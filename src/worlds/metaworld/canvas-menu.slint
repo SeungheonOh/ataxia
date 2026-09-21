@@ -4,9 +4,9 @@ import { MetaButton } from "controls.slint";
 export component CanvasCreation inherits Window {
     background: transparent;
     callback action(string);
-    Rectangle { border-width: 2px; border-color: Workstation.ink; border-radius: 0px; background: Workstation.paper; }
+    Rectangle { border-width: 1px; border-color: Workstation.ink; border-radius: 0px; background: Workstation.paper; }
     VerticalLayout {
-        padding: 6px; spacing: 5px;
+        padding: 12px; spacing: 8px;
         MetaButton { align-left: true; label: "Niri world"; activate => { root.action("new-niri"); } }
         MetaButton { align-left: true; label: "Hyprland world"; activate => { root.action("new-hyprland"); } }
         MetaButton { align-left: true; label: "Note"; activate => { root.action("note"); } }

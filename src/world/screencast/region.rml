@@ -1,6 +1,7 @@
 <rml><head><title>Select canvas region</title><style>
 body { margin:0; width:100%; height:100%; font-size:13dp; }
 div { display:block; box-sizing:border-box; }
-#instruction { position:absolute; left:20%; top:20dp; width:60%; padding:14dp; text-align:center; border:2dp var(--ink); }
-#rectangle { position:absolute; border:2dp var(--ink); display:none; }
-</style><link type="text/rcss" href="../rmlui/theme.rcss"/></head><body class="shell screencast-region"><div id="rectangle"><div class="edge horizontal top"/><div class="edge horizontal bottom"/><div class="edge vertical left"/><div class="edge vertical right"/></div><div id="instruction">Drag to select a canvas region · Escape to cancel</div></body></rml>
+button, input.button, input.action { display:block; box-sizing:border-box; height:var(--control); line-height:var(--control-line); padding:0 var(--gap); flex-shrink:0; }
+#instruction { position:absolute; left:var(--inset); right:var(--inset); top:var(--inset); padding:var(--inset); text-align:center; border:var(--frame) var(--ink); font-size:12dp; }
+#rectangle { position:absolute; display:none; }
+</style><link type="text/rcss" href="../rmlui/theme.rcss"/></head><body class="shell screencast-region"><div id="rectangle"/><div id="instruction">Drag to select a canvas region · Escape to cancel</div></body></rml>

@@ -2,50 +2,50 @@
 body { margin:0; width:100%; height:100%; font-size:12dp; }
 div { display:block; box-sizing:border-box; }
 #bar { position:absolute; left:0; right:0; top:0; height:44dp; box-sizing:border-box;
- display:flex; align-items:center; gap:10dp; padding:5dp 12dp 6dp; border-top:1dp var(--ink); }
-button { display:block; box-sizing:border-box; height:32dp; line-height:32dp; padding:0 10dp;
+ display:flex; align-items:center; gap:var(--gap); padding:5dp var(--inset) 6dp; border-top:1dp var(--ink); }
+button { display:block; box-sizing:border-box; height:32dp; line-height:var(--control-line); padding:0 var(--gap);
  text-align:center; }
 #home { flex-shrink:0; font-weight:bold; }
 #mark { display:none; }
-#brand { line-height:32dp; }
-.separator { width:1dp; height:20dp; flex-shrink:0; }
+#brand { line-height:var(--control-line); }
 #context { display:flex; align-items:center; min-width:60dp; flex-shrink:1; }
 #group { max-width:285dp; overflow:hidden; white-space:nowrap; }
 .arrow { display:none; }
 #workspaces { display:none; }
-.workspace { width:30dp; height:32dp; line-height:32dp; padding:0; }
+.workspace { width:30dp; height:32dp; line-height:var(--control-line); padding:0; }
 .workspace.selected { font-weight:bold; }
 #selection, #focus-label, #apps, #power-note { display:none; }
 #focus { flex:1; min-width:0; overflow:hidden; white-space:nowrap; }
-#title { line-height:32dp; overflow:hidden; white-space:nowrap; }
-#right { display:flex; align-items:center; gap:6dp; margin-left:auto; flex-shrink:0; }
-#audio, #clipboard { padding:0 7dp; }
+#title { line-height:var(--control-line); overflow:hidden; white-space:nowrap; }
+#right { display:flex; align-items:center; gap:var(--gap); margin-left:auto; flex-shrink:0; }
+#audio, #clipboard { padding:0 var(--gap); }
 #media { display:none; max-width:180dp; overflow:hidden; white-space:nowrap; padding:0 8dp; }
-#power { padding:0 6dp; display:flex; align-items:center; gap:8dp; white-space:nowrap; }
-#battery { position:relative; width:22dp; height:12dp; padding:2dp; border:2dp var(--ink); }
+#power { padding:0 var(--gap); display:flex; align-items:center; gap:8dp; white-space:nowrap; }
+#battery { position:relative; width:22dp; height:12dp; padding:2dp; border:1dp var(--ink); }
 #charge { height:100%; width:75%; }
 #battery-tip { position:absolute; right:-4dp; top:3dp; width:2dp; height:4dp; }
-#power-copy { line-height:32dp; }
-#power-symbol { font-size:14dp; line-height:32dp; }
-#clock { line-height:32dp; white-space:nowrap; }
+#power-copy { line-height:var(--control-line); }
+#power-symbol { font-size:14dp; line-height:var(--control-line); }
+#clock { line-height:var(--control-line); white-space:nowrap; }
 #date { white-space:nowrap; }
 #bar.has-media #media { display:block; }
 #bar.compact { gap:8dp; }
 .compact #focus, .compact #date, #bar.compact #media { display:none; }
 #bar.narrow { gap:8dp; padding-left:8dp; padding-right:8dp; }
-.narrow #power-text, .narrow .separator { display:none; }
-.narrow #group { max-width:220dp; padding:0 7dp; }
+.narrow #power-text { display:none; }
+.narrow #group { max-width:220dp; padding:0 var(--gap); }
 #bar.tiny { gap:4dp; padding-left:4dp; padding-right:4dp; }
-#bar.tiny #group { max-width:90dp; font-size:11dp; }
-#bar.tiny #right { gap:2dp; }
-#bar.tiny #home { padding:0 6dp; }
-#assistant { display:none; height:28dp; line-height:28dp; padding:0 8dp; font-size:11dp; }
+#bar.tiny #group { max-width:72dp; font-size:11dp; }
+#bar.tiny #right { gap:var(--unit); }
+#bar.tiny #assistant { padding:0 4dp; font-size:10dp; }
+#bar.tiny #home { padding:0 var(--gap); }
+#assistant { display:none; height:var(--control); line-height:var(--control-line); padding:0 8dp; font-size:11dp; }
 #bar.tiny #apps, #bar.tiny #clock, #bar.tiny #clipboard { display:none; }
 #bar.tiny #audio { max-width:38dp; overflow:hidden; white-space:nowrap; font-size:11dp; }
 </style><link type="text/rcss" href="../theme.rcss"/></head><body class="shell shell-bar">
 <div id="bar">
  <button id="home"><div id="mark">a</div><div id="brand">Apps</div></button>
- <div class="separator"/>
+
  <div id="context"><button id="previous" class="arrow">‹</button><button id="group">Overview / Workspaces ▾</button><button id="next" class="arrow">›</button></div>
  <div id="workspaces"><div id="selection"/>
  <button id="ws1" class="workspace selected">1</button><button id="ws2" class="workspace">2</button><button id="ws3" class="workspace">3</button>
@@ -55,5 +55,5 @@ button { display:block; box-sizing:border-box; height:32dp; line-height:32dp; pa
  <div id="right"><button id="assistant">Assistant</button><div id="apps">0 apps</div>
  <button id="media">Media</button><button id="audio">♪</button><button id="clipboard">▤</button>
  <button id="power"><div id="battery"><div id="charge"/><div id="battery-tip"/></div><div id="power-symbol">↯</div><div id="power-copy"><div id="power-text">AC</div><div id="power-note">Plugged in</div></div></button>
- <div class="separator"/><div id="date">THU, SEP 10</div><div id="clock">12:00</div></div>
+ <div id="date">THU, SEP 10</div><div id="clock">12:00</div></div>
 </div></body></rml>

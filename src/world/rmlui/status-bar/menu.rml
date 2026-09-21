@@ -1,41 +1,33 @@
 <rml><head><title>Ataxia applications</title><style>
 body { margin:0; width:100%; height:100%; font-size:13dp; }
 div { display:block; box-sizing:border-box; }
-#panel { position:absolute; left:0; right:0; top:0; bottom:0; padding:16dp; border:2dp var(--ink);
- display:flex; flex-direction:column; gap:12dp; overflow-y:auto; }
-#heading { display:flex; align-items:center; justify-content:space-between; height:28dp; flex-shrink:0; }
-#eyebrow { display:none; }
-#hello { font-size:15dp; font-weight:bold; }
-button { display:block; box-sizing:border-box; height:28dp; line-height:28dp; padding:0 8dp; text-align:center; }
-#close { font-size:18dp; width:28dp; padding:0; }
-#search { display:block; box-sizing:border-box; width:100%; height:36dp; padding:9dp 10dp; font-size:13dp;
- border:2dp var(--ink); flex-shrink:0; }
-#search:focus { border-color:var(--ink); }
-#section { display:flex; align-items:center; justify-content:space-between; height:16dp; flex-shrink:0; }
-#section-name { font-size:11dp; }
-#count { font-size:11dp; }
-#grid { display:flex; flex-direction:column; gap:2dp; flex:1; min-height:250dp; flex-shrink:0; }
-.app { width:100%; flex-shrink:0; height:40dp; display:flex; align-items:center; gap:12dp; padding:0 10dp; }
-.icon { width:24dp; height:24dp; font-size:12dp; line-height:24dp; text-align:center; flex-shrink:0; }
-.name { flex:1; height:40dp; line-height:40dp; text-align:left; overflow:hidden; white-space:nowrap; font-size:13dp; }
-#empty { display:none; padding:16dp 0; }
-#footer { display:flex; align-items:center; gap:4dp; border-top:1dp var(--ink); padding-top:8dp; flex-shrink:0; }
+button, input.button, input.action { display:block; box-sizing:border-box; height:var(--control); line-height:var(--control-line); padding:0 var(--gap); flex-shrink:0; }
+#panel { width:100%; height:100%; padding:var(--inset); border:var(--frame) var(--ink); display:flex; flex-direction:column; gap:var(--section); }
+#panel { overflow-y:auto; }
+#heading { display:flex; align-items:center; justify-content:space-between; gap:var(--gap); height:var(--control); flex-shrink:0; }
+#hello { font-size:var(--heading); font-weight:bold; }
+#close, #prev, #next { width:var(--control); padding:0; font-size:18dp; }
+#search { display:block; box-sizing:border-box; width:100%; height:var(--control); padding:6dp var(--gap); font-size:13dp; border:var(--frame) var(--ink); flex-shrink:0; }
+#section { display:flex; align-items:center; justify-content:space-between; flex-shrink:0; font-size:11dp; }
+#grid { display:flex; flex-direction:column; flex:1; min-height:192dp; flex-shrink:0; }
+.app { width:100%; display:flex; align-items:center; text-align:left; }
+.name { flex:1; min-width:0; text-align:left; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; font-size:13dp; }
+#empty { display:none; padding:var(--gap) 0; }
+#footer { display:flex; align-items:center; gap:var(--gap); flex-shrink:0; }
 #page { white-space:nowrap; flex-shrink:0; font-size:11dp; margin-left:auto; }
-#prev, #next { font-size:18dp; width:28dp; padding:0; }
 #hint { font-size:10dp; }
-#panel.small { padding:12dp; gap:10dp; }
 .small #hint { display:none; }
 </style><link type="text/rcss" href="../theme.rcss"/></head><body class="shell shell-menu" data-model="state">
-<div id="panel"><div id="heading"><div><div id="eyebrow">ATAXIA / YOUR APPS</div><div id="hello">Applications</div></div><div class="title-rule"/><button id="close">×</button></div>
+<div id="panel"><div id="heading"><div><div id="hello">Applications</div></div><button id="close">×</button></div>
 <input id="search" type="text" data-value="query" autofocus="autofocus" placeholder="Search applications…" />
 <div id="section"><div id="section-name">Installed</div><div id="count">All applications</div></div>
 <div id="grid">
-<button id="app0" class="app selected"><div id="icon0" class="icon">A</div><div id="name0" class="name">Application</div></button>
-<button id="app1" class="app tone1"><div id="icon1" class="icon">A</div><div id="name1" class="name">Application</div></button>
-<button id="app2" class="app tone2"><div id="icon2" class="icon">A</div><div id="name2" class="name">Application</div></button>
-<button id="app3" class="app tone3"><div id="icon3" class="icon">A</div><div id="name3" class="name">Application</div></button>
-<button id="app4" class="app tone1"><div id="icon4" class="icon">A</div><div id="name4" class="name">Application</div></button>
-<button id="app5" class="app tone2"><div id="icon5" class="icon">A</div><div id="name5" class="name">Application</div></button>
+<button id="app0" class="app selected"><div id="name0" class="name">Application</div></button>
+<button id="app1" class="app"><div id="name1" class="name">Application</div></button>
+<button id="app2" class="app"><div id="name2" class="name">Application</div></button>
+<button id="app3" class="app"><div id="name3" class="name">Application</div></button>
+<button id="app4" class="app"><div id="name4" class="name">Application</div></button>
+<button id="app5" class="app"><div id="name5" class="name">Application</div></button>
 <div id="empty">No applications match your search.</div></div>
-<div id="footer" class="ruled"><div class="dash-rule"/><button id="overview">Overview</button><button id="power">Power</button><div id="page">1 / 1</div><button id="prev">‹</button><button id="next">›</button></div>
+<div id="footer"><button id="overview">Overview</button><button id="power">Power</button><div id="page">1 / 1</div><button id="prev">‹</button><button id="next">›</button></div>
 <div id="hint">↑ ↓ Select Enter Open Esc Close</div></div></body></rml>

@@ -33,7 +33,6 @@ for width, height in [(480, 760), (304, 640)]:
     ok(set_class(c, b'panel', b'small', width < 360))
     ok(set_text(c, b'state', b'Ready'))
     ok(model(c, b'transcript', fixture.read_bytes()))
-    ok(style(c, b'empty', b'display', b'none'))
     ok(api('component_register_callback', C.c_bool, P, C.c_char_p)(c, b'settings-open'))
     im = capture(c, width, height, f'assistant-panel-{width}')
     assert im.getpixel((width//2, 2))[:3] == (255, 255, 255)
@@ -62,8 +61,7 @@ for width, height in [(800, 600), (304, 640)]:
     assert abs((x0+x1+1)/2 - width/2) <= 1, (x0,x1,width)
     assert abs((y0+y1+1)/2 - height/2) <= 1, (y0,y1,height)
     # Locate the two full-width field fills, independent of the display size.
-    field_x = x0 + 15 if width >= 400 else x0 + 12
-    field_x += 10
+    field_x = x0 + 14
     bands=[]
     for y in range(y0,y1):
         if im.getpixel((field_x,y))[:3] == (238,238,234):
@@ -78,8 +76,8 @@ for width, height in [(800, 600), (304, 640)]:
             ok(key(c,symbol,True,0)); ok(key(c,symbol,False,0)); ok(render(c))
         assert model_value(c,variable)==(b'fixture-fast' if variable==b'selected_model' else b'high'), model_value(c,variable)
     # Fast button is opposite its copy, above the bottom action row.
-    ok(button(c,x1-55,y1-110,1,True));ok(button(c,x1-55,y1-110,1,False));ok(render(c))
-    ok(button(c,x1-50,y1-35,1,True));ok(button(c,x1-50,y1-35,1,False));ok(render(c))
+    ok(button(c,x1-55,y1-88,1,True));ok(button(c,x1-55,y1-88,1,False));ok(render(c))
+    ok(button(c,x1-50,y1-28,1,True));ok(button(c,x1-50,y1-28,1,False));ok(render(c))
     ok(button(c,2,2,1,True));ok(button(c,2,2,1,False));ok(render(c))
     names=[api('component_callback_name',C.c_char_p,P,C.c_size_t)(c,i) for i in range(api('component_callback_count',C.c_size_t,P)(c))]
     assert all(n in names for n in [b'model-field:change',b'effort-field:change',b'fast',b'settings-done',b'settings-backdrop']),names

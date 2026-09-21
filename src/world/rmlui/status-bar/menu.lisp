@@ -40,14 +40,12 @@
             ;; containing width on the stacked narrow layout.
             (dolist (id '("body" "groups" "workspaces" "workspace-grid"))
               (set-widget-style popup id "width"
-                (if (< width 480d0) (format nil "~Ddp" (max 1 (floor (- width 34d0))))
+                (if (< width 480d0) (format nil "~Ddp" (max 1 (floor (- width 26d0))))
                     (if (equal id "groups") "160dp" "auto"))))))))))
 (defun %bar-update-power-popup (popup power)
   (let ((capacity (getf power :capacity)) (health (getf power :health))
         (cycles (getf power :cycles)) (tone (%bar-power-tone power)))
     (set-widget-text popup "percent" (if capacity (format nil "~D%" capacity) (if (eq :ac (getf power :status)) "AC" "—")))
-    (set-widget-style popup "big-battery" "display" (if capacity "block" "none"))
-    (set-widget-style popup "fill" "width" (format nil "~D%" (or capacity 0)))
     (set-widget-text popup "state" (%bar-power-status power))
     (set-widget-text popup "estimate" (%bar-power-estimate power))
     (set-widget-text popup "health" (if health (format nil "~D% of design" health) "Unavailable"))
@@ -55,7 +53,8 @@
     (set-widget-text popup "source" (if (or (getf power :online) (eq :ac (getf power :status))) "AC adapter" "Battery"))
     (set-widget-text popup "note" (case tone (:critical "Battery is very low. Connect your charger soon.")
                                  (:low "Battery is running low.")
-                                 (t "Time estimates vary with your current power usage.")))
+                                 (t "")))
+    (set-widget-style popup "note" "display" (if (member tone '(:low :critical)) "block" "none"))
     (%shell-class popup "low" (eq tone :low))
     (%shell-class popup "critical" (eq tone :critical))))
 
@@ -83,8 +82,7 @@
     (loop for i below 6 for entry = (nth (+ (* page 6) i) matches) do
       (set-widget-style popup (format nil "app~D" i) "display" (if entry "flex" "none"))
       (when entry
-        (set-widget-text popup (format nil "name~D" i) (short-ui-text (getf entry :name) 22))
-        (set-widget-text popup (format nil "icon~D" i) (if (plusp (length (getf entry :name))) (string-upcase (subseq (getf entry :name) 0 1)) "?"))))
+        (set-widget-text popup (format nil "name~D" i) (getf entry :name))))
     (%shell-select popup 0)))
 (defun %shell-search (popup query)
   (let ((query (string-trim '(#\Space #\Tab) query)))

@@ -16,13 +16,13 @@
     in property <bool> selected;
     callback activate(int);
 
-    height: 44px;
+    height: 32px;
     visible: root.enabled;
     background: touch.pressed ? #444440 : root.selected || touch.has-hover ? #161616 : #ffffff;
     Text {
-        x: 14px;
+        x: 8px;
         y: 0px;
-        width: parent.width - 28px;
+        width: parent.width - 16px;
         height: parent.height;
         text: root.title;
         color: root.selected || touch.has-hover ? #ffffff : #161616;
@@ -70,7 +70,7 @@ export component AtaxiaLauncher inherits Window {
         y: 0px;
         width: parent.width;
         height: parent.height;
-        border-width: 2px;
+        border-width: 1px;
         border-color: #161616;
         background: #ffffff;
 
@@ -78,15 +78,15 @@ export component AtaxiaLauncher inherits Window {
             x: 12px;
             y: 12px;
             width: parent.width - 24px;
-            height: 48px;
-            border-width: 2px;
+            height: 32px;
+            border-width: 1px;
             border-color: #161616;
             background: #eeeeea;
             editor := TextInput {
-                x: 14px;
-                y: 7px;
-                width: parent.width - 28px;
-                height: parent.height - 14px;
+                x: 8px;
+                y: 6px;
+                width: parent.width - 16px;
+                height: parent.height - 12px;
                 text <=> root.query;
                 color: #161616;
                 selection-background-color: #161616;
@@ -116,10 +116,10 @@ export component AtaxiaLauncher inherits Window {
 
         VerticalLayout {
             x: 12px;
-            y: 72px;
+            y: 60px;
             width: parent.width - 24px;
-            height: 269px;
-            spacing: 1px;
+            height: 192px;
+            spacing: 0px;
             LauncherRow { title: root.result-title-0; index: 0; enabled: root.result-count > 0; selected: root.selected-index == 0; activate(index) => { root.activate(index); } }
             LauncherRow { title: root.result-title-1; index: 1; enabled: root.result-count > 1; selected: root.selected-index == 1; activate(index) => { root.activate(index); } }
             LauncherRow { title: root.result-title-2; index: 2; enabled: root.result-count > 2; selected: root.selected-index == 2; activate(index) => { root.activate(index); } }
@@ -130,9 +130,9 @@ export component AtaxiaLauncher inherits Window {
 
         Text {
             x: 12px;
-            y: 72px;
+            y: 60px;
             width: parent.width - 24px;
-            height: 269px;
+            height: 192px;
             visible: root.result-count == 0;
             text: \"No matches\";
             color: #50504c;
@@ -347,8 +347,8 @@ export component AtaxiaLauncher inherits Window {
 
 (defun %launcher-size (state)
   (multiple-value-bind (width height) (%output-logical-size state)
-    (values (max 380d0 (min 620d0 (- width 48d0)))
-            (max 360d0 (min 380d0 (- height 48d0))))))
+    (values (max 1d0 (min 620d0 (- width 24d0)))
+            (max 1d0 (min 264d0 (- height 24d0))))))
 
 (defun %position-launcher (overlay state)
   (multiple-value-bind (output-width output-height) (%output-logical-size state)

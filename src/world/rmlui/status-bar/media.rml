@@ -1,23 +1,21 @@
 <rml><head><title>Sound and media</title><style>
 body { margin:0; width:100%; height:100%; font-size:13dp; }
 div { display:block; box-sizing:border-box; }
-#panel { width:100%; height:100%; padding:16dp; border:2dp var(--ink); }
-#header { display:flex; align-items:center; justify-content:space-between; height:28dp; }
-#title { font-size:18dp; font-weight:bold; }
-#content { position:absolute; top:56dp; left:16dp; right:16dp; bottom:16dp; overflow-y:auto; }
-input.button { display:block; box-sizing:border-box; padding:0 10dp; height:32dp; line-height:32dp; text-align:center; }
-.row { display:flex; align-items:center; justify-content:space-between; gap:12dp; margin:12dp 0; }
+button, input.button, input.action { display:block; box-sizing:border-box; height:var(--control); line-height:var(--control-line); padding:0 var(--gap); flex-shrink:0; }
+#panel { width:100%; height:100%; padding:var(--inset); border:var(--frame) var(--ink); display:flex; flex-direction:column; gap:var(--section); }
+#header { display:flex; align-items:center; justify-content:space-between; gap:var(--gap); height:var(--control); flex-shrink:0; }
+#title { font-size:var(--heading); font-weight:bold; }
+#content { flex:1; min-height:0; overflow-y:auto; }
+.row { display:flex; align-items:center; justify-content:space-between; gap:var(--gap); margin-bottom:var(--gap); }
 .label { font-weight:bold; }
-#volume { height:28dp; flex:1; }
-#volume slidertrack { height:4dp; margin-top:12dp; }
-#volume sliderbar { width:12dp; height:20dp; margin-top:4dp; }
+#volume { height:var(--control); flex:1; min-width:0; }
+#volume slidertrack { margin-top:14dp; }
 #volume:disabled { opacity:0.4; }
 .hint { font-size:11dp; line-height:16dp; }
-#media-section { margin-top:20dp; padding-top:16dp; border-top:1dp var(--ink); }
+#media-section { margin-top:var(--section); }
 #player { width:100%; text-align:left; }
-#track { margin-top:16dp; font-weight:bold; font-size:17dp; max-height:48dp; overflow:hidden; }
-#artist { margin-top:6dp; max-height:32dp; overflow:hidden; }
-#transport { display:flex; gap:8dp; margin:16dp 0 10dp; }
-#transport .button { flex:1; }
-scrollbarvertical { width:5dp; }
-</style><link type="text/rcss" href="../theme.rcss"/></head><body class="shell shell-media" data-model="state"><div id="panel"><div id="header"><div id="title">Sound &amp; media</div><div class="title-rule"/><input id="close" class="button" type="button" value="Close"/></div><div id="content"><div class="row"><div class="label">Output volume</div><div id="volume-value">Unavailable</div></div><div class="row"><input id="volume" type="range" min="0" max="100" step="1" data-value="volume" data-attrif-disabled="audio_disabled"/><input id="mute" class="button" type="button" value="Mute" data-attrif-disabled="audio_disabled"/></div><div id="device" class="hint">Connecting to audio…</div><div id="media-section" class="ruled"><div class="dash-rule"/><input id="player" class="button" type="button" value="No media player" data-attrif-disabled="player_disabled"/><div id="track">Nothing playing</div><div id="artist"/><div id="transport"><input id="previous" class="button" type="button" value="Previous" data-attrif-disabled="previous_disabled"/><input id="play" class="button" type="button" value="Play" data-attrif-disabled="play_disabled"/><input id="next" class="button" type="button" value="Next" data-attrif-disabled="next_disabled"/></div><div id="playback" class="hint">Waiting for a player</div></div></div></div></body></rml>
+#track { margin-top:var(--section); font-weight:bold; font-size:14dp; max-height:48dp; overflow:hidden; }
+#artist { margin-top:var(--unit); max-height:32dp; overflow:hidden; }
+#transport { display:flex; gap:var(--gap); margin:var(--section) 0 var(--gap); }
+#transport .button { flex:1; min-width:0; }
+</style><link type="text/rcss" href="../theme.rcss"/></head><body class="shell shell-media" data-model="state"><div id="panel"><div id="header"><div id="title">Sound &amp; media</div><input id="close" class="button" type="button" value="Close"/></div><div id="content"><div class="row"><div class="label">Output volume</div><div id="volume-value">Unavailable</div></div><div class="row"><input id="volume" type="range" min="0" max="100" step="1" data-value="volume" data-attrif-disabled="audio_disabled"/><input id="mute" class="button" type="button" value="Mute" data-attrif-disabled="audio_disabled"/></div><div id="device" class="hint">Connecting to audio…</div><div id="media-section"><input id="player" class="button" type="button" value="No media player" data-attrif-disabled="player_disabled"/><div id="track">Nothing playing</div><div id="artist"/><div id="transport"><input id="previous" class="button" type="button" value="Previous" data-attrif-disabled="previous_disabled"/><input id="play" class="button" type="button" value="Play" data-attrif-disabled="play_disabled"/><input id="next" class="button" type="button" value="Next" data-attrif-disabled="next_disabled"/></div><div id="playback" class="hint">Waiting for a player</div></div></div></div></body></rml>

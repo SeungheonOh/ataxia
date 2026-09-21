@@ -1,190 +1,78 @@
-/* Ataxia / workstation. Shared by compositor-owned UI only.
-   Geometry stays in each RML document. Patterns are static shader decorators,
-   not animated borders or image assets. Keep all lengths in logical dp. */
+/* Compositor-owned UI. Every mark must communicate a control, boundary or state.
+   Layout belongs to the document; use these shared logical-pixel measurements. */
 body.shell {
  --ink:#161616; --paper:#ffffff; --field:#eeeeea; --muted:#50504c;
  --disabled:#73736e; --danger:#8c2020;
+ --unit:4dp; --gap:8dp; --inset:12dp; --section:16dp;
+ --control:32dp; --control-line:30dp; --frame:1dp; --heading:14dp;
  font-family:DejaVu Sans Mono; color:var(--ink);
 }
 * { border-radius:0; }
 button, input, textarea, select { font-family:DejaVu Sans Mono; }
 #panel, #dialog, #bar, #tag, #instruction { background:var(--paper); }
 button, input.button, input.action {
- border:2dp var(--ink); background:var(--paper); color:var(--ink);
+ border:var(--frame) var(--ink); background:var(--paper); color:var(--ink);
  text-align:center; cursor:pointer;
 }
 button:hover, input.button:hover, input.action:hover,
-button:focus, input.button:focus, input.action:focus {
+button:focus, input.button:focus, input.action:focus,
+.selected, button.selected, input.action.selected {
  background:var(--ink); color:var(--paper);
 }
 button:active, input.button:active, input.action:active { background:#444440; color:var(--paper); }
-/* The ring also distinguishes focused primary buttons, which are already dark.
-   Shadows do not change layout or schedule animation. */
-button:focus, input.button:focus, input.action:focus {
- box-shadow:var(--paper) 0dp 0dp 0dp 1dp, var(--ink) 0dp 0dp 0dp 3dp;
-}
-button:active, input.button:active, input.action:active {
- box-shadow:var(--paper) 0dp 0dp 0dp 2dp inset;
-}
+/* A selected row still needs a distinct keyboard focus indicator. */
+button.selected:focus, input.action.selected:focus { border-color:var(--paper); }
 button:disabled, input:disabled, select:disabled {
  color:var(--disabled); border-color:var(--disabled); background:var(--field); cursor:unavailable;
 }
-input[type="text"], textarea, select {
- background:var(--field); color:var(--ink); caret-color:var(--ink);
-}
-input[type="text"]:focus, textarea:focus, select:focus {
- background:var(--paper); border-color:var(--ink);
- box-shadow:var(--ink) 0dp 0dp 0dp 1dp;
-}
-/* Inverse text selection and wide, square scrollbar grips. */
+input[type="text"], textarea, select { background:var(--field); color:var(--ink); caret-color:var(--ink); }
+input[type="text"]:focus, textarea:focus, select:focus { background:var(--paper); border-color:var(--ink); }
 selection { color:var(--paper); background:var(--ink); }
-scrollbarvertical { width:12dp; margin-left:4dp; background:var(--field); border-left:1dp var(--ink); }
-scrollbarhorizontal { height:12dp; background:var(--field); border-top:1dp var(--ink); }
-scrollbarvertical sliderbar, scrollbarhorizontal sliderbar {
- background:var(--ink); min-height:24dp; border:2dp var(--paper);
-}
+scrollbarvertical { width:12dp; margin-left:var(--unit); background:var(--field); }
+scrollbarhorizontal { height:12dp; background:var(--field); }
+scrollbarvertical sliderbar, scrollbarhorizontal sliderbar { background:var(--ink); min-height:24dp; }
 scrollbarvertical sliderarrowinc, scrollbarvertical sliderarrowdec { height:0; }
 scrollbarhorizontal sliderarrowinc, scrollbarhorizontal sliderarrowdec { width:0; }
-.title-rule {
- flex:1; min-width:8dp; height:6dp; margin:0 12dp; pointer-events:none;
- decorator:repeating-linear-gradient(90deg, #161616 0dp, #161616 6dp, #ffffff 6dp, #ffffff 10dp);
-}
-.ruled { position:relative; }
-#panel .ruled { border-top-width:0; }
-.dash-rule {
- position:absolute; left:0; right:0; top:0; height:3dp; pointer-events:none;
- decorator:repeating-linear-gradient(90deg, #161616 0dp, #161616 3dp, #ffffff 3dp, #ffffff 7dp);
-}
 .hint, .detail, .scope, .state, #hint, #count, #page, #date, #estimate,
 #note, #device, #artist, #playback, #empty, #selection, #privacy,
 #location, #group-page, #model-note, #saved-note, #dialog-description,
-#speed-description, #empty-description, #empty-kicker, #limits { color:var(--muted); }
-.selected, button.selected, input.action.selected { background:var(--ink); color:var(--paper); }
+#speed-description, #limits { color:var(--muted); }
 .selected .detail, .selected .preview, .selected .name { color:var(--paper); }
 #close, #settings-close { flex-shrink:0; }
-/* Bottom command strip: compact, readable and usable at laptop widths. */
-.shell-bar #bar { border-top:3dp var(--ink); padding-top:4dp; gap:8dp; }
-.shell-bar button { border:1dp var(--ink); line-height:28dp; }
-.shell-bar #home { background:var(--ink); color:var(--paper); }
-.shell-bar #home:hover { background:#444440; }
-.shell-bar #brand { line-height:28dp; }
-.shell-bar #group { background:var(--paper); color:var(--ink); }
-.shell-bar #group:hover, .shell-bar #group:focus { background:var(--ink); color:var(--paper); }
+.shell-bar button { border-color:transparent; }
 .shell-bar #title { color:var(--muted); }
-.shell-bar .separator {
- width:3dp; background:transparent;
- decorator:repeating-linear-gradient(0deg, #161616 0dp, #161616 3dp, #ffffff 3dp, #ffffff 6dp);
-}
-.shell-bar #charge, .shell-bar #battery-tip { background:var(--ink); }
+.shell-bar #charge, .shell-bar #battery-tip, .shell-osd #fill { background:var(--ink); }
 .shell-bar #power:hover #charge, .shell-bar #power:focus #charge,
 .shell-bar #power:hover #battery-tip, .shell-bar #power:focus #battery-tip { background:var(--paper); }
 .shell-bar #power:hover #battery, .shell-bar #power:focus #battery { border-color:var(--paper); }
-.shell-bar #bar.low #power { border-bottom:3dp var(--ink); }
+.shell-bar #bar.low #power { border-bottom-color:var(--ink); }
 .shell-bar #bar.critical #power { color:var(--danger); border-color:var(--danger); }
 .shell-bar #bar.critical #charge { background:var(--danger); }
-.shell-bar #bar.tiny #group { max-width:72dp; }
-.shell-bar #bar.tiny #assistant { padding:0 4dp; font-size:10dp; }
-/* Application and clipboard lists share one selection treatment. */
-.shell-menu #hello, .shell-power #heading, .shell-media #title,
-.shell-clipboard #title, .shell-workspaces #title { font-size:15dp; }
 .shell-menu .app, .shell-clipboard .item { border-color:transparent; }
-.shell-menu .app:hover, .shell-menu .app:focus, .shell-menu .app.selected,
-.shell-clipboard .item.selected { border-color:var(--ink); background:var(--ink); color:var(--paper); }
-.shell-menu .icon { border:1dp var(--ink); background:var(--paper); color:var(--ink); line-height:22dp; }
-.shell-menu .app.selected .icon, .shell-menu .app:hover .icon, .shell-menu .app:focus .icon { border-color:var(--paper); }
-.shell-menu #search { padding-top:7dp; padding-bottom:7dp; }
-.shell-menu #footer { gap:6dp; padding-top:10dp; }
-.shell-clipboard .item { text-align:left; border-left-width:2dp; }
-.shell-clipboard #footer { padding-top:12dp; }
-/* System controls: mechanical sliders and striped meters. */
 #volume slidertrack, #brightness slidertrack { height:4dp; background:var(--ink); }
-#volume sliderbar, #brightness sliderbar { width:16dp; height:24dp; margin-top:2dp; border:2dp var(--ink); background:var(--paper); }
+#volume sliderbar, #brightness sliderbar { width:16dp; height:24dp; margin-top:4dp; border:var(--frame) var(--ink); background:var(--paper); }
 #volume:focus sliderbar, #brightness:focus sliderbar { background:var(--ink); }
-.shell-power #fill, .shell-bar #charge, .shell-osd #fill {
- background:var(--ink);
- decorator:repeating-linear-gradient(90deg, #161616 0dp, #161616 4dp, #ffffff 4dp, #ffffff 6dp);
-}
-.shell-power #tip { background:var(--ink); }
-.shell-power #percent { font-weight:bold; }
-.shell-power .critical #percent { color:var(--danger); }
-.shell-power #sleep, .shell-media #play { background:var(--ink); color:var(--paper); }
-.shell-power #sleep:disabled, .shell-media #play:disabled { background:var(--field); color:var(--disabled); }
-.shell-power #details { padding-top:14dp; }
-.shell-osd #track { height:8dp; border:1dp var(--ink); background:var(--paper); margin:8dp 0; }
-.shell-osd #detail { color:var(--muted); }
-.shell-osd .error #detail { color:var(--danger); }
-.shell-workspaces #title { flex:0 0 auto; }
-.shell-workspaces .workspace { border:1dp var(--ink); }
-.shell-workspaces .workspace-open { border-width:0; }
+.shell-power .critical #percent, .shell-power .critical #note, .shell-osd .error #detail { color:var(--danger); }
 .shell-workspaces .remove { color:var(--danger); }
 .shell-workspaces .remove:hover { color:var(--paper); background:var(--danger); }
-/* Sharing uses the same window frame and a visibly armed primary action. */
-.screencast-picker .share-heading { display:flex; align-items:center; margin-bottom:8dp; }
-.screencast-picker #panel { display:flex; flex-direction:column; }
-.screencast-picker .share-heading, .screencast-picker #app,
-.screencast-picker .action, .screencast-picker #selection,
-.screencast-picker #footer, .screencast-picker #privacy { flex-shrink:0; }
-.screencast-picker h1 { font-size:16dp; margin:0; flex-shrink:0; }
-.screencast-picker #app { color:var(--muted); font-size:12dp; }
-.screencast-picker #sources { border:2dp var(--ink); flex:1; height:auto; min-height:76dp; }
-.screencast-picker #sources .action { border-width:0; text-align:left; }
-.screencast-picker .action { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
-.screencast-picker #region { font-size:12dp; }
-.screencast-picker #share { background:var(--ink); color:var(--paper); }
-.screencast-picker #share:disabled { background:var(--field); color:var(--disabled); border-color:var(--disabled); }
-.screencast-indicator #bar { padding:6dp 8dp; border:2dp var(--ink); }
-.screencast-indicator #label { min-width:0; overflow:hidden; }
-.screencast-indicator #stop { width:116dp; height:32dp; background:var(--ink); color:var(--paper); font-size:11dp; }
+.screencast-picker #sources .action { border-color:transparent; text-align:left; }
 .screencast-region { background:#16161628; }
-.screencast-region #instruction { left:16dp; right:16dp; width:auto; top:16dp; padding:12dp; font-size:12dp; }
-.screencast-region #rectangle { background:#ffffff18; border:2dp var(--paper); }
-.screencast-region .edge { position:absolute; pointer-events:none; }
-.screencast-region .horizontal { left:0; right:0; height:4dp; decorator:repeating-linear-gradient(90deg, #161616 0dp, #161616 8dp, #ffffff 8dp, #ffffff 16dp); }
-.screencast-region .vertical { top:0; bottom:0; width:4dp; decorator:repeating-linear-gradient(0deg, #161616 0dp, #161616 8dp, #ffffff 8dp, #ffffff 16dp); }
-.screencast-region .top { top:0; } .screencast-region .bottom { bottom:0; }
-.screencast-region .left { left:0; } .screencast-region .right { right:0; }
-/* Assistant and automation controls are ordinary workstation panels. */
-.assistant-panel #header { padding:14dp 16dp; border-bottom:2dp var(--ink); }
-.assistant-panel #header .title-rule { margin:0 8dp; }
-.assistant-panel #scope { font-size:10dp; padding:0 7dp; }
-.assistant-panel #conversation { padding:18dp 18dp 8dp; }
-.assistant-panel #empty-title { font-size:22dp; line-height:30dp; color:var(--ink); }
+/* Two contrasting lines keep the selection visible against any client pixels. */
+.screencast-region #rectangle { border:var(--frame) var(--ink); box-shadow:var(--paper) 0dp 0dp 0dp 1dp; }
 .assistant-panel #state, .assistant-panel .chat-role, .assistant-panel .md-muted,
 .assistant-panel .md-link-target, .assistant-panel .md-code-label { color:var(--muted); }
-.assistant-panel .chat-user { border:2dp var(--ink); background:var(--field); }
 .assistant-panel .md-code, .assistant-panel .md-code-block, .assistant-panel .md-table-heading { background:var(--field); }
 .assistant-panel .md-link-label { text-decoration:underline; }
-.assistant-panel #request { border:2dp var(--ink); background:var(--field); }
-.assistant-panel #compose { background:var(--paper); }
 .assistant-panel #message { background:var(--paper); }
-.assistant-panel #send, .assistant-panel #allow, .assistant-settings #settings-done,
-.assistant-settings #fast.enabled { background:var(--ink); color:var(--paper); }
-.assistant-panel #stop, .assistant-panel #deny { color:var(--danger); }
-.assistant-panel #stop:hover, .assistant-panel #deny:hover { background:var(--danger); color:var(--paper); }
-.assistant-panel #compose-actions { border-top:2dp var(--ink); }
-.assistant-panel .small #header { padding:12dp; }
-.assistant-panel .small #heading { font-size:12dp; }
-.assistant-panel .small #scope { max-width:70dp; overflow:hidden; }
-.assistant-panel .small #footer { font-size:9dp; }
-.assistant-panel .small #hint { max-width:180dp; white-space:normal; }
+.assistant-panel #stop, .assistant-panel #deny, .computer-use-panel .stop { color:var(--danger); }
+.assistant-panel #stop:hover, .assistant-panel #deny:hover, .computer-use-panel .stop:hover { background:var(--danger); color:var(--paper); }
 .assistant-settings #settings-backdrop { background:#16161640; }
-.assistant-settings #dialog { padding:20dp; }
-.assistant-settings #dialog-heading { font-size:15dp; }
-.assistant-settings #dialog-header .title-rule { margin:0 8dp; }
 .assistant-settings select selectbox { background:var(--paper); }
 .assistant-settings select option { color:var(--ink); }
-.assistant-settings select option:hover, .assistant-settings select option:checked { background:var(--ink); color:var(--paper); }
+.assistant-settings select option:hover, .assistant-settings select option:checked,
+.assistant-settings #fast.enabled { background:var(--ink); color:var(--paper); }
 .assistant-settings #fast.unavailable { background:var(--field); color:var(--disabled); }
-.computer-use-panel #heading { font-size:13dp; white-space:nowrap; }
-.computer-use-panel .title-rule { margin:0 6dp; }
-.computer-use-panel #pause-all { padding:0 7dp; font-size:11dp; line-height:24dp; }
-.computer-use-panel .card { border-top-width:0; }
-.computer-use-panel .dot { width:8dp; height:8dp; background:var(--ink); }
-.computer-use-panel .stop { color:var(--danger); }
-.computer-use-panel .stop:hover { background:var(--danger); color:var(--paper); }
-.computer-use-panel .actions button { line-height:24dp; padding:0 8dp; }
-.computer-use-cursor #tag { border-left:4dp var(--accent); }
+.computer-use-panel .dot { background:var(--ink); }
 .computer-use-cursor #state { color:var(--muted); }
-.computer-use-cursor #name, .computer-use-cursor #state { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .computer-use-cursor #tag.clicked { animation:0.15s linear 1 click; }
 @keyframes click { from { background:#cecec8; } to { background:#ffffff; } }

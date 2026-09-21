@@ -16,7 +16,7 @@ cases = [
     ('rmlui/status-bar/power', 340, 500), ('rmlui/status-bar/media', 380, 410),
     ('rmlui/status-bar/clipboard', 440, 460), ('rmlui/status-bar/workspaces', 560, 460),
     ('rmlui/status-bar/osd', 340, 106), ('assistant/panel', 480, 760),
-    ('assistant/settings', 800, 600), ('computer-use/panel', 380, 245),
+    ('assistant/settings', 800, 600), ('computer-use/panel', 380, 213),
     ('computer-use/cursor', 180, 46), ('screencast/picker', 540, 478),
     ('screencast/region', 640, 360), ('screencast/indicator', 400, 52),
 ]

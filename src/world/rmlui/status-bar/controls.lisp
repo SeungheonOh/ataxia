@@ -143,7 +143,6 @@
      (shell-service-osd-timer service) (if next (max 1 (ceiling (* 1000 (- next (monotonic-time))))) 0))))
 (defun %paint-osd (osd kind value detail &key muted error)
   (setf (%osd-kind osd) kind)
-  (set-widget-text osd "icon" (ecase kind (:brightness "☀") (:volume (if muted "×" "♪")) (:media "▶")))
   (set-widget-text osd "label" (ecase kind (:brightness "Brightness") (:volume (if muted "Muted" "Volume")) (:media value)))
   (set-widget-text osd "value" (if (eq kind :media) "" (if value (format nil "~D%" value) "—")))
   (set-widget-text osd "detail" (or detail ""))

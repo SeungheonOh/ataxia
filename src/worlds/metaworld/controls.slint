@@ -6,9 +6,9 @@ export component MetaButton inherits Rectangle {
     in property <bool> quiet-danger: false;
     in property <bool> align-left: false;
     callback activate();
-    min-width: 30px;
-    preferred-height: 30px;
-    border-width: 2px;
+    min-width: 32px;
+    preferred-height: 32px;
+    border-width: 1px;
     border-color: Workstation.ink;
     border-radius: 0px;
     background: touch.pressed ? #444440 : root.selected || touch.has-hover || focus.has-focus ? Workstation.ink : Workstation.paper;
@@ -17,8 +17,8 @@ export component MetaButton inherits Rectangle {
     accessible-label: root.label;
     forward-focus: focus;
     Text {
-        x: root.align-left ? 10px : 0px;
-        width: parent.width - (root.align-left ? 20px : 0px);
+        x: root.align-left ? 8px : 0px;
+        width: parent.width - (root.align-left ? 16px : 0px);
         text: root.label;
         color: root.selected || touch.has-hover || focus.has-focus ? Workstation.paper : root.quiet-danger ? Workstation.danger : Workstation.ink;
         font-family: "DejaVu Sans Mono";

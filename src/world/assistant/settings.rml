@@ -3,42 +3,33 @@ body { margin:0; width:100%; height:100%; font-size:13dp; }
 div { display:block; box-sizing:border-box; }
 #settings-layer { position:absolute; left:0; right:0; top:0; bottom:0; display:flex; align-items:center; justify-content:center; }
 #settings-backdrop { position:absolute; left:0; right:0; top:0; bottom:0; }
-#dialog { position:relative; z-index:1; width:420dp; max-width:94%; padding:22dp; border:2dp var(--ink); }
-#dialog-header, #speed-row, #dialog-actions { display:flex; align-items:center; gap:12dp; }
-#dialog-heading { font-size:17dp; font-weight:bold; }
-button { display:block; box-sizing:border-box; height:32dp; line-height:32dp; padding:0 12dp; text-align:center; }
-button:focus { border:2dp var(--ink); }
-#settings-close { margin-left:auto; width:28dp; height:28dp; line-height:26dp; padding:0; font-size:20dp; }
-#dialog-description { margin-top:7dp; margin-bottom:22dp; font-size:12dp; line-height:18dp; }
-.setting { margin-bottom:18dp; }
-.setting-label { font-size:12dp; font-weight:bold; margin-bottom:7dp; }
-#model-field, #effort-field { position:relative; width:100%; height:36dp; }
-select { display:block; width:100%; height:36dp; box-sizing:border-box; border:2dp var(--ink); font-size:13dp; }
-select selectvalue { padding:9dp 10dp; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-select selectarrow { width:28dp; }
-#model-chevron, #effort-chevron { position:absolute; top:9dp; right:11dp; pointer-events:none; }
-select selectbox { border:2dp var(--ink); max-height:248dp; overflow-y:auto; z-index:20; }
-select option { display:block; padding:10dp 12dp; }
-#models-load { margin-top:8dp; font-size:12dp; }
-#speed-row { padding:3dp 0 18dp; border-bottom:1dp var(--ink); }
+#dialog { position:relative; z-index:1; width:420dp; max-width:94%; padding:var(--inset); border:var(--frame) var(--ink); }
+#dialog-header, #speed-row, #dialog-actions { display:flex; align-items:center; gap:var(--gap); }
+#dialog-heading { font-size:var(--heading); font-weight:bold; }
+button { display:block; box-sizing:border-box; height:var(--control); line-height:var(--control-line); padding:0 var(--gap); }
+#settings-close { margin-left:auto; width:var(--control); padding:0; font-size:18dp; }
+#dialog-description { margin:var(--gap) 0 var(--section); font-size:12dp; line-height:18dp; }
+.setting { margin-bottom:var(--section); }
+.setting-label { font-size:12dp; font-weight:bold; margin-bottom:var(--unit); }
+#model-field, #effort-field { position:relative; width:100%; height:var(--control); }
+select { display:block; width:100%; height:var(--control); box-sizing:border-box; border:var(--frame) var(--ink); font-size:13dp; }
+select selectvalue { padding:6dp var(--gap); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+select selectarrow { width:var(--control); }
+#model-chevron, #effort-chevron { position:absolute; top:6dp; right:var(--gap); pointer-events:none; }
+select selectbox { border:var(--frame) var(--ink); max-height:248dp; overflow-y:auto; z-index:20; }
+select option { display:block; padding:var(--gap); }
+#models-load { margin-top:var(--gap); font-size:12dp; }
 #speed-copy { flex:1; min-width:0; }
-#speed-label { font-size:12dp; font-weight:bold; margin-bottom:5dp; }
-#speed-description { font-size:11dp; line-height:17dp; }
-#fast { flex-shrink:0; min-width:78dp; height:30dp; line-height:28dp; border:2dp var(--ink); font-size:11dp; }
-#fast.enabled { border-color:var(--ink); }
-#fast.unavailable { border-color:var(--ink); }
-#model-note { display:none; margin-top:12dp; font-size:11dp; line-height:18dp; }
-#dialog-actions { margin-top:18dp; }
+#speed-label { font-size:12dp; font-weight:bold; margin-bottom:var(--unit); }
+#speed-description { font-size:11dp; line-height:16dp; }
+#fast { flex-shrink:0; min-width:80dp; font-size:11dp; }
+#model-note { display:none; margin-top:var(--gap); font-size:11dp; line-height:16dp; }
+#dialog-actions { margin-top:var(--section); }
 #saved-note { font-size:11dp; }
-#settings-done { margin-left:auto; min-width:66dp; }
-scrollbarvertical { width:5dp; }
-scrollbarvertical sliderbar { min-height:22dp; }
-scrollbarvertical sliderarrowinc, scrollbarvertical sliderarrowdec { height:0; }
-#dialog.small { padding:18dp; }
-.small #dialog-heading { font-size:16dp; }
+#settings-done { margin-left:auto; }
 </style><link type="text/rcss" href="../rmlui/theme.rcss"/></head><body class="shell assistant-settings" data-model="state"><div id="settings-layer">
 <div id="settings-backdrop"/>
-<div id="dialog"><div id="dialog-header"><div id="dialog-heading">Model settings</div><div class="title-rule"/><button id="settings-close">×</button></div>
+<div id="dialog"><div id="dialog-header"><div id="dialog-heading">Model settings</div><button id="settings-close">×</button></div>
 <div id="dialog-description">Choose how the assistant handles your next task.</div>
 <div id="model-setting" class="setting"><div class="setting-label">Model</div><div id="model-field" data-rml="model_options"><select id="model-select" data-value="selected_model"><option value="">Codex default</option></select><div id="model-chevron">▾</div></div><button id="models-load">Connect</button></div>
 <div id="effort-setting" class="setting"><div class="setting-label">Reasoning effort</div><div id="effort-field" data-rml="effort_options"><select id="effort-select" data-value="selected_effort"><option value="">Auto</option></select><div id="effort-chevron">▾</div></div></div>

@@ -50,7 +50,7 @@
               (position-widget world panel (max 0d0 (- width 396d0)) 12d0 (max 1d0 (min 380d0 (- width 16d0)))
                                    (max 1d0 (min (- height 32d0)
                                                  (if sessions
-                                                     (+ 120d0 (* 125d0 (length sessions)))
+                                                     (+ 100d0 (* 113d0 (min 4 (length sessions))))
                                                      140d0)))))
             (set-widget-style panel "panel" "width" (format nil "~Fdp" (overlay-width panel)))
             (set-widget-style panel "panel" "height" (format nil "~Fdp" (overlay-height panel))))

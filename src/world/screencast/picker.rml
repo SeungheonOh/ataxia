@@ -1,18 +1,19 @@
 <rml><head><title>Share a source</title><style>
 body { margin:0; width:100%; height:100%; font-size:13dp; }
 div { display:block; box-sizing:border-box; }
-.action { box-sizing:border-box; }
-#panel { overflow-y:auto; position:absolute; left:0; top:0; right:0; bottom:0; padding:20dp; border:2dp var(--ink); }
-h1 { display:block; margin:0 0 8dp; font-size:18dp; font-weight:bold; }
-#app { height:34dp; overflow:hidden; }
-#sources { height:212dp; overflow-y:auto; margin-top:12dp; margin-bottom:10dp; border-top:1dp var(--ink); border-bottom:1dp var(--ink); }
-.action { display:block; width:100%; height:38dp; padding:9dp 10dp; text-align:left; }
-#selection { margin:8dp 0; height:34dp; font-size:12dp; overflow:hidden; }
-#footer { display:flex; gap:10dp; }
-#footer .action { width:50%; text-align:center; }
-#privacy { font-size:11dp; margin-top:10dp; }
-scrollbarvertical { width:6dp; }
-</style><link type="text/rcss" href="../rmlui/theme.rcss"/></head><body class="shell screencast-picker"><div id="panel"><div class="share-heading"><h1>Share a source</h1><div class="title-rule"/></div><div id="app">Screen sharing request</div>
+button, input.button, input.action { display:block; box-sizing:border-box; height:var(--control); line-height:var(--control-line); padding:0 var(--gap); flex-shrink:0; }
+#panel { width:100%; height:100%; padding:var(--inset); border:var(--frame) var(--ink); display:flex; flex-direction:column; gap:var(--section); }
+#panel { overflow-y:auto; }
+.share-heading { height:var(--control); display:flex; align-items:center; flex-shrink:0; }
+h1 { display:block; margin:0; font-size:var(--heading); font-weight:bold; }
+#app { font-size:12dp; color:var(--muted); flex-shrink:0; }
+#sources { flex:1; min-height:64dp; overflow-y:auto; border:var(--frame) var(--ink); }
+.action { width:100%; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+#selection { min-height:32dp; font-size:12dp; flex-shrink:0; }
+#footer { display:flex; gap:var(--gap); flex-shrink:0; }
+#footer .action { flex:1; width:auto; min-width:0; }
+#privacy { font-size:11dp; flex-shrink:0; }
+</style><link type="text/rcss" href="../rmlui/theme.rcss"/></head><body class="shell screencast-picker"><div id="panel"><div class="share-heading"><h1>Share a source</h1></div><div id="app">Screen sharing request</div>
 <input class="action" type="button" id="region" value="Draw a canvas region"/><div id="sources"><!-- sources --></div>
 <div id="selection">Choose an application or draw a canvas region.</div>
 <div id="footer"><input class="action" type="button" id="cancel" value="Cancel"/><input class="action" type="button" id="share" disabled="disabled" value="Share"/></div>

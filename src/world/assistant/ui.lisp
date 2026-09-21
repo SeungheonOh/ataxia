@@ -116,7 +116,6 @@
       (let* ((task (assistant-controller-task controller))
              (working (member task '(:working :paused :needs-input)))
              (details (assistant-generation-settings-details (assistant-controller-generation-settings controller))))
-        (set-widget-style panel "empty" "display" (if (or (assistant-controller-messages controller) working) "none" "block"))
         (set-widget-style panel "controls" "display" (if (or working (assistant-controller-undo controller)) "flex" "none"))
         (set-widget-style panel "pause" "display" (if working "block" "none"))
         (set-widget-style panel "stop" "display" (if working "block" "none"))

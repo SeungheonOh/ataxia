@@ -20,6 +20,7 @@
      (:file "listeners")
      (:file "gestures")
      (:file "runtime")
+     (:file "client")
      (:file "drag")
      (:file "event-loop")
      (:file "subsurface")
@@ -31,3 +32,8 @@
      (:file "desktop-shell-protocols")
      (:file "pointer-protocols")
      (:file "main")))))
+
+(asdf:defsystem "ataxia-runtime/xwayland"
+  :description "Optional typed wlroots XWayland transport"
+  :depends-on ("ataxia-runtime")
+  :components ((:file "src/runtime/xwayland")))

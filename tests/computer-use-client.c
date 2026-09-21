@@ -538,8 +538,34 @@ static void drag_cleanup(void *data, struct wl_data_source *source) {
   fprintf(logfile, "drag-cleanup\n");
   fflush(logfile);
 }
+static void detached_configure(void *data, struct xdg_surface *xdg, uint32_t serial) {
+  xdg_surface_ack_configure(xdg, serial);
+  paint(data, 600, 360, 0xff48cf60);
+}
+static const struct xdg_surface_listener detached_listener = {detached_configure};
+static void drag_cancelled(void *data, struct wl_data_source *source) {
+  drag_cleanup(data, source);
+  if (!getenv("ATAXIA_TEST_TAB_DETACH")) return;
+  /* Exercise Firefox's delayed new-toplevel path, including the original
+  * surface disappearing while the Wayland connection remains alive. */
+  struct timespec delay = {.tv_nsec = 150000000};
+  nanosleep(&delay, NULL);
+  if (getenv("ATAXIA_TEST_TAB_CLOSE_ORIGIN")) {
+    xdg_toplevel_destroy(toplevel);
+    xdg_surface_destroy(root_xdg);
+    wl_surface_destroy(surface);
+    toplevel = NULL; root_xdg = NULL; surface = NULL;
+  }
+  struct wl_surface *detached = wl_compositor_create_surface(compositor);
+  struct xdg_surface *xdg = xdg_wm_base_get_xdg_surface(shell, detached);
+  xdg_surface_add_listener(xdg, &detached_listener, detached);
+  struct xdg_toplevel *top = xdg_surface_get_toplevel(xdg);
+  xdg_toplevel_set_app_id(top, "ataxia.agent-test");
+  xdg_toplevel_set_title(top, "detached-tab");
+  wl_surface_commit(detached);
+}
 static const struct wl_data_source_listener drag_source_listener = {
-  .target = source_target, .send = source_send, .cancelled = drag_cleanup,
+  .target = source_target, .send = source_send, .cancelled = drag_cancelled,
   .dnd_drop_performed = source_finished, .dnd_finished = drag_cleanup, .action = source_action
 };
 static void drag_repaint(void *data, struct wl_callback *callback, uint32_t time) {
@@ -558,6 +584,8 @@ static void start_test_drag(void *seat_data, uint32_t serial) {
   struct wl_data_source *source = wl_data_device_manager_create_data_source(data_manager);
   wl_data_source_add_listener(source, &drag_source_listener, strdup("local drag fixture"));
   wl_data_source_offer(source, "text/plain;charset=utf-8");
+  if (getenv("ATAXIA_TEST_TAB_DETACH"))
+    wl_data_source_offer(source, "application/x-moz-tabbrowser-tab");
   wl_data_source_set_actions(source, WL_DATA_DEVICE_MANAGER_DND_ACTION_COPY);
   drag_preview = wl_compositor_create_surface(compositor);
   wl_data_device_start_drag(s->data_device, source, surface, drag_preview, serial);

@@ -28,6 +28,7 @@
    (stacking :initform nil :accessor %world-stacking)
    (outputs :initform (make-hash-table :test #'eq) :reader %world-outputs)
    (seats :initform (make-hash-table :test #'eq) :reader %world-seats)
+   (pending-tab-drops :initform (make-hash-table :test #'eq) :reader %world-pending-tab-drops)
    (view-shifts :initform (make-hash-table :test #'eq)
                 :reader %world-view-shifts)
    (shortcuts :initform (%make-infinite-shortcut-controller)
@@ -982,13 +983,48 @@
                      offset)))
         (values offset offset))))
 
+(defun %remember-tab-drop (world seat-state input)
+  ;; Firefox creates its detached toplevel asynchronously after an unaccepted
+  ;; tab drop. Snapshot the release in world coordinates before wlroots tears
+  ;; down the drag; subsequent pointer/camera motion must not move the window.
+  (let ((seat (%canvas-seat-seat seat-state)))
+    (when (and (eq :released (ataxia.kernel:cursor-button-input-state input))
+               (eql (ataxia.kernel:cursor-button-input-code input)
+                    (ataxia.kernel:seat-drag-grab-button seat))
+               (%canvas-seat-output seat-state)
+               (ataxia.kernel:seat-drag-has-mime-type-p
+                seat "application/x-moz-tabbrowser-tab")
+               (not (ataxia.kernel:seat-drag-drop-accepted-p seat)))
+      (let ((client (ataxia.kernel:seat-drag-client-identity seat)))
+        (when client
+          (multiple-value-bind (x y)
+              (%screen-to-world (%canvas-seat-output seat-state)
+                                (%canvas-seat-x seat-state) (%canvas-seat-y seat-state))
+            (setf (gethash seat (%world-pending-tab-drops world))
+                  (list client (+ (%now) 5d0) x y))))))))
+
+(defun %claim-tab-drop (world application)
+  ;; Bounded to one hint per seat, consumed by a newly created toplevel from
+  ;; the exact connection. Expiry is checked on demand, with no idle timer.
+  (let ((table (%world-pending-tab-drops world)) (now (%now)))
+    (loop for seat being the hash-keys of table using (hash-value drop)
+          do (when (> now (second drop)) (remhash seat table)))
+    (when (plusp (hash-table-count table))
+      (let ((client (ataxia.kernel:application-client-identity application)))
+        (loop for seat being the hash-keys of table using (hash-value drop)
+              when (eql client (first drop))
+                do (remhash seat table)
+                   (return (cddr drop)))))))
+
 (defun %make-window-binding (world application)
   (let ((width 900d0) (height 600d0))
     (multiple-value-bind (x y) (%initial-window-position world width height)
-      (%install-default-animation-hooks
-       (make-instance 'canvas-window
-                      :application application :x x :y y
-                      :width width :height height)))))
+      (let* ((drop (%claim-tab-drop world application))
+             (window (make-instance 'canvas-window
+                       :application application :x (if drop (first drop) x)
+                       :y (if drop (second drop) y) :width width :height height)))
+        (setf (%canvas-window-drop-placed-p window) (not (null drop)))
+        (%install-default-animation-hooks window)))))
 
 (defun %sync-window-size (window)
   (multiple-value-bind (x y width height)
@@ -1145,6 +1181,7 @@
     (clrhash (%world-windows world))
     (clrhash (%world-outputs world))
     (clrhash (%world-seats world))
+    (clrhash (%world-pending-tab-drops world))
     (clrhash (%world-view-shifts world))
     (setf (world-overlays world) nil
           (%world-retired-overlays world) nil
@@ -1388,6 +1425,7 @@
          (%target-component (%canvas-seat-focused seat-state))
          world seat :clear-keyboard)))
     (remhash seat (%world-seats world))
+    (remhash seat (%world-pending-tab-drops world))
     (ataxia.world:forget-shortcut-seat
      (ataxia.world:world-shortcut-controller world) seat)
     (%request-all-frames world))
@@ -1417,8 +1455,10 @@
              (pressed-p (eq (ataxia.kernel:cursor-button-input-state input)
                             :pressed))
              (buttons (%canvas-seat-buttons seat-state)))
+        (when pressed-p (remhash seat (%world-pending-tab-drops world)))
         (if (ataxia.kernel:seat-pointer-drag-active-p seat)
             (progn
+              (%remember-tab-drop world seat-state input)
               (ataxia.kernel:forward-pointer-drag-button seat input)
               (unless pressed-p (remhash code buttons)))
             (if pressed-p
@@ -1476,6 +1516,13 @@
                :anchor-x (%canvas-seat-x seat-state)
                :anchor-y (%canvas-seat-y seat-state)))))))
   input)
+
+(defmethod ataxia.kernel:world-key-event :around
+    ((world infinite-world) seat input)
+  (when (and (typep input 'ataxia.kernel:key-input)
+             (eq :pressed (ataxia.kernel:key-input-state input)))
+    (remhash seat (%world-pending-tab-drops world)))
+  (call-next-method))
 
 (defmethod ataxia.kernel:world-key-event
     ((world infinite-world) seat input)

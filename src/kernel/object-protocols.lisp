@@ -103,7 +103,10 @@
                  :reader configuration-bounds-width)
    (bounds-height :initarg :bounds-height :initform :unchanged
                   :reader configuration-bounds-height))
-  (:documentation "World-selected XDG configure fields; :UNCHANGED preserves a field."))
+  (:documentation
+   "World-selected toplevel configuration; :UNCHANGED preserves a field.
+Adapters translate supported fields into their native protocol and ignore advisory
+hints with no equivalent. World uses this contract without inspecting the backend."))
 
 (defstruct (cursor-motion-input
              (:constructor make-cursor-motion-input

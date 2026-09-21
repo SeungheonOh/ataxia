@@ -19,6 +19,7 @@
      (:file "frames")
      (:file "objects")
      (:file "kernel")
+     (:file "clients")
      (:file "world-watchdog")
      (:file "seats")
      (:file "wayland-objects")

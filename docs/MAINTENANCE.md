@@ -19,6 +19,12 @@ CUA sessions, helpers, or optional-feature definitions belong in Kernel/Runtime.
 | `src/world/assistant/` | Assistant protocol, scheduling, audio, tools and UI. `worker.lisp` owns the protocol mailbox loop; `protocol.lisp` owns message semantics; `lifecycle.lisp` owns tasks and approvals; `service.lisp` owns World attachment and teardown. |
 | `src/control/`, `scripts/` | Owner-thread inspection and process entry points. |
 
+Native helpers expose fields and listener primitives; stable compositor IDs are
+allocated by Kernel's Lisp registry. Kernel adapters consume typed Runtime APIs
+and copied requests. They must not declare protocol FFI, subclass Runtime native
+wrappers, or manage native listener cells. Optional protocol families such as
+`ataxia-runtime/xwayland` remain loadable without Kernel or a World.
+
 World and native graphics mutations stay on the compositor owner thread. Workers
 use the existing control queue for World operations. A callback may request a
 frame or publish work; it must not wait for network, audio, disk, or a subprocess.
@@ -94,6 +100,10 @@ their coverage so previously skipped pixels are reconstructed.
 
 - `make test`: native glue, Kernel damage, geometry/layout, animation, shortcuts,
   World scheduling, shared command-line options and Slint checks.
+  Connection lifecycle coverage includes World replacement, disconnect/reconnect,
+  listener allocation failure, and native/Kernel retirement.
+- `make test-xwayland`: standalone Runtime transport without Kernel/World, then
+  real X11 application mapping, popup trees and World-driven resize.
 - `make test-occlusion`: native opaque-region/callback metadata and GLES pixel
   comparisons against full painting, including alpha holes, minification, all
   output transforms, partial damage, offroot popups and exposure.

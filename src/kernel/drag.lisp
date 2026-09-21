@@ -22,6 +22,22 @@
   (and (eq :live (object-state seat))
        (ataxia.runtime:seat-pointer-drag-active-p (seat-runtime-object seat))))
 
+(defun seat-drag-client-identity (seat)
+  (when (%seat-drag seat)
+    (%ensure-wayland-client (object-kernel seat) (ataxia.runtime:drag-client (%seat-drag seat)))))
+
+(defun seat-drag-has-mime-type-p (seat mime)
+  (when (%seat-drag seat)
+    (ataxia.runtime:drag-has-mime-type-p (%seat-drag seat) mime)))
+
+(defun seat-drag-grab-button (seat)
+  (when (%seat-drag seat)
+    (ataxia.runtime:drag-grab-button (%seat-drag seat))))
+
+(defun seat-drag-drop-accepted-p (seat)
+  (when (%seat-drag seat)
+    (ataxia.runtime:drag-drop-accepted-p (%seat-drag seat))))
+
 (defun forward-pointer-drag-button (seat input)
   "Deliver a button to the current drag grab without re-entering its origin."
   (when (seat-pointer-drag-active-p seat)

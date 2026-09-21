@@ -562,6 +562,8 @@
 
 (defmethod ataxia.kernel:world-cursor-button :around ((world metaworld) seat input)
   (%cancel-seat-gesture world seat)
+  (when (eq :pressed (ataxia.kernel:cursor-button-input-state input))
+    (remhash seat (%world-pending-tab-drops world)))
   (let* ((*meta-action-seat* seat)
          (seat-state (%meta-seat world seat))
          (state (and seat-state (%canvas-seat-output seat-state)))
@@ -737,7 +739,12 @@
     (let* ((app-id (ataxia.kernel:application-app-id (canvas-window-application window)))
            (pending (find app-id (%meta-pending-launches world)
                           :key #'%meta-launch-app-id :test #'equal)))
-      (if pending
+      (cond
+        ((%canvas-window-drop-placed-p window)
+         ;; Explicit drag placement belongs to the free canvas. Saved geometry,
+         ;; the current subworld and launch defaults must not override it.
+         nil)
+        (pending
           (let* ((group (find (%meta-launch-group-id pending) (metaworld-subworlds world)
                               :key #'subworld-id))
                  (below (and group
@@ -752,12 +759,12 @@
               (when (and below (eq :niri (subworld-kind group))
                          (not (subworld-member-floating-p below)))
                 (%meta-insert-member group (%meta-member group window) below t t)
-                (%meta-layout world group))))
-          (unless (%meta-restore-window world window)
+                (%meta-layout world group)))))
+        (t (unless (%meta-restore-window world window)
             (let ((group (or (%meta-current world)
                              (and (%meta-standalone world) (first (metaworld-subworlds world))))))
               (when (and group (not (object-subworld world window)))
-                (move-object-to-subworld world window group))))))
+                (move-object-to-subworld world window group)))))))
     (when (and (%window-visible-p window)
                (or (null (%meta-current world))
                    (eq (object-subworld world window) (%meta-current world))))

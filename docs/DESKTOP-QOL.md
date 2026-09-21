@@ -1,8 +1,9 @@
 # Desktop integration
 
 The screen-sharing chooser, region selector and sharing indicator use RmlUi.
-Capture policy and monitor cameras belong to World. Kernel's optional XWayland
-adapter translates protocol objects and requests; the portal worker handles
+Capture policy and monitor cameras belong to World. Runtime's optional XWayland
+module owns native wrappers, listeners and copied protocol requests. Kernel's
+adapter translates these into stable application objects and World requests; the portal worker handles
 D-Bus/PipeWire transport without calling Lisp or GL.
 
 The experimental window stacks, selection gesture and canvas/window context menus
@@ -35,6 +36,15 @@ Metaworld starts a lazy XWayland server and exports its `DISPLAY` to launched
 applications. Install `Xwayland` alongside the compositor's wlroots build. Managed
 X11 windows use the same World layout, focus, close, maximize and fullscreen paths
 as Wayland windows; override-redirect menus are attached to their application.
+X11 applications implement the same `drawable` and `interactable` protocols as
+Wayland applications and Slint/RmlUi components. World consumes their drawable
+records, transforms local coordinates, and calls the common input, focus,
+configuration and state methods. Popup surface routing and XWM translation stay
+inside Kernel's adapter; there are no X11 rendering or input hooks in World.
+Unsupported advisory hints are ignored: `:suspended` does not minimize X11 windows.
+`make test-xwayland` exercises the contract with a real X11 client in plain Infinite
+World, including popup pixels and input outside the root bounds, camera transforms,
+pointer grabs, keyboard focus, resizing, fullscreen and close.
 `--no-xwayland` disables the server. X11 accessibility depends on the application;
 pixel capture and application input work when no accessibility tree is available.
 
@@ -123,6 +133,22 @@ not change the preview. Frame callbacks continue during a stationary drag, and
 drop targets use the pointer’s current position. Drop, cancellation and client
 exit remove the preview. `make test-drag` exercises actual Wayland input and GLES
 pixels; the sharing test also decodes two simultaneous PipeWire streams.
+
+Detached Firefox tabs open with their top-left corner at the release point in
+the infinite world, including on another monitor or a zoomed/rotated viewport.
+World snapshots that point before the drag ends and applies it to the next new
+toplevel from the same Wayland connection. This overrides saved/default placement
+and keeps the detached window on the free canvas. A drop accepted by another app,
+ordinary non-tab drags and cancelled drags do not establish a placement hint.
+Unclaimed hints expire after five seconds or the next button/key press, without
+an idle timer. The native regression also covers delayed mapping, source surface
+destruction and unrelated clients sharing an application ID.
+
+Native helpers expose client pointers and listener primitives to Runtime only.
+Runtime owns typed connection wrappers and listener cleanup; Kernel allocates
+stable connection identities in its normal object registry. World sees only
+those opaque identities. No Firefox detection, placement or expiry lives below
+World. Native listener libraries remain loaded while their listeners are alive.
 
 Run `make test`, `make test-qol` and `make test-computer-use` for regression coverage.
 See [the QA checklist](METAWORLD-QA.md) for dependencies and the limits of headless

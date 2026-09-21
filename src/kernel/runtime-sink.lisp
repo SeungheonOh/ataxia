@@ -28,6 +28,10 @@
     (%retire-input-device input-device))
   (dolist (surface (%hash-values (%kernel-surface-table kernel)))
     (%retire-surface-node surface :protocol-active-p nil))
+  (loop for native being the hash-keys of (%kernel-runtime-index kernel)
+        using (hash-value object)
+        when (typep object 'wayland-client)
+          do (%retire-object kernel object :runtime-object native))
   kernel)
 
 (defmethod ataxia.runtime:runtime-started

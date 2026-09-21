@@ -640,6 +640,13 @@
    #:seat-destroying
    #:seat-request-set-cursor
    #:drag-icon-surface
+   #:wl-client
+   #:surface-client
+   #:drag-client
+   #:client-destroying
+   #:drag-has-mime-type-p
+   #:drag-grab-button
+   #:drag-drop-accepted-p
    #:surface-commit-offset
    #:drag-destroying
    #:seat-request-start-drag

@@ -12,6 +12,7 @@
    (listeners :initform nil :accessor %native-listeners)))
 
 (defclass wl-display (native-object) ())
+(defclass wl-client (native-object) ())
 (defclass wl-event-loop (native-object) ())
 (defclass wlr-backend (native-object) ())
 (defclass wlr-renderer (native-object) ())
@@ -214,6 +215,8 @@
 (defgeneric surface-mapped (sink surface))
 (defgeneric surface-unmapped (sink surface))
 (defgeneric surface-destroying (sink surface))
+(defgeneric client-destroying (sink client)
+  (:method ((sink runtime-sink) client) (declare (ignore sink client))))
 
 (defmethod runtime-started ((sink runtime-sink) runtime)
   (declare (ignore sink runtime)))

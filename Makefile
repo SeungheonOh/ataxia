@@ -25,7 +25,12 @@ LDLIBS += $(shell PKG_CONFIG_PATH='$(PKG_CONFIG_PATH)' $(PKG_CONFIG) --libs wlro
 
 .PHONY: all clean
 
-all: $(BUILD_DIR)/libataxia-wlr-drag.so $(GLUE) $(SLINT_LIBRARY) $(BUILD_DIR)/libataxia-rmlui-native.so $(BUILD_DIR)/libataxia-screencast.so
+all: $(BUILD_DIR)/libataxia-wlr-client.so $(BUILD_DIR)/libataxia-wlr-drag.so $(GLUE) $(SLINT_LIBRARY) $(BUILD_DIR)/libataxia-rmlui-native.so $(BUILD_DIR)/libataxia-screencast.so
+
+$(BUILD_DIR)/libataxia-wlr-client.so: native/ataxia-client.c
+	@mkdir -p $(BUILD_DIR)
+	$(CC) $(CFLAGS) -shared -o $@.pending $< $(LDLIBS)
+	mv $@.pending $@
 
 $(BUILD_DIR)/libataxia-wlr-drag.so: native/ataxia-drag.c
 	@mkdir -p $(BUILD_DIR)
@@ -142,12 +147,15 @@ $(BUILD_DIR)/xwayland-client: tests/xwayland-client.c
 	$(CC) -O2 -Wall -Wextra -o $@ $< $$(pkg-config --cflags --libs x11)
 
 .PHONY: test-xwayland
-test-xwayland: all $(BUILD_DIR)/xwayland-client
+test-xwayland: all $(BUILD_DIR)/xwayland-client $(BUILD_DIR)/libataxia-synthetic-input.so
+	WLR_RENDERER=gles2 LD_LIBRARY_PATH='$(abspath $(BUILD_DIR)):$(PREFIX)/lib:$(LD_LIBRARY_PATH)' sbcl --noinform --disable-debugger --eval '(sb-int:set-floating-point-modes :traps nil)' --script tests/runtime-xwayland.lisp
 	WLR_RENDERER=gles2 LD_LIBRARY_PATH='$(abspath $(BUILD_DIR)):$(PREFIX)/lib:$(LD_LIBRARY_PATH)' sbcl --noinform --disable-debugger --eval '(sb-int:set-floating-point-modes :traps nil)' --script tests/xwayland-world.lisp
+	WLR_RENDERER=gles2 LD_LIBRARY_PATH='$(abspath $(BUILD_DIR)):$(PREFIX)/lib:$(LD_LIBRARY_PATH)' sbcl --noinform --disable-debugger --eval '(sb-int:set-floating-point-modes :traps nil)' --script tests/xwayland-contract.lisp
 
 .PHONY: test-drag
 test-drag: all $(BUILD_DIR)/computer-use-client $(BUILD_DIR)/libataxia-synthetic-input.so
 	WLR_RENDERER=gles2 LD_LIBRARY_PATH='$(abspath $(BUILD_DIR)):$(PREFIX)/lib:$(LD_LIBRARY_PATH)' sbcl --noinform --disable-debugger --eval '(sb-int:set-floating-point-modes :traps nil)' --script tests/drag-world.lisp
+	WLR_RENDERER=gles2 LD_LIBRARY_PATH='$(abspath $(BUILD_DIR)):$(PREFIX)/lib:$(LD_LIBRARY_PATH)' sbcl --noinform --disable-debugger --eval '(sb-int:set-floating-point-modes :traps nil)' --script tests/drag-placement-world.lisp
 
 .PHONY: test-screencast
 test-screencast: all $(BUILD_DIR)/computer-use-client

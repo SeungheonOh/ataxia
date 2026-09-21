@@ -3,6 +3,10 @@
 
 (cffi:defcfun ("ataxia_drag_wlroots_version" %drag-wlroots-version) :string)
 (cffi:defcfun ("ataxia_drag_icon_surface" %drag-icon-surface) :pointer (drag :pointer))
+(cffi:defcfun ("ataxia_drag_has_mime_type" %drag-has-mime-type-p) :boolean
+  (drag :pointer) (mime :string))
+(cffi:defcfun ("ataxia_drag_grab_button" %drag-grab-button) :uint32 (drag :pointer))
+(cffi:defcfun ("ataxia_drag_drop_accepted" %drag-drop-accepted-p) :boolean (drag :pointer))
 (cffi:defcfun ("ataxia_surface_commit_offset" %surface-commit-offset) :void
   (surface :pointer) (x :pointer) (y :pointer))
 (defvar *drag-library* nil)
@@ -28,3 +32,18 @@
   (cffi:with-foreign-objects ((x :int32) (y :int32))
     (%surface-commit-offset (%object-pointer surface) x y)
     (values (cffi:mem-ref x :int32) (cffi:mem-ref y :int32))))
+
+(defun drag-has-mime-type-p (drag mime)
+  (%assert-runtime-live (%native-runtime drag) :drag-has-mime-type)
+  (%load-drag-library)
+  (%drag-has-mime-type-p (%object-pointer drag) mime))
+
+(defun drag-grab-button (drag)
+  (%assert-runtime-live (%native-runtime drag) :drag-grab-button)
+  (%load-drag-library)
+  (%drag-grab-button (%object-pointer drag)))
+
+(defun drag-drop-accepted-p (drag)
+  (%assert-runtime-live (%native-runtime drag) :drag-drop-accepted)
+  (%load-drag-library)
+  (%drag-drop-accepted-p (%object-pointer drag)))

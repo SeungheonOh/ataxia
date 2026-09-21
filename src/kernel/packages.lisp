@@ -208,6 +208,11 @@
    #:drag-icon
    #:seat-drag-icon
    #:seat-pointer-drag-active-p
+   #:application-client-identity
+   #:seat-drag-client-identity
+   #:seat-drag-has-mime-type-p
+   #:seat-drag-grab-button
+   #:seat-drag-drop-accepted-p
    #:forward-pointer-drag-button
    #:world-seat-drag-icon-changed
    #:world-seat-cursor-request

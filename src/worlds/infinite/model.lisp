@@ -19,6 +19,7 @@
    (width :initarg :width :accessor canvas-window-width)
    (height :initarg :height :accessor canvas-window-height)
    (mapped-p :initform nil :accessor %canvas-window-mapped-p)
+   (drop-placed-p :initform nil :accessor %canvas-window-drop-placed-p)
    (hidden-p :initform nil :accessor %canvas-window-hidden-p)
    (minimized-p :initform nil :accessor %canvas-window-minimized-p)
    (expanded-state :initform nil :accessor %canvas-window-expanded-state)

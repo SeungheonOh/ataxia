@@ -12,6 +12,9 @@
    (dispatcher :initarg :dispatcher :reader %subscription-dispatcher)
    (cell :initform (ataxia.runtime.raw:null-pointer)
          :accessor %subscription-cell)
+   (destroy-cell :initarg :destroy-cell
+                 :initform #'ataxia.runtime.raw:%glue-listener-destroy
+                 :reader %subscription-destroy-cell)
    (active-p :initform t :accessor %subscription-active-p)))
 
 (defvar *subscription-registry* (make-hash-table :test #'eql))
@@ -47,30 +50,25 @@
 (defun ataxia.runtime.raw:%listener-dispatch-pointer ()
   (cffi:callback listener-dispatch))
 
-(defun %attach-signal (runtime signal-name signal-pointer dispatcher)
-  (when (ataxia.runtime.raw:null-pointer-p signal-pointer)
-    (error 'native-call-failed :name signal-name :detail "null wl_signal"))
+(defun %attach-listener (runtime signal-name dispatcher create-cell destroy-cell)
+  "Contain a native listener using the same registration and retirement path."
   (let* ((cookie (%next-subscription-cookie))
          (subscription
            (make-instance 'signal-subscription
                           :cookie cookie
                           :runtime runtime
                           :signal-name signal-name
+                          :destroy-cell destroy-cell
                           :dispatcher dispatcher))
          (completed-p nil))
     (setf (gethash cookie *subscription-registry*) subscription)
     (unwind-protect
          (let ((cell
-                 (ataxia.runtime.raw:%glue-listener-create
-                  cookie (ataxia.runtime.raw:%listener-dispatch-pointer))))
+                 (funcall create-cell cookie (ataxia.runtime.raw:%listener-dispatch-pointer))))
            (when (ataxia.runtime.raw:null-pointer-p cell)
              (error 'native-call-failed
                     :name :listener-create :detail signal-name))
            (setf (%subscription-cell subscription) cell)
-           (unless (ataxia.runtime.raw:%glue-listener-attach
-                    cell signal-pointer)
-             (error 'native-call-failed
-                    :name :listener-attach :detail signal-name))
            (%register-runtime-subscription runtime subscription)
            (setf completed-p t)
            subscription)
@@ -78,10 +76,23 @@
         (remhash cookie *subscription-registry*)
         (unless (ataxia.runtime.raw:null-pointer-p
                  (%subscription-cell subscription))
-          (ataxia.runtime.raw:%glue-listener-destroy
-           (%subscription-cell subscription))
+          (funcall destroy-cell (%subscription-cell subscription))
           (setf (%subscription-cell subscription)
                 (ataxia.runtime.raw:null-pointer)))))))
+
+(defun %attach-signal (runtime signal-name signal-pointer dispatcher)
+  (when (ataxia.runtime.raw:null-pointer-p signal-pointer)
+    (error 'native-call-failed :name signal-name :detail "null wl_signal"))
+  (%attach-listener
+   runtime signal-name dispatcher
+   (lambda (cookie callback)
+     (let ((cell (ataxia.runtime.raw:%glue-listener-create cookie callback)))
+       (unless (ataxia.runtime.raw:null-pointer-p cell)
+         (unless (ataxia.runtime.raw:%glue-listener-attach cell signal-pointer)
+           (ataxia.runtime.raw:%glue-listener-destroy cell)
+           (error 'native-call-failed :name :listener-attach :detail signal-name)))
+       cell))
+   #'ataxia.runtime.raw:%glue-listener-destroy))
 
 (defun %attach-object-signal
     (object signal-name signal-pointer dispatcher)
@@ -93,8 +104,7 @@
 
 (defun %destroy-subscription-cell (subscription)
   (unless (ataxia.runtime.raw:null-pointer-p (%subscription-cell subscription))
-    (ataxia.runtime.raw:%glue-listener-destroy
-     (%subscription-cell subscription))
+    (funcall (%subscription-destroy-cell subscription) (%subscription-cell subscription))
     (setf (%subscription-cell subscription)
           (ataxia.runtime.raw:null-pointer))))
 

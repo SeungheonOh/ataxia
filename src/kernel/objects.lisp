@@ -12,6 +12,9 @@
    (state :initarg :state :initform :constructing :accessor object-state))
   (:documentation "Stable Kernel identity with explicit lifecycle state and generation."))
 
+(defclass wayland-client (kernel-object) ()
+  (:documentation "Opaque Kernel-owned identity of one Wayland connection."))
+
 (defclass kernel-output (kernel-object)
   ((runtime-object :initarg :runtime-object :reader output-runtime-object)
    (name :initarg :name :reader output-name)
@@ -84,6 +87,7 @@
 (defclass wayland-application (kernel-object drawable interactable)
   ((toplevel :initarg :toplevel :reader application-toplevel)
    (root-surface :initarg :root-surface :reader application-root-surface)
+   (client-identity :initform nil :accessor %application-client-identity)
    (title :initarg :title :initform nil :accessor application-title)
    (app-id :initarg :app-id :initform nil :accessor application-app-id)
    (mapped-p :initarg :mapped-p :initform nil :accessor application-mapped-p)

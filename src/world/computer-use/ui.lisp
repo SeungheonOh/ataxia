@@ -47,11 +47,11 @@
           (if sessions (show-overlay world panel) (hide-overlay world panel))
           (when output
             (multiple-value-bind (width height) (output-logical-size output)
-              (position-widget world panel (max 0d0 (- width 396d0)) 12d0 (max 1d0 (min 380d0 (- width 16d0)))
-                                   (max 1d0 (min (- height 32d0)
+              (position-widget world panel (max 0d0 (- width 380d0)) 0d0 (max 1d0 (min 380d0 width))
+                                   (max 1d0 (min height
                                                  (if sessions
-                                                     (+ 100d0 (* 113d0 (min 4 (length sessions))))
-                                                     140d0)))))
+                                                     (+ 34d0 (* 64d0 (min 4 (length sessions))))
+                                                     50d0)))))
             (set-widget-style panel "panel" "width" (format nil "~Fdp" (overlay-width panel)))
             (set-widget-style panel "panel" "height" (format nil "~Fdp" (overlay-height panel))))
           (set-widget-style panel "empty" "display" (if sessions "none" "block"))
@@ -77,7 +77,7 @@
                   (%computer-update-cursor session))))))))
 (defun %computer-create-cursor (session)
   (let ((cursor (%computer-widget 'computer-cursor-label (computer-session-world session) "cursor.rml"
-                                  (computer-session-output session) 180d0 46d0 1500)))
+                                  (computer-session-output session) 180d0 34d0 1500)))
     (setf (computer-session-cursor session) cursor)
     (set-widget-style cursor "" "--accent" (%computer-color session))
     (set-widget-text cursor "name" (short-ui-text (computer-session-name session) 24))
@@ -100,8 +100,8 @@
       (multiple-value-bind (width height) (output-logical-size output)
         (position-widget world cursor
                          (max 0d0 (min (+ 18d0 (computer-input-state-x state)) (- width 180d0)))
-                         (max 0d0 (min (+ 20d0 (computer-input-state-y state)) (- height 46d0)))
-                         180d0 46d0))
+                         (max 0d0 (min (+ 20d0 (computer-input-state-y state)) (- height 34d0)))
+                         180d0 34d0))
       (set-widget-text cursor "state"
                        (if (eq :paused (computer-session-state session)) "Paused · waiting for you"
                            (short-ui-text (computer-session-message session) 30))))))

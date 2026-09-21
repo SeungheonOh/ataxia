@@ -1,19 +1,18 @@
 <rml><head><title>Ataxia applications</title><style>
 body { margin:0; width:100%; height:100%; font-size:13dp; }
 div { display:block; box-sizing:border-box; }
-button, input.button, input.action { display:block; box-sizing:border-box; height:var(--control); line-height:var(--control-line); padding:0 var(--gap); flex-shrink:0; }
-#panel { width:100%; height:100%; padding:var(--inset); border:var(--frame) var(--ink); display:flex; flex-direction:column; gap:var(--section); }
+#panel { width:100%; height:100%; padding:0; border:var(--frame) var(--ink); display:flex; flex-direction:column; gap:var(--section); }
 #panel { overflow-y:auto; }
-#heading { display:flex; align-items:center; justify-content:space-between; gap:var(--gap); height:var(--control); flex-shrink:0; }
+#heading { display:flex; align-items:center; justify-content:space-between; gap:0 var(--gap); height:var(--control); flex-shrink:0; }
 #hello { font-size:var(--heading); font-weight:bold; }
-#close, #prev, #next { width:var(--control); padding:0; font-size:18dp; }
-#search { display:block; box-sizing:border-box; width:100%; height:var(--control); padding:6dp var(--gap); font-size:13dp; border:var(--frame) var(--ink); flex-shrink:0; }
+#close, #prev, #next { width:var(--control); padding:0; text-align:center; font-size:14dp; }
+#search { display:block; box-sizing:border-box; width:100%; height:var(--field-height); padding:0; font-size:13dp; border:var(--frame) var(--ink); flex-shrink:0; }
 #section { display:flex; align-items:center; justify-content:space-between; flex-shrink:0; font-size:11dp; }
-#grid { display:flex; flex-direction:column; flex:1; min-height:192dp; flex-shrink:0; }
+#grid { display:flex; flex-direction:column; flex:none; min-height:96dp; flex-shrink:0; }
 .app { width:100%; display:flex; align-items:center; text-align:left; }
 .name { flex:1; min-width:0; text-align:left; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; font-size:13dp; }
-#empty { display:none; padding:var(--gap) 0; }
-#footer { display:flex; align-items:center; gap:var(--gap); flex-shrink:0; }
+#empty { display:none; padding:0; }
+#footer { display:flex; flex-wrap:wrap; justify-content:flex-start; align-items:center; gap:0 var(--gap); flex-shrink:0; }
 #page { white-space:nowrap; flex-shrink:0; font-size:11dp; margin-left:auto; }
 #hint { font-size:10dp; }
 .small #hint { display:none; }

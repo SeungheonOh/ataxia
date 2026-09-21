@@ -7,7 +7,7 @@ for face in ['DejaVuSansMono.ttf', 'DejaVuSansMono-Bold.ttf', 'DejaVuSansMono-Ob
 property_text=api('component_set_string',C.c_bool,P,C.c_char_p,C.c_char_p)
 source=(root/'src/world/rmlui/status-bar/bar.rml').read_bytes()
 for width,scale in [(1320,1),(820,1),(480,1),(320,1),(820,2)]:
-    height=44
+    height=18
     bind_texture(0x0de1,tex)
     tex_image(0x0de1,0,0x1908,width*scale,height*scale,0,0x1908,0x1401,None)
     c=create(source,str(root/'src/world/rmlui/status-bar/bar.rml').encode(),b'',width*scale,height*scale,scale);ok(c)
@@ -26,7 +26,7 @@ for width,scale in [(1320,1),(820,1),(480,1),(320,1),(820,2)]:
     bind_fbo(0x8d40,fbo);read(0,0,width*scale,height*scale,0x1908,0x1401,pixels)
     im=Image.frombytes('RGBA',(width*scale,height*scale),bytes(pixels)).transpose(Image.Transpose.FLIP_TOP_BOTTOM)
     im.save(root/f'build/status-bar-{width}-{scale}x.png')
-    assert im.getpixel((width*scale//2,35*scale))[3]>200
+    assert im.getpixel((width*scale//2,9*scale))[3]>200
     assert im.getpixel((0,0))[3]==255
     assert im.getpixel((0,height*scale-1))[:3]==(255,255,255)
     # A selection change updates immediately and settles without animation.
@@ -38,7 +38,7 @@ for width,scale in [(1320,1),(820,1),(480,1),(320,1),(820,2)]:
     assert revision(c)==rev
     if width == 1320:
         ok(api('component_register_callback',C.c_bool,P,C.c_char_p)(c,b'group'))
-        ok(button(c,150,22,1,True));ok(button(c,150,22,1,False))
+        ok(button(c,150,9,1,True));ok(button(c,150,9,1,False))
         assert api('component_callback_count',C.c_size_t,P)(c)==1
         assert api('component_callback_name',C.c_char_p,P,C.c_size_t)(c,0)==b'group'
         # A stationary hovered button must also return to idle.

@@ -31,8 +31,8 @@
                               (let ((seat-state (gethash seat (%world-seats world))))
                                 (ataxia.kernel:world-cursor-motion world seat
                                   (ataxia.kernel:make-cursor-motion-input
-                                    :delta-x (- 35d0 (%canvas-seat-x seat-state))
-                                    :delta-y (- (+ (overlay-y bar) 20d0) (%canvas-seat-y seat-state))))
+                                    :delta-x (- 12d0 (%canvas-seat-x seat-state))
+                                    :delta-y (- (+ (overlay-y bar) 9d0) (%canvas-seat-y seat-state))))
                                 (dolist (state '(:pressed :released))
                                   (ataxia.kernel:world-cursor-button world seat
                                     (ataxia.kernel:make-cursor-button-input :code 272 :state state))))

@@ -14,7 +14,7 @@
 (defmethod service-output-insets ((service shell-service) world output)
   (declare (ignore service))
   (values 0d0 0d0 0d0
-          (if (find output (status-bars world) :key #'overlay-output) 44d0 0d0)))
+          (if (find output (status-bars world) :key #'overlay-output) 18d0 0d0)))
 (defun set-bar-class (bar name value)
   (cache-widget-value bar (list :class name) value
     (lambda (component) (ataxia.world.rmlui:set-rmlui-class component "bar" name value))))
@@ -31,7 +31,7 @@
            (first-slot (max 1 (min (- count slots -1) (- selected (floor slots 2)))))
            (seat (world-seat-on-output world output))
            (focused (and seat (world-seat-focus world seat))))
-      (position-widget world bar 0d0 (max 0d0 (- height 44d0)) bar-width 44d0)
+      (position-widget world bar 0d0 (max 0d0 (- height 18d0)) bar-width 18d0)
       (set-bar-class bar "compact" (< bar-width 1050d0))
       (set-bar-class bar "narrow" (< bar-width 680d0))
       (set-bar-class bar "tiny" tiny)
@@ -93,7 +93,7 @@
          (bar (create-agent-widget 'rmlui-status-bar world (uiop:read-file-string path)
                                    :component-factory #'ataxia.world.rmlui:make-shell-rmlui-component
                                    :source-path (namestring path) :output output
-                                   :width 1000d0 :height 44d0 :layer 1150)))
+                                   :width 1000d0 :height 18d0 :layer 1150)))
     (dolist (entry '(("home" . :menu) ("power" . :power) ("group" . :spaces)
                      ("audio" . :media) ("media" . :media) ("clipboard" . :clipboard)
                      ("previous" . :previous) ("next" . :next)))

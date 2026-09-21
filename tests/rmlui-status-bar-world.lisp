@@ -25,7 +25,7 @@
                        (assert (plusp frames))
                        (assert (not (ataxia.kernel:drawable-active-p (canvas-overlay-component bar))))
                        (assert (= 1100d0 (canvas-overlay-width bar)))
-                       (assert (= 656d0 (canvas-overlay-y bar)))
+                       (assert (= 682d0 (canvas-overlay-y bar)))
                        (setf baseline frames phase 1)
                        (ataxia.runtime:update-event-loop-timer source 300))
                       (1

@@ -165,7 +165,10 @@
                (source (concatenate 'string (subseq template 0 offset)
                          (format nil "~{~A~}" (loop for w in windows for i from 0 collect (format nil "<input class='action' type='button' id='app~D' value='Application'/>" i)))
                          (subseq template (+ offset (length marker)))))
-               (widget (%share-widget controller "picker" state 540d0 478d0 :source source)))
+               ;; Consecutive text rows, plus labels and wrapped narrow hints.
+               (height (+ (if (< (nth-value 0 (%output-logical-size state)) 400d0) 130d0 98d0)
+                          (* 16d0 (min 12 (max 3 (length windows))))))
+               (widget (%share-widget controller "picker" state 540d0 height :source source)))
           (setf (share-controller-current controller) session (share-controller-picker controller) widget
                 (share-controller-seat controller) seat (share-controller-previous-focus controller) (and seat (%canvas-seat-focused seat)))
           (setf (gethash :share-windows (ataxia.world.rmlui:widget-cache widget)) windows)
@@ -193,8 +196,8 @@
     (setf (share-controller-indicators controller) nil)
     (when active
       (dolist (state (%output-states world))
-        (let ((widget (%share-widget controller "indicator" state 400d0 52d0 :layer 4900)))
-          (ataxia.world:configure-agent-widget world widget :y 12d0)
+        (let ((widget (%share-widget controller "indicator" state 400d0 18d0 :layer 4900)))
+          (ataxia.world:configure-agent-widget world widget :y 0d0)
           (ataxia.world.rmlui:set-widget-text widget "label" (format nil "Sharing ~D source~:P" (length active)))
           (bind-agent-widget-event widget "stop"
             (lambda (source event) (declare (ignore source event))

@@ -37,7 +37,7 @@
                                  (let* ((picker (share-controller-picker controller))
                                         (seat (share-controller-seat controller))
                                         (x (+ (overlay-x picker) 100d0))
-                                        (y (+ (overlay-y picker) 112d0)))
+                                        (y (+ (overlay-y picker) 41d0)))
                                    (ataxia.kernel:world-cursor-motion world (%canvas-seat-seat seat)
                                      (ataxia.kernel:make-cursor-motion-input
                                        :delta-x (- x (%canvas-seat-x seat)) :delta-y (- y (%canvas-seat-y seat))))

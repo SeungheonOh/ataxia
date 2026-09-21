@@ -619,10 +619,10 @@
             (or logo-p
                 (and (typep target 'meta-note)
                      (< (%canvas-seat-y seat-state)
-                        (+ (overlay-y target) (* 28d0 (%canvas-output-zoom state))))
+                        (+ (overlay-y target) (* 17d0 (%canvas-output-zoom state))))
                      (< (%canvas-seat-x seat-state)
                         (- (+ (overlay-x target) (overlay-width target))
-                           (* 30d0 (%canvas-output-zoom state)))))))
+                           (* 17d0 (%canvas-output-zoom state)))))))
        (%meta-begin-drag world seat-state target)
        (%focus-target world seat-state target)
        (setf (gethash code (%canvas-seat-buttons seat-state)) :world))

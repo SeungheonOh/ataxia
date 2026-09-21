@@ -26,21 +26,21 @@
     (when popup
       (multiple-value-bind (ow oh) (output-logical-size output)
         (let* ((kind (%shell-popup-kind popup))
-               (size (ecase kind (:apps '(400d0 480d0)) (:power '(340d0 500d0))
-                               (:spaces '(560d0 460d0)) (:media '(380d0 410d0)) (:clipboard '(440d0 460d0))))
+               (size (ecase kind (:apps '(400d0 180d0)) (:power '(340d0 210d0))
+                               (:spaces '(560d0 260d0)) (:media '(380d0 146d0)) (:clipboard '(440d0 196d0))))
                (width (max 1d0 (min (first size) (- ow 16d0))))
-               (height (max 1d0 (min (second size) (- oh 60d0))))
-               (anchor (if (member kind '(:apps :spaces)) (+ (overlay-x bar) 8d0)
+               (height (max 1d0 (min (second size) (- oh 18d0))))
+               (anchor (if (member kind '(:apps :spaces)) (overlay-x bar)
                            (- (+ (overlay-x bar) (overlay-width bar)) width))))
           (position-widget world popup (max 0d0 (min (- ow width) anchor))
-                               (max 0d0 (- (overlay-y bar) height 8d0)) width height)
+                               (max 0d0 (- (overlay-y bar) height)) width height)
           (%shell-class popup "small" (< width 480d0))
           (when (eq kind :spaces)
             ;; RmlUi's nested scroll/flex percentage widths need a definite
             ;; containing width on the stacked narrow layout.
             (dolist (id '("body" "groups" "workspaces" "workspace-grid"))
               (set-widget-style popup id "width"
-                (if (< width 480d0) (format nil "~Ddp" (max 1 (floor (- width 26d0))))
+                (if (< width 480d0) (format nil "~Ddp" (max 1 (floor (- width 2d0))))
                     (if (equal id "groups") "160dp" "auto"))))))))))
 (defun %bar-update-power-popup (popup power)
   (let ((capacity (getf power :capacity)) (health (getf power :health))
@@ -113,7 +113,7 @@
          (popup (create-agent-widget 'rmlui-shell-popup world (uiop:read-file-string path)
                                       :component-factory #'ataxia.world.rmlui:make-shell-rmlui-component
                                       :source-path (namestring path) :output (overlay-output bar)
-                                      :width 400d0 :height 480d0 :layer 1300)))
+                                      :width 400d0 :height 180d0 :layer 1300)))
     (setf (%shell-popup-kind popup) kind (%shell-popup-bar popup) bar (%bar-popup bar) popup)
     (handler-case
         (progn

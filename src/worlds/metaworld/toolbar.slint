@@ -3,7 +3,7 @@ import { MetaButton } from "controls.slint";
 
 export component MetaworldToolbar inherits Window {
     background: transparent;
-    width: 480px; height: 44px;
+    width: 480px; height: 18px;
     in property <string> caption: "METAWORLD";
     in property <bool> active: false;
     in property <bool> standalone: false;
@@ -12,7 +12,7 @@ export component MetaworldToolbar inherits Window {
     callback action(string);
     Rectangle { border-width: 1px; border-color: Workstation.ink; border-radius: 0px; background: Workstation.paper; }
     HorizontalLayout {
-        padding: 6px; padding-left: 12px; padding-right: 12px;
+        padding: 1px;
         spacing: 8px;
         if root.width >= 380px : Text {
             text: root.caption;
@@ -26,9 +26,9 @@ export component MetaworldToolbar inherits Window {
         }
         MetaButton { width: root.compact ? 52px : 68px; label: root.active ? "Layout" : "Create"; activate => { root.action("controls"); } }
         MetaButton { width: root.compact ? 52px : 68px; label: root.standalone ? "Canvas" : root.active ? "Exit" : root.compact ? "View" : "Overview"; activate => { root.action(root.standalone ? "mode-canvas" : "overview"); } }
-        if root.active : MetaButton { width: root.compact ? 28px : 32px; label: "↑"; activate => { root.action("previous-workspace"); } }
+        if root.active : MetaButton { width: root.compact ? 24px : 32px; label: "↑"; activate => { root.action("previous-workspace"); } }
         if root.active : Text { width: root.compact ? 16px : 20px; text: root.workspace; color: Workstation.muted; horizontal-alignment: center; vertical-alignment: center; }
-        if root.active : MetaButton { width: root.compact ? 28px : 32px; label: "↓"; activate => { root.action("next-workspace"); } }
-        MetaButton { width: root.compact ? 52px : 68px; label: "Terminal"; activate => { root.action("terminal"); } }
+        if root.active : MetaButton { width: root.compact ? 24px : 32px; label: "↓"; activate => { root.action("next-workspace"); } }
+        MetaButton { width: root.compact ? 40px : 68px; label: root.compact ? "Term" : "Terminal"; activate => { root.action("terminal"); } }
     }
 }

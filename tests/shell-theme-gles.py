@@ -12,19 +12,19 @@ set_text = api('component_set_string', C.c_bool, P, C.c_char_p, C.c_char_p)
 focus = api('component_focus', C.c_bool, P, C.c_bool)
 model = api('model_string', C.c_bool, P, C.c_char_p, C.c_char_p)
 cases = [
-    ('rmlui/status-bar/bar', 1280, 44), ('rmlui/status-bar/menu', 400, 480),
-    ('rmlui/status-bar/power', 340, 500), ('rmlui/status-bar/media', 380, 410),
-    ('rmlui/status-bar/clipboard', 440, 460), ('rmlui/status-bar/workspaces', 560, 460),
-    ('rmlui/status-bar/osd', 340, 106), ('assistant/panel', 480, 760),
-    ('assistant/settings', 800, 600), ('computer-use/panel', 380, 213),
-    ('computer-use/cursor', 180, 46), ('screencast/picker', 540, 478),
-    ('screencast/region', 640, 360), ('screencast/indicator', 400, 52),
+    ('rmlui/status-bar/bar', 1280, 18), ('rmlui/status-bar/menu', 400, 180),
+    ('rmlui/status-bar/power', 340, 210), ('rmlui/status-bar/media', 380, 146),
+    ('rmlui/status-bar/clipboard', 440, 196), ('rmlui/status-bar/workspaces', 560, 260),
+    ('rmlui/status-bar/osd', 340, 42), ('assistant/panel', 480, 760),
+    ('assistant/settings', 800, 600), ('computer-use/panel', 380, 98),
+    ('computer-use/cursor', 180, 34), ('screencast/picker', 540, 178),
+    ('screencast/region', 640, 360), ('screencast/indicator', 400, 18),
 ]
 artifacts = {}
 for name, normal_width, normal_height in cases:
     for narrow, scale in [(False, 1), (True, 1), (False, 1.5), (False, 2)]:
         width = min(304, normal_width) if narrow else normal_width
-        height = normal_height
+        height = (178 if narrow else 146) if name == "screencast/picker" else normal_height
         pw, ph = round(width * scale), round(height * scale)
         bind_texture(0x0de1, tex)
         tex_image(0x0de1, 0, 0x1908, pw, ph, 0, 0x1908, 0x1401, None)

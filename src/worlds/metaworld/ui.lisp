@@ -135,7 +135,7 @@
   (let* ((view (%meta-view-for-state world state))
          (headers (%meta-view-headers view)))
     (or (gethash group headers)
-        (let ((widget (%meta-ui-widget world "header" "SubworldHeader" state 330d0 30d0 :layer 100)))
+        (let ((widget (%meta-ui-widget world "header" "SubworldHeader" state 330d0 16d0 :layer 100)))
           (bind-agent-widget-event
            widget "enter"
            (lambda (source event)
@@ -150,7 +150,7 @@
 (defun %meta-toolbar (world state)
   (let ((view (%meta-view-for-state world state)))
     (or (%meta-view-panel view)
-        (let ((widget (%meta-ui-widget world "toolbar" "MetaworldToolbar" state 760d0 48d0)))
+        (let ((widget (%meta-ui-widget world "toolbar" "MetaworldToolbar" state 760d0 18d0)))
           (bind-agent-widget-event
            widget "action"
            (lambda (source event)
@@ -200,7 +200,7 @@
     (multiple-value-bind (width height) (%output-logical-size state)
       (declare (ignore height))
       (let ((panel-width (min (if active 480d0 340d0) (- width 24d0))))
-        (%meta-reposition-ui world panel (/ (- width panel-width) 2d0) 8d0 panel-width 44d0)))
+        (%meta-reposition-ui world panel (/ (- width panel-width) 2d0) 8d0 panel-width 18d0)))
     (%meta-property panel "caption"
                     (if active (subworld-name active) "Canvas"))
     (%meta-property panel "active" (not (null active)))
@@ -213,13 +213,13 @@
             ;; Keep the breadcrumb reachable when the canvas header is offscreen.
             (multiple-value-bind (width height) (%output-logical-size state)
               (declare (ignore height))
-              (%meta-reposition-ui world header 12d0 8d0 (max 96d0 (min 248d0 (- width 24d0))) 30d0))
+              (%meta-reposition-ui world header 12d0 8d0 (max 96d0 (min 248d0 (- width 24d0))) 16d0))
             (multiple-value-bind (canvas-x canvas-y)
                 (%world-to-canvas state (subworld-x group) (subworld-y group))
               (multiple-value-bind (x y) (%canvas-to-screen state canvas-x canvas-y)
-                (%meta-reposition-ui world header x (- y 32d0)
+                (%meta-reposition-ui world header x (- y 16d0)
                                      (min 280d0 (max 100d0 (* (%canvas-output-zoom state)
-                                                             (%meta-footprint-width group)))) 30d0))))
+                                                             (%meta-footprint-width group)))) 16d0))))
         (%meta-property header "caption"
                         (subworld-name group))
         (%meta-property header "active" (eq group active))

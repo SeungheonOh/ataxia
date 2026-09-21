@@ -104,6 +104,7 @@ test-rmlui-status-bar: all rmlui
 .PHONY: test-shell-theme
 test-shell-theme: all rmlui
 	python3 tests/shell-theme-gles.py
+	python3 tests/shell-action-layout-gles.py
 	python3 tests/rmlui-status-bar-gles.py
 	python3 tests/rmlui-shell-gles.py
 	python3 tests/assistant-gles.py

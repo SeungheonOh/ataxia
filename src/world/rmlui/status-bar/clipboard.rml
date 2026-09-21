@@ -1,18 +1,17 @@
 <rml><head><title>Clipboard history</title><style>
 body { margin:0; width:100%; height:100%; font-size:13dp; }
 div { display:block; box-sizing:border-box; }
-button, input.button, input.action { display:block; box-sizing:border-box; height:var(--control); line-height:var(--control-line); padding:0 var(--gap); flex-shrink:0; }
-#panel { width:100%; height:100%; padding:var(--inset); border:var(--frame) var(--ink); display:flex; flex-direction:column; gap:var(--section); }
-#header { display:flex; align-items:center; justify-content:space-between; gap:var(--gap); height:var(--control); flex-shrink:0; }
+#panel { width:100%; height:100%; padding:0; border:var(--frame) var(--ink); display:flex; flex-direction:column; gap:var(--section); }
+#header { display:flex; align-items:center; justify-content:space-between; gap:0 var(--gap); height:var(--control); flex-shrink:0; }
 #title { font-size:var(--heading); font-weight:bold; }
-#search { display:block; width:100%; box-sizing:border-box; height:var(--control); padding:6dp var(--gap); border:var(--frame) var(--ink); flex-shrink:0; }
+#search { display:block; width:100%; box-sizing:border-box; height:var(--field-height); padding:0; border:var(--frame) var(--ink); flex-shrink:0; }
 #count { font-size:11dp; }
 #list { flex:1; min-height:0; overflow-y:auto; }
-.item { width:100%; text-align:left; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
-#empty { line-height:20dp; padding:var(--gap) 0; }
+.item { display:block; width:100%; text-align:left; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+#empty { line-height:16dp; padding:0; }
 #footer { flex-shrink:0; }
-#paging { display:flex; align-items:center; justify-content:space-between; gap:var(--gap); }
-#prev, #next { width:var(--control); padding:0; font-size:18dp; }
+#paging { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:0 var(--gap); }
+#prev, #next { width:var(--control); padding:0; font-size:14dp; }
 #page { font-size:11dp; white-space:nowrap; }
-#hint { font-size:11dp; line-height:16dp; margin-top:var(--gap); }
-</style><link type="text/rcss" href="../theme.rcss"/></head><body class="shell shell-clipboard" data-model="state"><div id="panel"><div id="header"><div id="title">Clipboard</div><button id="close">Close</button></div><input id="search" type="text" data-value="query" placeholder="Search recent text…" autofocus="autofocus"/><div id="count">0 recent items</div><div id="list"><button id="app0" class="item"/><button id="app1" class="item"/><button id="app2" class="item"/><button id="app3" class="item"/><button id="app4" class="item"/><button id="app5" class="item"/><div id="empty">Copy text in an app to keep it here.<br/>History lasts for this desktop session.</div></div><div id="footer"><div id="paging"><button id="prev">‹</button><div id="page">1 / 1</div><button id="next">›</button><button id="clear">Clear history</button></div><div id="hint">Choose an item, then paste in your app.<br/>Ctrl + Super + V · ↑ ↓ and Enter · Esc to close</div></div></div></body></rml>
+#hint { font-size:11dp; line-height:16dp; margin-top:0; }
+</style><link type="text/rcss" href="../theme.rcss"/></head><body class="shell shell-clipboard" data-model="state"><div id="panel"><div id="header"><div id="title">Clipboard</div><button id="close">Close</button></div><input id="search" type="text" data-value="query" placeholder="Search recent text…" autofocus="autofocus"/><div id="count">0 recent items</div><div id="list"><button id="app0" class="item"/><button id="app1" class="item"/><button id="app2" class="item"/><button id="app3" class="item"/><button id="app4" class="item"/><button id="app5" class="item"/><div id="empty">Copy text in an app to keep it here.<br/>History lasts for this desktop session.</div></div><div id="footer"><div id="paging"><button id="prev">‹</button><div id="page">1 / 1</div><button id="next">›</button><button id="clear">Clear history</button></div><div id="hint">↑ ↓ Select · Enter Copy · Esc Close<br/>Ctrl + Super + V opens history</div></div></div></body></rml>

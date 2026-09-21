@@ -1,6 +1,7 @@
 """Exercise the shipping panel using the real native renderer; no model or audio."""
 from pathlib import Path
 exec(compile((Path(__file__).parent / 'rmlui-gles.py').read_text(), __file__, 'exec'))
+exec(compile((Path(__file__).parent / 'rmlui-layout.py').read_text(), __file__, 'exec'))
 for face in ['DejaVuSansMono.ttf', 'DejaVuSansMono-Bold.ttf', 'DejaVuSansMono-Oblique.ttf', 'DejaVuSansMono-BoldOblique.ttf']:
     ok(api('load_font', C.c_bool, C.c_char_p)(f'/usr/share/fonts/truetype/dejavu/{face}'.encode()))
 set_text = api('component_set_string', C.c_bool, P, C.c_char_p, C.c_char_p)
@@ -23,7 +24,7 @@ def capture(c, width, height, name):
 def component(source, width, height):
     bind_texture(0x0de1, tex)
     tex_image(0x0de1, 0, 0x1908, width, height, 0, 0x1908, 0x1401, None)
-    c = create((root/f'src/world/assistant/{source}.rml').read_bytes(), str(root/f'src/world/assistant/{source}.rml').encode(), b'', width, height, 1)
+    c = create(measured_source((root/f'src/world/assistant/{source}.rml').read_bytes(), ['settings-open','fast','settings-done','model-select','effort-select']), str(root/f'src/world/assistant/{source}.rml').encode(), b'', width, height, 1)
     ok(c); ok(attach(c, fbo))
     return c
 
@@ -36,7 +37,8 @@ for width, height in [(480, 760), (304, 640)]:
     ok(api('component_register_callback', C.c_bool, P, C.c_char_p)(c, b'settings-open'))
     im = capture(c, width, height, f'assistant-panel-{width}')
     assert im.getpixel((width//2, 2))[:3] == (255, 255, 255)
-    ok(button(c, 75, height - 69, 1, True)); ok(button(c, 75, height - 69, 1, False)); ok(render(c))
+    settings_x,settings_y=box_center(element_box(c,'settings-open',width,height))
+    ok(button(c, settings_x, settings_y, 1, True)); ok(button(c, settings_x, settings_y, 1, False)); ok(render(c))
     names = [api('component_callback_name', C.c_char_p, P, C.c_size_t)(c, i) for i in range(api('component_callback_count', C.c_size_t, P)(c))]
     assert b'settings-open' in names, names
     ok(api('component_focus', C.c_bool, P, C.c_bool)(c, False))
@@ -60,24 +62,16 @@ for width, height in [(800, 600), (304, 640)]:
     y0, y1 = min(p[1] for p in white), max(p[1] for p in white)
     assert abs((x0+x1+1)/2 - width/2) <= 1, (x0,x1,width)
     assert abs((y0+y1+1)/2 - height/2) <= 1, (y0,y1,height)
-    # Locate the two full-width field fills, independent of the display size.
-    field_x = x0 + 14
-    bands=[]
-    for y in range(y0,y1):
-        if im.getpixel((field_x,y))[:3] == (238,238,234):
-            if not bands or y > bands[-1][-1]+1: bands.append([])
-            bands[-1].append(y)
-    bands=[b for b in bands if len(b)>20]
-    assert len(bands)==2, [len(b) for b in bands]
-    for variable, band in [(b'selected_model', bands[0]), (b'selected_effort', bands[1])]:
-        y=(band[0]+band[-1])/2
+    # Use rendered bounds: editable rows have no extra vertical padding.
+    for variable, field in [(b'selected_model', 'model-select'), (b'selected_effort', 'effort-select')]:
+        _, y=box_center(element_box(c,field,width,height))
         ok(button(c, width/2, y, 1, True)); ok(button(c, width/2, y, 1, False)); ok(render(c))
         for symbol in [0xff54,0xff54,0xff0d]:
             ok(key(c,symbol,True,0)); ok(key(c,symbol,False,0)); ok(render(c))
         assert model_value(c,variable)==(b'fixture-fast' if variable==b'selected_model' else b'high'), model_value(c,variable)
-    # Fast button is opposite its copy, above the bottom action row.
-    ok(button(c,x1-55,y1-88,1,True));ok(button(c,x1-55,y1-88,1,False));ok(render(c))
-    ok(button(c,x1-50,y1-28,1,True));ok(button(c,x1-50,y1-28,1,False));ok(render(c))
+    for action in ['fast','settings-done']:
+        x,y=box_center(element_box(c,action,width,height))
+        ok(button(c,x,y,1,True));ok(button(c,x,y,1,False));ok(render(c))
     ok(button(c,2,2,1,True));ok(button(c,2,2,1,False));ok(render(c))
     names=[api('component_callback_name',C.c_char_p,P,C.c_size_t)(c,i) for i in range(api('component_callback_count',C.c_size_t,P)(c))]
     assert all(n in names for n in [b'model-field:change',b'effort-field:change',b'fast',b'settings-done',b'settings-backdrop']),names

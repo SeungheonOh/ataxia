@@ -3,28 +3,28 @@
 body.shell {
  --ink:#161616; --paper:#ffffff; --field:#eeeeea; --muted:#50504c;
  --disabled:#73736e; --danger:#8c2020;
- --unit:4dp; --gap:8dp; --inset:12dp; --section:16dp;
- --control:32dp; --control-line:30dp; --frame:1dp; --heading:14dp;
- font-family:DejaVu Sans Mono; color:var(--ink);
+ --unit:0dp; --gap:8dp; --inset:0dp; --section:0dp;
+ --control:16dp; --control-line:16dp; --field-height:18dp; --frame:1dp; --heading:14dp;
+ font-family:DejaVu Sans Mono; color:var(--ink); line-height:16dp;
 }
 * { border-radius:0; }
 button, input, textarea, select { font-family:DejaVu Sans Mono; }
 #panel, #dialog, #bar, #tag, #instruction { background:var(--paper); }
 button, input.button, input.action {
- border:var(--frame) var(--ink); background:var(--paper); color:var(--ink);
- text-align:center; cursor:pointer;
+ display:inline-block; box-sizing:border-box; height:var(--control); line-height:var(--control-line);
+ padding:0 var(--unit); border:0; background:transparent; color:var(--ink);
+ flex-shrink:0; white-space:nowrap; text-align:left; cursor:pointer;
 }
 button:hover, input.button:hover, input.action:hover,
 button:focus, input.button:focus, input.action:focus,
 .selected, button.selected, input.action.selected {
  background:var(--ink); color:var(--paper);
 }
-button:active, input.button:active, input.action:active { background:#444440; color:var(--paper); }
-/* A selected row still needs a distinct keyboard focus indicator. */
-button.selected:focus, input.action.selected:focus { border-color:var(--paper); }
+button:active, input.button:active, input.action:active { background:var(--ink); color:var(--paper); }
 button:disabled, input:disabled, select:disabled {
- color:var(--disabled); border-color:var(--disabled); background:var(--field); cursor:unavailable;
+ color:var(--disabled); cursor:unavailable;
 }
+button:disabled, input.button:disabled, input.action:disabled { background:transparent; }
 input[type="text"], textarea, select { background:var(--field); color:var(--ink); caret-color:var(--ink); }
 input[type="text"]:focus, textarea:focus, select:focus { background:var(--paper); border-color:var(--ink); }
 selection { color:var(--paper); background:var(--ink); }
@@ -37,25 +37,24 @@ scrollbarhorizontal sliderarrowinc, scrollbarhorizontal sliderarrowdec { width:0
 #note, #device, #artist, #playback, #empty, #selection, #privacy,
 #location, #group-page, #model-note, #saved-note, #dialog-description,
 #speed-description, #limits { color:var(--muted); }
-.selected .detail, .selected .preview, .selected .name { color:var(--paper); }
+.selected .detail, .selected .preview, .selected .name,
+button:hover .detail, button:focus .detail, button:hover .preview, button:focus .preview { color:var(--paper); }
 #close, #settings-close { flex-shrink:0; }
-.shell-bar button { border-color:transparent; }
 .shell-bar #title { color:var(--muted); }
 .shell-bar #charge, .shell-bar #battery-tip, .shell-osd #fill { background:var(--ink); }
 .shell-bar #power:hover #charge, .shell-bar #power:focus #charge,
 .shell-bar #power:hover #battery-tip, .shell-bar #power:focus #battery-tip { background:var(--paper); }
 .shell-bar #power:hover #battery, .shell-bar #power:focus #battery { border-color:var(--paper); }
-.shell-bar #bar.low #power { border-bottom-color:var(--ink); }
-.shell-bar #bar.critical #power { color:var(--danger); border-color:var(--danger); }
+.shell-bar #bar.low #power { font-weight:bold; }
+.shell-bar #bar.critical #power { color:var(--danger); }
 .shell-bar #bar.critical #charge { background:var(--danger); }
-.shell-menu .app, .shell-clipboard .item { border-color:transparent; }
 #volume slidertrack, #brightness slidertrack { height:4dp; background:var(--ink); }
-#volume sliderbar, #brightness sliderbar { width:16dp; height:24dp; margin-top:4dp; border:var(--frame) var(--ink); background:var(--paper); }
+#volume sliderbar, #brightness sliderbar { width:8dp; height:16dp; margin-top:1dp; border:var(--frame) var(--ink); background:var(--paper); }
 #volume:focus sliderbar, #brightness:focus sliderbar { background:var(--ink); }
 .shell-power .critical #percent, .shell-power .critical #note, .shell-osd .error #detail { color:var(--danger); }
 .shell-workspaces .remove { color:var(--danger); }
-.shell-workspaces .remove:hover { color:var(--paper); background:var(--danger); }
-.screencast-picker #sources .action { border-color:transparent; text-align:left; }
+.shell-workspaces .remove:hover, .shell-workspaces .remove:focus { color:var(--paper); background:var(--danger); }
+.screencast-picker #sources .action { text-align:left; }
 .screencast-region { background:#16161628; }
 /* Two contrasting lines keep the selection visible against any client pixels. */
 .screencast-region #rectangle { border:var(--frame) var(--ink); box-shadow:var(--paper) 0dp 0dp 0dp 1dp; }
@@ -65,13 +64,13 @@ scrollbarhorizontal sliderarrowinc, scrollbarhorizontal sliderarrowdec { width:0
 .assistant-panel .md-link-label { text-decoration:underline; }
 .assistant-panel #message { background:var(--paper); }
 .assistant-panel #stop, .assistant-panel #deny, .computer-use-panel .stop { color:var(--danger); }
-.assistant-panel #stop:hover, .assistant-panel #deny:hover, .computer-use-panel .stop:hover { background:var(--danger); color:var(--paper); }
+.assistant-panel #stop:hover, .assistant-panel #stop:focus, .assistant-panel #deny:hover, .assistant-panel #deny:focus, .computer-use-panel .stop:hover, .computer-use-panel .stop:focus { background:var(--danger); color:var(--paper); }
 .assistant-settings #settings-backdrop { background:#16161640; }
 .assistant-settings select selectbox { background:var(--paper); }
 .assistant-settings select option { color:var(--ink); }
 .assistant-settings select option:hover, .assistant-settings select option:checked,
 .assistant-settings #fast.enabled { background:var(--ink); color:var(--paper); }
-.assistant-settings #fast.unavailable { background:var(--field); color:var(--disabled); }
+.assistant-settings #fast.unavailable { background:transparent; color:var(--disabled); }
 .computer-use-panel .dot { background:var(--ink); }
 .computer-use-cursor #state { color:var(--muted); }
 .computer-use-cursor #tag.clicked { animation:0.15s linear 1 click; }

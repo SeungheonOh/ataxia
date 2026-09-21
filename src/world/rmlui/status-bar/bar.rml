@@ -1,27 +1,26 @@
 <rml><head><title>Ataxia status bar</title><style>
 body { margin:0; width:100%; height:100%; font-size:12dp; }
 div { display:block; box-sizing:border-box; }
-#bar { position:absolute; left:0; right:0; top:0; height:44dp; box-sizing:border-box;
- display:flex; align-items:center; gap:var(--gap); padding:5dp var(--inset) 6dp; border-top:1dp var(--ink); }
-button { display:block; box-sizing:border-box; height:32dp; line-height:var(--control-line); padding:0 var(--gap);
- text-align:center; }
+#bar { position:absolute; left:0; right:0; top:0; height:18dp; box-sizing:border-box;
+ display:flex; align-items:center; gap:0 var(--gap); padding:0; border-top:1dp var(--ink); }
+button { height:var(--control); }
 #home { flex-shrink:0; font-weight:bold; }
 #mark { display:none; }
 #brand { line-height:var(--control-line); }
-#context { display:flex; align-items:center; min-width:60dp; flex-shrink:1; }
-#group { max-width:285dp; overflow:hidden; white-space:nowrap; }
+#context { display:flex; align-items:center; min-width:0; flex:0 1 240dp; overflow:hidden; }
+#group { width:100%; min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
 .arrow { display:none; }
 #workspaces { display:none; }
-.workspace { width:30dp; height:32dp; line-height:var(--control-line); padding:0; }
+.workspace { width:30dp; height:var(--control); line-height:var(--control-line); padding:0; }
 .workspace.selected { font-weight:bold; }
 #selection, #focus-label, #apps, #power-note { display:none; }
 #focus { flex:1; min-width:0; overflow:hidden; white-space:nowrap; }
 #title { line-height:var(--control-line); overflow:hidden; white-space:nowrap; }
-#right { display:flex; align-items:center; gap:var(--gap); margin-left:auto; flex-shrink:0; }
-#audio, #clipboard { padding:0 var(--gap); }
-#media { display:none; max-width:180dp; overflow:hidden; white-space:nowrap; padding:0 8dp; }
-#power { padding:0 var(--gap); display:flex; align-items:center; gap:8dp; white-space:nowrap; }
-#battery { position:relative; width:22dp; height:12dp; padding:2dp; border:1dp var(--ink); }
+#right { display:flex; align-items:center; gap:0 var(--gap); margin-left:auto; flex-shrink:0; }
+#audio, #clipboard { padding:0; }
+#media { display:none; max-width:180dp; overflow:hidden; white-space:nowrap; padding:0; }
+#power { padding:0; display:flex; align-items:center; gap:8dp; white-space:nowrap; }
+#battery { position:relative; width:22dp; height:12dp; padding:0; border:1dp var(--ink); }
 #charge { height:100%; width:75%; }
 #battery-tip { position:absolute; right:-4dp; top:3dp; width:2dp; height:4dp; }
 #power-copy { line-height:var(--control-line); }
@@ -31,15 +30,17 @@ button { display:block; box-sizing:border-box; height:32dp; line-height:var(--co
 #bar.has-media #media { display:block; }
 #bar.compact { gap:8dp; }
 .compact #focus, .compact #date, #bar.compact #media { display:none; }
-#bar.narrow { gap:8dp; padding-left:8dp; padding-right:8dp; }
+#bar.narrow { gap:0 var(--gap); }
 .narrow #power-text { display:none; }
-.narrow #group { max-width:220dp; padding:0 var(--gap); }
-#bar.tiny { gap:4dp; padding-left:4dp; padding-right:4dp; }
-#bar.tiny #group { max-width:72dp; font-size:11dp; }
-#bar.tiny #right { gap:var(--unit); }
-#bar.tiny #assistant { padding:0 4dp; font-size:10dp; }
-#bar.tiny #home { padding:0 var(--gap); }
-#assistant { display:none; height:var(--control); line-height:var(--control-line); padding:0 8dp; font-size:11dp; }
+.narrow #context { flex-basis:220dp; }
+#bar.tiny { gap:0 var(--gap); padding:0; }
+#bar.tiny #context { flex-basis:72dp; }
+#bar.tiny #group { font-size:11dp; }
+#bar.tiny #right { gap:0 var(--gap); }
+#bar.tiny #assistant { padding:0; font-size:10dp; }
+#bar.tiny #home { padding:0; }
+#bar.tiny #assistant { max-width:64dp; overflow:hidden; text-overflow:ellipsis; }
+#assistant { display:none; font-size:11dp; }
 #bar.tiny #apps, #bar.tiny #clock, #bar.tiny #clipboard { display:none; }
 #bar.tiny #audio { max-width:38dp; overflow:hidden; white-space:nowrap; font-size:11dp; }
 </style><link type="text/rcss" href="../theme.rcss"/></head><body class="shell shell-bar">

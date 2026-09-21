@@ -5,7 +5,7 @@ exec(compile((Path(__file__).parent / 'rmlui-layout.py').read_text(), __file__, 
 for face in ['DejaVuSansMono.ttf', 'DejaVuSansMono-Bold.ttf', 'DejaVuSansMono-Oblique.ttf', 'DejaVuSansMono-BoldOblique.ttf']:
     ok(api('load_font', C.c_bool, C.c_char_p)(f'/usr/share/fonts/truetype/dejavu/{face}'.encode()))
 set_text=api('component_set_string',C.c_bool,P,C.c_char_p,C.c_char_p)
-for kind,width,height in [('menu',400,180),('menu',304,180),('power',340,210),('power',304,210),('power',304,160)]:
+for kind,width,height in [('menu',400,180),('menu',304,180),('power',340,148),('power',304,148),('power',304,100)]:
     bind_texture(0x0de1,tex);tex_image(0x0de1,0,0x1908,width,height,0,0x1908,0x1401,None)
     source=(root/f'src/world/rmlui/status-bar/{kind}.rml').read_bytes()
     c=create(measured_source(source,['brightness-up','sleep']),str(root/f'src/world/rmlui/status-bar/{kind}.rml').encode(),b'',width,height,1);ok(c);ok(attach(c,fbo))
@@ -24,8 +24,9 @@ for kind,width,height in [('menu',400,180),('menu',304,180),('power',340,210),('
             ok(api('component_register_callback',C.c_bool,P,C.c_char_p)(c,name))
         for name,value in [('percent','18%'),('state','On battery'),('estimate','About 1h 24m remaining'),('health','84% of design'),('cycles','139'),('source','Battery')]:
             ok(set_text(c,name.encode(),value.encode()))
-        for name,value in [('brightness-value','45%'),('brightness-note','Display backlight'),('sleep-note','Suspend to memory. Press the power button to wake.')]:
+        for name,value in [('brightness-value','45%'),('brightness-note','Display backlight'),('sleep-note','Suspend · power button wakes')]:
             ok(set_text(c,name.encode(),value.encode()))
+        ok(style(c,b'estimate',b'display',b'block'))
         ok(set_class(c,b'panel',b'low',True))
     for _ in range(30): time.sleep(.016);ok(render(c))
     pixels=(C.c_ubyte*(width*height*4))();bind_fbo(0x8d40,fbo);read(0,0,width,height,0x1908,0x1401,pixels)
@@ -44,7 +45,7 @@ for kind,width,height in [('menu',400,180),('menu',304,180),('power',340,210),('
         callback_name=api('component_callback_name',C.c_char_p,P,C.c_size_t)
         def click(x,y):
             ok(button(c,x,y,1,True));ok(button(c,x,y,1,False));ok(render(c))
-        if height==210:
+        if height==148:
             assert count_callbacks(c)==0,'model initialization must not issue a brightness command'
             up_x,up_y=box_center(element_box(c,'brightness-up',width,height))
             click(up_x,up_y)
@@ -72,7 +73,7 @@ for kind,width,height in [('menu',400,180),('menu',304,180),('power',340,210),('
         else:
             # A short output scrolls to the actual Sleep control.
             scroll=api('component_pointer_scroll',C.c_bool,P,F,F,F,F)
-            ok(scroll(c,width//2,120,0,3000))
+            ok(scroll(c,width//2,60,0,3000))
             for _ in range(35): time.sleep(.016);ok(render(c))
             pixels=(C.c_ubyte*(width*height*4))();read(0,0,width,height,0x1908,0x1401,pixels)
             scrolled=Image.frombytes('RGBA',(width,height),bytes(pixels)).transpose(Image.Transpose.FLIP_TOP_BOTTOM)

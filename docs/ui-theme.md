@@ -24,6 +24,10 @@ DejaVu Sans Mono faces once. The generic factory hosts independently styled apps
 - Single-line editable fields are 18 dp including their 1 dp frame.
   The status bar is one text line, 18 dp including its boundary. Size popup
   hosts with their contents; do not leave the old oversized empty containers.
+- Battery details use aligned label/value columns. Show estimates and error
+  explanations only when available. Media controls appear when a player exists.
+  Clipboard previews preserve line breaks; use a column beside the list, or
+  stack below it on narrow outputs. Empty results shrink to a single message.
 - Body text: 12–14 dp; panel headings: bold 14 dp. Avoid oversized greetings.
 - Inverse ink/paper communicates hover, focus and selection. Red indicates
   destructive actions or critical status. Agent colors identify sessions.

@@ -4,6 +4,14 @@
 (defun %power-model (popup name value)
   (cache-widget-value popup (list :model name) value
     (lambda (component) (ataxia.world.rmlui:set-rmlui-model component name value))))
+(defun %power-popup-height (popup)
+  ;; Size from cached presentation state; never poll the backend during layout.
+  (setf (gethash :preferred-height (widget-cache popup))
+        (+ 132d0
+           (if (equal "block" (gethash '("estimate" "display") (widget-cache popup))) 16d0 0d0)
+           (if (equal "block" (gethash '("note" "display") (widget-cache popup))) 32d0 0d0)
+           (if (equal "block" (gethash '("brightness-note" "display") (widget-cache popup))) 32d0 0d0)
+           (if (gethash :sleep-detail (widget-cache popup)) 32d0 0d0))))
 (defun %update-power-controls (popup service view)
   (let* ((backlight (getf view :backlight))
          (percent (or (shell-service-brightness-target service) (getf backlight :percent)))
@@ -21,15 +29,20 @@
     (set-widget-text popup "brightness-value" (if percent (format nil "~D%" percent) "Unavailable"))
     (set-widget-text popup "brightness-note"
                      (or (getf view :brightness-error)
-                         (if backlight "Display backlight" "No controllable display backlight")))
+                         (if backlight "" "No controllable display backlight")))
+    (set-widget-style popup "brightness-note" "display"
+                      (if (or (getf view :brightness-error) (null backlight)) "block" "none"))
+    (setf (gethash :sleep-detail (widget-cache popup))
+          (or (getf view :suspend-error) (not (eq capability :yes))))
     (set-widget-text popup "sleep" (if sleeping "Sleeping…" "Sleep"))
     (set-widget-text popup "sleep-note"
                      (or (getf view :suspend-error)
                          (case capability
-                           (:yes "Suspend to memory. Press the power button to wake.")
+                           (:yes "Suspend · power button wakes")
                            (:loading "Checking sleep availability…")
                            ((:no :challenge) "Sleep requires system authorization.")
-                           (otherwise "Sleep is unavailable on this system."))))))
+                           (otherwise "Sleep is unavailable on this system."))))
+    (%power-popup-height popup)))
 (defun %sync-power-controls (world service)
   (let ((view (%power-view (shell-service-power service))))
     (unless (getf view :brightness-pending) (setf (shell-service-brightness-target service) nil))

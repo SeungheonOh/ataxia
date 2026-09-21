@@ -17,9 +17,9 @@ boolean = api('model_boolean', C.c_bool, P, C.c_char_p, C.c_bool)
 cases = [
     ('rmlui/status-bar/bar', 18, ['home', 'group', 'assistant', 'audio', 'power']),
     ('rmlui/status-bar/menu', 180, ['close', 'overview', 'power', 'prev', 'next'] + [f'app{i}' for i in range(6)]),
-    ('rmlui/status-bar/media', 146, ['close', 'mute', 'player', 'previous', 'play', 'next']),
-    ('rmlui/status-bar/power', 210, ['close', 'brightness-down', 'brightness-up', 'sleep']),
-    ('rmlui/status-bar/clipboard', 196, ['close', 'prev', 'next', 'clear'] + [f'app{i}' for i in range(6)]),
+    ('rmlui/status-bar/media', 148, ['close', 'mute', 'player', 'previous', 'play', 'next']),
+    ('rmlui/status-bar/power', 132, ['close', 'brightness-down', 'brightness-up', 'sleep']),
+    ('rmlui/status-bar/clipboard', 180, ['close', 'prev', 'next', 'clear'] + [f'app{i}' for i in range(6)]),
     ('rmlui/status-bar/workspaces', 260, ['close', 'group0', 'group-prev', 'group-next', 'group-remove', 'workspace1', 'workspace-new', 'overview']),
     ('assistant/settings', 640, ['settings-close', 'fast', 'settings-done']),
     ('screencast/picker', 178, ['region', 'app0', 'app1', 'cancel', 'share']),
@@ -30,6 +30,7 @@ cases = [
 for name, height, ids in cases:
     for width in [280, 304, 480, 820]:
         if name == "screencast/picker": height = 178 if width < 400 else 146
+        if name == "rmlui/status-bar/clipboard": height = 228 if width < 480 else 180
         bind_texture(0x0de1, tex)
         tex_image(0x0de1, 0, 0x1908, width, height, 0, 0x1908, 0x1401, None)
         path = root / f'src/world/{name}.rml'
@@ -44,6 +45,14 @@ for name, height, ids in cases:
             ok(style(c, b'assistant', b'display', b'block'))
             ok(text(c, b'group', b'A very long project name / Workspace 123'))
             ok(text(c, b'power-text', b'100%'))
+        if name == 'rmlui/status-bar/media':
+            ok(set_class(c, b'panel', b'has-player', True))
+        if name == 'rmlui/status-bar/clipboard':
+            ok(set_class(c, b'panel', b'small', width < 480))
+            ok(style(c, b'empty', b'display', b'none'))
+            ok(text(c, b'preview', b'First line\nSecond line'))
+            for key in ['prev_disabled', 'next_disabled', 'clear_disabled']:
+                ok(boolean(c, key.encode(), False))
         if name == 'assistant/panel':
             ok(set_class(c, b'panel', b'small', width < 360))
             ok(style(c, b'controls', b'display', b'flex'))

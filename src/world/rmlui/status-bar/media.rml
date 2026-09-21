@@ -1,20 +1,35 @@
 <rml><head><title>Sound and media</title><style>
 body { margin:0; width:100%; height:100%; font-size:13dp; }
 div { display:block; box-sizing:border-box; }
-#panel { width:100%; height:100%; padding:0 var(--inset); border:var(--frame) var(--ink); display:flex; flex-direction:column; gap:var(--section); }
-#header { display:flex; align-items:center; justify-content:space-between; gap:0 var(--gap); height:var(--control); flex-shrink:0; }
+#panel { width:100%; height:100%; padding:0 var(--inset); border:var(--frame) var(--ink); display:flex; flex-direction:column; }
+#header, .row, #transport { display:flex; align-items:center; gap:0 var(--gap); }
+#header { height:var(--control); flex-shrink:0; }
 #title { font-size:var(--heading); font-weight:bold; }
+#close, #mute { margin-left:auto; }
 #content { flex:1; min-height:0; overflow-y:auto; }
-.row { display:flex; align-items:center; justify-content:space-between; gap:0 var(--gap); margin-bottom:0; }
-.label { font-weight:bold; }
-#volume { height:var(--field-height); flex:1; min-width:0; }
+.label { font-weight:bold; flex-shrink:0; }
+#volume-value { min-width:0; font-size:12dp; }
+#volume { display:block; width:100%; height:var(--field-height); }
 #volume slidertrack { margin-top:7dp; }
 #volume:disabled { opacity:0.4; }
 .hint { font-size:11dp; line-height:16dp; }
-#media-section { margin-top:0; }
-#player { width:100%; text-align:left; overflow:hidden; text-overflow:ellipsis; }
-#track { margin-top:0; font-weight:bold; font-size:14dp; max-height:48dp; overflow:hidden; }
-#artist { margin-top:0; max-height:32dp; overflow:hidden; }
-#transport { display:flex; flex-wrap:wrap; gap:0 var(--gap); margin:0; }
-#transport .button { flex:0 0 auto; }
-</style><link type="text/rcss" href="../theme.rcss"/></head><body class="shell shell-media" data-model="state"><div id="panel"><div id="header"><div id="title">Sound &amp; media</div><input id="close" class="button" type="button" value="Close"/></div><div id="content"><div class="row"><div class="label">Output volume</div><div id="volume-value">Unavailable</div></div><div class="row"><input id="volume" type="range" min="0" max="100" step="1" data-value="volume" data-attrif-disabled="audio_disabled"/><input id="mute" class="button" type="button" value="Mute" data-attrif-disabled="audio_disabled"/></div><div id="device" class="hint">Connecting to audio…</div><div id="media-section"><input id="player" class="button" type="button" value="No media player" data-attrif-disabled="player_disabled"/><div id="track">Nothing playing</div><div id="artist"/><div id="transport"><input id="previous" class="button" type="button" value="Previous" data-attrif-disabled="previous_disabled"/><input id="play" class="button" type="button" value="Play" data-attrif-disabled="play_disabled"/><input id="next" class="button" type="button" value="Next" data-attrif-disabled="next_disabled"/></div><div id="playback" class="hint">Waiting for a player</div></div></div></div></body></rml>
+#device, #artist { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+#media-section { display:none; }
+.has-player #media-section { display:block; }
+.has-player #empty { display:none; }
+#player-row { gap:0 var(--column-gap); }
+#player { flex:1; min-width:0; flex-shrink:1; text-align:left; overflow:hidden; text-overflow:ellipsis; }
+#track { font-weight:bold; max-height:32dp; overflow:hidden; word-break:break-word; }
+#artist { font-size:12dp; }
+#transport { flex-wrap:wrap; }
+#playback { margin-left:auto; max-width:100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+</style><link type="text/rcss" href="../theme.rcss"/></head><body class="shell shell-media" data-model="state"><div id="panel">
+<div id="header"><div id="title">Sound &amp; media</div><input id="close" class="button" type="button" value="Close"/></div>
+<div id="content"><div class="row"><div class="label">Volume</div><div id="volume-value">Unavailable</div><input id="mute" class="button" type="button" value="Mute" data-attrif-disabled="audio_disabled"/></div>
+<input id="volume" type="range" min="0" max="100" step="1" data-value="volume" data-attrif-disabled="audio_disabled"/>
+<div id="device" class="hint">Connecting to audio…</div>
+<div id="empty" class="hint">No media playing</div>
+<div id="media-section"><div id="player-row" class="row"><div class="label">Player</div><input id="player" class="button" type="button" value="No media player" data-attrif-disabled="player_disabled"/></div>
+<div id="track"/><div id="artist"/>
+<div id="transport"><input id="previous" class="button" type="button" value="Previous" data-attrif-disabled="previous_disabled"/><input id="play" class="button" type="button" value="Play" data-attrif-disabled="play_disabled"/><input id="next" class="button" type="button" value="Next" data-attrif-disabled="next_disabled"/><div id="playback" class="hint"/></div>
+</div></div></div></body></rml>

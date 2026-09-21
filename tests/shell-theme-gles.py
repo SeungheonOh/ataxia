@@ -13,8 +13,8 @@ focus = api('component_focus', C.c_bool, P, C.c_bool)
 model = api('model_string', C.c_bool, P, C.c_char_p, C.c_char_p)
 cases = [
     ('rmlui/status-bar/bar', 1280, 18), ('rmlui/status-bar/menu', 400, 180),
-    ('rmlui/status-bar/power', 340, 210), ('rmlui/status-bar/media', 380, 146),
-    ('rmlui/status-bar/clipboard', 440, 196), ('rmlui/status-bar/workspaces', 560, 260),
+    ('rmlui/status-bar/power', 340, 132), ('rmlui/status-bar/media', 380, 84),
+    ('rmlui/status-bar/clipboard', 560, 180), ('rmlui/status-bar/workspaces', 560, 260),
     ('rmlui/status-bar/osd', 340, 42), ('assistant/panel', 480, 760),
     ('assistant/settings', 800, 600), ('computer-use/panel', 380, 98),
     ('computer-use/cursor', 180, 34), ('screencast/picker', 540, 178),
@@ -25,6 +25,7 @@ for name, normal_width, normal_height in cases:
     for narrow, scale in [(False, 1), (True, 1), (False, 1.5), (False, 2)]:
         width = min(304, normal_width) if narrow else normal_width
         height = (178 if narrow else 146) if name == "screencast/picker" else normal_height
+        if name == "rmlui/status-bar/clipboard": height = 228 if narrow else 180
         pw, ph = round(width * scale), round(height * scale)
         bind_texture(0x0de1, tex)
         tex_image(0x0de1, 0, 0x1908, pw, ph, 0, 0x1908, 0x1401, None)
@@ -56,6 +57,8 @@ for name, normal_width, normal_height in cases:
                                 (b'width', f'{width-64}dp'.encode()), (b'height', b'160dp')]:
                 ok(style(c, b'rectangle', prop, value))
         if name == 'rmlui/status-bar/clipboard':
+            ok(set_class(c, b'panel', b'small', narrow))
+            ok(set_text(c, b'preview', b'A thought worth keeping.\nA second line to inspect before copying.'))
             for i, text in enumerate(['A thought worth keeping.', 'https://interlisp.org', '(hello world)']):
                 ok(set_text(c, f'app{i}'.encode(), text.encode()))
             for i in range(3, 6): ok(style(c, f'app{i}'.encode(), b'display', b'none'))

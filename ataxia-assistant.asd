@@ -1,12 +1,12 @@
 (asdf:defsystem "ataxia-assistant"
   :description "World-owned Codex assistant, native desktop tools and optional talk mode"
   :version "0.1.0"
-  :depends-on ("ataxia-computer-use" "ataxia-rmlui/status-bar")
+  :depends-on ("ataxia-agent" "ataxia-rmlui/status-bar")
   :serial t
   :components ((:module "src/world/assistant"
                 :serial t
                 :components ((:file "packages") (:static-file "instructions.md")
-                             (:file "model") (:file "models") (:file "voice-host") (:file "protocol") (:file "worker") (:file "layout")
+                             (:file "model") (:file "models") (:file "voice-host") (:file "protocol") (:file "worker")
                              (:file "tools") (:file "lisp") (:file "preview") (:file "voice")
                              (:file "format") (:file "ui") (:file "lifecycle")
                              (:file "service")))))

@@ -63,7 +63,7 @@
                                (assert (eq :ready (ataxia.assistant::assistant-controller-connection controller)))
                                (assert (= 1 (hash-table-count (ataxia.assistant::assistant-controller-seen-calls controller))))
                                (assert (search "<b>Safe text</b>" (getf (car (last (ataxia.assistant::assistant-controller-messages controller))) :text)))
-                               (assert (eq :paused (ataxia.computer-use::computer-session-state (ataxia.assistant::assistant-controller-session controller))))
+                               (assert (null (ataxia.assistant::assistant-controller-session controller)))
                                (assert (= 2 (length (ataxia.assistant::assistant-controller-models controller))))
                                (ataxia.assistant::%assistant-select-model controller "fixture-fast")
                                (ataxia.assistant::%assistant-submit controller "MODEL:fast")))

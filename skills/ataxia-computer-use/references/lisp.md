@@ -4,7 +4,7 @@ From the Ataxia checkout, `scripts/ataxia-eval --world` evaluates on the active
 World's owner thread, with lexical `world` and `kernel`. SLY normally listens
 on localhost:4005; `--port` selects another compositor. The embedded assistant
 uses `ataxia_lisp` with `mode:"inspect"` and lexical `world` for the same work.
-It needs no external SLY listener, CUA connection or input seat.
+It needs no external SLY listener. Pure World work allocates no input seat.
 
 ## Inspect only what matters
 
@@ -89,6 +89,42 @@ partial changes before failing; inspect current state before deciding what to
 do next, never blindly replay. Keep copied data and stable IDs, not live handles
 across calls. The CLI supports stdin and `--file` to avoid shell quoting errors.
 
-SLY exposes compositor objects, not the contents of client processes. Use CUA's
-window-local accessibility/input/capture for native apps, or its browser adapter
-for Chromium tabs. Do not pan the user's camera merely to read an app.
+## Application contents
+
+The portable `ataxia-agent` system supplies these functions on any desktop World.
+Use **worker mode**, with lexical `agent`, and a stable application window ID:
+
+| Function | Arguments after `agent window` |
+| --- | --- |
+| `ataxia.agent:capture-window` | optional `:settle` in seconds, default 0.05 |
+| `ataxia.agent:click` | `x y`, optional `:button :left/:right/:middle` |
+| `ataxia.agent:move-pointer` | `x y`, optional `:duration` in seconds |
+| `ataxia.agent:button` | `:left/:right/:middle` and `:down/:up/:click` |
+| `ataxia.agent:press-key` | XKB base key string, optional `:modifiers` list and `:state :tap/:down/:up` |
+| `ataxia.agent:type-text` | string, up to 256 characters |
+| `ataxia.agent:paste` | string, up to 16,000 characters; optional `:format :text/:md/:html` |
+| `ataxia.agent:scroll` | `:x`/`:y` scroll deltas at the agent pointer |
+
+Capture returns a plist with PNG `:path`, pixel and coordinate dimensions,
+window ID and coordinate-space metadata. It renders that window and its popups
+independently of occlusion, camera pan, zoom or rotation. The embedded tool emits
+up to four captures per call in order; the CLI prints paths for the image-viewing
+tool. In Codex code mode the embedded tool's image result is a string with data
+URLs and JSON metadata, not an MCP content object. Emit each matched PNG URL with
+`image(url)` and print only the remaining metadata. Reuse the existing result;
+do not rerun an action because its image was not forwarded. Native input returns T and performs no automatic capture or inventory.
+
+Use `"n" :modifiers '("Control_L")` for Ctrl+N, `"Return"` for Enter. For a drag,
+move, press `:down`, move to the destination, release `:up`. Keep held input short;
+errors and human takeover release it. Paste uses the agent clipboard and preserves
+the user's clipboard. These operations preserve human focus and monitor cameras.
+
+External SLY forms bind `agent` to the `--agent` name (default `SLY`). Choose a
+separate stable name (up to 34 characters) for independent tasks. The embedded host binds its task
+object instead. `ataxia.agent:disconnect` takes only `agent` and releases native
+resources. A closed or paused name is not silently reconnected. Ordinary World
+inspection needs no named input session.
+
+This interface exposes compositor objects and native window input/capture. It
+has no browser DOM or application accessibility-tree API. Browser windows can
+be operated through their screenshots, keyboard commands and pointer input.

@@ -14,6 +14,24 @@
   (let* ((text (assistant-output-text stream)) (newline (position #\Newline text :from-end t)))
     (- (length text) (if newline (1+ newline) 0))))
 
+(defmethod ataxia.agent:call-with-world ((agent assistant-controller) function)
+  (%assistant-owner agent
+    (lambda ()
+      (%assistant-require-task agent)
+      (funcall function (assistant-controller-world agent)))))
+
+(defmethod ataxia.agent:input-session ((agent assistant-controller) world)
+  (declare (ignore world))
+  (%assistant-ensure-session agent))
+
+(defmethod ataxia.agent:disconnect ((agent assistant-controller))
+  (ataxia.agent:call-with-world agent
+    (lambda (world)
+      (declare (ignore world))
+      (when (assistant-controller-session agent)
+        (cu:close-session (assistant-controller-session agent) "Lisp agent disconnected"))))
+  t)
+
 (defun %assistant-evaluate-lisp (controller arguments)
   ;; The dispatcher checks the task before compilation; check again on the
   ;; owner before executing a prepared form in case the user paused meanwhile.
@@ -23,6 +41,10 @@
          (*read-eval* nil)
          (*default-pathname-defaults* (pathname (assistant-controller-project controller)))
          (output (make-instance 'assistant-output))
+         (images nil)
+         (ataxia.agent::*image-sink* (lambda (image)
+                                      (when (>= (length images) 4) (error "Return at most four captures per call."))
+                                      (push (list* :bytes (%assistant-image-bytes image) (copy-list image)) images)))
          (*standard-input* (make-string-input-stream ""))
          (*standard-output* output) (*error-output* output) (*trace-output* output)
          (*query-io* (make-two-way-stream *standard-input* output))
@@ -38,11 +60,11 @@
                        (unless (eq eof (read input nil eof)) (error "Use PROGN for multiple Lisp forms."))
                        form)))
              ;; WORLD is lexical and supplied only for short owner-thread work.
-             (function (compile nil `(lambda (cl-user::world)
-                                       (declare (ignorable cl-user::world)) ,form)))
+             (function (compile nil `(lambda (cl-user::world cl-user::agent)
+                                       (declare (ignorable cl-user::world cl-user::agent)) ,form)))
              (result
                (if (equal mode "worker")
-                   (multiple-value-list (funcall function nil))
+                   (multiple-value-list (funcall function nil controller))
                    (%assistant-owner controller
                      (lambda ()
                        (%assistant-require-task controller)
@@ -55,7 +77,7 @@
                                  (*print-length* 64) (*print-level* 8) (*print-circle* t) (*print-pretty* nil))
                             (sb-ext:with-timeout .25d0
                              (let ((values (multiple-value-list
-                                            (funcall function (assistant-controller-world controller)))))
+                                            (funcall function (assistant-controller-world controller) controller))))
                                (when (equal mode "apply")
                                  (refresh-world (assistant-controller-world controller)))
                                ;; Print while the owner still holds the objects.
@@ -68,4 +90,5 @@
           (setf result nil))
         (dolist (value result) (write value :stream output) (terpri output))
         (list :ok t :output (copy-seq (assistant-output-text output))
-              :truncated (if (assistant-output-truncated output) t :false))))))
+              :truncated (if (assistant-output-truncated output) t :false)
+              :images (nreverse images))))))

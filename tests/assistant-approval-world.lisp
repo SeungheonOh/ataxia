@@ -39,7 +39,7 @@
                                (assert (= 1 (ataxia.assistant::assistant-controller-tool-count controller)))
                                (assert (= 1 (hash-table-count (ataxia.assistant::assistant-controller-seen-calls controller))))
                                (assert (search "<b>Safe text</b>" (getf (car (last (ataxia.assistant::assistant-controller-messages controller))) :text)))
-                               (assert (eq :paused (ataxia.computer-use::computer-session-state (ataxia.assistant::assistant-controller-session controller))))
+                               (assert (null (ataxia.assistant::assistant-controller-session controller)))
                                (ataxia.assistant::%assistant-toggle-talk controller)))
                       (wait-for (lambda () (and (eq :off (ataxia.assistant::assistant-controller-microphone controller))
                                                 (search "Voice unavailable" (ataxia.assistant::assistant-controller-activity controller)))))

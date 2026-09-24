@@ -71,7 +71,7 @@ def parse_sexp(text, start=0):
     return parse(start)
 
 
-def evaluation_wrapper(source):
+def evaluation_wrapper(source, agent="SLY"):
     return f"""
 (handler-case
     (let ((source {lisp_string(source)})
@@ -86,13 +86,15 @@ def evaluation_wrapper(source):
               (list :ataxia-eval-ok
                     (mapcar #'prin1-to-string result-values))))
           (setf position next-position
-                result-values (multiple-value-list (eval form))))))
+                result-values (multiple-value-list
+                                (eval `(let ((,(intern "AGENT") ,{lisp_string(agent)}))
+                                         (declare (ignorable ,(intern "AGENT"))) ,form)))))))
   (serious-condition (condition)
     (list :ataxia-eval-error (princ-to-string condition))))
 """.strip()
 
 
-def world_wrapper(source, refresh=False, generation=None):
+def world_wrapper(source, refresh=False, generation=None, agent="SLY"):
     """Compile on SLY's worker; execute and print values during one owner turn."""
     return f"""
 (handler-case
@@ -103,7 +105,8 @@ def world_wrapper(source, refresh=False, generation=None):
                           until (eq form eof) collect form)))
            (function (compile nil `(lambda (,(intern "WORLD") ,(intern "KERNEL"))
                                      (declare (ignorable ,(intern "WORLD") ,(intern "KERNEL")))
-                                     ,@forms)))
+                                     (let ((,(intern "AGENT") ,{lisp_string(agent)}))
+                                       (declare (ignorable ,(intern "AGENT"))) ,@forms))))
            (reply
              (ataxia.sly-control:agent-inspect
                (lambda (kernel world)
@@ -131,8 +134,8 @@ def world_wrapper(source, refresh=False, generation=None):
 """.strip()
 
 
-def evaluate(host, port, package, source, timeout, world=False, refresh=False, generation=None):
-    wrapper = world_wrapper(source, refresh, generation) if world else evaluation_wrapper(source)
+def evaluate(host, port, package, source, timeout, world=False, refresh=False, generation=None, agent="SLY"):
+    wrapper = world_wrapper(source, refresh, generation, agent) if world else evaluation_wrapper(source, agent)
     request = (
         "(:emacs-rex "
         f"(slynk:eval-and-grab-output {lisp_string(wrapper)}) "
@@ -186,6 +189,7 @@ def main():
     parser.add_argument("--port", type=int, default=4005)
     parser.add_argument("--package", default="COMMON-LISP-USER")
     parser.add_argument("--timeout", type=float, default=30.0)
+    parser.add_argument("--agent", default="SLY", help="stable name for this task's Lisp input resources")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--world", action="store_true",
                       help="bind WORLD and KERNEL on the owner thread (250 ms budget)")
@@ -211,6 +215,7 @@ def main():
             arguments.world or arguments.apply,
             arguments.apply,
             arguments.generation,
+            arguments.agent,
         )
         values = (
             result[1]

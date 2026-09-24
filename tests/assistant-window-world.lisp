@@ -1,4 +1,4 @@
-;;;; Exercise the public window tool against real Wayland clients.
+;;;; Exercise the Lisp World protocol against real Wayland clients.
 (load (merge-pathnames "support.lisp" *load-truename*))
 (asdf:load-system "ataxia-assistant/metaworld")
 (in-package #:ataxia.infinite-world)
@@ -9,7 +9,12 @@
   (labels ((owner (f)
              (ataxia.sly-control:agent-inspect (lambda (k w) (declare (ignore k w)) (funcall f)) :timeout 5d0))
            (action (id op)
-             (ataxia.assistant::%assistant-run-tool controller "ataxia_window" (ataxia.assistant::%assistant-object "window" id "action" op)))
+             (let* ((*read-eval* nil)
+                    (result (ataxia.assistant::%assistant-run-tool controller "ataxia_lisp"
+                              (ataxia.assistant::%assistant-object "mode" "inspect" "code"
+                                (format nil "(progn (ataxia.world:control-world-window world (or (ataxia.world:find-world-window world ~S) (error ~S)) ~S (first (ataxia.world:world-outputs world))) (ataxia.world:world-desktop-state world))"
+                                        id "Window disappeared" (intern (string-upcase op) :keyword))))))
+               (list :ok t :desktop (read-from-string (getf result :output)))))
            (rejects (f)
              (assert (handler-case (progn (funcall f) nil) (error () t))))
            (window (id)
@@ -53,16 +58,11 @@
                           (owner (lambda ()
                                    (ataxia.assistant::%assistant-start-task controller)
                                    (%focus-target world (first (%seat-states world)) (window other-id))))
-                          ;; The viewport tool uses shared CUA revisions and session.
-                          (let* ((arguments
-                                   (owner (lambda ()
-                                            (ataxia.assistant::%assistant-object
-                                             "output" (ataxia.kernel:object-id (first (ataxia.world:world-outputs world)))
-                                             "action" "set" "x" -2000 "y" 500 "zoom" .75d0 "rotation" .2d0
-                                             "revision" (ataxia.assistant::%assistant-layout-revision controller)))))
-                                 (result (ataxia.assistant::%assistant-run-tool controller "ataxia_viewport" arguments)))
-                            (assert (equalp #(-2000d0 500d0 .75d0 .2d0) (getf (aref (getf (getf result :desktop) :outputs) 0) :camera)))
-                            (rejects (lambda () (ataxia.assistant::%assistant-run-tool controller "ataxia_viewport" arguments)))
+                          ;; Direct Lisp names the output and preserves human focus.
+                          (let* ((result (ataxia.assistant::%assistant-run-tool controller "ataxia_lisp"
+                                           (ataxia.assistant::%assistant-object "mode" "inspect" "code"
+                                             "(progn (ataxia.world:navigate-world-viewport world (first (ataxia.world:world-outputs world)) :set :x -2000 :y 500 :zoom .75d0 :rotation .2d0) (getf (aref (getf (ataxia.world:world-desktop-state world) :outputs) 0) :camera))"))))
+                            (assert (equalp #(-2000d0 500d0 .75d0 .2d0) (read-from-string (getf result :output))))
                             (owner (lambda ()
                                      (assert (eq (window other-id) (%canvas-seat-focused (first (%seat-states world))))))))
                           ;; Minimized windows stay out of both tilers after another layout pass.
@@ -102,15 +102,6 @@
                               (assert (eq :false (getf state :maximized))))
                             (action id "restore")
                             (owner (lambda () (assert (equalp geometry (%meta-object-geometry (window id)))))))
-                          ;; Window controls invalidate the previously observed layout revision.
-                          (let ((arguments (owner (lambda ()
-                                             (ataxia.assistant::%assistant-object "revision" (ataxia.assistant::%assistant-layout-revision controller)
-                                               "operations" (vector (ataxia.assistant::%assistant-object "op" "configure-group"
-                                                                      "group" (subworld-id (first (metaworld-subworlds world)))
-                                                                      "name" "Stale arrangement")))))))
-                            (action id "minimize")
-                            (rejects (lambda () (ataxia.assistant::%assistant-run-tool controller "ataxia_arrange" arguments)))
-                            (assert (eq :false (getf (snapshot-window (action id "restore") id) :minimized))))
                           ;; The close request reaches the real client, which exits normally.
                           (let ((result (action id "close")))
                             (assert (eq t (getf result :ok))))
@@ -120,7 +111,7 @@
                           (assert (uiop:process-alive-p (ataxia.assistant::assistant-preview-process other)))
                           (rejects (lambda () (action id "close")))
                           (assert (uiop:process-alive-p (ataxia.assistant::assistant-preview-process other)))
-                          (format t "PASS: native window controls, viewport tool and revisions, both tilers, focus preservation, full access and stale revisions/IDs.~%")
+                          (format t "PASS: Lisp window controls and viewport movement, both tilers, focus preservation, full access and stale IDs.~%")
                           (setf done t))
                       (error (cause) (setf failure cause done t))))
                   :name "Assistant window controls test"))

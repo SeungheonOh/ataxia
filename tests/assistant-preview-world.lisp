@@ -35,10 +35,8 @@
                              (copy (merge-pathnames "before.png" project)))
                         (uiop:copy-file before copy)
                         (uiop:copy-file before (asdf:system-relative-pathname "ataxia-assistant" "build/assistant-preview-before.png"))
-                        (let* ((clicked (ataxia.assistant::%assistant-run-tool controller "ataxia_act"
-                                          (ataxia.assistant::%assistant-object "actions" (vector (ataxia.assistant::%assistant-object "op" "move" "x" 80 "y" 50)
-                                                                                (ataxia.assistant::%assistant-object "op" "button" "button" "left" "state" "click")))))
-                               (after (getf (getf clicked :image) :path)))
+                        (ataxia.agent:click controller (getf result :window) 80 50)
+                        (let* ((after (getf (ataxia.agent:capture-window controller (getf result :window)) :path)))
                           (assert after)
                           (uiop:copy-file after (asdf:system-relative-pathname "ataxia-assistant" "build/assistant-preview-after.png"))
                           (assert (not (equalp (bytes copy) (bytes after))))))
@@ -50,35 +48,24 @@
                       (let ((updated (ataxia.assistant::%assistant-preview-update controller (ataxia.assistant::%assistant-object "preview" id "path" (namestring (merge-pathnames "app.rml" project))))))
                         (assert (= 2 (getf updated :revision))) (assert (getf updated :image)))
                       ;; The preview and updates above use an absolute file outside cwd.
-                      ;; Animated packing must not invalidate its own resulting revision.
-                      (let ((revision nil) (group nil))
-                        (owner (lambda ()
-                          (let ((applied (ataxia.assistant::%assistant-desktop-action controller "arrange"
-                                           (ataxia.assistant::%assistant-object "revision" (ataxia.assistant::%assistant-layout-revision controller)
-                                             "operations" (vector
-                                               (ataxia.assistant::%assistant-object "op" "create-group" "ref" "test" "name" "Test" "policy" "master" "x" 0 "y" 0)
-                                               (ataxia.assistant::%assistant-object "op" "place-window" "window" (getf result :window) "group" "test" "workspace" 2))))))
-                            (setf revision (getf (getf applied :desktop) :revision)
-                                  group (object-subworld world (ataxia.world:find-world-window world (getf result :window)))))))
-                        (sleep 1d0)
-                        (owner (lambda ()
-                          (assert (= revision (ataxia.assistant::%assistant-layout-revision controller)))
-                          ;; Removing an occupied group preserves the client on the canvas.
-                          (%meta-toggle-fullscreen world (ataxia.world:find-world-window world (getf result :window)) t)
-                          (enter-subworld world group (ataxia.assistant::assistant-controller-seat controller))
-                          (ataxia.assistant::%assistant-desktop-action controller "arrange"
-                            (ataxia.assistant::%assistant-object "revision" (ataxia.assistant::%assistant-layout-revision controller)
-                              "operations" (vector (ataxia.assistant::%assistant-object "op" "remove-group" "group" (subworld-id group)))))
+                      ;; Removing an occupied layout container preserves its client.
+                      (owner (lambda ()
+                        (ataxia.world:apply-world-layout world
+                          (vector (ataxia.assistant::%assistant-object "op" "create-group" "ref" "test" "name" "Test" "policy" "master" "x" 0 "y" 0)
+                                  (ataxia.assistant::%assistant-object "op" "place-window" "window" (getf result :window) "group" "test" "workspace" 2)))
+                        (let ((group (object-subworld world (ataxia.world:find-world-window world (getf result :window)))))
+                          (ataxia.world:apply-world-layout world
+                            (vector (ataxia.assistant::%assistant-object "op" "remove-group" "group" (subworld-id group))))
                           (assert (not (member group (metaworld-subworlds world))))
-                          (assert (null (object-subworld world (ataxia.world:find-world-window world (getf result :window)))))))
-                        (assert (uiop:process-alive-p (ataxia.assistant::assistant-preview-process preview))))
+                          (assert (null (object-subworld world (ataxia.world:find-world-window world (getf result :window))))))))
+                      (assert (uiop:process-alive-p (ataxia.assistant::assistant-preview-process preview)))
                       (owner (lambda () (ataxia.assistant::%assistant-disable world)))
                       (setf done t))
                   (error (cause) (setf failure cause done t)))) :name "Preview integration checks"))
            (ataxia.kernel:run-kernel kernel :run-for 20d0)
            (assert done)
            (when failure (error failure))
-           (format t "PASS: native preview interaction, update recovery, direct animated layout and stable revision, occupied sub-world deletion without closing the client, cleanup.~%"))
+           (format t "PASS: native preview interaction, update recovery, direct Lisp layout, occupied sub-world deletion without closing the client, cleanup.~%"))
       (when control (ataxia.sly-control:stop-sly-control control))
       (ataxia.kernel:destroy-kernel kernel :assistant-preview-test-complete)
       (when (and test-thread (sb-thread:thread-alive-p test-thread)) (sb-thread:terminate-thread test-thread))

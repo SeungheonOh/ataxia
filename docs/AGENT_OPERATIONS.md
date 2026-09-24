@@ -47,7 +47,8 @@ on the owner thread, and prints returned values there. Batch related operations
 in one form and return a compact result. This needs no CUA seat, desktop revision
 fingerprint, screenshot, model round trip per action or background polling.
 See the [Lisp operation examples](../skills/ataxia-computer-use/references/lisp.md).
-Application contents still require native input/accessibility or browser tools.
+Application contents use the `ataxia.agent` functions in worker mode; the embedded
+Lisp tool emits captures, and the SLY helper prints PNG paths for viewing.
 
 `--world` executes for at most 250 ms and adds no refresh beyond the World APIs'
 own damage. `--apply` also requests a full refresh for raw live changes. Both

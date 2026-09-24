@@ -20,7 +20,7 @@
     (let ((reply (ataxia.computer-use.wire:read-line-bytes output 4096)))
       (unless (equal reply "OK") (error "~A" (if (> (length reply) 6) (subseq reply 6) reply))))))
 (defun %assistant-preview-image (controller preview)
-  (let* ((result (%assistant-cu-call controller
+  (let* ((result (%assistant-native-request controller
                   (list :op "batch" :actions
                     (vector (list :op "wait-window" :app-id (assistant-preview-app-id preview) :timeout 10d0 :focus t)
                             (list :op "wait-stable" :timeout 3d0 :settle .2d0)) :capture t)))

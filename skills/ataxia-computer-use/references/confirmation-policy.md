@@ -2,7 +2,7 @@
 
 This policy defines when the model should request confirmation for consequential computer/browser actions. It only applies to actions that would interact with a web browser or computer UI. It does not apply to terminal or shell commands, and any other tools such as MCP connectors.
 
-The `cua_repl` tool and its CLI transport operate UI, so their UI actions are covered. Higher-priority instructions and the user's explicit task scope continue to apply. The policy below preserves the confirmation modes supplied for this interface.
+The Lisp application functions operate UI, so their UI actions are covered regardless of transport. Higher-priority instructions and the user's explicit task scope continue to apply. The policy below preserves the confirmation modes supplied for this interface.
 
 ## Definitions
 

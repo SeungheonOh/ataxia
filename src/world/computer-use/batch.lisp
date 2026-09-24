@@ -180,7 +180,7 @@
      ;; requests idle output frames; frame callbacks also work offscreen.
      (sleep (min .025d0 (max .001d0 (- until (monotonic-time))))))))
 
-(defun %computer-finish-batch (batch)
+(defun %computer-finish-batch (batch &key (observe t))
   (let ((deadline (+ (monotonic-time) 30d0)) (failure nil) (image nil) (reply nil))
     (unwind-protect
          (handler-case
@@ -237,7 +237,8 @@
                           (append failure (list :failed-action (when (< (computer-batch-completed batch)
                                                                         (length (computer-batch-actions batch)))
                                                                  (1+ (computer-batch-completed batch)))))
-                          (append (list :windows (%computer-windows session)) (when image (list :image image)))))))
+                          (append (when observe (list :windows (%computer-windows session)))
+                                  (when image (list :image image)))))))
                  :expected-generation (computer-batch-generation batch) :timeout 5d0))
         (error (cause)
           (setf reply (list :ok :false :error "batch-interrupted" :message (princ-to-string cause)

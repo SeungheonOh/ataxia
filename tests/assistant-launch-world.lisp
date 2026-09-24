@@ -11,7 +11,9 @@
        (real (equal "1" (uiop:getenv "ATAXIA_TEST_CODEX")))
        (controller nil) (control nil) (worker nil) (done nil) (failure nil))
   (labels ((owner (f) (ataxia.sly-control:agent-inspect (lambda (k w) (declare (ignore k w)) (funcall f)) :timeout 5d0))
-           (observe () (ataxia.assistant::%assistant-run-tool controller "ataxia_observe" (ataxia.assistant::%assistant-object)))
+           (evaluate (code mode)
+             (ataxia.assistant::%assistant-run-tool controller "ataxia_lisp"
+               (ataxia.assistant::%assistant-object "code" code "mode" mode)))
            (fixture-window () (find "ataxia.agent-test" (ataxia.world:world-windows world)
                                      :key (lambda (window) (ataxia.kernel:application-app-id (canvas-window-application window))) :test #'equal)))
     (unwind-protect
@@ -41,16 +43,11 @@
                                       do (return)
                                     do (sleep .1d0)
                                     finally (error "Real model launch timed out."))
-                              (let ((inventory (observe)))
-                                (assert (null (getf inventory :image)))
-                                (assert (find "firefox_fixture" (getf inventory :applications) :key (lambda (app) (getf app :id)) :test #'equal))
-                                (let ((result
-                                        (ataxia.assistant::%assistant-run-tool controller "ataxia_act"
-                                          (ataxia.assistant::%assistant-object "capture" :false "actions"
-                                            (vector (ataxia.assistant::%assistant-object "op" "launch" "application" "firefox_fixture")
-                                                    (ataxia.assistant::%assistant-object "op" "wait-window" "app-id" "ataxia.agent-test" "timeout" 10))))))
-                                  (assert (eq t (getf result :ok)))
-                                  (assert (= 2 (getf result :completed))))))
+                              (progn
+                                (assert (search "firefox_fixture" (getf (evaluate "(ataxia.world:world-application-catalog world (first (ataxia.world:world-outputs world)))" "inspect") :output)))
+                                (evaluate "(ataxia.world:launch-world-application world (first (ataxia.world:world-outputs world)) \"firefox_fixture\")" "inspect")
+                                (loop repeat 100 until (owner #'fixture-window) do (sleep .05d0)
+                                      finally (assert (owner #'fixture-window)))))
                           (owner (lambda ()
                                    (when real
                                      (assert (eq :done (ataxia.assistant::assistant-controller-task controller)) ()
@@ -60,11 +57,10 @@
                                    (assert (= 1 (length (ataxia.world:world-windows world))))
                                    (assert (fixture-window))))
                           (unless real
+                            (assert (null (ataxia.assistant::assistant-controller-session controller)))
                             (let* ((id (owner (lambda () (ataxia.kernel:object-id (canvas-window-application (fixture-window))))))
-                                   (snapshot (ataxia.assistant::%assistant-run-tool controller "ataxia_observe" (ataxia.assistant::%assistant-object "window" id))))
-                              (assert (getf snapshot :image))
-                              ;; Discovery remains lightweight even after selecting an app.
-                              (assert (null (getf (observe) :image)))))
+                                   (snapshot (evaluate (format nil "(ataxia.agent:capture-window agent ~D)" id) "worker")))
+                              (assert (= 1 (length (getf snapshot :images))))))
                           (format t "PASS: ~A discovered Firefox in the catalog, launched once, and verified its mapped native window.~%"
                                   (if real "Real Codex" "Assistant tools"))
                           (setf done t))

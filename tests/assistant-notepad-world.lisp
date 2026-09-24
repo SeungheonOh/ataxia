@@ -37,17 +37,27 @@
                           (assert (and (integerp (getf first :pid)) (plusp (getf first :pid))))
                           (assert (/= (getf first :pid) (getf second :pid) (sb-posix:getpid)))
                           (assert (/= (getf first :window) (getf second :window)))
-                          (ataxia.assistant::%assistant-run-tool controller "ataxia_observe" (ataxia.assistant::%assistant-object "window" (getf first :window)))
-                          (let* ((typed (ataxia.assistant::%assistant-run-tool controller "ataxia_act"
-                                          (ataxia.assistant::%assistant-object "actions"
-                                            (vector (ataxia.assistant::%assistant-object "op" "move" "x" 60 "y" 125)
-                                                    (ataxia.assistant::%assistant-object "op" "button" "button" "left" "state" "click")
-                                                    (ataxia.assistant::%assistant-object "op" "type" "text" (format nil "First line~%Second line"))))))
-                                 (image (getf (getf typed :image) :path)))
-                            (assert (not (equalp before (bytes image))))
-                            (uiop:copy-file image (asdf:system-relative-pathname "ataxia-assistant" "build/assistant-notepad-wayland.png")))
-                          (ataxia.assistant::%assistant-run-tool controller "ataxia_window"
-                            (ataxia.assistant::%assistant-object "window" (getf first :window) "action" "close"))
+                          ;; Captures survive the backend replacing its temporary PNG.
+                          (let* ((typed (ataxia.assistant::%assistant-run-tool controller "ataxia_lisp"
+                                          (ataxia.assistant::%assistant-object "mode" "worker" "code"
+                                            (format nil "(progn (ataxia.agent:capture-window agent ~D) (ataxia.agent:click agent ~D 60 125) (ataxia.agent:type-text agent ~D ~S) (ataxia.agent:capture-window agent ~D))"
+                                                    (getf first :window) (getf first :window) (getf first :window)
+                                                    (format nil "First line~%Second line") (getf first :window)))))
+                                 (captures (getf typed :images))
+                                 (after (getf (second captures) :bytes)))
+                            (assert (= 2 (length captures)))
+                            (assert (not (equalp before after)))
+                            (assert (not (equalp (getf (first captures) :bytes) after)))
+                            (let* ((response (ataxia.assistant::%assistant-tool-result typed))
+                                   (items (gethash "contentItems" response)))
+                              (assert (= 3 (length items)))
+                              (assert (every (lambda (item) (equal "inputImage" (gethash "type" item))) (subseq items 0 2))))
+                            (with-open-file (out (asdf:system-relative-pathname "ataxia-assistant" "build/assistant-notepad-wayland.png")
+                                                 :direction :output :if-exists :supersede :element-type '(unsigned-byte 8))
+                              (write-sequence after out)))
+                          (owner (lambda () (ataxia.world:control-world-window world
+                                              (ataxia.world:find-world-window world (getf first :window)) :close
+                                              (first (ataxia.world:world-outputs world)))))
                           (loop repeat 100 while (uiop:process-alive-p (ataxia.assistant::assistant-preview-process first-preview)) do (sleep .05d0))
                           (assert (not (uiop:process-alive-p (ataxia.assistant::assistant-preview-process first-preview))))
                           (assert (uiop:process-alive-p (ataxia.assistant::assistant-preview-process second-preview)))

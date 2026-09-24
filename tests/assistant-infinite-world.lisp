@@ -8,7 +8,7 @@
 (in-package #:ataxia.test.assistant-infinite)
 (assert (not (find-class (find-symbol "METAWORLD" :ataxia.infinite-world) nil)))
 (setf assistant::*assistant-command*
-      (list "env" "ATAXIA_EXPECTED_TOOLS=8" "sbcl" "--noinform" "--disable-debugger" "--script"
+      (list "env" "sbcl" "--noinform" "--disable-debugger" "--script"
             (namestring (asdf:system-relative-pathname "ataxia-assistant" "tests/assistant-mock-codex.lisp"))))
 
 (let* ((world (ataxia.infinite-world:make-infinite-world))
@@ -48,8 +48,7 @@
                          (assert (eq :done (assistant::assistant-controller-task controller)) ()
                                  "~A" (assistant::assistant-controller-activity controller))
                          (assert (eq :ready (assistant::assistant-controller-connection controller)))
-                         (assert (eq :paused (cu:computer-session-state
-                                             (assistant::assistant-controller-session controller))))
+                         (assert (null (assistant::assistant-controller-session controller)))
                          ;; A focused text caret and clock deadline are active
                          ;; UI work. Exclude them from this bounded idle sample.
                          (assistant::%assistant-close-panel controller)

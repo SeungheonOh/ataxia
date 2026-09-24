@@ -1,3 +1,5 @@
+> Legacy SDK reference. Agents use [direct Lisp/SLY](CODEX-COMPUTER-USE.md).
+
 # API reference
 
 The globals in `cua_repl` are `cua: Cua` and `nodeRepl: NodeRepl`. For direct host integration, import `createCua` from `sdk/computer-use/index.mjs`; host configuration is not browser/page input.
@@ -124,13 +126,13 @@ export class ComputerTransport {
 
 - `connect` creates an active native session automatically; a paused session can be resumed through the activity panel. `status` exposes its current state. `disconnect` releases it.
 - `capabilities` reports protocol and provider availability without creating or approving a native session.
-- `getWorld` returns structured World state; `getDesktop` is its compatibility alias. Window placement and each monitor camera are distinct from application-local input coordinates. See the [coordinate reference](desktop.md#coordinates-and-viewports).
+- `getWorld` returns structured World state; `getDesktop` is its compatibility alias. Window placement and each monitor camera are distinct from application-local input coordinates. See the [coordinate reference](CUA-DESKTOP.md#coordinates-and-viewports).
 - `listWindows` discovers mapped windows across the World, including unavailable windows. `getWindow` selects an available window without raising it, moving it, or switching the user's workspace. Selection and target operations explicitly use window view. `getApp` rejects ambiguous matches with candidate IDs and does not relaunch an already mapped but unavailable app.
 - `batch` runs up to 16 data-only Ataxia actions with one sequence number; optional capture and settle use compositor frame stability. The existing protocol remains available to other clients. This is sequential execution, not a transaction: a later failure can leave earlier actions applied.
 - `captureViewport` (`captureDesktop` alias) captures the session output's current camera, then restores the prior input view. Its metadata names the output and logical coordinate space. It does not show the entire World or move any camera. Refresh accessibility indices afterwards.
 - `tabMarks` reports deliverable/handoff tabs, and `metrics` counts native/CDP transport requests in this adapter.
 
-Prefer [direct Lisp](lisp.md) for World control. The compatible SDK methods for window placement, floating/tiling, groups, workspaces, shell navigation, and native window state are documented in [CUA desktop operations](desktop.md). They are exposed as `getWorld` (`getDesktop` alias), `moveWindow`, `setFloating`, `windowAction`, `setViewport`, `panViewport`, `frameWindow`, `frameRegion`, and `arrange` on `cua.ataxia`. Native keys bypass World shortcuts, and native pointers cannot operate World chrome; `captureViewport` (`captureDesktop` alias) and `settle: 0` do not change that routing.
+Prefer [direct Lisp](../skills/ataxia-computer-use/references/lisp.md) for World control. The compatible SDK methods for window placement, floating/tiling, groups, workspaces, shell navigation, and native window state are documented in [CUA desktop operations](CUA-DESKTOP.md). They are exposed as `getWorld` (`getDesktop` alias), `moveWindow`, `setFloating`, `windowAction`, `setViewport`, `panViewport`, `frameWindow`, `frameRegion`, and `arrange` on `cua.ataxia`. Native keys bypass World shortcuts, and native pointers cannot operate World chrome; `captureViewport` (`captureDesktop` alias) and `settle: 0` do not change that routing.
 
 ### Continuously updating applications
 

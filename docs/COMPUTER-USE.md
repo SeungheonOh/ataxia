@@ -1,12 +1,14 @@
+> Agent interface: [direct Lisp/SLY](CODEX-COMPUTER-USE.md). This document describes the underlying native input/capture service and its legacy data transport.
+
 # Agent computer use
 
-## Codex JavaScript interface
+## Native backend and legacy transport
 
-For the Codex-compatible `cua` API, persistent `cua_repl` tool, agent skill,
-browser providers and compatibility limits, see [CODEX-COMPUTER-USE.md](CODEX-COMPUTER-USE.md).
+The agent's [Lisp interface](CODEX-COMPUTER-USE.md) calls this service directly.
+The older JavaScript compatibility library is documented in [CUA API](CUA-API.md).
 The data-only protocol provides capabilities, target PID metadata, seat-local
 paste, desktop snapshots, direct layout arrangement, window controls, and
-navigation; see the [desktop API](../skills/ataxia-computer-use/references/desktop.md).
+navigation; see the [desktop API](CUA-DESKTOP.md).
 These operations use the same native session and honor pause, disconnect, expiry,
 and sequence checks. Desktop mutations require the observed revision. A desktop snapshot covers the whole current World; camera navigation explicitly names the output to change.
 

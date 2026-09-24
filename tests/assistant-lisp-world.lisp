@@ -61,8 +61,11 @@
                        (owner (lambda ()
                                 (a::%assistant-start-task controller)))
                        (assert (search "3" (getf (evaluate "(+ 1 2)" "inspect") :output)))
-                       ;; The first native request creates one seat, reused until Stop.
-                       (a::%assistant-run-tool controller "ataxia_observe" (a::%assistant-object))
+                       ;; Blocking native functions reject owner use without creating a seat.
+                       (reject "(ataxia.agent:capture-window agent 999999)" "inspect")
+                       (owner (lambda () (assert (null (a::assistant-controller-session controller)))))
+                       ;; Even a missing target creates only one seat, reused until Stop.
+                       (reject "(ataxia.agent:capture-window agent 999999)" "worker")
                        (let ((session (owner (lambda () (a::assistant-controller-session controller)))))
                          (owner (lambda ()
                                   (assert session)
@@ -70,7 +73,7 @@
                                   (a:pause world)))
                          (reject "(+ 1 2)" "inspect")
                          (owner (lambda () (a::%assistant-start-task controller)))
-                         (a::%assistant-run-tool controller "ataxia_observe" (a::%assistant-object))
+                         (reject "(ataxia.agent:capture-window agent 999999)" "worker")
                          (owner (lambda () (assert (eq session (a::assistant-controller-session controller)))))))
                    (serious-condition (cause) (setf failure cause)))
                  (setf done t)) :name "Live Lisp test"))

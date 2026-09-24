@@ -2,7 +2,7 @@
 (asdf:load-system "ataxia-assistant/metaworld")
 (in-package #:ataxia.infinite-world)
 (load (merge-pathnames "assistant-voice-fixture.lisp" *load-truename*))
-(setf ataxia.assistant::*assistant-command* (list "env" "ATAXIA_VOICE_FIXTURE=1" "ATAXIA_LISP_FIXTURE=1" "sbcl" "--noinform" "--disable-debugger" "--script"
+(setf ataxia.assistant::*assistant-command* (list "env" "ATAXIA_VOICE_FIXTURE=1" "sbcl" "--noinform" "--disable-debugger" "--script"
                            (namestring (asdf:system-relative-pathname "ataxia-assistant" "tests/assistant-mock-codex.lisp"))))
 (let* ((world (make-metaworld :state-file nil))
        (kernel (ataxia.kernel:create-kernel world :backend :headless :headless-width 1100 :headless-height 800))

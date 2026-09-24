@@ -17,6 +17,8 @@ def evaluate(*arguments, ok=True, stdin=None):
     return result.stdout if ok else result.stderr
 
 
+assert evaluate("--agent", "test task", "agent").strip() == '"test task"'
+assert evaluate("--world", "--agent", "test task", "agent").strip() == '"test task"'
 assert evaluate("(+ 1 2)").strip() == "3"  # Raw worker mode remains compatible.
 assert evaluate("--world", "(eq sb-thread:*current-thread* ataxia.test.assistant-lisp::*expected-owner*)").strip() == "T"
 generation = int(evaluate("--world", "(ataxia.kernel:kernel-world-generation kernel)"))

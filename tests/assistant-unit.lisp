@@ -48,7 +48,9 @@
   (assert (equal "default" (ataxia.assistant::%assistant-effective-tier controller))))
 (let* ((tools (ataxia.assistant::%assistant-tool-specs (make-metaworld :state-file nil)))
        (decoded (ataxia.computer-use.wire:decode (ataxia.computer-use.wire:encode tools) :max-depth 32)))
-  (assert (= 9 (length decoded)))
+  (assert (= 3 (length decoded)))
+  (assert (equal '("ataxia_lisp" "ataxia_ui_preview" "ataxia_ui_update")
+                 (map 'list (lambda (tool) (gethash "name" tool)) decoded)))
   (loop for tool across decoded do (assert (gethash "inputSchema" tool)) (assert (equal "function" (gethash "type" tool)))))
 
 (let ((controller (ataxia.assistant::%make-assistant-controller :epoch 2 :blocked t)))
@@ -56,24 +58,6 @@
   (assert (null (ataxia.assistant::%assistant-queue controller :submit "stale" 5 1)))
   (assert (null (ataxia.assistant::assistant-controller-queue controller))))
 (format t "PASS: parser isolation, image encoding, tool schemas, paused task and stale mailbox events.~%")
-
-;; Model-visible action schemas agree with the executor's distinct fields and
-;; seconds-based bounds, rather than suggesting x/y on a button action.
-(let* ((world (make-metaworld :state-file nil))
-       (schema (ataxia.assistant::%assistant-action-schema world))
-       (branches (gethash "anyOf" schema)))
-  (labels ((branch (op)
-             (find op branches :test #'equal
-                   :key (lambda (item) (aref (ataxia.assistant::%assistant-field item "properties" "op" "enum") 0)))))
-    (assert (= (length branches) (length ataxia.computer-use:+batch-action-fields+)))
-    (loop for (op . fields) in ataxia.computer-use:+batch-action-fields+
-          for properties = (gethash "properties" (branch op)) do
-            (assert (= (hash-table-count properties) (1+ (length fields))))
-            (dolist (field fields) (assert (gethash (string-downcase (symbol-name field)) properties))))
-    (assert (not (ataxia.assistant::%assistant-field (branch "button") "properties" "x")))
-    (assert (= 2 (ataxia.assistant::%assistant-field (branch "wait-stable") "properties" "settle" "maximum")))
-    (assert (= 16000 (ataxia.assistant::%assistant-field (branch "paste") "properties" "text" "maxLength")))
-    (assert (branch "launch"))))
 
 (let* ((result (ataxia.assistant::%assistant-object "success" t "contentItems"
                  (vector (ataxia.assistant::%assistant-object "type" "inputImage" "imageUrl" "data:image/png;base64,fixture")

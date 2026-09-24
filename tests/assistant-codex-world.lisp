@@ -15,7 +15,7 @@
          (setf control (ataxia.sly-control:start-sly-control kernel :port nil))
          (setf controller (ataxia.assistant::%assistant-enable world :project (namestring (merge-pathnames "work/" project)))
                (ataxia.assistant::assistant-controller-seat controller) (%canvas-seat-seat (first (%seat-states world))))
-         (ataxia.assistant::%assistant-submit controller (format nil "Remember the phrase copper otter for the next turn. This is an isolated integration test with an empty desktop. Call ataxia_desktop_snapshot exactly once, then call ataxia_lisp with mode inspect and code (length (ataxia.world:world-windows world)). Use a shell command to write exactly full-access into the disposable fixture file ~A, which is outside the working directory. Reply with one short sentence stating how many windows there are. Do not change other files, change the desktop, or delegate to agents." (namestring (merge-pathnames "outside-cwd.txt" project))))
+         (ataxia.assistant::%assistant-submit controller (format nil "Remember the phrase copper otter for the next turn. This is an isolated integration test with an empty desktop. Call ataxia_lisp with mode inspect and code (length (ataxia.world:world-windows world)). Use a shell command to write exactly full-access into the disposable fixture file ~A, which is outside the working directory. Reply with one short sentence stating how many windows there are. Do not change other files, change the desktop, or delegate to agents." (namestring (merge-pathnames "outside-cwd.txt" project))))
          (setf test-thread
            (sb-thread:make-thread
             (lambda ()

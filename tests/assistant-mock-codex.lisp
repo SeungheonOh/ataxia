@@ -25,7 +25,7 @@
        (assert (equal "danger-full-access" (gethash "sandbox" (gethash "params" message))))
        (assert (equal "never" (gethash "approvalPolicy" (gethash "params" message))))
        (assert (eq :false (gethash "ephemeral" (gethash "params" message))))
-       (assert (= (parse-integer (or (uiop:getenv "ATAXIA_EXPECTED_TOOLS") "9"))
+       (assert (= 3
                   (length (gethash "dynamicTools" (gethash "params" message)))))
        (result id (obj "thread" (obj "id" "fixture-thread") "model" "fixture-default" "reasoningEffort" "medium")))
       ((equal method "thread/resume")
@@ -61,9 +61,7 @@
                             "options" (vector (obj "label" "Inspect" "description" "Read the fixture desktop")))))))
            (send-message (obj "id" 9001 "method" "item/tool/call" "params"
              (obj "threadId" "fixture-thread" "turnId" "fixture-turn" "callId" "fixture-call"
-                  "tool" (if (uiop:getenv "ATAXIA_LISP_FIXTURE") "ataxia_lisp" "ataxia_desktop_snapshot")
-                  "arguments" (if (uiop:getenv "ATAXIA_LISP_FIXTURE")
-                                  (obj "mode" "inspect" "code" "(type-of world)") (obj)))))))
+                  "tool" "ataxia_lisp" "arguments" (obj "mode" "inspect" "code" "(type-of world)"))))))
       ((eql id 8001)
        (assert (equalp #("Inspect") (gethash "answers" (gethash "inspect" (gethash "answers" (gethash "result" message))))))
        (send-message (obj "id" 8002 "method" "item/commandExecution/requestApproval" "params"
@@ -83,17 +81,13 @@
          (assert (eq t (gethash "enabled" (gethash "network" (gethash "permissions" reply))))))
        (send-message (obj "id" 9001 "method" "item/tool/call" "params"
          (obj "threadId" "fixture-thread" "turnId" "fixture-turn" "callId" "fixture-call"
-              "tool" (if (uiop:getenv "ATAXIA_LISP_FIXTURE") "ataxia_lisp" "ataxia_desktop_snapshot")
-                  "arguments" (if (uiop:getenv "ATAXIA_LISP_FIXTURE")
-                                  (obj "mode" "inspect" "code" "(type-of world)") (obj))))))
+              "tool" "ataxia_lisp" "arguments" (obj "mode" "inspect" "code" "(type-of world)")))))
       ((eql id 9001)
        (assert (eq t (gethash "success" (gethash "result" message))))
        ;; A retried completed call must return the cached result without executing again.
        (send-message (obj "id" 9002 "method" "item/tool/call" "params"
          (obj "threadId" "fixture-thread" "turnId" "fixture-turn" "callId" "fixture-call"
-              "tool" (if (uiop:getenv "ATAXIA_LISP_FIXTURE") "ataxia_lisp" "ataxia_desktop_snapshot")
-                  "arguments" (if (uiop:getenv "ATAXIA_LISP_FIXTURE")
-                                  (obj "mode" "inspect" "code" "(type-of world)") (obj))))))
+              "tool" "ataxia_lisp" "arguments" (obj "mode" "inspect" "code" "(type-of world)")))))
       ((eql id 9002)
        (assert (eq t (gethash "success" (gethash "result" message))))
        (event "item/agentMessage/delta" (obj "threadId" "fixture-thread" "turnId" "fixture-turn" "itemId" "reply" "delta" "Checked your desktop. "))

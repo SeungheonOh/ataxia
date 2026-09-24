@@ -77,26 +77,33 @@ it is not an access boundary. Metaworld defaults to the Ataxia source tree.
 Other Worlds can choose a directory with
 `(ataxia.assistant:enable world :project "/path/to/project/")`.
 
-The default control path is `ataxia_lisp`, using the same owner queue as SLY.
-It can discover, resolve, change and report World objects in one short call,
-returning only the fields needed. Native input/capture remains available through
-`ataxia_observe` and `ataxia_act` for the contents of client applications. SLY
-cannot inspect a Firefox page or a native application's widgets by itself.
+`ataxia_lisp` is the desktop interface, using the same owner queue as SLY.
+It discovers, resolves, changes and reports World objects in one short call.
+Application input/capture uses the portable `ataxia.agent` Lisp functions in
+worker mode. The former CUA observation/action/window/layout tools are removed.
+The other two registered tools create and update RML preview windows.
 
-A task creates no native input seat until its first CUA tool call. Lisp, shell,
-file and voice-only work therefore creates no agent cursor, input-session state
-or session timeout. Existing sessions still pause at task completion or human
-takeover and resume only on a new human request. Tool calls never undo a pause.
-The compatible CUA desktop tools below also create a session when first used.
+All modes bind `AGENT` to the current task. For example, worker code can click,
+type and verify in one form:
 
-`ataxia_arrange` applies a batch directly using the latest desktop snapshot
-revision. The assistant and CUA share the same revision and operation path.
-There are no retained layout plans, apply tokens or Undo history. Validation
-checks the whole batch before mutation, and the World rolls back a failed batch.
-Intervening layout changes and active drags reject stale requests. Titles and
-presentation animations do not count as layout edits. `remove-group` returns
-its remaining windows and widgets to the canvas without closing them;
-standalone Worlds keep their only sub-world.
+```lisp
+(progn
+  (ataxia.agent:click agent 42 60 125)
+  (ataxia.agent:type-text agent 42 "hello")
+  (ataxia.agent:capture-window agent 42))
+```
+
+Use observed IDs and image-local coordinates. Input returns T without an
+inventory or automatic screenshot. Capture emits an image, up to four per call;
+PNG bytes are retained before a later capture replaces the temporary file.
+Pure World, shell, file and voice work allocates no input seat. Native resources
+appear on first application input/capture and still pause on task completion,
+Pause or human takeover. Tool calls never undo a pause.
+
+Use `ataxia.world:apply-world-layout` for layout batches. The World validates
+and applies these atomically with failure rollback and no Undo history. Resolve
+current objects and check relevant layout assumptions inside the owner call;
+there are no assistant revision tokens or retained plans.
 
 `ataxia_lisp` reads and compiles one form off the owner thread. `inspect` and
 `apply` bind `WORLD` to the active World and run on its owner thread with a
@@ -114,22 +121,16 @@ can temporarily remove accessors used by frames. Read/compile on workers and
 install prepared definitions in a short owner-thread operation. No Kernel or
 Runtime implementation changes are needed by this service.
 
-`ataxia_window` controls a window by its stable ID: `close`, `minimize`, `restore`,
-`maximize`, or `fullscreen`. Closing sends a normal application close request;
-the assistant checks afterward for closure or a save dialog. It does not force-kill
-the application. A window is one application toplevel;
-closing every window of an app requires selecting each matching window.
-Snapshots include minimized windows and window state. Minimize persists across
-layout updates; Restore unminimizes and exits expanded presentation. The launcher
-can also unminimize a window. Maximize and fullscreen fill the containing sub-world
-for grouped windows, or the output for canvas windows. Window state changes update the layout revision. They do not move the human's focus to another app.
+Use `ataxia.world:control-world-window` for :close, :minimize, :restore,
+:maximize or :fullscreen; resolve the stable ID with `find-world-window`.
+A normal close may open a save dialog, so verify before reporting closure.
+Window methods preserve the human's focus. `navigate-world-viewport` changes
+one named output camera independently of window placement.
 
-`ataxia_observe` without a window returns the window inventory and installed app
-catalog without taking a screenshot or changing the selected target. Supplying
-a window captures it by default; `capture:false` requests metadata only. To open
-an app, use `ataxia_act` with `op:"launch"`, an `application` ID from that catalog,
-and `capture:false`, then observe to verify its window. Launching is asynchronous;
-an accepted request alone does not prove that a window opened.
+Read `world-application-catalog` for installed catalog IDs and call
+`launch-world-application`. Launch is asynchronous; verify the new window
+separately without waiting on the compositor thread. See the
+[Lisp reference](../skills/ataxia-computer-use/references/lisp.md) for signatures.
 
 The launcher reads `applications/*.desktop` from `XDG_DATA_HOME` and every
 directory in `XDG_DATA_DIRS`, using the [XDG defaults and precedence](https://specifications.freedesktop.org/basedir/latest/).
@@ -137,11 +138,11 @@ This includes Snap and Flatpak export directories advertised by the session.
 User entries take precedence by desktop ID, including hidden overrides. The
 catalog stays cached between launches; discovery adds no idle polling.
 
-Native action schemas describe each operation separately: a click is `move`
-followed by `button`, key chords use XKB base names such as lowercase `n` with
-`Control_L`, and timing values are seconds. The assistant uses its existing
-native session rather than an external CUA MCP connection with another approval
-flow. Application discovery does not require a second permission request.
+Application keys use XKB base names such as lowercase `"n"` with
+`:modifiers '("Control_L")`; timings are seconds. Application functions schedule
+owner work and wait on the calling worker. Invoke World/UI objects directly for
+shell controls; native application input does not dispatch compositor shortcuts.
+The interface has no browser DOM or application accessibility-tree API.
 
 Execution requests follow the full-access policy without another prompt. Model
 questions support supplied choices and typed answers. Sign in opens the app-server's browser
@@ -227,9 +228,9 @@ part of that check.
 `ataxia-assistant` is independent of concrete Worlds. Load
 `ataxia-assistant/metaworld` for Metaworld, or
 `ataxia-assistant/infinite-world` for plain Infinite World. Both use the same
-controller, panels, computer-use service, and preview implementation. Layout
-tools appear only when the World provides a layout schema and transaction
-adapter. See [World services](WORLD-SERVICES.md) to attach another implementation.
+controller, panels, Lisp agent/native input service, and preview implementation.
+The separate `ataxia-agent` system works without the assistant. Optional World
+features are discovered through `world-supports-p` and `world-layout-schema`. See [World services](WORLD-SERVICES.md) to attach another implementation.
 
 ## Lifecycle and retention
 

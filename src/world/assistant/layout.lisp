@@ -3,12 +3,12 @@
 
 (defun %assistant-layout-snapshot (controller)
   (%assistant-require-task controller)
-  (list* :ok t (cu::%computer-desktop-snapshot (assistant-controller-session controller))))
+  (list* :ok t (cu::%computer-desktop-snapshot (%assistant-ensure-session controller))))
 (defun %assistant-layout-revision (controller)
   (getf (%assistant-layout-snapshot controller) :revision))
 (defun %assistant-desktop-action (controller op arguments)
   (%assistant-require-task controller)
-  (let* ((session (assistant-controller-session controller))
+  (let* ((session (%assistant-ensure-session controller))
          (request (cu:decode-request arguments)))
     (setf (getf request :op) op
           (getf request :token) (cu:computer-session-token session)

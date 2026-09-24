@@ -1,3 +1,3 @@
 interface:
   display_name: "Ataxia Computer Use"
-  short_description: "Use CUA for apps and Ataxia APIs for desktop layout"
+  short_description: "Use Lisp for Ataxia and CUA for application contents"

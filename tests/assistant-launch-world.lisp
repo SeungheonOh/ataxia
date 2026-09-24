@@ -18,7 +18,7 @@
          (progn
            (ensure-directories-exist entry)
            (with-open-file (out entry :direction :output)
-             (format out "[Desktop Entry]~%Type=Application~%Name=Firefox~%Exec=~A ~A~%"
+             (format out "[Desktop Entry]~%Type=Application~%Name=Firefox~%Exec=env ATAXIA_TEST_SECONDS=90 ATAXIA_TEST_TITLE=Firefox ~A ~A~%"
                      (asdf:system-relative-pathname "ataxia-assistant" "build/computer-use-client")
                      (merge-pathnames "client.log" root)))
            (ataxia.kernel:start-kernel kernel)
@@ -28,7 +28,7 @@
            (setf (%launcher-desktop-entries (%launcher-for-output world (first (ataxia.world:world-outputs world))))
                  (%load-desktop-entries (list root)))
            (if real
-               (ataxia.assistant::%assistant-submit controller "Open Firefox and verify that its window appeared. This isolated desktop's Firefox catalog entry is a disposable test client. Use only the registered Ataxia tools; don't run shell commands, edit files, use external MCP tools, or open other apps. Finish with one short sentence.")
+               (ataxia.assistant::%assistant-submit controller "Open Firefox and verify that its window appeared. This isolated desktop's Firefox catalog entry is a disposable test client. Use ataxia_lisp to discover the catalog, launch and verify via the public World protocol. Do not use native input/capture, shell commands, files or external tools. Finish with one short sentence.")
                (ataxia.assistant::%assistant-start-task controller))
            (setf worker
                  (sb-thread:make-thread
@@ -55,7 +55,8 @@
                                    (when real
                                      (assert (eq :done (ataxia.assistant::assistant-controller-task controller)) ()
                                              "Model launch failed: ~A" (ataxia.assistant::assistant-controller-activity controller))
-                                     (assert (>= (ataxia.assistant::assistant-controller-tool-count controller) 3)))
+                                     (assert (plusp (ataxia.assistant::assistant-controller-tool-count controller)))
+                                     (assert (null (ataxia.assistant::assistant-controller-session controller))))
                                    (assert (= 1 (length (ataxia.world:world-windows world))))
                                    (assert (fixture-window))))
                           (unless real

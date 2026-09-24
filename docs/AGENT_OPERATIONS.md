@@ -30,6 +30,42 @@ From outside the VM, forward port `4005` first. The evaluation helper accepts a
 single form, standard input, or `--file`. Its socket timeout must be longer than
 any event wait performed by Lisp.
 
+## Direct World operations
+
+Prefer `ataxia-eval --world` for routine World inspection and control:
+
+```sh
+./scripts/ataxia-eval --world '(ataxia.world:world-desktop-state world)'
+./scripts/ataxia-eval --world '(mapcar (lambda (window)
+  (let ((app (ataxia.world:window-application window)))
+    (list (ataxia.kernel:object-id app) (ataxia.kernel:application-title app))))
+  (ataxia.world:world-windows world))'
+```
+
+The helper reads/compiles on SLY's worker, binds lexical `WORLD` and `KERNEL`
+on the owner thread, and prints returned values there. Batch related operations
+in one form and return a compact result. This needs no CUA seat, desktop revision
+fingerprint, screenshot, model round trip per action or background polling.
+See the [Lisp operation examples](../skills/ataxia-computer-use/references/lisp.md).
+Application contents still require native input/accessibility or browser tools.
+
+`--world` executes for at most 250 ms and adds no refresh beyond the World APIs'
+own damage. `--apply` also requests a full refresh for raw live changes. Both
+accept forms, stdin, `--file` and `--package`. `--generation N` rejects operations
+on a replacement World. Return data or IDs instead of keeping object handles.
+Read errors, execution errors and timeouts return failure without World recovery;
+partial changes are not undone or automatically retried. Inspect before retrying.
+An expired socket timeout does not imply cancellation of an already running form.
+
+Without either flag the helper retains raw SLY worker evaluation, suitable for
+reading source, compiling definitions, filesystem work and event waits. Never
+ASDF-reload the live World's dependency tree. Keep I/O, compilation, sleeps and
+waiting off the owner thread. The embedded assistant's `ataxia_lisp` provides
+the same distinction without requiring a SLY listener or another socket.
+
+The lower-level SLY operations below remain useful for event streams and custom
+control clients.
+
 ## Inspect first
 
 Use `agent-inspect` for reads. The supplied function runs briefly on the

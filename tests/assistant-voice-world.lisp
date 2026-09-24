@@ -2,7 +2,7 @@
 (asdf:load-system "ataxia-assistant/metaworld")
 (in-package #:ataxia.infinite-world)
 (load (merge-pathnames "assistant-voice-fixture.lisp" *load-truename*))
-(setf ataxia.assistant::*assistant-command* (list "env" "ATAXIA_VOICE_FIXTURE=1" "sbcl" "--noinform" "--disable-debugger" "--script"
+(setf ataxia.assistant::*assistant-command* (list "env" "ATAXIA_VOICE_FIXTURE=1" "ATAXIA_LISP_FIXTURE=1" "sbcl" "--noinform" "--disable-debugger" "--script"
                            (namestring (asdf:system-relative-pathname "ataxia-assistant" "tests/assistant-mock-codex.lisp"))))
 (let* ((world (make-metaworld :state-file nil))
        (kernel (ataxia.kernel:create-kernel world :backend :headless :headless-width 1100 :headless-height 800))
@@ -34,7 +34,7 @@
                                (assert (eq :ready (ataxia.assistant::assistant-controller-connection controller)))
                                (assert (= 1 (hash-table-count (ataxia.assistant::assistant-controller-seen-calls controller))))
                                (assert (search "<b>Safe text</b>" (getf (car (last (ataxia.assistant::assistant-controller-messages controller))) :text)))
-                               (assert (eq :paused (ataxia.computer-use::computer-session-state (ataxia.assistant::assistant-controller-session controller))))
+                               (assert (null (ataxia.assistant::assistant-controller-session controller)))
                                (ataxia.assistant::%assistant-toggle-talk controller)))
                       (wait-for (lambda () (and (eq :listening (ataxia.assistant::assistant-controller-microphone controller))
                                                (eq :done (ataxia.assistant::assistant-controller-task controller))
@@ -52,6 +52,8 @@
                         (assert (null (ataxia.assistant::%assistant-voice-deadline controller)))
                         (owner (lambda ()
                           (assert (= 2 (ataxia.assistant::assistant-controller-turn-count controller)))
+                          (assert (null (ataxia.assistant::assistant-controller-session controller)))
+                          (assert (ataxia.assistant::assistant-controller-blocked controller))
                           (assert (= 1 (count "Voice fixture task" (ataxia.assistant::assistant-controller-messages controller)
                                              :key (lambda (m) (getf m :text)) :test #'equal)))
                           (ataxia.assistant::%assistant-close-panel controller)

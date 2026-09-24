@@ -77,6 +77,18 @@ it is not an access boundary. Metaworld defaults to the Ataxia source tree.
 Other Worlds can choose a directory with
 `(ataxia.assistant:enable world :project "/path/to/project/")`.
 
+The default control path is `ataxia_lisp`, using the same owner queue as SLY.
+It can discover, resolve, change and report World objects in one short call,
+returning only the fields needed. Native input/capture remains available through
+`ataxia_observe` and `ataxia_act` for the contents of client applications. SLY
+cannot inspect a Firefox page or a native application's widgets by itself.
+
+A task creates no native input seat until its first CUA tool call. Lisp, shell,
+file and voice-only work therefore creates no agent cursor, input-session state
+or session timeout. Existing sessions still pause at task completion or human
+takeover and resume only on a new human request. Tool calls never undo a pause.
+The compatible CUA desktop tools below also create a session when first used.
+
 `ataxia_arrange` applies a batch directly using the latest desktop snapshot
 revision. The assistant and CUA share the same revision and operation path.
 There are no retained layout plans, apply tokens or Undo history. Validation
@@ -88,10 +100,12 @@ standalone Worlds keep their only sub-world.
 
 `ataxia_lisp` reads and compiles one form off the owner thread. `inspect` and
 `apply` bind `WORLD` to the active World and run on its owner thread with a
-250 ms execution budget; `apply` requests a refresh. `worker` permits filesystem
+250 ms execution budget; `apply` requests a full refresh. `inspect` also permits
+World control calls that already record their own damage, avoiding that full repaint. `worker` permits filesystem
 work and compilation off the compositor thread with a 30 second budget. It must
 not mutate World state or install class/generic-function definitions. Output is
-bounded to 16 KiB, and errors return to the chat without replacing the World.
+bounded to 16 KiB and printed on the owner thread before live values can escape
+to the worker. Errors return to the chat without replacing the World.
 Changes made before an error are not rolled back or automatically replayed.
 This is trusted live development access, not a Lisp sandbox. Pause and Stop reject subsequent calls; they do not reverse completed changes.
 

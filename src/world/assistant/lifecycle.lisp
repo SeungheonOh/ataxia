@@ -34,13 +34,36 @@
         (assistant-controller-voice-stopping-p controller) nil (assistant-controller-login-url controller) nil)
   (clrhash (assistant-controller-pending controller))
   (clrhash (assistant-controller-seen-calls controller)))
+(defun %assistant-ensure-session (controller)
+  "Create native input resources only when a tool first needs them. Owner only."
+  (%assistant-require-task controller)
+  (let* ((world (assistant-controller-world controller))
+         (seat (assistant-controller-seat controller))
+         (session (assistant-controller-session controller)))
+    (unless session
+      (let* ((current (and seat (world-seat-focus world seat)))
+             (focused (if (typep current 'assistant-panel)
+                          (world-seat-previous-focus world seat) current))
+             ;; An output may disappear between task start and first app input.
+             (output (or (find (assistant-controller-output controller) (world-outputs world))
+                         (and seat (world-seat-output world seat))
+                         (first (world-outputs world)))))
+        (setf (assistant-controller-output controller) output)
+        (setf session (cu:connect-session world "Ataxia assistant" "Your assistant task"
+                                         output)
+              (assistant-controller-session controller) session)
+        (cu:activate-session session)
+        (when (window-application focused)
+          (cu:change-session-view session :window
+                                  (ataxia.kernel:object-id (window-application focused))))))
+    ;; Tool calls may not reactivate a session paused by human takeover.
+    (unless (eq :active (cu:computer-session-state session))
+      (error "The native input session is paused. Wait for the user to Send or Resume."))
+    session))
+
 (defun %assistant-start-task (controller)
   (let* ((world (assistant-controller-world controller))
          (seat (assistant-controller-seat controller))
-         (current (and seat (world-seat-focus world seat)))
-         (focused (if (typep current 'assistant-panel)
-                      (world-seat-previous-focus world seat) current))
-         (selected (and (window-application focused) focused))
          (panel (assistant-controller-panel controller))
          (project (if panel
                       (ataxia.world.rmlui:rmlui-model-value (overlay-component panel) "project")
@@ -54,19 +77,16 @@
         (error "Stop the current task before changing the working directory."))
       (%assistant-reset-conversation controller)
       (setf (assistant-controller-project controller) project))
-    (unless (and (assistant-controller-session controller)
-                 (not (eq :closed (cu:computer-session-state (assistant-controller-session controller)))))
+    (when (and (assistant-controller-session controller)
+               (eq :closed (cu:computer-session-state (assistant-controller-session controller))))
+      (setf (assistant-controller-session controller) nil))
+    (unless (assistant-controller-session controller)
       (setf (assistant-controller-output controller)
-            (or (and seat (world-seat-output world seat)) (first (world-outputs world)))
-            (assistant-controller-session controller)
-            (cu:connect-session world "Ataxia assistant" "Your assistant task"
-                                (assistant-controller-output controller))))
-    (cu:activate-session (assistant-controller-session controller))
-    (unless (eq :active (cu:computer-session-state (assistant-controller-session controller)))
-      (error "The native input session could not start."))
-    (when (and selected (null (cu:computer-view-window (cu:computer-session-view (assistant-controller-session controller)))))
-      (cu:change-session-view (assistant-controller-session controller) :window
-                             (ataxia.kernel:object-id (window-application selected))))
+            (or (and seat (world-seat-output world seat)) (first (world-outputs world)))))
+    ;; A new human request resumes an existing seat, but Lisp, file and voice
+    ;; tasks need no seat, cursor, capture state or native-session deadlines.
+    (when (assistant-controller-session controller)
+      (cu:activate-session (assistant-controller-session controller)))
     (setf (assistant-controller-blocked controller) nil
           (assistant-controller-started controller) (monotonic-time))))
 (defun %assistant-submit (controller text)

@@ -130,7 +130,7 @@ export class ComputerTransport {
 - `captureViewport` (`captureDesktop` alias) captures the session output's current camera, then restores the prior input view. Its metadata names the output and logical coordinate space. It does not show the entire World or move any camera. Refresh accessibility indices afterwards.
 - `tabMarks` reports deliverable/handoff tabs, and `metrics` counts native/CDP transport requests in this adapter.
 
-For window placement, floating/tiling, groups, workspaces, shell navigation, and native window close/minimize/restore/maximize/fullscreen, use [Ataxia desktop operations](desktop.md). They are exposed as `getWorld` (`getDesktop` alias), `moveWindow`, `setFloating`, `windowAction`, `setViewport`, `panViewport`, `frameWindow`, `frameRegion`, and `arrange` on `cua.ataxia`. Native keys bypass World shortcuts, and native pointers cannot operate World chrome; `captureViewport` (`captureDesktop` alias) and `settle: 0` do not change that routing.
+Prefer [direct Lisp](lisp.md) for World control. The compatible SDK methods for window placement, floating/tiling, groups, workspaces, shell navigation, and native window state are documented in [CUA desktop operations](desktop.md). They are exposed as `getWorld` (`getDesktop` alias), `moveWindow`, `setFloating`, `windowAction`, `setViewport`, `panViewport`, `frameWindow`, `frameRegion`, and `arrange` on `cua.ataxia`. Native keys bypass World shortcuts, and native pointers cannot operate World chrome; `captureViewport` (`captureDesktop` alias) and `settle: 0` do not change that routing.
 
 ### Continuously updating applications
 

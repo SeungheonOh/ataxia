@@ -1,6 +1,6 @@
 # Ataxia desktop operations
 
-Use this reference for window placement, floating/tiling, optional layout containers, viewport navigation, and native window controls. CUA pointer/key actions control application content. The `cua.ataxia` desktop methods below operate through World APIs. Synthetic keys bypass World shortcut dispatch; desktop captures do not grant control of shell chrome. Changing `settle` changes observation timing only.
+Prefer [direct Lisp](lisp.md) for World operations. This reference covers the compatible CUA SDK path for window placement, floating/tiling, optional layout containers, viewport navigation, and native window controls. CUA pointer/key actions control application content. The `cua.ataxia` desktop methods below operate through World APIs. Synthetic keys bypass World shortcut dispatch; desktop captures do not grant control of shell chrome. Changing `settle` changes observation timing only.
 
 ## Coordinates and viewports
 

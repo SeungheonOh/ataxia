@@ -221,8 +221,7 @@
                 (member (assistant-controller-microphone controller) '(:starting :listening :muted)))
        (%assistant-owner controller
          (lambda ()
-           (when (and (assistant-controller-session controller)
-                      (member (assistant-controller-microphone controller) '(:starting :listening :muted)))
+           (when (member (assistant-controller-microphone controller) '(:starting :listening :muted))
              (setf (assistant-controller-voice-resume-p controller) nil (assistant-controller-blocked controller) nil)
              (when (assistant-controller-session controller) (cu:activate-session (assistant-controller-session controller)))))))
      (if (assistant-controller-blocked controller) (%assistant-interrupt controller)
@@ -261,7 +260,8 @@
                    (assistant-controller-activity controller)
                    (cond ((equal status "completed") "Done") ((equal status "interrupted") "Stopped")
                          (t (%assistant-text (or (%assistant-field params "turn" "error" "message") "Task failed")))))
-             ;; Completed tasks keep no input capability active between user turns.
+             ;; Completed tasks reject late calls even when they never needed a seat.
+             (setf (assistant-controller-blocked controller) t)
              (when (assistant-controller-session controller)
                (cu:pause-session (assistant-controller-session controller) "Assistant is waiting for you"))
              (%assistant-refresh controller))))))

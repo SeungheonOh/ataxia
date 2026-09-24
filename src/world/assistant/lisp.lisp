@@ -1,4 +1,4 @@
-;;;; Live development is an explicit World service capability, never a kernel API.
+;;;; Direct World inspection, control and live development through the owner queue.
 (in-package #:ataxia.assistant)
 
 (defclass assistant-output (sb-gray:fundamental-character-output-stream)
@@ -15,7 +15,8 @@
     (- (length text) (if newline (1+ newline) 0))))
 
 (defun %assistant-evaluate-lisp (controller arguments)
-  (%assistant-owner controller (lambda () (%assistant-require-task controller)))
+  ;; The dispatcher checks the task before compilation; check again on the
+  ;; owner before executing a prepared form in case the user paused meanwhile.
   (let* ((code (cu:bounded-string (gethash "code" arguments) 32768 "code"))
          (mode (gethash "mode" arguments))
          (*package* (find-package :cl-user))
@@ -57,11 +58,14 @@
                                             (funcall function (assistant-controller-world controller)))))
                                (when (equal mode "apply")
                                  (refresh-world (assistant-controller-world controller)))
-                               (list :values values))))
+                               ;; Print while the owner still holds the objects.
+                               ;; Never traverse mutable World values on the worker.
+                               (dolist (value values) (write value :stream output) (terpri output))
+                               nil)))
                          (serious-condition (cause) (list :error (princ-to-string cause)))))))))
         (unless (equal mode "worker")
           (when (getf result :error) (error "~A" (getf result :error)))
-          (setf result (getf result :values)))
+          (setf result nil))
         (dolist (value result) (write value :stream output) (terpri output))
         (list :ok t :output (copy-seq (assistant-output-text output))
               :truncated (if (assistant-output-truncated output) t :false))))))

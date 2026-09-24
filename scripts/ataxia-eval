@@ -92,8 +92,47 @@ def evaluation_wrapper(source):
 """.strip()
 
 
-def evaluate(host, port, package, source, timeout):
-    wrapper = evaluation_wrapper(source)
+def world_wrapper(source, refresh=False, generation=None):
+    """Compile on SLY's worker; execute and print values during one owner turn."""
+    return f"""
+(handler-case
+    (let* ((*read-eval* nil)
+           (forms (with-input-from-string (input {lisp_string(source)})
+                    (loop with eof = (gensym)
+                          for form = (read input nil eof)
+                          until (eq form eof) collect form)))
+           (function (compile nil `(lambda (,(intern "WORLD") ,(intern "KERNEL"))
+                                     (declare (ignorable ,(intern "WORLD") ,(intern "KERNEL")))
+                                     ,@forms)))
+           (reply
+             (ataxia.sly-control:agent-inspect
+               (lambda (kernel world)
+                 (let* ((*standard-input* (make-string-input-stream ""))
+                        (*standard-output* (make-string-output-stream))
+                        (*error-output* *standard-output*) (*trace-output* *standard-output*)
+                        (*query-io* (make-two-way-stream *standard-input* *standard-output*))
+                        (*print-length* 64) (*print-level* 8) (*print-circle* t)
+                        (*print-pretty* nil)
+                        (result
+                          (handler-case
+                              (sb-ext:with-timeout .25d0
+                                (let ((values (multiple-value-list (funcall function world kernel))))
+                                  {"(ataxia.world:refresh-world world)" if refresh else ""}
+                                  (list :ataxia-eval-ok (mapcar #'prin1-to-string values))))
+                            (serious-condition (cause)
+                              (list :ataxia-eval-error (princ-to-string cause))))))
+                   (list (get-output-stream-string *standard-output*) result)))
+               {f":expected-generation {generation}" if generation is not None else ""}
+               :timeout 5d0)))
+      (write-string (first reply))
+      (second reply))
+  (serious-condition (condition)
+    (list :ataxia-eval-error (princ-to-string condition))))
+""".strip()
+
+
+def evaluate(host, port, package, source, timeout, world=False, refresh=False, generation=None):
+    wrapper = world_wrapper(source, refresh, generation) if world else evaluation_wrapper(source)
     request = (
         "(:emacs-rex "
         f"(slynk:eval-and-grab-output {lisp_string(wrapper)}) "
@@ -147,10 +186,19 @@ def main():
     parser.add_argument("--port", type=int, default=4005)
     parser.add_argument("--package", default="COMMON-LISP-USER")
     parser.add_argument("--timeout", type=float, default=30.0)
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--world", action="store_true",
+                      help="bind WORLD and KERNEL on the owner thread (250 ms budget)")
+    mode.add_argument("--apply", action="store_true",
+                      help="like --world, then request a World refresh")
+    parser.add_argument("--generation", type=int,
+                        help="reject an owner operation if this World generation was replaced")
     arguments = parser.parse_args()
 
     if arguments.file and arguments.form is not None:
         parser.error("FORM and --file are mutually exclusive")
+    if arguments.generation is not None and not (arguments.world or arguments.apply):
+        parser.error("--generation requires --world or --apply")
 
     try:
         source = load_source(arguments)
@@ -160,6 +208,9 @@ def main():
             arguments.package,
             source,
             arguments.timeout,
+            arguments.world or arguments.apply,
+            arguments.apply,
+            arguments.generation,
         )
         values = (
             result[1]

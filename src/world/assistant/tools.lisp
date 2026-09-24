@@ -57,7 +57,7 @@
       (coerce
        (append
         (list (%assistant-tool-spec "ataxia_lisp"
-                 "Evaluate one Common Lisp form in this running Ataxia. inspect/apply bind WORLD to the active World on its owner thread, with a 250 ms execution budget; apply also refreshes it. worker runs off the compositor thread for reading/compiling source and file I/O, with a 30 s budget; it must not access mutable World state or install class/generic-function definitions. Never ASDF-reload the live World dependency tree. Parse/compile happens off-thread. Errors are returned without replacing the World; partial mutations are not rolled back or retried. Use regular Ataxia tools for normal application input. Never change kernel/runtime/native code."
+                 "Preferred tool for World discovery, launching apps, window/layout/camera control and live development. Batch related operations and return only the needed fields using the public ataxia.world protocol. Evaluate one Common Lisp form in this running Ataxia. inspect/apply bind WORLD to the active World on its owner thread, with a 250 ms execution budget; apply also refreshes it. worker runs off the compositor thread for reading/compiling source and file I/O, with a 30 s budget; it must not access mutable World state or install class/generic-function definitions. Never ASDF-reload the live World dependency tree. Parse/compile happens off-thread. Errors are returned without replacing the World; partial mutations are not rolled back or retried. Use ataxia_observe/act for application contents and screenshots. Lisp World operations need no native input session. Never change kernel/runtime/native code."
                  (%assistant-object "code" (%assistant-schema "string" "maxLength" 32768)
                    "mode" (%assistant-schema "string" "enum" #("inspect" "apply" "worker"))) #("code" "mode")))
         (list
@@ -131,8 +131,7 @@
          (%assistant-owner controller
            (lambda ()
              (%assistant-require-task controller)
-             (let ((session (assistant-controller-session controller)))
-               (unless session (error "This task has no computer-use session."))
+             (let ((session (%assistant-ensure-session controller)))
                (setf (getf request :token) (cu:computer-session-token session)
                      (getf request :sequence) (1+ (cu:computer-session-sequence session)))
                (cu:request-on-owner (assistant-controller-world controller) request))))))

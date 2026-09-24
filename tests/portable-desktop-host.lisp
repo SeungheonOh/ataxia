@@ -96,8 +96,8 @@
            (assert (= 6 (length tools)))
            (assert (notany (lambda (tool) (search "layout" (gethash "name" tool))) tools))
            (let* ((act (find "ataxia_act" tools :key (lambda (tool) (gethash "name" tool)) :test #'equal))
-                  (operations (assistant::%assistant-field act "inputSchema" "properties" "actions"
-                                                           "items" "properties" "op" "enum")))
+                  (operations (loop for action across (assistant::%assistant-field act "inputSchema" "properties" "actions" "items" "anyOf")
+                                    collect (aref (assistant::%assistant-field action "properties" "op" "enum") 0))))
              (assert (not (find "launch" operations :test #'equal))))
            (assert (handler-case
                        (progn (assistant::%assistant-layout-preview assistant (make-hash-table)) nil)

@@ -217,7 +217,8 @@ test-cua: computer-use $(BUILD_DIR)/cua-clipboard-native-test
 	ATAXIA_CUA_NODE='$(ATAXIA_CUA_NODE)' WLR_RENDERER=gles2 LD_LIBRARY_PATH='$(abspath $(BUILD_DIR)):$(PREFIX)/lib:$(LD_LIBRARY_PATH)' dbus-run-session -- sbcl --noinform --disable-debugger --eval '(sb-int:set-floating-point-modes :traps nil)' --script tests/cua-world.lisp
 
 .PHONY: test-assistant
-test-assistant: assistant test-portability
+test-assistant: assistant test-portability $(BUILD_DIR)/computer-use-client
+	sbcl --noinform --disable-debugger --script tests/launcher-catalog.lisp
 	sbcl --noinform --disable-debugger --script tests/assistant-unit.lisp
 	sbcl --noinform --disable-debugger --script tests/assistant-scheduling.lisp
 	sbcl --noinform --disable-debugger --script tests/assistant-format.lisp
@@ -225,6 +226,7 @@ test-assistant: assistant test-portability
 	python3 tests/assistant-gles.py
 	python3 tests/assistant-notepad-gles.py
 	WLR_RENDERER=gles2 LD_LIBRARY_PATH='$(abspath $(BUILD_DIR)):$(PREFIX)/lib:$(LD_LIBRARY_PATH)' sbcl --noinform --disable-debugger --eval '(sb-int:set-floating-point-modes :traps nil)' --script tests/assistant-world.lisp
+	WLR_RENDERER=gles2 LD_LIBRARY_PATH='$(abspath $(BUILD_DIR)):$(PREFIX)/lib:$(LD_LIBRARY_PATH)' sbcl --noinform --disable-debugger --eval '(sb-int:set-floating-point-modes :traps nil)' --script tests/assistant-launch-world.lisp
 	WLR_RENDERER=gles2 LD_LIBRARY_PATH='$(abspath $(BUILD_DIR)):$(PREFIX)/lib:$(LD_LIBRARY_PATH)' sbcl --noinform --disable-debugger --eval '(sb-int:set-floating-point-modes :traps nil)' --script tests/assistant-voice-world.lisp
 	WLR_RENDERER=gles2 LD_LIBRARY_PATH='$(abspath $(BUILD_DIR)):$(PREFIX)/lib:$(LD_LIBRARY_PATH)' sbcl --noinform --disable-debugger --eval '(sb-int:set-floating-point-modes :traps nil)' --script tests/assistant-lisp-world.lisp
 	WLR_RENDERER=gles2 LD_LIBRARY_PATH='$(abspath $(BUILD_DIR)):$(PREFIX)/lib:$(LD_LIBRARY_PATH)' sbcl --noinform --disable-debugger --eval '(sb-int:set-floating-point-modes :traps nil)' --script tests/assistant-idle-world.lisp

@@ -208,16 +208,33 @@ export component AtaxiaLauncher inherits Window {
              (pathname-name path)))))
     (serious-condition () nil)))
 
-(defun %desktop-files ()
-  (remove-duplicates
-   (append
-    (directory #P"/usr/share/applications/*.desktop")
-    (directory (merge-pathnames #P".local/share/applications/*.desktop"
-                                (user-homedir-pathname))))
-   :test #'equal :key #'namestring))
+(defun %desktop-data-directories (&optional (data-home (uiop:getenv "XDG_DATA_HOME"))
+                                            (data-dirs (uiop:getenv "XDG_DATA_DIRS")))
+  ;; Snap/Flatpak and distribution exports are supplied by the session. Do not
+  ;; replace that search path with a fixed /usr/share + ~/.local/share pair.
+  (labels ((absolute-directory (text)
+             (when (and text (plusp (length text)) (char= #\/ (char text 0)))
+               (uiop:ensure-directory-pathname text))))
+    (remove-duplicates
+     (cons (or (absolute-directory data-home)
+               (merge-pathnames #P".local/share/" (user-homedir-pathname)))
+           (remove nil (mapcar #'absolute-directory
+                              (uiop:split-string (if (and data-dirs (plusp (length data-dirs)))
+                                                     data-dirs "/usr/local/share:/usr/share")
+                                                 :separator ":"))))
+     :test #'equal :from-end t)))
 
-(defun %load-desktop-entries ()
-  (sort (remove nil (mapcar #'%read-desktop-entry (%desktop-files)))
+(defun %desktop-files (&optional (directories (%desktop-data-directories)))
+  ;; Resolve precedence before reading entries: Hidden=true and NoDisplay=true
+  ;; in a user entry must also mask an entry of the same ID in a system directory.
+  (remove-duplicates
+   (loop for directory in directories append
+         (ignore-errors (directory (merge-pathnames #P"applications/*.desktop" directory)
+                                   :resolve-symlinks nil)))
+   :test #'equal :key #'pathname-name :from-end t))
+
+(defun %load-desktop-entries (&optional (directories (%desktop-data-directories)))
+  (sort (remove nil (mapcar #'%read-desktop-entry (%desktop-files directories)))
         #'string-lessp :key #'%desktop-entry-name))
 
 (defun %search-score (query text base)

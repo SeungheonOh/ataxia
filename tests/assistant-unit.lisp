@@ -82,6 +82,26 @@
   (assert (null (ataxia.assistant::assistant-controller-queue controller))))
 (format t "PASS: parser isolation, image encoding, tool schemas, preview/apply/Undo revisions, paused grants and stale mailbox events.~%")
 
+;; Model-visible action schemas agree with the executor's distinct fields and
+;; seconds-based bounds, rather than suggesting x/y on a button action.
+(let* ((world (make-metaworld :state-file nil))
+       (schema (ataxia.assistant::%assistant-action-schema world :ataxia))
+       (branches (gethash "anyOf" schema)))
+  (labels ((branch (op)
+             (find op branches :test #'equal
+                   :key (lambda (item) (aref (ataxia.assistant::%assistant-field item "properties" "op" "enum") 0)))))
+    (assert (= (length branches) (length ataxia.computer-use:+batch-action-fields+)))
+    (loop for (op . fields) in ataxia.computer-use:+batch-action-fields+
+          for properties = (gethash "properties" (branch op)) do
+            (assert (= (hash-table-count properties) (1+ (length fields))))
+            (dolist (field fields) (assert (gethash (string-downcase (symbol-name field)) properties))))
+    (assert (not (ataxia.assistant::%assistant-field (branch "button") "properties" "x")))
+    (assert (= 2 (ataxia.assistant::%assistant-field (branch "wait-stable") "properties" "settle" "maximum")))
+    (assert (= 16000 (ataxia.assistant::%assistant-field (branch "paste") "properties" "text" "maxLength")))
+    (dolist (scope '(:project :application))
+      (assert (not (find "launch" (gethash "anyOf" (ataxia.assistant::%assistant-action-schema world scope))
+                         :test #'equal :key (lambda (item) (aref (ataxia.assistant::%assistant-field item "properties" "op" "enum") 0))))))))
+
 (let* ((result (ataxia.assistant::%assistant-object "success" t "contentItems"
                  (vector (ataxia.assistant::%assistant-object "type" "inputImage" "imageUrl" "data:image/png;base64,fixture")
                          (ataxia.assistant::%assistant-object "type" "inputText" "text" "completed once"))))

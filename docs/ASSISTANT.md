@@ -110,6 +110,25 @@ can also unminimize a window. Maximize and fullscreen fill the containing sub-wo
 for grouped windows, or the output for canvas windows. Window controls invalidate
 earlier layout plans and Undo. They do not move the human's focus to another app.
 
+`ataxia_observe` without a window returns the window inventory and installed app
+catalog without taking a screenshot or changing the selected target. Supplying
+a window captures it by default; `capture:false` requests metadata only. To open
+an app, use `ataxia_act` with `op:"launch"`, an `application` ID from that catalog,
+and `capture:false`, then observe to verify its window. Launching is asynchronous;
+an accepted request alone does not prove that a window opened.
+
+The launcher reads `applications/*.desktop` from `XDG_DATA_HOME` and every
+directory in `XDG_DATA_DIRS`, using the [XDG defaults and precedence](https://specifications.freedesktop.org/basedir/latest/).
+This includes Snap and Flatpak export directories advertised by the session.
+User entries take precedence by desktop ID, including hidden overrides. The
+catalog stays cached between launches; discovery adds no idle polling.
+
+Native action schemas describe each operation separately: a click is `move`
+followed by `button`, key chords use XKB base names such as lowercase `n` with
+`Control_L`, and timing values are seconds. The assistant uses its existing
+native session rather than an external CUA MCP connection with another approval
+flow. Application discovery does not require a second permission request.
+
 Command, file and permission requests required by Codex appear inline. Questions
 support supplied choices and typed answers. Sign in opens the app-server's browser
 flow; Retry rechecks account state. Credentials are managed by Codex.

@@ -7,23 +7,54 @@
 (defun %assistant-tool-spec (name description properties &optional required)
   (%assistant-object "type" "function" "name" name "description" description
                      "inputSchema" (%assistant-object-schema properties (or required #()))))
+(defun %assistant-action-schema (world scope)
+  "Describe the same per-operation fields the native batch executor accepts."
+  (let* ((seconds (%assistant-schema "number" "minimum" .016d0 "maximum" 2 "description" "Seconds, not milliseconds."))
+         (fields (%assistant-object
+                   "window" (%assistant-schema "integer" "minimum" 1)
+                   "mode" (%assistant-schema "string" "enum" #("window" "desktop"))
+                   "x" (%assistant-schema "number") "y" (%assistant-schema "number")
+                   "duration" seconds "settle" seconds
+                   "timeout" (%assistant-schema "number" "minimum" .05d0 "maximum" 20 "description" "Seconds.")
+                   "button" (%assistant-schema "string" "enum" #("left" "right" "middle"))
+                   "state" (%assistant-schema "string")
+                   "key" (%assistant-schema "string" "maxLength" 80 "description" "XKB base key: lowercase n for Ctrl+N; Return for Enter.")
+                   "modifiers" (%assistant-schema "array" "maxItems" 4 "items"
+                                  (%assistant-schema "string" "enum" #("Control_L" "Shift_L" "Alt_L" "Super_L")))
+                   "text" (%assistant-schema "string" "maxLength" 256)
+                   "format" (%assistant-schema "string" "enum" #("text" "md" "html"))
+                   "application" (%assistant-schema "string" "description" "Catalog ID from ataxia_observe applications, not a window ID or command.")
+                   "title" (%assistant-schema "string" "maxLength" 256)
+                   "app-id" (%assistant-schema "string" "maxLength" 256)
+                   "focus" (%assistant-schema "boolean"))))
+    (%assistant-object "anyOf"
+      (coerce
+       (loop for (op . allowed) in cu:+batch-action-fields+
+             unless (and (equal op "launch")
+                         (or (not (world-supports-p world :launcher))
+                             (not (member scope '(:desktop :ataxia)))))
+             collect
+             (let ((properties (%assistant-object "op" (%assistant-schema "string" "enum" (vector op)))))
+               (dolist (field allowed)
+                 (let ((name (string-downcase (symbol-name field))))
+                   (setf (gethash name properties) (gethash name fields))))
+               (when (member op '("button" "key") :test #'equal)
+                 (setf (gethash "state" properties)
+                       (%assistant-schema "string" "enum" (if (equal op "button") #("click" "down" "up") #("tap" "down" "up")))))
+               (when (equal op "paste")
+                 (setf (gethash "text" properties) (%assistant-schema "string" "maxLength" 16000)))
+               (%assistant-object-schema properties
+                 (coerce (cons "op" (cdr (assoc op '(("focus" "window") ("view" "mode") ("move" "x" "y")
+                                                    ("key" "key") ("type" "text") ("paste" "text") ("launch" "application"))
+                                               :test #'equal))) 'vector))))
+       'vector))))
+
 (defun %assistant-tool-specs (world &optional (scope :desktop))
   (multiple-value-bind (operation description)
       (when (world-supports-p world :layout) (world-layout-schema world))
     (let* ((string (%assistant-schema "string")) (integer (%assistant-schema "integer"))
            (number (%assistant-schema "number")) (boolean (%assistant-schema "boolean"))
-           (action (%assistant-object-schema
-                  (%assistant-object
-                    "op" (%assistant-schema "string" "enum"
-                           (coerce (remove-if (lambda (op)
-                                                (and (equal op "launch")
-                                                     (not (world-supports-p world :launcher))))
-                                              (mapcar #'car cu:+batch-action-fields+)) 'vector))
-                    "window" integer "mode" (%assistant-schema "string" "enum" #("window" "desktop"))
-                    "x" number "y" number "duration" number "button" string "state" string
-                    "key" string "modifiers" (%assistant-schema "array" "items" string "maxItems" 4)
-                    "text" (%assistant-schema "string" "maxLength" 256) "application" string
-                    "title" string "app-id" string "timeout" number "focus" boolean "settle" number) #("op"))))
+           (action (%assistant-action-schema world scope)))
       (coerce
        (append
         (when (eq scope :ataxia)
@@ -33,12 +64,12 @@
                    "mode" (%assistant-schema "string" "enum" #("inspect" "apply" "worker"))) #("code" "mode"))))
         (list
          (%assistant-tool-spec "ataxia_observe"
-       "Discover approved mapped applications across the World, including offscreen windows. Select an available window by stable ID for its own PNG and local input coordinates, independent of monitor cameras or occlusion. Unavailable windows remain in discovery; inspect their World state. capture defaults true; without a selected window only the window list is returned. The token and sequence are managed by Ataxia."
+       "Discover approved mapped applications across the World, including offscreen windows. Select an available window by stable ID for its own PNG and local input coordinates, independent of monitor cameras or occlusion. Unavailable windows remain in discovery; inspect their World state. Omit window for discovery without a screenshot or target change. The applications array lists launchable catalog IDs and names, including apps not running. capture defaults true only when window is supplied. The token and sequence are managed by Ataxia."
        (%assistant-object "window" integer "capture" boolean))
          (%assistant-tool-spec "ataxia_act"
-       "Execute 1–16 native input actions in order and return a settled screenshot. Observe a window before input. Key names are XKB names, e.g. Return; modifiers are Control_L, Shift_L, Alt_L, Super_L. Window coordinates apply to the last image. This seat cannot invoke desktop shortcuts or click World controls. Human takeover pauses the session."
+       "Execute 1–16 native actions and return the resulting windows; capture defaults true. To launch, use op:launch with application set to an applications catalog ID from observe, capture:false, then observe to verify the new window. Observe before input. To click, move to x/y then use button; button has no coordinates. Key names are XKB base names, e.g. n with Control_L for Ctrl+N, or Return. All durations, timeout and settle are seconds (settle 0–2). Window coordinates apply to the last image. This seat cannot invoke desktop shortcuts or click World controls. Human takeover pauses the session."
        (%assistant-object "actions" (%assistant-schema "array" "items" action "minItems" 1 "maxItems" 16)
-                          "capture" boolean "settle" number) #("actions"))
+                          "capture" boolean "settle" (%assistant-schema "number" "minimum" 0 "maximum" 2 "description" "Seconds; default 0.15.")) #("actions"))
          (%assistant-tool-spec "ataxia_window"
        "Control an application window by its stable ID from observe or desktop_snapshot. Actions: close, minimize, restore, maximize, fullscreen. Close sends the normal application close request; it has no Undo and may open a save dialog, so verify afterward. Restore unminimizes and exits maximized/fullscreen presentation. Maximize and fullscreen follow the current World's placement policy. Application scope permits only its selected window; Project scope permits only this assistant's previews."
        (%assistant-object "window" integer "action" (%assistant-schema "string" "enum" #("close" "minimize" "restore" "maximize" "fullscreen"))) #("window" "action"))
@@ -159,9 +190,9 @@
     ((equal name "ataxia_observe")
      (let ((window (gethash "window" arguments)))
        (%assistant-check-action-scope controller (vector (list :op "view" :window window :mode "window")))
-       (%assistant-cu-call controller (list :op "view" :mode "window" :window window))
+       (when window (%assistant-cu-call controller (list :op "view" :mode "window" :window window)))
        (let ((result (%assistant-cu-call controller (list :op "observe" :mode "window"))))
-         (unless (eq :false (gethash "capture" arguments t))
+         (unless (eq :false (gethash "capture" arguments (if window t :false)))
            (when (getf (getf result :session) :window)
              (setf (getf result :image) (getf (%assistant-cu-call controller (list :op "capture")) :image))))
          result)))

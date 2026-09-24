@@ -10,7 +10,7 @@
     (unless (and window (ataxia.kernel:application-mapped-p (ataxia.world:window-application window)))
       (error "Window ~A is no longer open. Observe the desktop again." id))
     (ecase (assistant-controller-scope controller)
-      (:desktop
+      ((:desktop :ataxia)
        (unless (getf (assistant-controller-grant controller) :layout)
          (error "This task has no Desktop grant.")))
       (:application

@@ -2,7 +2,7 @@
 (defparameter *assistant-preview-error-output* "/dev/null")
 
 (defun %assistant-project-file (controller path)
-  (unless (and (eq :project (assistant-controller-scope controller))
+  (unless (and (member (assistant-controller-scope controller) '(:project :ataxia))
                (getf (assistant-controller-grant controller) :project))
     (error "Choose Project scope and a directory before opening an app preview."))
   (cu:bounded-string path 2048 "path")

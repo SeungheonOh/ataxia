@@ -5,6 +5,7 @@
 (defparameter +assistant-frame-limit+ (* 8 1024 1024))
 (defparameter *assistant-time-limit* 1800d0)
 (defparameter *assistant-tool-limit* 256)
+(defparameter *assistant-idle-timeout* 60d0)
 (defvar *assistant-operation-epoch* nil)
 (defvar *assistant-operation-process* nil)
 
@@ -34,6 +35,7 @@
   (seen-calls (make-hash-table :test #'equal)) tool-worker
   (tool-count 0) (turn-count 0) (audio nil) (audio-player nil)
   (audio-thread nil) (audio-epoch 0) (voice-active nil) (voice-started-at 0d0)
+  (capture-epoch 0) (voice-version nil) voice-error (voice-caption "") (voice-caption-role nil)
   (voice-stopping-p nil) (voice-resume-p nil) (audio-output nil) (audio-output-bytes 0) audio-play-thread
   (audio-wake (sb-thread:make-semaphore :count 0))
   (utterances (make-hash-table :test #'equal)))
@@ -90,6 +92,7 @@
               (:connection (setf (assistant-controller-connection controller) value))
               (:task (setf (assistant-controller-task controller) value))
               (:microphone (setf (assistant-controller-microphone controller) value))
+              (:voice-error (setf (assistant-controller-voice-error controller) value))
               (:activity (setf (assistant-controller-activity controller) (%assistant-text value 1024)))
               (:plan (setf (assistant-controller-plan controller) value))
               (:request (setf (assistant-controller-request controller) value))))

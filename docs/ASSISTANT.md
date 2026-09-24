@@ -1,24 +1,31 @@
 # Desktop assistant
 
-The optional `ataxia-assistant` system connects the native RmlUi panel to the
-installed Codex app-server. Opening the panel starts neither Codex nor audio.
+The reusable `ataxia-assistant` system connects the native RmlUi panel to the
+installed [Codex app-server](https://learn.chatgpt.com/docs/app-server).
+Opening the panel starts neither Codex nor audio.
 
 ```sh
 make assistant
-ataxia --assistant
+ataxia
 # Optional initial project directory:
 ataxia --assistant-project /path/to/project
 ```
 
+Normal desktop sessions enable the service in **Ataxia** scope. `--no-assistant`
+or `ATAXIA_ASSISTANT=0` opts out; headless sessions still require `--assistant`.
+Attaching the service and opening its panel starts no Codex process and opens no
+audio devices. Connect, Send, or Voice starts the app-server lazily.
+
 `ATAXIA_ASSISTANT=1` also enables startup. `--no-sly` keeps the internal owner
-queue available without opening a SLY listener. Existing sessions can load the
-system and call `(ataxia.assistant:enable world)` on the compositor owner thread.
+queue available without opening a SLY listener. Load the system before starting
+the World; call `(ataxia.assistant:enable world)` on its owner thread to attach it.
 
 | Control | Action |
 | --- | --- |
 | Super+A / Assistant in the bar | Open or focus the panel |
 | Super+Shift+A / Voice | Toggle voice |
 | Send | Authorize the displayed scope and submit a task |
+| Ctrl+Enter | Send the composer; Enter remains a newline |
 | Send during a turn | Steer that turn |
 | Model settings | Open the centered dialog for model, effort and Fast mode |
 | Details | Show task activity, plan and limits |
@@ -32,8 +39,10 @@ Closing the panel preserves a running text task. It restores prior application
 focus when that application is still available. The bar shows actual task and
 microphone state while the panel is closed.
 
-The panel uses the light shell style: white surfaces, gray borders and blue
-accents. **Model settings** opens a dialog centered on the current screen with
+The panel follows the shell's monochrome workstation style: square boundaries,
+16 dp text rows, inverse text actions and consistent horizontal gutters. The
+current model, Fast toggle and Voice action stay beside Send. Clicking the model
+opens a dialog centered on the current screen with
 model, reasoning effort and Fast mode together. Changes save automatically;
 Done, Escape or clicking outside returns to the chat without losing the draft.
 Escape closes the settings dialog first, then the assistant on a second press.
@@ -68,6 +77,25 @@ Click the scope button to cycle through:
   the panel. The assistant cannot launch or switch to another application.
 - **Project:** Codex may edit the chosen directory using its workspace-write
   sandbox. Native input and window controls are limited to previews created by this assistant.
+- **Ataxia:** desktop tools, editing the selected source directory, app previews,
+  and the `ataxia_lisp` live-development tool. This is the normal desktop default;
+  its initial directory is the Ataxia source tree. Other Worlds can opt in with
+  `(ataxia.assistant:enable world :scope :ataxia :project "/path/to/source/")`.
+
+`ataxia_lisp` reads and compiles one form off the owner thread. `inspect` and
+`apply` bind `WORLD` to the active World and run on its owner thread with a
+250 ms execution budget; `apply` requests a refresh. `worker` permits filesystem
+work and compilation off the compositor thread with a 30 second budget. It must
+not mutate World state or install class/generic-function definitions. Output is
+bounded to 16 KiB, and errors return to the chat without replacing the World.
+Changes made before an error are not rolled back or automatically replayed.
+This is trusted live development access, not a Lisp sandbox. Pause and scope
+changes reject subsequent calls; they cannot undo a completed change.
+
+Do not ASDF-reload a live World's dependency tree from a worker. Class redefinition
+can temporarily remove accessors used by frames. Read/compile on workers and
+install prepared definitions in a short owner-thread operation. No Kernel or
+Runtime implementation changes are needed by this service.
 
 `ataxia_window` controls a window by its stable ID: `close`, `minimize`, `restore`,
 `maximize`, or `fullscreen`. Closing sends a normal application close request;
@@ -120,19 +148,25 @@ as a persistent compositor widget is a separate development action.
 
 ## Voice
 
-The adapter targets **Codex CLI 0.153.4**, experimental realtime v2 over its
-websocket transport. It uses `pw-record` / `pw-play`, PCM16 mono at 24 kHz, and
+The adapter is checked against **Codex CLI 0.156.1** and its generated experimental
+schema. It lets Codex choose its configured realtime protocol (v1, v2 or v3)
+over its websocket transport. It uses `pw-record` / `pw-play`, PCM16 mono at 24 kHz, and
 starts microphone capture only after the service confirms negotiation. The
 server performs speech-to-task handoff; displayed transcripts are not submitted
-as duplicate tasks. Talking during a task first pauses native input.
+as duplicate tasks. The panel displays live captions and microphone state.
+**Mute mic** closes capture and rejects already-queued microphone chunks while
+leaving playback connected; **Unmute mic** opens a new capture stream. End voice,
+closing the panel, Pause, Stop and World teardown close both audio devices.
 
-On this installation, ChatGPT sign-in works for typed tasks, but realtime returns
+On this installation, ChatGPT sign-in works for typed tasks. A realtime start
+request is accepted, then the asynchronous backend error returns
 `realtime conversation requires API key auth`. Configure API-key authentication
 locally for the Codex child, or supply `OPENAI_API_KEY` in the compositor's launch
 environment, to use that service. The panel reports unavailability and keeps text
-usable. It does not substitute another audio provider. Synthetic input/output and
-all tested shutdown paths pass; a physical microphone conversation remains
-unverified with the current credentials.
+usable, including after the microphone returns to off. It does not substitute
+another audio provider. Synthetic v2/v3 capture, playback, captions, mute/unmute,
+single handoff and shutdown tests pass. A physical microphone conversation
+remains unverified with the current credentials.
 
 ## World attachment
 
@@ -147,20 +181,39 @@ adapter. See [World services](WORLD-SERVICES.md) to attach another implementatio
 
 The controller has separate connection, task and microphone state. Owner-thread
 mutations are short; subprocess I/O, encoding and audio run in workers. Events
-are bounded and stamped with controller/World identity. Reconnecting creates a
-fresh ephemeral Codex thread and never replays physical actions automatically.
+are bounded and stamped with controller/World identity. The Codex child starts
+only on Send, Voice, or an explicit model-list connection. After 60 seconds
+without a task, approval, pending RPC or voice session, the worker closes its
+stdio connection, lets Codex flush its conversation, and exits along with the
+reader. The next submission starts a child and resumes the same persisted
+thread, including its tool definitions and conversation context. An unused empty
+thread is created anew because Codex does not persist it until its first turn.
+Scope changes and recovery from an uncertain connection failure create a new
+thread; physical actions are never replayed automatically.
 
 Defaults are 30 minutes per human submission and 256 local tool calls per turn;
 `*assistant-time-limit*` and `*assistant-tool-limit*` configure these limits in
-`ataxia.assistant`. The panel displays them. Idle UI schedules no continuous
-frames; a focused text field can blink its caret.
+`ataxia.assistant`. The panel displays them. `*assistant-idle-timeout*` controls
+the child shutdown delay (seconds; NIL disables it). Idle UI schedules no
+continuous frames; a focused text field can blink its caret. The worker waits on
+a semaphore or the nearest actual deadline, with no periodic polling.
 
 Ataxia keeps at most 40 messages in memory and renders a bounded transcript.
 `$XDG_STATE_HOME/ataxia/assistant/operations.jsonl` (normally under
 `~/.local/state`) records accepted/completed call identifiers and tool names,
 with mode 0600 and a 1 MiB retention bound. It contains no prompts, audio,
-transcripts, screenshots or credentials. Codex manages its own process logging.
+transcripts, screenshots or credentials. Codex stores conversation rollouts in
+its own configured state directory so idle shutdown can preserve full context;
+Ataxia's 40-message display bound does not delete that Codex history.
 Unknown outcomes are not replayed after reconnect; begin with a new observation.
+
+On this development laptop, `make benchmark-idle` measured zero worker CPU time
+and voluntary wakeups over five seconds. The isolated World measured zero
+frames, zero allocated bytes, and 0.41 ms process CPU over five seconds, excluding
+caret blinking and unrelated desktop activity. Codex 0.156.1 itself used CPU
+while idle in a separate subprocess probe, which is why the child is released
+after the grace period. After release there is no assistant worker, reader, or
+Codex child left to poll. Active inference and voice are not idle workloads.
 
 ## Verification
 
@@ -188,7 +241,9 @@ ATAXIA_TEST_CODEX=1 WLR_RENDERER=gles2 sbcl --noinform --disable-debugger \
 The deterministic suite covers protocol streaming, explicit approvals and answers,
 duplicate calls, stale epochs, native panel rendering at wide/narrow sizes, idle
 rendering, preview input and update recovery, animated layout Undo, synthetic
-voice handoff/playback and cleanup. Window tests cover actual client closure,
+voice handoff/playback and cleanup, bounded live Lisp evaluation, and idle child
+shutdown/resume. The real Codex test also verifies context and dynamic tools
+survive replacement of the subprocess. Window tests cover actual client closure,
 minimize/restore across both tilers, canvas expansion, scope checks, stale IDs
 and focus preservation. The real-model checks exercise registered native tools
 in an isolated headless World, including UI creation from an empty project.

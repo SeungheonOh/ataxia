@@ -24,7 +24,7 @@ def capture(c, width, height, name):
 def component(source, width, height):
     bind_texture(0x0de1, tex)
     tex_image(0x0de1, 0, 0x1908, width, height, 0, 0x1908, 0x1401, None)
-    c = create(measured_source((root/f'src/world/assistant/{source}.rml').read_bytes(), ['settings-open','fast','settings-done','model-select','effort-select']), str(root/f'src/world/assistant/{source}.rml').encode(), b'', width, height, 1)
+    c = create(measured_source((root/f'src/world/assistant/{source}.rml').read_bytes(), ['settings-open','fast','settings-done','model-select','effort-select','fast-toggle','talk','mic-mute','send','message','voice-caption']), str(root/f'src/world/assistant/{source}.rml').encode(), b'', width, height, 1)
     ok(c); ok(attach(c, fbo))
     return c
 
@@ -41,6 +41,25 @@ for width, height in [(480, 760), (304, 640)]:
     ok(button(c, settings_x, settings_y, 1, True)); ok(button(c, settings_x, settings_y, 1, False)); ok(render(c))
     names = [api('component_callback_name', C.c_char_p, P, C.c_size_t)(c, i) for i in range(api('component_callback_count', C.c_size_t, P)(c))]
     assert b'settings-open' in names, names
+    ok(api('model_boolean',C.c_bool,P,C.c_char_p,C.c_bool)(c,b'fast_disabled',False))
+    ok(set_text(c,b'settings-open',b'GPT-6 Astra'))
+    ok(set_text(c,b'talk',b'End voice'))
+    ok(style(c,b'voice-controls',b'display',b'flex'))
+    ok(style(c,b'voice-caption',b'display',b'block'))
+    ok(set_text(c,b'voice-caption',b'Make the battery panel more compact and keep the current apps open.'))
+    for state,label in [('listening','Mute mic'),('muted','Unmute mic')]:
+        ok(set_text(c,b'mic-status',b'Microphone on' if state=='listening' else b'Microphone muted'))
+        ok(set_text(c,b'mic-mute',label.encode()))
+        capture(c,width,height,f'assistant-voice-{state}-{width}')
+        bounds={name:element_box(c,name,width,height) for name in ['settings-open','fast-toggle','talk','mic-mute','send','message','voice-caption']}
+        for name,a in bounds.items():
+            for other,b in bounds.items():
+                if name!=other: assert a[2]<=b[0] or b[2]<=a[0] or a[3]<=b[1] or b[3]<=a[1], (state,name,other,a,b)
+        for action in ['fast-toggle','talk','mic-mute','send']:
+            ok(api('component_register_callback',C.c_bool,P,C.c_char_p)(c,action.encode()))
+            x,y=box_center(bounds[action]);ok(button(c,x,y,1,True));ok(button(c,x,y,1,False));ok(render(c))
+        names=[api('component_callback_name',C.c_char_p,P,C.c_size_t)(c,i) for i in range(api('component_callback_count',C.c_size_t,P)(c))]
+        assert all(action.encode() in names for action in ['fast-toggle','talk','mic-mute','send']), names
     ok(api('component_focus', C.c_bool, P, C.c_bool)(c, False))
     ok(render(c)); assert delay(c) < 0, delay(c)
     ok(detach(c)); destroy(c)

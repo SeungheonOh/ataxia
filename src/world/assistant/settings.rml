@@ -6,7 +6,7 @@ div { display:block; box-sizing:border-box; }
 #dialog { position:relative; z-index:1; width:420dp; max-width:94%; padding:0 var(--inset); border:var(--frame) var(--ink); }
 #dialog-header, #speed-row, #dialog-actions { display:flex; align-items:center; gap:0 var(--gap); }
 #dialog-heading { font-size:var(--heading); font-weight:bold; }
-#settings-close { margin-left:auto; width:var(--control); padding:0; text-align:center; font-size:14dp; }
+#settings-close { margin-left:auto; padding:0; font-size:12dp; }
 #dialog-description { margin:0; font-size:12dp; line-height:16dp; }
 .setting { margin-bottom:0; }
 .setting-label { font-size:12dp; font-weight:bold; margin-bottom:0; }
@@ -28,7 +28,7 @@ select option { display:block; padding:0 var(--inset); }
 #settings-done { margin-left:auto; }
 </style><link type="text/rcss" href="../rmlui/theme.rcss"/></head><body class="shell assistant-settings" data-model="state"><div id="settings-layer">
 <div id="settings-backdrop"/>
-<div id="dialog"><div id="dialog-header"><div id="dialog-heading">Model settings</div><button id="settings-close">×</button></div>
+<div id="dialog"><div id="dialog-header"><div id="dialog-heading">Model settings</div><button id="settings-close">Close</button></div>
 <div id="dialog-description">Choose how the assistant handles your next task.</div>
 <div id="model-setting" class="setting"><div class="setting-label">Model</div><div id="model-field" data-rml="model_options"><select id="model-select" data-value="selected_model"><option value="">Codex default</option></select><div id="model-chevron">▾</div></div><button id="models-load">Connect</button></div>
 <div id="effort-setting" class="setting"><div class="setting-label">Reasoning effort</div><div id="effort-field" data-rml="effort_options"><select id="effort-select" data-value="selected_effort"><option value="">Auto</option></select><div id="effort-chevron">▾</div></div></div>

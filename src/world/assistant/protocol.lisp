@@ -25,17 +25,25 @@
   (format nil "~A~%~%Current task scope: ~A.~%Selected project directory: ~A~%Ataxia source directory (reference examples): ~A~%"
           (uiop:read-file-string (asdf:system-relative-pathname "ataxia-assistant" "src/world/assistant/instructions.md"))
           (ecase (assistant-controller-scope controller)
-            (:desktop "Desktop") (:application "Selected app") (:project "Project"))
+            (:desktop "Desktop") (:application "Selected app") (:project "Project")
+            (:ataxia "Ataxia — edit the selected source tree and use ataxia_lisp for live changes"))
           (assistant-controller-project controller)
           (namestring (asdf:system-source-directory "ataxia-assistant"))))
 
 (defun %assistant-start-thread (controller)
-  (%assistant-rpc controller "thread/start"
-      (%assistant-object "ephemeral" t "cwd" (assistant-controller-project controller)
-                         "sandbox" (if (eq :project (assistant-controller-scope controller)) "workspace-write" "read-only")
-                         "approvalPolicy" "on-request" "dynamicTools" (%assistant-owner controller (lambda () (%assistant-tool-specs (assistant-controller-world controller))))
+  (let* ((resume (assistant-controller-thread-id controller))
+         (params (%assistant-object "cwd" (assistant-controller-project controller)
+                         "sandbox" (if (member (assistant-controller-scope controller) '(:project :ataxia)) "workspace-write" "read-only")
+                         "approvalPolicy" "on-request"
                          "developerInstructions"
-                         (%assistant-developer-instructions controller))
+                         (%assistant-developer-instructions controller))))
+    (if resume
+        (setf (gethash "threadId" params) resume (gethash "excludeTurns" params) t)
+        (setf (gethash "ephemeral" params) :false
+              (assistant-controller-turn-count controller) 0
+              (gethash "dynamicTools" params)
+              (%assistant-owner controller (lambda () (%assistant-tool-specs (assistant-controller-world controller) (assistant-controller-scope controller))))))
+  (%assistant-rpc controller (if resume "thread/resume" "thread/start") params
     (lambda (result error)
       (%assistant-check-result result error)
       (setf (assistant-controller-thread-id controller) (%assistant-field result "thread" "id"))
@@ -53,7 +61,7 @@
       (%assistant-state controller :connection :ready :activity "Connected to Codex")
       (let ((deferred (shiftf (assistant-controller-deferred controller) nil)))
         (when deferred (%assistant-send-task controller deferred)))
-      (when (eq :starting (assistant-controller-microphone controller)) (%assistant-voice-start controller)))))
+      (when (eq :starting (assistant-controller-microphone controller)) (%assistant-voice-start controller))))))
 (defun %assistant-account (controller)
   (%assistant-rpc controller "account/read" (%assistant-object "refreshToken" :false)
     (lambda (account failure)
@@ -63,7 +71,7 @@
                             :activity "Sign in to Codex, or use Retry after signing in elsewhere. Your task is retained.")
           (%assistant-list-models controller
                                   (lambda ()
-                                    (unless (assistant-controller-thread-id controller) (%assistant-start-thread controller))))))))
+                                    (%assistant-start-thread controller)))))))
 (defun %assistant-list-models (controller continuation &optional cursor (entries nil) (pages 0))
   (let ((params (%assistant-object "limit" 100 "includeHidden" :false)))
     (when cursor (setf (gethash "cursor" params) cursor))
@@ -122,7 +130,8 @@
     (error () nil)))
 
 (defun %assistant-send-task (controller text)
-  (unless (assistant-controller-thread-id controller)
+  (unless (and (eq :ready (assistant-controller-connection controller))
+               (assistant-controller-thread-id controller))
     (setf (assistant-controller-deferred controller) text)
     (return-from %assistant-send-task nil))
   (when (assistant-controller-starting-turn controller)
@@ -197,6 +206,9 @@
   (when (and (string= method "turn/started")
              (equal (assistant-controller-thread-id controller) (%assistant-field params "threadId")))
     (unless (equal (assistant-controller-turn-id controller) (%assistant-field params "turn" "id"))
+      ;; Realtime owns its handoff turns; they did not pass through turn/start.
+      (unless (assistant-controller-starting-turn controller)
+        (incf (assistant-controller-turn-count controller)))
       (setf (assistant-controller-tool-count controller) 0)
       (clrhash (assistant-controller-seen-calls controller)))
     (setf (assistant-controller-turn-id controller) (%assistant-field params "turn" "id")))
@@ -209,11 +221,11 @@
            (%assistant-state controller :activity (or (%assistant-field params "error") "Sign-in failed. Try again.")))))
     ((string= method "turn/started")
      (when (and (assistant-controller-voice-active controller)
-                (member (assistant-controller-microphone controller) '(:starting :listening)))
+                (member (assistant-controller-microphone controller) '(:starting :listening :muted)))
        (%assistant-owner controller
          (lambda ()
            (when (and (assistant-controller-grant controller)
-                      (member (assistant-controller-microphone controller) '(:starting :listening)))
+                      (member (assistant-controller-microphone controller) '(:starting :listening :muted)))
              (setf (assistant-controller-voice-resume-p controller) nil (assistant-controller-blocked controller) nil)
              (when (assistant-controller-session controller) (cu:activate-session (assistant-controller-session controller)))))))
      (if (assistant-controller-blocked controller) (%assistant-interrupt controller)
@@ -259,7 +271,7 @@
     ((and (>= (length method) 16) (string= "thread/realtime/" method :end2 16))
      (handler-case (%assistant-voice-event controller method params)
        (error (cause) (%assistant-voice-close controller)
-              (%assistant-state controller :activity (format nil "Voice stopped: ~A. You can keep typing." cause)))))
+              (%assistant-state controller :voice-error t :activity (format nil "Voice stopped: ~A. You can keep typing." cause)))))
     ((string= method "error")
      (%assistant-state controller :activity (or (%assistant-field params "error" "message") "Codex reported an error")))))
 

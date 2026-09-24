@@ -10,7 +10,7 @@ div { display:block; box-sizing:border-box; }
 #identity { min-width:0; }
 #heading { white-space:nowrap; }
 #scope { flex-shrink:1; min-width:0; font-size:11dp; max-width:120dp; overflow:hidden; text-overflow:ellipsis; }
-#close { width:var(--control); padding:0; text-align:center; font-size:14dp; }
+#close { padding:0; font-size:12dp; }
 #scope-note { display:none; }
 #project { display:none; box-sizing:border-box; margin:0; width:100%; height:var(--field-height); padding:0 var(--inset); border:var(--frame) var(--ink); font-size:12dp; flex-shrink:0; }
 #conversation { flex:1; min-height:0; width:100%; overflow-y:auto; padding:0; }
@@ -48,8 +48,12 @@ div { display:block; box-sizing:border-box; }
 #compose { margin:0; flex-shrink:0; }
 #message { display:block; box-sizing:border-box; width:100%; height:80dp; padding:0 var(--inset); border:var(--frame) var(--ink); font-size:14dp; line-height:16dp; }
 #compose-actions { flex-wrap:wrap; padding:0; }
-#settings-open, #talk { font-size:11dp; }
-#mic-status { display:none; }
+#settings-open, #fast-toggle, #talk, #mic-mute { font-size:11dp; }
+#settings-open { max-width:200dp; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+#voice-controls { display:none; align-items:center; gap:0 var(--gap); flex-wrap:wrap; }
+#mic-status { font-size:11dp; }
+#voice-caption { display:none; max-height:48dp; overflow-y:auto; font-size:12dp; white-space:pre-wrap; word-break:break-word; }
+#fast-toggle.enabled { background:var(--ink); color:var(--paper); }
 #send { margin-left:auto; font-size:12dp; }
 #footer { flex-wrap:wrap; padding:0; font-size:10dp; }
 #details { margin-left:auto; font-size:10dp; }
@@ -60,13 +64,14 @@ div { display:block; box-sizing:border-box; }
 .small #scope { max-width:72dp; }
 .small #hint { max-width:180dp; white-space:normal; }
 </style><link type="text/rcss" href="../rmlui/theme.rcss"/></head><body class="shell assistant-panel" data-model="state"><div id="panel">
-<div id="header"><div id="identity"><div><div id="heading">Assistant</div><div id="state">Ready</div></div></div><div id="header-actions"><button id="scope">Desktop</button><button id="close">×</button></div><div id="scope-note"/></div>
+<div id="header"><div id="identity"><div><div id="heading">Assistant</div><div id="state">Ready</div></div></div><div id="header-actions"><button id="scope">Desktop</button><button id="close">Close</button></div><div id="scope-note"/></div>
 <input id="project" type="text" data-value="project" placeholder="Project directory"/>
 <div id="conversation"><div id="transcript" data-rml="transcript"/><div id="plan"/><div id="activity"/>
 <div id="connection-actions"><button id="login">Sign in</button><button id="retry">Retry</button></div>
 <div id="request"><div id="question"/><div id="choices"><button id="choice0" class="choice"/><button id="choice1" class="choice"/><button id="choice2" class="choice"/><button id="choice3" class="choice"/><button id="choice4" class="choice"/><button id="choice5" class="choice"/></div><div id="approval-actions"><button id="allow">Allow once</button><button id="deny">Deny</button></div></div><div id="limits"/></div>
 <div id="controls"><button id="pause">Pause</button><button id="stop">Stop</button><button id="undo">Undo layout</button></div>
-<div id="compose"><textarea id="message" data-value="message" autofocus="autofocus" placeholder="Describe a task…"/>
-<div id="compose-actions"><button id="settings-open">Model settings</button><button id="talk">Voice</button><div id="mic-status">Microphone off</div><button id="send">Send</button></div></div>
-<div id="footer"><div id="hint">Esc close · Ctrl+Alt+Esc pause all</div><button id="details">Details</button></div>
+<div id="compose"><div id="voice-controls"><div id="mic-status">Microphone off</div><button id="mic-mute">Mute mic</button></div><div id="voice-caption"/>
+<textarea id="message" data-value="message" autofocus="autofocus" placeholder="Describe a task…"/>
+<div id="compose-actions"><button id="settings-open">Model settings</button><button id="fast-toggle" data-attrif-disabled="fast_disabled">Fast off</button><button id="talk">Voice</button><button id="send">Send</button></div></div>
+<div id="footer"><div id="hint">Ctrl+Enter send · Esc close</div><button id="details">Details</button></div>
 </div></body></rml>

@@ -7,7 +7,7 @@
 (defun %assistant-tool-spec (name description properties &optional required)
   (%assistant-object "type" "function" "name" name "description" description
                      "inputSchema" (%assistant-object-schema properties (or required #()))))
-(defun %assistant-tool-specs (world)
+(defun %assistant-tool-specs (world &optional (scope :desktop))
   (multiple-value-bind (operation description)
       (when (world-supports-p world :layout) (world-layout-schema world))
     (let* ((string (%assistant-schema "string")) (integer (%assistant-schema "integer"))
@@ -26,6 +26,11 @@
                     "title" string "app-id" string "timeout" number "focus" boolean "settle" number) #("op"))))
       (coerce
        (append
+        (when (eq scope :ataxia)
+          (list (%assistant-tool-spec "ataxia_lisp"
+                 "Evaluate one Common Lisp form in this running Ataxia. Ataxia scope only. inspect/apply bind WORLD to the active World on its owner thread, with a 250 ms execution budget; apply also refreshes it. worker runs off the compositor thread for reading/compiling source and file I/O, with a 30 s budget; it must not access mutable World state or install class/generic-function definitions. Never ASDF-reload the live World dependency tree. Parse/compile happens off-thread. Errors are returned without replacing the World; partial mutations are not rolled back or retried. Use regular Ataxia tools for normal application input. Never change kernel/runtime/native code."
+                 (%assistant-object "code" (%assistant-schema "string" "maxLength" 32768)
+                   "mode" (%assistant-schema "string" "enum" #("inspect" "apply" "worker"))) #("code" "mode"))))
         (list
          (%assistant-tool-spec "ataxia_observe"
        "Discover approved mapped applications across the World, including offscreen windows. Select an available window by stable ID for its own PNG and local input coordinates, independent of monitor cameras or occlusion. Unavailable windows remain in discovery; inspect their World state. capture defaults true; without a selected window only the window list is returned. The token and sequence are managed by Ataxia."
@@ -150,6 +155,7 @@
   (unless (hash-table-p arguments) (error "Tool arguments must be an object."))
   (%assistant-owner controller (lambda () (%assistant-require-task controller)))
   (cond
+    ((equal name "ataxia_lisp") (%assistant-evaluate-lisp controller arguments))
     ((equal name "ataxia_observe")
      (let ((window (gethash "window" arguments)))
        (%assistant-check-action-scope controller (vector (list :op "view" :window window :mode "window")))
@@ -212,7 +218,7 @@
            (let* ((*assistant-operation-epoch* epoch)
                   (result (handler-case
                            (%assistant-tool-result (%assistant-run-tool controller name (gethash "arguments" params)))
-                           (error (cause) (%assistant-tool-failure cause)))))
+                           (serious-condition (cause) (%assistant-tool-failure cause)))))
              ;; The worker alone owns the response cache; the tool thread posts completion.
              (when (= epoch (assistant-controller-epoch controller))
                (ignore-errors (%assistant-queue controller :tool-result (list key id result))))))

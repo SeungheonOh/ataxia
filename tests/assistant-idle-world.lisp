@@ -1,0 +1,62 @@
+;;;; Real process teardown/resume in a plain World; no model/network access.
+(load (merge-pathnames "support.lisp" *load-truename*))
+(asdf:load-system "ataxia-assistant/infinite-world")
+(in-package #:ataxia.infinite-world)
+(setf ataxia.assistant::*assistant-command*
+      (list "env" "ATAXIA_EXPECTED_TOOLS=7" "sbcl" "--noinform" "--disable-debugger" "--script"
+            (namestring (asdf:system-relative-pathname "ataxia-assistant" "tests/assistant-mock-codex.lisp")))
+      ataxia.assistant::*assistant-idle-timeout* .15d0)
+(let* ((world (make-infinite-world))
+       (kernel (ataxia.kernel:create-kernel world :backend :headless))
+       (controller nil) (control nil) (test-thread nil) (failure nil) (done nil))
+  (labels ((owner (f) (ataxia.sly-control:agent-inspect (lambda (k w) (declare (ignore k w)) (funcall f))))
+           (wait-for (f)
+             (loop repeat 200 when (owner f) return t do (sleep .025d0)
+                   finally (error "Idle test timeout: ~A" (ataxia.assistant::assistant-controller-activity controller)))))
+    (unwind-protect
+         (progn
+           (ataxia.kernel:start-kernel kernel)
+           (setf control (ataxia.sly-control:start-sly-control kernel :port nil)
+                 controller (ataxia.assistant::%assistant-enable world)
+                 (ataxia.assistant::assistant-controller-seat controller) (%canvas-seat-seat (first (%seat-states world))))
+           (setf test-thread
+                 (sb-thread:make-thread
+                  (lambda ()
+                    (handler-case
+                        (progn
+                          ;; Just loading models must also release the child, and
+                          ;; empty threads must be created anew rather than resumed.
+                          (owner (lambda () (ataxia.assistant::%assistant-connect controller)))
+                          (wait-for (lambda () (eq :sleeping (ataxia.assistant::assistant-controller-connection controller))))
+                          (owner (lambda ()
+                                   (assert (null (ataxia.assistant::assistant-controller-thread-id controller)))
+                                   (ataxia.assistant::%assistant-submit controller "Inspect the isolated desktop.")))
+                          (wait-for (lambda () (eq :done (ataxia.assistant::assistant-controller-task controller))))
+                          (let ((process (ataxia.assistant::assistant-controller-process controller))
+                                (worker (ataxia.assistant::assistant-controller-worker controller))
+                                (reader (ataxia.assistant::assistant-controller-reader controller))
+                                (id (ataxia.assistant::assistant-controller-thread-id controller)))
+                            (wait-for (lambda () (eq :sleeping (ataxia.assistant::assistant-controller-connection controller))))
+                            (dolist (thread (list worker reader))
+                              (sb-thread:join-thread thread :timeout 4d0 :default :stuck)
+                              (assert (not (sb-thread:thread-alive-p thread))))
+                            (assert (not (uiop:process-alive-p process)))
+                            (owner (lambda ()
+                                     (assert (equal id (ataxia.assistant::assistant-controller-thread-id controller)))
+                                     (assert (= 2 (length (ataxia.assistant::assistant-controller-messages controller))))
+                                     (ataxia.assistant::%assistant-submit controller "MODEL:default")))
+                            (wait-for (lambda () (eq :done (ataxia.assistant::assistant-controller-task controller))))
+                            (owner (lambda ()
+                                     (assert (equal id (ataxia.assistant::assistant-controller-thread-id controller)))
+                                     (assert (= 2 (ataxia.assistant::assistant-controller-turn-count controller)))
+                                     (assert (eq :running (ataxia.kernel:kernel-world-status kernel))))))
+                          (setf done t))
+                      (error (cause) (setf failure cause done t))))))
+           (ataxia.kernel:run-kernel kernel :run-for 8d0)
+           (assert done)
+           (when failure (error failure))
+           (format t "PASS: unused server exits, completed conversation resumes, workers/readers exit, process is reaped, plain World stays running.~%"))
+      (when controller (ataxia.assistant::%assistant-disable world))
+      (when control (ataxia.sly-control:stop-sly-control control))
+      (ataxia.kernel:destroy-kernel kernel :assistant-idle-test-complete)
+      (when (and test-thread (sb-thread:thread-alive-p test-thread)) (sb-thread:terminate-thread test-thread)))))

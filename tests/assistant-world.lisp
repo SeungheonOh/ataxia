@@ -48,7 +48,12 @@
                 (handler-case
                     (progn
                       (sleep .5d0)
-                      (owner (lambda () (ataxia.assistant::%assistant-submit controller "Inspect this isolated desktop.")))
+                      (owner (lambda ()
+                               (ataxia.world.rmlui:set-rmlui-model
+                                (overlay-component (ataxia.assistant::assistant-controller-panel controller))
+                                "message" "Inspect this isolated desktop.")
+                               (key "Return" '(:control))
+                               (assert (equal "" (ataxia.assistant::%assistant-read-composer controller)))))
                       (wait-for (lambda () (member (ataxia.assistant::assistant-controller-task controller) '(:done :failed))))
                       (owner (lambda ()
                                (assert (eq :done (ataxia.assistant::assistant-controller-task controller)) () "Assistant failed: ~A" (ataxia.assistant::assistant-controller-activity controller))

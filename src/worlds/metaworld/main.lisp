@@ -2,7 +2,7 @@
 
 (defun run-metaworld-compositor
     (&key (backend :auto) (width 1280) (height 720) run-for debug-p
-       damage-debug-p (sly-port 4005) standalone assistant-p assistant-project (xwayland-p t)
+       damage-debug-p (sly-port 4005) standalone (assistant-p (not (eq backend :headless))) assistant-project (xwayland-p t)
        (status-bar-p (or assistant-p (not (eq backend :headless))))
        (screen-sharing-p (not (eq backend :headless)))
        (state-file (%meta-state-path standalone)))
@@ -38,7 +38,7 @@
            (when (or sly-port assistant-p)
              (setf control (ataxia.sly-control:start-sly-control kernel :port sly-port)))
            (when assistant-p
-             (uiop:symbol-call :ataxia.assistant :enable (ataxia.kernel:kernel-world kernel) :project assistant-project))
+             (uiop:symbol-call :ataxia.assistant :enable (ataxia.kernel:kernel-world kernel) :project assistant-project :scope :ataxia))
            (format t "[metaworld] WAYLAND_DISPLAY=~A mode=~A~%"
                    (ataxia.runtime:runtime-socket-name (ataxia.kernel:kernel-runtime kernel))
                    (or standalone :metaworld))
@@ -53,7 +53,9 @@
   (handler-case
       (let ((xwayland-p t) (screen-sharing-p :default) (status-bar-p :default)
             (remaining nil) (standalone nil) (state-file nil) (state-supplied-p nil)
-            (assistant-p (equal "1" (uiop:getenv "ATAXIA_ASSISTANT"))) (assistant-project nil))
+            (assistant-p (cond ((equal "1" (uiop:getenv "ATAXIA_ASSISTANT")) t)
+                               ((equal "0" (uiop:getenv "ATAXIA_ASSISTANT")) nil) (t :default)))
+            (assistant-project nil))
         (loop while arguments
               for option = (pop arguments)
               do (cond
@@ -74,18 +76,20 @@
                    ((string= option "--no-status-bar") (setf status-bar-p nil))
                    ((string= option "--no-persist") (setf state-file nil state-supplied-p t))
                    ((string= option "--assistant") (setf assistant-p t))
+                   ((string= option "--no-assistant") (setf assistant-p nil))
                    ((string= option "--assistant-project")
                     (setf assistant-project (or (pop arguments) (error "Missing --assistant-project directory.")) assistant-p t))
                    (t (push option remaining))))
         (let ((options (%parse-main-options (nreverse remaining))))
           (if (eq :help options)
               (progn
-                (format t "Metaworld: --world metaworld|niri|hyprland [--state-file PATH|--no-persist] [--assistant] [--assistant-project DIR] [--no-xwayland] [--screen-sharing|--no-screen-sharing] [--status-bar|--no-status-bar]~%")
+                (format t "Metaworld: --world metaworld|niri|hyprland [--state-file PATH|--no-persist] [--assistant|--no-assistant] [--assistant-project DIR] [--no-xwayland] [--screen-sharing|--no-screen-sharing] [--status-bar|--no-status-bar]~%")
                 (%print-usage) 0)
-              (apply #'run-metaworld-compositor :standalone standalone :assistant-p assistant-p :assistant-project assistant-project
+              (apply #'run-metaworld-compositor :standalone standalone :assistant-project assistant-project
                      :state-file (if state-supplied-p state-file (%meta-state-path standalone))
                      :xwayland-p xwayland-p
-                     (append (unless (eq screen-sharing-p :default) (list :screen-sharing-p screen-sharing-p))
+                     (append (unless (eq assistant-p :default) (list :assistant-p assistant-p))
+                             (unless (eq screen-sharing-p :default) (list :screen-sharing-p screen-sharing-p))
                              (unless (eq status-bar-p :default) (list :status-bar-p status-bar-p)) options)))))
     (serious-condition (cause)
       (format *error-output* "[metaworld] fatal: ~A~%" cause)

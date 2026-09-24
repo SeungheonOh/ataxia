@@ -44,11 +44,11 @@
          (selected (and (window-application focused) focused))
          (scope (assistant-controller-scope controller))
          (panel (assistant-controller-panel controller))
-         (project (if (and panel (eq scope :project))
+         (project (if (and panel (member scope '(:project :ataxia)))
                       (ataxia.world.rmlui:rmlui-model-value (overlay-component panel) "project")
                       (assistant-controller-project controller))))
     (when (and (eq scope :application) (not selected)) (error "Focus an application, then open the assistant again."))
-    (when (eq scope :project)
+    (when (member scope '(:project :ataxia))
       (unless (and (stringp project) (uiop:directory-exists-p project)) (error "Enter an existing project directory."))
       (setf project (namestring (truename (uiop:ensure-directory-pathname project))))
       (unless (equal project (assistant-controller-project controller))
@@ -72,7 +72,8 @@
       (cu:change-session-view (assistant-controller-session controller) :window
                              (ataxia.kernel:object-id (window-application selected))))
     (setf (assistant-controller-grant controller)
-          (list :layout (eq scope :desktop) :project (eq scope :project)
+          (list :layout (not (null (member scope '(:desktop :ataxia))))
+                :project (not (null (member scope '(:project :ataxia)))) :lisp (eq scope :ataxia)
                 :window (and selected (ataxia.kernel:object-id (window-application selected)))
                 :windows (mapcar (lambda (w) (ataxia.kernel:object-id (window-application w))) (world-windows world)))
           (assistant-controller-blocked controller) nil

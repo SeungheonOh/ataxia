@@ -7,6 +7,36 @@
   (and (assistant-controller-alive controller)
        (= epoch (assistant-controller-epoch controller))))
 
+(defun %assistant-idle-p (controller)
+  (and (eq :ready (assistant-controller-connection controller))
+       (not (eq :working (assistant-controller-task controller)))
+       (null (assistant-controller-turn-id controller))
+       (null (assistant-controller-starting-turn controller))
+       (null (assistant-controller-deferred controller))
+       (null (assistant-controller-request controller))
+       (null (assistant-controller-login-url controller))
+       (not (assistant-controller-voice-active controller))
+       (eq :off (assistant-controller-microphone controller))
+       (zerop (hash-table-count (assistant-controller-pending controller)))
+       (not (and (assistant-controller-tool-worker controller)
+                 (sb-thread:thread-alive-p (assistant-controller-tool-worker controller))))))
+
+(defun %assistant-park (controller)
+  ;; Recheck on the owner: a human submission racing the deadline must win.
+  (%assistant-owner controller
+    (lambda ()
+      (sb-thread:with-mutex ((assistant-controller-lock controller))
+        (when (and (%assistant-idle-p controller) (null (assistant-controller-queue controller)))
+          ;; Empty threads have no persisted rollout in Codex yet.
+          (when (zerop (assistant-controller-turn-count controller))
+            (setf (assistant-controller-thread-id controller) nil))
+          (incf (assistant-controller-epoch controller))
+          (setf (assistant-controller-connection controller) :sleeping
+                (assistant-controller-worker controller) nil
+                (assistant-controller-reader controller) nil
+                (assistant-controller-process controller) nil)
+          t)))))
+
 (defun %assistant-voice-deadline (controller)
   (when (and (assistant-controller-voice-active controller)
              (eq :starting (assistant-controller-microphone controller)))
@@ -40,7 +70,7 @@
   (let ((deadline (%assistant-voice-deadline controller)))
     (when (and deadline (>= now deadline))
       (%assistant-voice-close controller)
-      (%assistant-state controller :activity "Voice startup timed out. You can keep typing.")))
+      (%assistant-state controller :voice-error t :activity "Voice startup timed out. You can keep typing.")))
   (let ((deadline (%assistant-task-deadline controller)))
     (when (and deadline (not (eql deadline expired-task-deadline)) (>= now deadline))
       (%assistant-owner controller
@@ -69,20 +99,32 @@
        (%assistant-result controller id result)))
     (:voice (%assistant-voice-start controller))
     (:voice-stop (%assistant-voice-close controller))
+    (:mic-open
+     (when (and (= value (assistant-controller-audio-epoch controller))
+                (assistant-controller-voice-active controller)
+                (eq :starting (assistant-controller-microphone controller)))
+       (%assistant-open-microphone controller value)))
     (:audio (%assistant-voice-send controller value))
     (:mic-ready
-     (when (= value (assistant-controller-audio-epoch controller))
+     (when (and (= (first value) (assistant-controller-audio-epoch controller))
+                (= (second value) (assistant-controller-capture-epoch controller)))
        (%assistant-state controller :microphone :listening :activity "Listening")))
     (:voice-error
      (%assistant-voice-close controller)
-     (%assistant-state controller :activity value))
+     (%assistant-state controller :voice-error t :activity value))
     (:failure (error "~A" value))))
 
 (defun %assistant-worker-loop (controller epoch wake)
-  (loop with expired-task-deadline = nil
+  (loop with expired-task-deadline = nil and idle-since = nil
         while (%assistant-worker-current-p controller epoch) do
-        (sb-thread:wait-on-semaphore
-         wake :timeout (%assistant-worker-timeout controller (monotonic-time) expired-task-deadline))
+        (let* ((now (monotonic-time))
+               (timeout (%assistant-worker-timeout controller now expired-task-deadline)))
+          (setf idle-since (and *assistant-idle-timeout* (%assistant-idle-p controller)
+                                (or idle-since now)))
+          (when idle-since
+            (let ((remaining (max 0d0 (- (+ idle-since *assistant-idle-timeout*) now))))
+              (setf timeout (if timeout (min timeout remaining) remaining))))
+          (sb-thread:wait-on-semaphore wake :timeout timeout))
         ;; Reset/shutdown also signal WAKE. Never inspect the new connection's state.
         (unless (%assistant-worker-current-p controller epoch) (return))
         (dolist (event (%assistant-take-events controller epoch))
@@ -92,7 +134,11 @@
         (when (%assistant-worker-current-p controller epoch)
           ;; Interrupt an expired task once. Resuming grants it a new start time.
           (setf expired-task-deadline
-                (%assistant-check-deadlines controller (monotonic-time) expired-task-deadline)))))
+                (%assistant-check-deadlines controller (monotonic-time) expired-task-deadline))
+          (when (and idle-since *assistant-idle-timeout*
+                     (>= (monotonic-time) (+ idle-since *assistant-idle-timeout*)))
+            (when (%assistant-park controller) (return))
+            (setf idle-since nil)))))
 
 (defun %assistant-reader-main (controller epoch process)
   (handler-case
@@ -132,15 +178,22 @@
         (ignore-errors (%assistant-voice-close controller)))
       (when process
         (ignore-errors (close (uiop:process-info-input process)))
-        (ignore-errors (uiop:terminate-process process))))))
+        ;; EOF lets Codex flush the rollout and stop its children. Never block
+        ;; the compositor owner while reaping an unresponsive child.
+        (handler-case (sb-ext:with-timeout 3d0 (uiop:wait-process process))
+          (serious-condition ()
+            (ignore-errors (uiop:terminate-process process :urgent t))
+            (handler-case (sb-ext:with-timeout 1d0 (uiop:wait-process process))
+              (serious-condition () nil))))))))
 
 (defun %assistant-connect (controller)
   ;; Owner thread: process creation and all pipe I/O happen in the worker.
   (unless (and (assistant-controller-worker controller)
                (sb-thread:thread-alive-p (assistant-controller-worker controller)))
     (incf (assistant-controller-epoch controller))
-    (setf (assistant-controller-thread-id controller) nil
-          (assistant-controller-turn-id controller) nil
+    (unless (eq :sleeping (assistant-controller-connection controller))
+      (setf (assistant-controller-thread-id controller) nil))
+    (setf (assistant-controller-turn-id controller) nil
           (assistant-controller-starting-turn controller) nil
           (assistant-controller-connection controller) :connecting)
     (clrhash (assistant-controller-pending controller))

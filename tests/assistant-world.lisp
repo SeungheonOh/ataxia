@@ -1,5 +1,6 @@
 (load (merge-pathnames "support.lisp" *load-truename*))
 (asdf:load-system "ataxia-assistant/metaworld")
+(load (merge-pathnames "assistant-voice-fixture.lisp" *load-truename*))
 (in-package #:ataxia.infinite-world)
 (setf ataxia.assistant::*assistant-command* (list "sbcl" "--noinform" "--disable-debugger" "--script"
                            (namestring (asdf:system-relative-pathname "ataxia-assistant" "tests/assistant-mock-codex.lisp"))))

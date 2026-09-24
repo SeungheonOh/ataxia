@@ -151,7 +151,7 @@
       (set-widget-style panel "mic-mute" "display" (if (member (assistant-controller-microphone controller) '(:listening :muted)) "block" "none"))
       (set-widget-text panel "mic-mute" (if (eq :muted (assistant-controller-microphone controller)) "Unmute mic" "Mute mic"))
       (set-widget-text panel "mic-status" (case (assistant-controller-microphone controller)
-                                     (:listening "Microphone on") (:muted "Microphone muted") (:starting "Connecting voice…") (t "Microphone off")))
+                                     (:listening "Microphone on") (:muted "Microphone muted") (:muting "Muting microphone…") (:unmuting "Unmuting microphone…") (:starting "Connecting voice…") (t "Microphone off")))
       (set-widget-style panel "voice-caption" "display" (if (plusp (length (assistant-controller-voice-caption controller))) "block" "none"))
       (set-widget-text panel "voice-caption" (assistant-controller-voice-caption controller))
       (%assistant-render-request controller panel))))

@@ -150,25 +150,44 @@ as a persistent compositor widget is a separate development action.
 
 ## Voice
 
-The adapter is checked against **Codex CLI 0.156.1** and its generated experimental
-schema. It lets Codex choose its configured realtime protocol (v1, v2 or v3)
-over its websocket transport. It uses `pw-record` / `pw-play`, PCM16 mono at 24 kHz, and
-starts microphone capture only after the service confirms negotiation. The
-server performs speech-to-task handoff; displayed transcripts are not submitted
-as duplicate tasks. The panel displays live captions and microphone state.
-**Mute mic** closes capture and rejects already-queued microphone chunks while
-leaving playback connected; **Unmute mic** opens a new capture stream. End voice,
-closing the panel, Pause, Stop and World teardown close both audio devices.
+Voice uses the signed-in **Codex CLI account**, through app-server's v3 WebRTC
+transport. It does not require a separate API key. The previous WebSocket adapter
+selected an API-key-only path; that was an integration error, not an account
+limitation. Codex chooses its configured realtime model independently of the
+panel's text/task model selector, as in the CLI's own voice mode.
 
-On this installation, ChatGPT sign-in works for typed tasks. A realtime start
-request is accepted, then the asynchronous backend error returns
-`realtime conversation requires API key auth`. Configure API-key authentication
-locally for the Codex child, or supply `OPENAI_API_KEY` in the compositor's launch
-environment, to use that service. The panel reports unavailability and keeps text
-usable, including after the microphone returns to off. It does not substitute
-another audio provider. Synthetic v2/v3 capture, playback, captions, mute/unmute,
-single handoff and shutdown tests pass. A physical microphone conversation
-remains unverified with the current credentials.
+The adapter is checked against **Codex CLI 0.156.1**. Ataxia locates the packaged
+`codex-voice-host` beside the configured CLI executable, resolves PATH symlinks,
+and uses its manifest build identifier for the versioned helper handshake. This
+is Codex's internal same-build protocol, not a stable public audio API; other
+CLI versions require compatibility verification. Install the packaged CLI with
+its voice resources. No additional PipeWire utilities or audio libraries need
+to be installed for the adapter.
+
+The helper handles WebRTC, capture and playback outside the compositor. Only
+bounded control messages and SDP signaling cross the worker's pipes; no PCM
+passes through Lisp. SDP and native diagnostics are not logged. Microphone and
+speaker devices open after the WebRTC answer connects, initially muted, and the
+UI displays **Microphone on** only after audio is enabled. **Mute mic** preserves
+playback and waits for acknowledgement that the helper has invalidated the old
+capture generation before displaying **Microphone muted**. Missing control
+acknowledgements close voice after a bounded deadline. End voice, closing the
+panel, Pause, Stop and World teardown immediately terminate the local audio
+host; process cleanup happens off the compositor owner.
+
+The server performs speech-to-task handoff; displayed transcripts are not
+submitted as duplicate tasks. Voice errors leave typed chat usable. There is no
+audio metering timer or periodic helper polling, and no voice process when voice
+is off. The control reader blocks on its pipe; startup and mute transitions use
+the assistant worker's existing deadline-based wait.
+
+`make test-assistant` covers the real framing/state machine with a synthetic
+helper: negotiated device opening, mute/unmute, withheld acknowledgements,
+captions, single handoff, stale messages, helper failure and teardown. The
+opt-in check `ATAXIA_TEST_CODEX=1 sbcl --script tests/assistant-codex-voice.lisp`
+connected the installed native host to the realtime service using ChatGPT
+sign-in, with devices left closed. A physical microphone conversation is not
+part of that check.
 
 ## World attachment
 

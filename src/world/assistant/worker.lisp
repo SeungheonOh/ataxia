@@ -38,9 +38,11 @@
           t)))))
 
 (defun %assistant-voice-deadline (controller)
-  (when (and (assistant-controller-voice-active controller)
-             (eq :starting (assistant-controller-microphone controller)))
-    (+ (assistant-controller-voice-started-at controller) 20d0)))
+  (when (assistant-controller-voice-active controller)
+    (let ((host (assistant-controller-audio controller)))
+      (if host (assistant-voice-host-deadline host)
+          (when (eq :starting (assistant-controller-microphone controller))
+            (+ (assistant-controller-voice-started-at controller) 20d0))))))
 
 (defun %assistant-task-deadline (controller)
   (when (assistant-controller-turn-id controller)
@@ -70,7 +72,7 @@
   (let ((deadline (%assistant-voice-deadline controller)))
     (when (and deadline (>= now deadline))
       (%assistant-voice-close controller)
-      (%assistant-state controller :voice-error t :activity "Voice startup timed out. You can keep typing.")))
+      (%assistant-state controller :voice-error t :activity "Voice connection or audio control timed out. You can keep typing.")))
   (let ((deadline (%assistant-task-deadline controller)))
     (when (and deadline (not (eql deadline expired-task-deadline)) (>= now deadline))
       (%assistant-owner controller
@@ -97,21 +99,16 @@
              (%assistant-cache-result result))
        (%assistant-journal controller "completed" "call" (third key) "success" (gethash "success" result))
        (%assistant-result controller id result)))
-    (:voice (%assistant-voice-start controller))
+    ((:voice :voice-host :voice-control)
+     ;; Optional voice failures must leave typed tasks and their connection usable.
+     (handler-case
+         (ecase kind
+           (:voice (%assistant-voice-start controller))
+           (:voice-host (apply #'%assistant-voice-host-event controller value))
+           (:voice-control (apply #'%assistant-voice-control controller value)))
+       (error (cause) (%assistant-voice-fail controller (princ-to-string cause)))
+       (sb-ext:timeout () (%assistant-voice-fail controller "Voice runtime did not accept a control request"))))
     (:voice-stop (%assistant-voice-close controller))
-    (:mic-open
-     (when (and (= value (assistant-controller-audio-epoch controller))
-                (assistant-controller-voice-active controller)
-                (eq :starting (assistant-controller-microphone controller)))
-       (%assistant-open-microphone controller value)))
-    (:audio (%assistant-voice-send controller value))
-    (:mic-ready
-     (when (and (= (first value) (assistant-controller-audio-epoch controller))
-                (= (second value) (assistant-controller-capture-epoch controller)))
-       (%assistant-state controller :microphone :listening :activity "Listening")))
-    (:voice-error
-     (%assistant-voice-close controller)
-     (%assistant-state controller :voice-error t :activity value))
     (:failure (error "~A" value))))
 
 (defun %assistant-worker-loop (controller epoch wake)

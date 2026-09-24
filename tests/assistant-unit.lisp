@@ -8,10 +8,9 @@
 (let ((nested "[[[[[[[[[[0]]]]]]]]]]"))
   (assistant-test-rejects (lambda () (ataxia.computer-use.wire:decode nested)))
   (assert (vectorp (ataxia.computer-use.wire:decode nested :max-depth 32))))
-(loop for size from 0 to 128 do
-  (let ((bytes (make-array size :element-type '(unsigned-byte 8))))
-    (dotimes (i size) (setf (aref bytes i) (mod (+ (* i 37) size) 256)))
-    (assert (equalp bytes (ataxia.assistant::%assistant-unbase64 (ataxia.assistant::%assistant-base64 bytes))))))
+(loop for text in '("" "f" "fo" "foo" "foob" "fooba" "foobar")
+      for encoded in '("" "Zg==" "Zm8=" "Zm9v" "Zm9vYg==" "Zm9vYmE=" "Zm9vYmFy")
+      do (assert (equal encoded (ataxia.assistant::%assistant-base64 (sb-ext:string-to-octets text)))))
 (let* ((controller (ataxia.assistant::%make-assistant-controller
                     :models (vector (ataxia.assistant::%assistant-object "model" "fast" "defaultReasoningEffort" "low")
                                     (ataxia.assistant::%assistant-object "model" "hidden" "hidden" t))))
@@ -47,8 +46,6 @@
   (assert (equal "priority" (ataxia.assistant::%assistant-effective-tier controller)))
   (ataxia.assistant::%assistant-toggle-fast controller)
   (assert (equal "default" (ataxia.assistant::%assistant-effective-tier controller))))
-(dolist (bad '("A" "AA=A" "=AAA" "A===AAAA" "????"))
-  (assistant-test-rejects (lambda () (ataxia.assistant::%assistant-unbase64 bad))))
 (let* ((tools (ataxia.assistant::%assistant-tool-specs (make-metaworld :state-file nil)))
        (decoded (ataxia.computer-use.wire:decode (ataxia.computer-use.wire:encode tools) :max-depth 32)))
   (assert (= 10 (length decoded)))
@@ -83,7 +80,7 @@
   (setf (ataxia.assistant::assistant-controller-epoch controller) 2)
   (assert (null (ataxia.assistant::%assistant-queue controller :submit "stale" 5 1)))
   (assert (null (ataxia.assistant::assistant-controller-queue controller))))
-(format t "PASS: parser isolation, audio encoding, tool schemas, preview/apply/Undo revisions, paused grants and stale mailbox events.~%")
+(format t "PASS: parser isolation, image encoding, tool schemas, preview/apply/Undo revisions, paused grants and stale mailbox events.~%")
 
 (let* ((result (ataxia.assistant::%assistant-object "success" t "contentItems"
                  (vector (ataxia.assistant::%assistant-object "type" "inputImage" "imageUrl" "data:image/png;base64,fixture")

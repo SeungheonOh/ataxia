@@ -7,7 +7,6 @@
   (write-line (ataxia.computer-use.wire:encode message)) (finish-output))
 (defun result (id value) (send-message (obj "id" id "result" value)))
 (defun event (method params) (send-message (obj "method" method "params" params)))
-(defvar *voice-audio-seen* nil)
 (defun fixture-model (name effort &optional fast)
   (obj "model" name "displayName" name "defaultReasoningEffort" effort
        "supportedReasoningEfforts" (vector (obj "reasoningEffort" "low") (obj "reasoningEffort" "medium") (obj "reasoningEffort" "high"))
@@ -80,26 +79,26 @@
        (event "item/agentMessage/delta" (obj "threadId" "fixture-thread" "turnId" "fixture-turn" "itemId" "reply" "delta" "<b>Safe text</b>"))
        (event "turn/completed" (obj "threadId" "fixture-thread" "turn" (obj "id" "fixture-turn" "status" "completed"))))
       ((equal method "thread/realtime/start")
-       (assert (null (gethash "version" (gethash "params" message))))
+       (let ((params (gethash "params" message)))
+         (assert (equal "v3" (gethash "version" params)))
+         (assert (equal "webrtc" (gethash "type" (gethash "transport" params))))
+         (assert (equal "fixture-offer" (gethash "sdp" (gethash "transport" params))))
+         (assert (eq :false (gethash "clientManagedHandoffs" params))))
        (if (uiop:getenv "ATAXIA_VOICE_FIXTURE")
-           (progn (setf *voice-audio-seen* nil) (result id (obj))
-                  (event "thread/realtime/started" (obj "threadId" "fixture-thread" "version" (or (uiop:getenv "ATAXIA_VOICE_VERSION") "v2"))))
+           (progn
+             (result id (obj))
+             (event "thread/realtime/started" (obj "threadId" "fixture-thread" "version" "v3"))
+             (event "thread/realtime/sdp" (obj "threadId" "fixture-thread" "sdp" "fixture-answer"))
+             ;; The sideband carries captions/handoffs, never PCM on WebRTC.
+             (event "thread/realtime/transcript/done" (obj "threadId" "fixture-thread" "role" "user" "text" "Voice fixture task"))
+             (event "thread/realtime/item/started" (obj "threadId" "fixture-thread" "item"
+               (obj "id" "voice-item" "realtimeSessionId" "voice-session" "type" "transcriptSegment" "role" "user" "text" "")))
+             (event "thread/realtime/item/transcript/delta" (obj "threadId" "fixture-thread" "itemId" "voice-item" "delta" "Voice fixture"))
+             (event "thread/realtime/item/completed" (obj "threadId" "fixture-thread" "item"
+               (obj "id" "voice-item" "realtimeSessionId" "voice-session" "type" "transcriptSegment" "role" "user" "text" "Voice fixture task")))
+             (event "turn/started" (obj "threadId" "fixture-thread" "turn" (obj "id" "voice-turn")))
+             (event "turn/completed" (obj "threadId" "fixture-thread" "turn" (obj "id" "voice-turn" "status" "completed"))))
            (send-message (obj "id" id "error" (obj "code" -32000 "message" "Voice fixture unavailable")))))
-      ((equal method "thread/realtime/appendAudio")
-       (assert (uiop:getenv "ATAXIA_VOICE_FIXTURE"))
-       (assert (= 24000 (gethash "sampleRate" (gethash "audio" (gethash "params" message)))))
-       (result id (obj))
-       (unless *voice-audio-seen*
-         (setf *voice-audio-seen* t)
-         (event "thread/realtime/outputAudio/delta" (obj "threadId" "fixture-thread" "audio" (obj "data" "AAAAAA==" "sampleRate" 24000 "numChannels" 1)))
-         (event "thread/realtime/transcript/done" (obj "threadId" "fixture-thread" "role" "user" "text" "Voice fixture task"))
-         (when (equal "v3" (uiop:getenv "ATAXIA_VOICE_VERSION"))
-           (event "thread/realtime/item/started" (obj "threadId" "fixture-thread" "item"
-             (obj "id" "voice-item" "realtimeSessionId" "voice-session" "type" "transcriptSegment" "role" "user" "text" "")))
-           (event "thread/realtime/item/transcript/delta" (obj "threadId" "fixture-thread" "itemId" "voice-item" "delta" "Voice fixture"))
-           (event "thread/realtime/item/completed" (obj "threadId" "fixture-thread" "item"
-             (obj "id" "voice-item" "realtimeSessionId" "voice-session" "type" "transcriptSegment" "role" "user" "text" "Voice fixture task"))))
-         (event "turn/started" (obj "threadId" "fixture-thread" "turn" (obj "id" "voice-turn")))
-         (event "turn/completed" (obj "threadId" "fixture-thread" "turn" (obj "id" "voice-turn" "status" "completed")))))
+      ((equal method "thread/realtime/appendAudio") (error "WebRTC must not forward PCM through the app-server."))
       ((equal method "turn/interrupt") (result id (obj)))
       ((and method id) (result id (obj))))))

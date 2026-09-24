@@ -270,8 +270,8 @@
              (%assistant-refresh controller))))))
     ((and (>= (length method) 16) (string= "thread/realtime/" method :end2 16))
      (handler-case (%assistant-voice-event controller method params)
-       (error (cause) (%assistant-voice-close controller)
-              (%assistant-state controller :voice-error t :activity (format nil "Voice stopped: ~A. You can keep typing." cause)))))
+       (error (cause) (%assistant-voice-fail controller (princ-to-string cause)))
+       (sb-ext:timeout () (%assistant-voice-fail controller "Voice runtime did not accept the connection answer"))))
     ((string= method "error")
      (%assistant-state controller :activity (or (%assistant-field params "error" "message") "Codex reported an error")))))
 

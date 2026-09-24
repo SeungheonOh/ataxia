@@ -6,7 +6,7 @@
   :components ((:module "src/world/assistant"
                 :serial t
                 :components ((:file "packages") (:static-file "instructions.md")
-                             (:file "model") (:file "models") (:file "protocol") (:file "worker") (:file "layout")
+                             (:file "model") (:file "models") (:file "voice-host") (:file "protocol") (:file "worker") (:file "layout")
                              (:file "tools") (:file "lisp") (:file "windows") (:file "preview") (:file "voice")
                              (:file "format") (:file "ui") (:file "lifecycle")
                              (:file "service")))))

@@ -33,11 +33,10 @@
   (next-id 0) (pending (make-hash-table :test #'eql))
   thread-id turn-id (starting-turn nil) (deferred nil)
   (seen-calls (make-hash-table :test #'equal)) tool-worker
-  (tool-count 0) (turn-count 0) (audio nil) (audio-player nil)
+  (tool-count 0) (turn-count 0) (audio nil)
   (audio-thread nil) (audio-epoch 0) (voice-active nil) (voice-started-at 0d0)
-  (capture-epoch 0) (voice-version nil) voice-error (voice-caption "") (voice-caption-role nil)
-  (voice-stopping-p nil) (voice-resume-p nil) (audio-output nil) (audio-output-bytes 0) audio-play-thread
-  (audio-wake (sb-thread:make-semaphore :count 0))
+  (voice-version nil) voice-error (voice-caption "") (voice-caption-role nil)
+  (voice-stopping-p nil) (voice-resume-p nil)
   (utterances (make-hash-table :test #'equal)))
 
 (defun %assistant-object (&rest entries)

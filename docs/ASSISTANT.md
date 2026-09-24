@@ -27,7 +27,7 @@ the World; call `(ataxia.assistant:enable world)` on its owner thread to attach 
 | Send | Authorize the displayed scope and submit a task |
 | Ctrl+Enter | Send the composer; Enter remains a newline |
 | Send during a turn | Steer that turn |
-| Model settings | Open the centered dialog for model, effort and Fast mode |
+| Model name | Expand or collapse Model and Effort controls above the composer |
 | Details | Show task activity, plan and limits |
 | Pause / Resume | Release agent input immediately / continue after a human action |
 | Stop | Interrupt the task and close its input session |
@@ -40,12 +40,14 @@ focus when that application is still available. The bar shows actual task and
 microphone state while the panel is closed.
 
 The panel follows the shell's monochrome workstation style: square boundaries,
-16 dp text rows, inverse text actions and consistent horizontal gutters. The
-current model, Fast toggle and Voice action stay beside Send. Clicking the model
-opens a dialog centered on the current screen with
-model, reasoning effort and Fast mode together. Changes save automatically;
-Done, Escape or clicking outside returns to the chat without losing the draft.
-Escape closes the settings dialog first, then the assistant on a second press.
+16 dp text rows and inverse text actions. Its reading area uses 16 dp horizontal
+gutters, 8 dp header insets and separation between messages; controls use 12 dp
+monospaced text with 16 dp horizontal gaps. The current model, Fast toggle and
+Voice action stay beside Send. Clicking the model expands Model and Effort rows
+inside the panel, directly above the composer. There is no separate overlay or
+screen-wide input capture; the conversation and draft remain usable. Changes
+save automatically. Done, Escape, or clicking the model name again collapses
+settings without losing the draft. A second Escape closes the assistant.
 Pause and Stop appear during a task; Undo remains available after a layout
 change. Routine activity and limits are under Details. Scope stays in the header.
 

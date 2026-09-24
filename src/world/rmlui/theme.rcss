@@ -65,12 +65,9 @@ button:hover .detail, button:focus .detail, button:hover .preview, button:focus 
 .assistant-panel #message { background:var(--paper); }
 .assistant-panel #stop, .assistant-panel #deny, .computer-use-panel .stop { color:var(--danger); }
 .assistant-panel #stop:hover, .assistant-panel #stop:focus, .assistant-panel #deny:hover, .assistant-panel #deny:focus, .computer-use-panel .stop:hover, .computer-use-panel .stop:focus { background:var(--danger); color:var(--paper); }
-.assistant-settings #settings-backdrop { background:#16161640; }
-.assistant-settings select selectbox { background:var(--paper); }
-.assistant-settings select option { color:var(--ink); }
-.assistant-settings select option:hover, .assistant-settings select option:checked,
-.assistant-settings #fast.enabled { background:var(--ink); color:var(--paper); }
-.assistant-settings #fast.unavailable { background:transparent; color:var(--disabled); }
+.assistant-panel select selectbox { background:var(--paper); }
+.assistant-panel select option { color:var(--ink); }
+.assistant-panel select option:hover, .assistant-panel select option:checked { background:var(--ink); color:var(--paper); }
 .computer-use-panel .dot { background:var(--ink); }
 .computer-use-cursor #state { color:var(--muted); }
 .computer-use-cursor #tag.clicked { animation:0.15s linear 1 click; }

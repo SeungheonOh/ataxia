@@ -16,7 +16,7 @@
 (defstruct (assistant-controller (:constructor %make-assistant-controller))
   ;; Owner-thread attachment, widgets and user preferences.
   world generation (shortcuts (make-shortcut-controller)) (epoch 0) (alive t)
-  output seat panel settings-dialog session timer (last-render 0d0)
+  output seat panel session timer (last-render 0d0)
   (model-selection (make-assistant-model-selection))
   (generation-settings (make-assistant-generation-settings))
   refresh-context

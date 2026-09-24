@@ -6,7 +6,7 @@ There are no ornamental title rules, patterns, badges, shadows or brand marks.
 Application content belongs to the application and keeps its own styling.
 
 `src/world/rmlui/theme.rcss` owns the palette, typography, spacing tokens and
-control states for all 14 shell documents. Inline styles own each layout;
+control states for all 13 shell documents. Inline styles own each layout;
 do not add theme overrides to correct document geometry. Each document links
 the theme relative to its real source path and opts in with a `shell` body
 class. Use `ataxia.world.rmlui:make-shell-rmlui-component` to load the four
@@ -18,6 +18,10 @@ DejaVu Sans Mono faces once. The generic factory hosts independently styled apps
   the spacing. Add the gutter once per container, not to each text action.
 - Keep 16 dp text rows with no extra padding above or below text. Wrapped
   commands stay on consecutive lines. Use horizontal space for readability.
+- Reading surfaces such as the assistant may use 16 dp horizontal gutters and
+  8 dp around the header and between messages. Keep action text unpadded; use
+  16 dp gaps to distinguish independent options. Model controls expand locally
+  beside their task instead of covering the desktop with a modal.
 - Actions are text, without an outline, resting fill or button padding.
   Invert foreground/background on hover, keyboard focus, press and selection;
   keep disabled text unfilled. Retain semantic buttons for keyboard activation.

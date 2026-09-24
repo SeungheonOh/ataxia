@@ -39,7 +39,7 @@
   (let* ((world (assistant-controller-world controller))
          (seat (assistant-controller-seat controller))
          (current (and seat (world-seat-focus world seat)))
-         (focused (if (typep current '(or assistant-panel assistant-settings-dialog))
+         (focused (if (typep current 'assistant-panel)
                       (world-seat-previous-focus world seat) current))
          (selected (and (window-application focused) focused))
          (scope (assistant-controller-scope controller))

@@ -21,10 +21,9 @@ cases = [
     ('rmlui/status-bar/power', 132, ['close', 'brightness-down', 'brightness-up', 'sleep']),
     ('rmlui/status-bar/clipboard', 180, ['close', 'prev', 'next', 'clear'] + [f'app{i}' for i in range(6)]),
     ('rmlui/status-bar/workspaces', 260, ['close', 'group0', 'group-prev', 'group-next', 'group-remove', 'workspace1', 'workspace-new', 'overview']),
-    ('assistant/settings', 640, ['settings-close', 'fast', 'settings-done']),
     ('screencast/picker', 178, ['region', 'app0', 'app1', 'cancel', 'share']),
     ('screencast/indicator', 18, ['stop']),
-    ('assistant/panel', 640, ['scope', 'close', 'pause', 'stop', 'undo', 'settings-open', 'talk', 'send', 'details']),
+    ('assistant/panel', 640, ['scope', 'close', 'pause', 'stop', 'undo', 'settings-open', 'settings-done', 'fast-toggle', 'talk', 'send', 'details']),
     ('computer-use/panel', 98, ['pause-all', 'resume0', 'stop0']),
 ]
 for name, height, ids in cases:
@@ -56,8 +55,9 @@ for name, height, ids in cases:
         if name == 'assistant/panel':
             ok(set_class(c, b'panel', b'small', width < 360))
             ok(style(c, b'controls', b'display', b'flex'))
-        if name == 'assistant/settings':
+            ok(style(c, b'model-settings', b'display', b'block'))
             ok(style(c, b'models-load', b'display', b'none'))
+            ok(boolean(c, b'fast_disabled', False))
         if name == 'rmlui/status-bar/workspaces':
             ok(set_class(c, b'panel', b'small', width < 480))
             for i in range(1, 6): ok(style(c, f'group{i}'.encode(), b'display', b'none'))

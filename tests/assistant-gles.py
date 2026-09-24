@@ -24,7 +24,7 @@ def capture(c, width, height, name):
 def component(source, width, height):
     bind_texture(0x0de1, tex)
     tex_image(0x0de1, 0, 0x1908, width, height, 0, 0x1908, 0x1401, None)
-    c = create(measured_source((root/f'src/world/assistant/{source}.rml').read_bytes(), ['settings-open','fast','settings-done','model-select','effort-select','fast-toggle','talk','mic-mute','send','message','voice-caption']), str(root/f'src/world/assistant/{source}.rml').encode(), b'', width, height, 1)
+    c = create(measured_source((root/f'src/world/assistant/{source}.rml').read_bytes(), ['heading','scope','close','model-settings','settings-open','settings-done','model-select','effort-select','fast-toggle','talk','mic-mute','send','message','voice-caption']), str(root/f'src/world/assistant/{source}.rml').encode(), b'', width, height, 1)
     ok(c); ok(attach(c, fbo))
     return c
 
@@ -64,23 +64,25 @@ for width, height in [(480, 760), (304, 640)]:
     ok(render(c)); assert delay(c) < 0, delay(c)
     ok(detach(c)); destroy(c)
 
-for width, height in [(800, 600), (304, 640)]:
-    c = component('settings', width, height)
-    ok(set_class(c, b'dialog', b'small', width < 400))
+for width, height in [(480, 760), (304, 640)]:
+    c = component('panel', width, height)
+    ok(model(c,b'message',b'Keep this draft'))
+    ok(model(c,b'transcript',fixture.read_bytes()))
+    ok(set_class(c,b'panel',b'small',width<360))
+    ok(style(c,b'model-settings',b'display',b'block'))
     ok(model(c, b'model_options', '<select id="model-select" data-value="selected_model"><option value="">GPT-6 Astra</option><option value="fixture-main">GPT-5.6 Sol</option><option value="fixture-fast">GPT-5.6 Luna</option></select><div id="model-chevron">▾</div>'.encode()))
     ok(model(c, b'selected_model', b''))
     ok(model(c, b'effort_options', '<select id="effort-select" data-value="selected_effort"><option value="">Auto · X-high</option><option value="low">Low</option><option value="high">High</option></select><div id="effort-chevron">▾</div>'.encode()))
     ok(model(c, b'selected_effort', b''))
-    ok(set_text(c, b'fast', b'Fast on')); ok(set_class(c, b'fast', b'enabled', True))
     ok(style(c, b'models-load', b'display', b'none'))
-    for name in [b'model-field:change', b'effort-field:change', b'fast', b'settings-done', b'settings-backdrop']:
+    for name in [b'model-field:change', b'effort-field:change', b'settings-done']:
         ok(api('component_register_callback', C.c_bool, P, C.c_char_p)(c, name))
     im = capture(c, width, height, f'assistant-settings-{width}')
-    white = [(x, y) for y in range(height) for x in range(width) if im.getpixel((x,y)) == (255,255,255,255)]
-    x0, x1 = min(p[0] for p in white), max(p[0] for p in white)
-    y0, y1 = min(p[1] for p in white), max(p[1] for p in white)
-    assert abs((x0+x1+1)/2 - width/2) <= 1, (x0,x1,width)
-    assert abs((y0+y1+1)/2 - height/2) <= 1, (y0,y1,height)
+    settings_box=element_box(c,'model-settings',width,height)
+    message_box=element_box(c,'message',width,height)
+    assert settings_box[0]>=16 and settings_box[2]<=width-16, settings_box
+    assert settings_box[3]<=message_box[1], (settings_box,message_box)
+    assert model_value(c,b'message')==b'Keep this draft'
     # Use rendered bounds: editable rows have no extra vertical padding.
     for variable, field in [(b'selected_model', 'model-select'), (b'selected_effort', 'effort-select')]:
         _, y=box_center(element_box(c,field,width,height))
@@ -88,12 +90,18 @@ for width, height in [(800, 600), (304, 640)]:
         for symbol in [0xff54,0xff54,0xff0d]:
             ok(key(c,symbol,True,0)); ok(key(c,symbol,False,0)); ok(render(c))
         assert model_value(c,variable)==(b'fixture-fast' if variable==b'selected_model' else b'high'), model_value(c,variable)
-    for action in ['fast','settings-done']:
+    for action in ['settings-done']:
         x,y=box_center(element_box(c,action,width,height))
         ok(button(c,x,y,1,True));ok(button(c,x,y,1,False));ok(render(c))
-    ok(button(c,2,2,1,True));ok(button(c,2,2,1,False));ok(render(c))
     names=[api('component_callback_name',C.c_char_p,P,C.c_size_t)(c,i) for i in range(api('component_callback_count',C.c_size_t,P)(c))]
-    assert all(n in names for n in [b'model-field:change',b'effort-field:change',b'fast',b'settings-done',b'settings-backdrop']),names
+    assert all(n in names for n in [b'model-field:change',b'effort-field:change',b'settings-done']),names
+    ok(api('component_focus',C.c_bool,P,C.c_bool)(c,False));ok(render(c))
+    assert delay(c)<0, delay(c)
+    stable=revision(c)
+    for _ in range(8): ok(render(c))
+    assert revision(c)==stable, 'Inline settings repainted while idle'
+    ok(style(c,b'model-settings',b'display',b'none'))
+    assert model_value(c,b'message')==b'Keep this draft'
     ok(api('component_focus',C.c_bool,P,C.c_bool)(c,False));ok(render(c));assert delay(c)<0,delay(c)
     ok(detach(c));destroy(c)
-print('PASS: workstation assistant and centered settings modal, narrow/wide, keyboard selectors, Fast, dismiss controls and idle rendering.')
+print('PASS: readable assistant and inline model settings, narrow/wide, keyboard selectors, draft preservation, Fast, voice controls and idle rendering.')

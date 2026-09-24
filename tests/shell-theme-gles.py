@@ -16,7 +16,7 @@ cases = [
     ('rmlui/status-bar/power', 340, 132), ('rmlui/status-bar/media', 380, 84),
     ('rmlui/status-bar/clipboard', 560, 180), ('rmlui/status-bar/workspaces', 560, 260),
     ('rmlui/status-bar/osd', 340, 42), ('assistant/panel', 480, 760),
-    ('assistant/settings', 800, 600), ('computer-use/panel', 380, 98),
+    ('computer-use/panel', 380, 98),
     ('computer-use/cursor', 180, 34), ('screencast/picker', 540, 178),
     ('screencast/region', 640, 360), ('screencast/indicator', 400, 18),
 ]
@@ -42,8 +42,6 @@ for name, normal_width, normal_height in cases:
                 ok(set_class(c, b'bar', cls, width < limit))
         if name in ['rmlui/status-bar/menu', 'rmlui/status-bar/workspaces', 'assistant/panel']:
             ok(set_class(c, b'panel', b'small', narrow))
-        if name == 'assistant/settings':
-            ok(set_class(c, b'dialog', b'small', narrow))
         if name == 'computer-use/panel':
             ok(style(c, b'panel', b'width', f'{width}dp'.encode()))
             ok(style(c, b'panel', b'height', f'{height}dp'.encode()))
@@ -100,4 +98,4 @@ place('rmlui/status-bar/osd', 24, 1202, 'SYSTEM FEEDBACK')
 place('screencast/indicator', 388, 1138, 'SHARING INDICATOR')
 place('computer-use/cursor', 1012, 1240, 'AGENT LABEL')
 sheet.save(root / 'build/workstation-ui.png')
-print('PASS: all 14 shell documents, narrow/normal, 1x/1.5x/2x, linked theme and settled idle.')
+print('PASS: all 13 shell documents, narrow/normal, 1x/1.5x/2x, linked theme and settled idle.')

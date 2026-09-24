@@ -148,14 +148,15 @@ stable application IDs. Metaworld reports target geometry while animations run,
 so cosmetic motion does not invalidate transactions.
 
 A layout-capable World provides `world-layout-schema`, `validate-world-layout`,
-`capture-world-layout`, `apply-world-layout`, and `restore-world-layout`. The
-schema and its description define that World's operations. Validation must
-check **every affected window** against the supplied allowed IDs, including
-windows indirectly affected by a group operation.
+and `apply-world-layout`. The schema and its description define that World's
+operations. Both validation and application accept `(world operations)`.
+Application validates the whole batch before mutation and owns atomic failure
+rollback; no rollback snapshot escapes into the service or a user Undo history.
 
-The assistant owns task grants, revision checks, plan expiration, rollback, and
-Undo tokens. The World owns operation validation and layout mutations. Worlds
-without this capability receive ordinary desktop tools and no layout tools.
+CUA owns session state, revision checks and input coordination. The assistant
+uses that same path. The World owns operation validation and layout mutations.
+Worlds without this capability receive ordinary desktop tools and no arrangement
+tool. All implemented tools, including live Lisp, are available without scopes.
 
 ## Composing services
 

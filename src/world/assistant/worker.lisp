@@ -129,7 +129,7 @@
             (when (and (= epoch event-epoch) (%assistant-worker-current-p controller epoch))
               (%assistant-worker-event controller kind value))))
         (when (%assistant-worker-current-p controller epoch)
-          ;; Interrupt an expired task once. Resuming grants it a new start time.
+          ;; Interrupt an expired task once. Resuming sets a new start time.
           (setf expired-task-deadline
                 (%assistant-check-deadlines controller (monotonic-time) expired-task-deadline))
           (when (and idle-since *assistant-idle-timeout*

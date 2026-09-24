@@ -24,14 +24,9 @@ export function desktopMethods(native, emitter) {
     requireThat(Array.isArray(operations) && operations.length >= 1 && operations.length <= 64, 'invalid-layout', 'Use one to 64 layout operations.');
     return operations;
   };
-  const preview = async (operations, opts) => {
-    const revision = await basis(opts);
-    return native.transport.send('layout-preview', { revision, operations: actions(operations) });
-  };
-  const arrange = async (operations, opts) => {
-    const { plan } = await preview(operations, opts);
-    return remember(await native.transport.send('layout-apply', { plan }));
-  };
+  const arrange = async (operations, opts) => remember(await native.transport.send('arrange', {
+    revision: await basis(opts), operations: actions(operations),
+  }));
   const windowRecord = async (id, opts) => {
     const revision = await basis(opts);
     requireThat(last.capabilities.layout && last['layout-schema']?.properties?.op?.enum?.includes('place-window'),
@@ -55,18 +50,7 @@ export function desktopMethods(native, emitter) {
   return {
     getWorld,
     getDesktop: getWorld,
-    async previewLayout(operations, opts = {}) {
-      return native.run(async () => { const { plan, revision, operations: validated } = await preview(operations, opts); return { plan, revision, operations: validated }; });
-    },
-    async applyLayout(plan) {
-      requireThat(typeof plan === 'string' && plan.length === 64, 'invalid-plan', 'Use the plan returned by previewLayout().');
-      return native.run(() => native.transport.send('layout-apply', { plan }).then(remember));
-    },
     async arrange(operations, opts = {}) { return native.run(() => arrange(operations, opts)); },
-    async undoLayout(undo) {
-      requireThat(typeof undo === 'string' && undo.length === 64, 'invalid-undo', 'Use the Undo token returned by arrange() or applyLayout().');
-      return native.run(() => native.transport.send('layout-undo', { undo }).then(remember));
-    },
     async moveWindow(id, placement, opts = {}) {
       options(placement, ['group', 'workspace', 'floating', 'x', 'y', 'width', 'height']);
       return native.run(async () => {

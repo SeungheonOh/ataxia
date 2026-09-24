@@ -15,7 +15,7 @@
            (window (id)
              (find id (%world-stacking world) :key (lambda (w) (ataxia.kernel:object-id (canvas-window-application w)))))
            (snapshot-window (result id)
-             (find id (getf (getf result :snapshot) :windows) :key (lambda (w) (getf w :id)))))
+             (find id (getf (getf result :desktop) :windows) :key (lambda (w) (getf w :id)))))
     (unwind-protect
          (progn
            (ensure-directories-exist project)
@@ -24,9 +24,9 @@
            (ataxia.kernel:start-kernel kernel)
            (setf control (ataxia.sly-control:start-sly-control kernel :port nil)
                  controller (ataxia.assistant::%assistant-enable world :project (namestring project))
-                 (ataxia.assistant::assistant-controller-scope controller) :project
+
                  (ataxia.assistant::assistant-controller-seat controller) (%canvas-seat-seat (first (%seat-states world))))
-           (ataxia.assistant::%assistant-grant controller)
+           (ataxia.assistant::%assistant-start-task controller)
            (setf worker
                  (sb-thread:make-thread
                   (lambda ()
@@ -36,11 +36,11 @@
                                (id (getf first :window)) (other-id (getf second :window))
                                (preview (gethash (getf first :preview) (ataxia.assistant::assistant-controller-previews controller)))
                                (other (gethash (getf second :preview) (ataxia.assistant::assistant-controller-previews controller))))
-                          ;; Project scope cannot control a client it does not own.
-                          (rejects (lambda () (ataxia.assistant::%assistant-run-tool controller "ataxia_viewport"
-                                                (ataxia.assistant::%assistant-object "output" 1 "action" "pan" "dx" 1 "dy" 0 "revision" 1))))
+                          ;; Windows opened after task start are immediately controllable, even
+                          ;; when they are no longer tracked as this assistant's own previews.
                           (owner (lambda () (remhash (getf second :preview) (ataxia.assistant::assistant-controller-previews controller))))
-                          (rejects (lambda () (action other-id "close")))
+                          (assert (eq t (getf (snapshot-window (action other-id "minimize") other-id) :minimized)))
+                          (action other-id "restore")
                           (owner (lambda () (setf (gethash (getf second :preview) (ataxia.assistant::assistant-controller-previews controller)) other)))
                           (rejects (lambda () (action id "kill")))
                           (rejects (lambda () (action nil "close")))
@@ -48,18 +48,12 @@
                           (owner (lambda () (setf (ataxia.assistant::assistant-controller-blocked controller) t)))
                           (rejects (lambda () (action id "close")))
                           (owner (lambda () (setf (ataxia.assistant::assistant-controller-blocked controller) nil)))
-                          ;; Selected-app scope applies to explicit controls as well as input.
-                          (owner (lambda ()
-                                   (setf (ataxia.assistant::assistant-controller-scope controller) :application
-                                         (getf (ataxia.assistant::assistant-controller-grant controller) :window) id)))
-                          (rejects (lambda () (action other-id "close")))
                           (assert (eq t (getf (snapshot-window (action id "minimize") id) :minimized)))
                           (action id "restore")
                           (owner (lambda ()
-                                   (setf (ataxia.assistant::assistant-controller-scope controller) :desktop)
-                                   (ataxia.assistant::%assistant-grant controller)
+                                   (ataxia.assistant::%assistant-start-task controller)
                                    (%focus-target world (first (%seat-states world)) (window other-id))))
-                          ;; The viewport tool uses assistant revisions and the same native grant.
+                          ;; The viewport tool uses shared CUA revisions and session.
                           (let* ((arguments
                                    (owner (lambda ()
                                             (ataxia.assistant::%assistant-object
@@ -67,7 +61,7 @@
                                              "action" "set" "x" -2000 "y" 500 "zoom" .75d0 "rotation" .2d0
                                              "revision" (ataxia.assistant::%assistant-layout-revision controller)))))
                                  (result (ataxia.assistant::%assistant-run-tool controller "ataxia_viewport" arguments)))
-                            (assert (equalp #(-2000d0 500d0 .75d0 .2d0) (getf (aref (getf result :outputs) 0) :camera)))
+                            (assert (equalp #(-2000d0 500d0 .75d0 .2d0) (getf (aref (getf (getf result :desktop) :outputs) 0) :camera)))
                             (rejects (lambda () (ataxia.assistant::%assistant-run-tool controller "ataxia_viewport" arguments)))
                             (owner (lambda ()
                                      (assert (eq (window other-id) (%canvas-seat-focused (first (%seat-states world))))))))
@@ -108,27 +102,25 @@
                               (assert (eq :false (getf state :maximized))))
                             (action id "restore")
                             (owner (lambda () (assert (equalp geometry (%meta-object-geometry (window id)))))))
-                          ;; Window controls invalidate a previously reviewed layout plan.
-                          (let ((plan (owner (lambda ()
-                                             (ataxia.assistant::%assistant-layout-preview controller
-                                               (ataxia.assistant::%assistant-object "revision" (ataxia.assistant::%assistant-layout-revision controller)
-                                                 "operations" (vector (ataxia.assistant::%assistant-object "op" "configure-group"
-                                                                        "group" (subworld-id (first (metaworld-subworlds world)))
-                                                                        "name" "Stale arrangement"))))))))
+                          ;; Window controls invalidate the previously observed layout revision.
+                          (let ((arguments (owner (lambda ()
+                                             (ataxia.assistant::%assistant-object "revision" (ataxia.assistant::%assistant-layout-revision controller)
+                                               "operations" (vector (ataxia.assistant::%assistant-object "op" "configure-group"
+                                                                      "group" (subworld-id (first (metaworld-subworlds world)))
+                                                                      "name" "Stale arrangement")))))))
                             (action id "minimize")
-                            (rejects (lambda () (ataxia.assistant::%assistant-run-tool controller "ataxia_layout_apply"
-                                                  (ataxia.assistant::%assistant-object "plan" (getf plan :plan)))))
+                            (rejects (lambda () (ataxia.assistant::%assistant-run-tool controller "ataxia_arrange" arguments)))
                             (assert (eq :false (getf (snapshot-window (action id "restore") id) :minimized))))
                           ;; The close request reaches the real client, which exits normally.
                           (let ((result (action id "close")))
-                            (assert (equal "close-requested" (getf result :status))))
+                            (assert (eq t (getf result :ok))))
                           (loop repeat 100 until (owner (lambda () (null (window id)))) do (sleep .05d0)
                                 finally (owner (lambda () (assert (null (window id))))))
                           (assert (not (uiop:process-alive-p (ataxia.assistant::assistant-preview-process preview))))
                           (assert (uiop:process-alive-p (ataxia.assistant::assistant-preview-process other)))
                           (rejects (lambda () (action id "close")))
                           (assert (uiop:process-alive-p (ataxia.assistant::assistant-preview-process other)))
-                          (format t "PASS: native window controls, viewport tool and revisions, both tilers, focus preservation, scopes and stale plans/IDs.~%")
+                          (format t "PASS: native window controls, viewport tool and revisions, both tilers, focus preservation, full access and stale revisions/IDs.~%")
                           (setf done t))
                       (error (cause) (setf failure cause done t))))
                   :name "Assistant window controls test"))

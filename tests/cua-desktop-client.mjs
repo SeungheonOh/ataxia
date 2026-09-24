@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { createCua } from '../sdk/computer-use/index.mjs';
 
 export async function exerciseDesktop(cua, directory, mark, until, id) {
   const win = state => state.windows.find(w => w.id === id);
@@ -20,24 +19,14 @@ export async function exerciseDesktop(cua, directory, mark, until, id) {
   result = await cua.ataxia.setFloating(id, true); assert.equal(win(result.desktop).floating, true);
   result = await cua.ataxia.moveWindow(id, { workspace: 3, width: 500, height: 400 });
   assert.equal(win(result.desktop).workspace, 3); assert.equal(win(result.desktop).group, group);
-  const undo = result.undo;
-  result = await cua.ataxia.undoLayout(undo); assert.equal(win(result.desktop).workspace, 2);
-  await assert.rejects(cua.ataxia.undoLayout(undo), error => error.code === 'undo-unavailable');
+  result = await cua.ataxia.moveWindow(id, { workspace: 2 });
   result = await cua.ataxia.setFloating(id, false); assert.equal(win(result.desktop).floating, false);
 
-  // An intervening change invalidates a preview; no automatic rebase/replay.
-  const stale = await cua.ataxia.previewLayout([{ op: 'place-window', window: id, group, workspace: 4 }]);
-  await cua.ataxia.arrange([{ op: 'configure-group', group, name: 'Changed after preview' }]);
-  await assert.rejects(cua.ataxia.applyLayout(stale.plan), error => error.code === 'desktop-changed');
+  // An intervening change invalidates the observation; no automatic rebase/replay.
+  const stale = (await observe()).revision;
+  await cua.ataxia.arrange([{ op: 'configure-group', group, name: 'Changed after observation' }]);
+  await assert.rejects(cua.ataxia.arrange([{ op: 'place-window', window: id, group, workspace: 4 }], { revision: stale }), error => error.code === 'desktop-changed');
   assert.equal(win(await observe()).workspace, 2);
-
-  // Plans and Undo are session-owned. Explicit window controls clear prior plans.
-  const privatePlan = await cua.ataxia.previewLayout([{ op: 'place-window', window: id, group, workspace: 4 }]);
-  const other = createCua({ socket: path.join(directory, 'computer-use.sock'), name: 'Other fixture', purpose: 'Verify session ownership', browsers: [] });
-  try {
-    await other.ataxia.getDesktop({ emit: false });
-    await assert.rejects(other.ataxia.applyLayout(privatePlan.plan), error => error.code === 'plan-expired');
-  } finally { await other[Symbol.asyncDispose](); }
 
   // Validate the whole plan before applying any operation.
   const before = await observe();
@@ -96,5 +85,5 @@ export async function exerciseDesktop(cua, directory, mark, until, id) {
   await cua.ataxia.windowAction(id, 'restore');
   result = await cua.ataxia.frameWindow(secondOutput.id, id);
   assert.equal(result.desktop.outputs.find(o => o.id === secondOutput.id).group, null);
-  console.log('PASS: World layouts and controls, explicit per-output pan/zoom/rotation/framing, unchanged other camera and window placement, hidden-window rejection, revisions and Undo.');
+  console.log('PASS: World layouts and controls, explicit per-output pan/zoom/rotation/framing, unchanged other camera and window placement, hidden-window rejection, revisions and atomic failure rollback.');
 }

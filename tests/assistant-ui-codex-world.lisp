@@ -14,7 +14,7 @@
          (ataxia.kernel:start-kernel kernel)
          (setf control (ataxia.sly-control:start-sly-control kernel :port nil)
                controller (ataxia.assistant::%assistant-enable world :project (namestring project))
-               (ataxia.assistant::assistant-controller-scope controller) :project
+
                (ataxia.assistant::assistant-controller-seat controller) (%canvas-seat-seat (first (%seat-states world))))
          (ataxia.assistant::%assistant-submit controller "Create a simple light-style notepad as notepad.rml in this empty project, using your built-in authoring guide and its shipped starter. Open it in its own separate process and window. Verify that I can type two lines into the editor, clear only your test text, then leave the app open. Do not add saving or other features. Finish with a short sentence.")
          (setf worker

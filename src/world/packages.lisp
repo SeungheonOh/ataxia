@@ -45,7 +45,7 @@
    #:world-output-work-area #:world-output-work-area-changed #:service-output-insets
    #:service-selection-changed #:request-clipboard-text #:set-clipboard-text
    #:world-desktop-state #:world-layout-schema #:validate-world-layout
-   #:capture-world-layout #:restore-world-layout #:apply-world-layout
+   #:apply-world-layout
    #:ui-host
    #:ui-overlay
    #:make-overlay

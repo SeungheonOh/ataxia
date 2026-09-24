@@ -22,19 +22,16 @@
   (when error (error "~A" (or (%assistant-field error "message") "Codex request failed."))) result)
 
 (defun %assistant-developer-instructions (controller)
-  (format nil "~A~%~%Current task scope: ~A.~%Selected project directory: ~A~%Ataxia source directory (reference examples): ~A~%"
+  (format nil "~A~%~%Working directory: ~A~%Ataxia source directory (reference examples): ~A~%"
           (uiop:read-file-string (asdf:system-relative-pathname "ataxia-assistant" "src/world/assistant/instructions.md"))
-          (ecase (assistant-controller-scope controller)
-            (:desktop "Desktop") (:application "Selected app") (:project "Project")
-            (:ataxia "Ataxia — edit the selected source tree and use ataxia_lisp for live changes"))
           (assistant-controller-project controller)
           (namestring (asdf:system-source-directory "ataxia-assistant"))))
 
 (defun %assistant-start-thread (controller)
   (let* ((resume (assistant-controller-thread-id controller))
          (params (%assistant-object "cwd" (assistant-controller-project controller)
-                         "sandbox" (if (member (assistant-controller-scope controller) '(:project :ataxia)) "workspace-write" "read-only")
-                         "approvalPolicy" "on-request"
+                         "sandbox" "danger-full-access"
+                         "approvalPolicy" "never"
                          "developerInstructions"
                          (%assistant-developer-instructions controller))))
     (if resume
@@ -42,7 +39,7 @@
         (setf (gethash "ephemeral" params) :false
               (assistant-controller-turn-count controller) 0
               (gethash "dynamicTools" params)
-              (%assistant-owner controller (lambda () (%assistant-tool-specs (assistant-controller-world controller) (assistant-controller-scope controller))))))
+              (%assistant-owner controller (lambda () (%assistant-tool-specs (assistant-controller-world controller))))))
   (%assistant-rpc controller (if resume "thread/resume" "thread/start") params
     (lambda (result error)
       (%assistant-check-result result error)
@@ -224,7 +221,7 @@
                 (member (assistant-controller-microphone controller) '(:starting :listening :muted)))
        (%assistant-owner controller
          (lambda ()
-           (when (and (assistant-controller-grant controller)
+           (when (and (assistant-controller-session controller)
                       (member (assistant-controller-microphone controller) '(:starting :listening :muted)))
              (setf (assistant-controller-voice-resume-p controller) nil (assistant-controller-blocked controller) nil)
              (when (assistant-controller-session controller) (cu:activate-session (assistant-controller-session controller)))))))
@@ -248,8 +245,8 @@
             (lambda () (%assistant-add-message controller :assistant (%assistant-field item "text") (%assistant-field item "id"))
               (%assistant-refresh controller))))
          ((equal method "item/started")
-          (let ((label (cdr (assoc type '(("commandExecution" . "Running a project command")
-                                          ("fileChange" . "Editing project files")
+          (let ((label (cdr (assoc type '(("commandExecution" . "Running a command")
+                                          ("fileChange" . "Editing files")
                                           ("dynamicToolCall" . "Using a desktop tool")) :test #'equal))))
             (when label (%assistant-state controller :activity label)))))))
     ((string= method "turn/completed")
@@ -281,8 +278,15 @@
     (return-from %assistant-server-request nil))
   (cond
     ((equal method "item/tool/call") (%assistant-dispatch-tool controller id params))
-    ((member method '("item/commandExecution/requestApproval" "item/fileChange/requestApproval"
-                      "item/permissions/requestApproval" "item/tool/requestUserInput") :test #'equal)
+    ((member method '("item/commandExecution/requestApproval" "item/fileChange/requestApproval") :test #'equal)
+     (%assistant-result controller id
+       (%assistant-object "decision" (if (assistant-controller-blocked controller) "decline" "accept"))))
+    ((equal method "item/permissions/requestApproval")
+     (%assistant-result controller id
+       (%assistant-object "permissions" (if (assistant-controller-blocked controller)
+                                            (%assistant-object) (%assistant-field params "permissions"))
+                          "scope" "session")))
+    ((equal method "item/tool/requestUserInput")
      (%assistant-owner controller
        (lambda ()
          (when (assistant-controller-request controller) (error "Concurrent user requests are not supported."))

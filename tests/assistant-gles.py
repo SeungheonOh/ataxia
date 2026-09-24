@@ -24,7 +24,7 @@ def capture(c, width, height, name):
 def component(source, width, height):
     bind_texture(0x0de1, tex)
     tex_image(0x0de1, 0, 0x1908, width, height, 0, 0x1908, 0x1401, None)
-    c = create(measured_source((root/f'src/world/assistant/{source}.rml').read_bytes(), ['heading','scope','close','model-settings','settings-open','settings-done','model-select','effort-select','fast-toggle','talk','mic-mute','send','message','voice-caption']), str(root/f'src/world/assistant/{source}.rml').encode(), b'', width, height, 1)
+    c = create(measured_source((root/f'src/world/assistant/{source}.rml').read_bytes(), ['heading','project','close','model-settings','settings-open','settings-done','model-select','effort-select','fast-toggle','talk','mic-mute','send','message','voice-caption']), str(root/f'src/world/assistant/{source}.rml').encode(), b'', width, height, 1)
     ok(c); ok(attach(c, fbo))
     return c
 

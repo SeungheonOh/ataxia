@@ -2,17 +2,12 @@
 (defparameter *assistant-preview-error-output* "/dev/null")
 
 (defun %assistant-project-file (controller path)
-  (unless (and (member (assistant-controller-scope controller) '(:project :ataxia))
-               (getf (assistant-controller-grant controller) :project))
-    (error "Choose Project scope and a directory before opening an app preview."))
   (cu:bounded-string path 2048 "path")
-  (unless (and (uiop:relative-pathname-p path)
-               (notany (lambda (c) (find c '(#\Newline #\Return #\Tab))) path))
-    (error "Use a project-relative RML path."))
-  (let* ((root (uiop:ensure-directory-pathname (truename (assistant-controller-project controller))))
-         (resolved (truename (merge-pathnames path root))))
-    (unless (and (uiop:subpathp resolved root) (equalp (pathname-type resolved) "rml"))
-      (error "Preview documents must be RML files inside the selected project."))
+  (when (some (lambda (c) (find c '(#\Newline #\Return #\Tab))) path)
+    (error "The RML path cannot contain tabs or line breaks."))
+  (let ((resolved (truename (merge-pathnames path (uiop:ensure-directory-pathname
+                                                  (assistant-controller-project controller))))))
+    (unless (equalp (pathname-type resolved) "rml") (error "Preview documents must be RML files."))
     (namestring resolved)))
 (defun %assistant-preview-command (preview path)
   (let* ((process (assistant-preview-process preview)) (input (uiop:process-info-input process))
@@ -61,7 +56,9 @@
            (setf (assistant-preview-process preview)
                  (uiop:launch-program
                   (list "env" "EGL_PLATFORM=wayland" (concatenate 'string "WAYLAND_DISPLAY=" socket) (namestring binary)
-                        (assistant-controller-project controller) app-id (princ-to-string (round width)) (princ-to-string (round height)))
+                        (namestring (let ((project (uiop:ensure-directory-pathname (assistant-controller-project controller))))
+                                      (if (uiop:subpathp path project) project (uiop:pathname-directory-pathname path))))
+                        app-id (princ-to-string (round width)) (princ-to-string (round height)))
                   :directory (assistant-controller-project controller) :input :stream :output :stream
                   :error-output *assistant-preview-error-output* :if-error-output-exists :append :element-type '(unsigned-byte 8)))
            (%assistant-preview-command preview path)

@@ -1,7 +1,7 @@
 # Ataxia assistant
 
 Status: implemented September 16, 2026, as the optional `ataxia-assistant` system.
-Typed Codex tasks, native computer use, layout transactions with Undo, isolated
+Typed Codex tasks, native computer use, direct layout operations, isolated
 RmlUi previews, shortcuts and the panel are implemented. The realtime adapter has
 passed synthetic-audio tests; the installed service requires API-key authentication,
 so a real microphone conversation has not been verified. See [usage and validation](ASSISTANT.md).
@@ -31,13 +31,12 @@ repeated permission prompts. Pause and Stop remain immediate local operations.
 - **Ctrl+Alt+Escape** immediately pauses all computer-use sessions, closes audio
   capture/playback and requests cancellation of assistant turns.
 
-The displayed scope is part of starting a task: for example, this desktop's
-layout, selected applications, or a chosen project directory. Pressing Send is the
-human authorization for those resources. The integrated assistant can create and
-approve its computer-use session from that human UI action; it does not approve
-itself through an agent tool. External computer-use clients retain the existing
-Allow/Resume controls. Resource expansion or a genuinely new consequential action
-uses an inline request, with the existing grant preserved.
+The assistant has full access to files, commands, application input, layout and
+live Lisp. Send starts the task using the existing native session. The working
+directory sets `cwd`, without limiting access to that directory. No scope tiers,
+window grants, execution approval controls or layout Undo are exposed. Pause,
+Resume, Stop and Disconnect remain explicit user controls. Model clarification
+questions appear inline.
 
 The prototype is [activity.rml](../examples/assistant/activity.rml). Run
 `python3 examples/assistant/render-preview.py` from an environment with render
@@ -80,7 +79,7 @@ A static panel must schedule no frames. Show elapsed time at most once per secon
 while expanded and working, and retain the existing idle bar schedule.
 
 The native computer-use listener remains available to external clients. This
-in-process controller shares its request validation, batch scheduling, approval,
+in-process controller shares its request validation, batch scheduling, session state,
 input and capture implementation through the owner queue, without another socket
 round trip or SLY evaluation of model-generated forms.
 
@@ -104,8 +103,7 @@ inferred from the existence of a voice UI in another Codex client.
 2. Read account state through app-server. If sign-in is required, show the returned
    login flow in the panel/browser. Never read or copy authentication files.
 3. Start or resume one thread per conversation. Set an explicit working directory
-   and permissions; use a restricted desktop task profile, or workspace write
-   access for the selected development project. Respect required Codex approvals.
+   with `sandbox: "danger-full-access"` and `approvalPolicy: "never"`.
    Obtain available models through `model/list`; use the user's configured choice.
 4. Register Ataxia tools through `thread/start.dynamicTools`. In 0.153.4 a function
    spec has `type: "function"`, `name`, `description` and `inputSchema`.
@@ -141,11 +139,10 @@ These assistant tools wrap the native computer-use API and the Metaworld layout 
 | --- | --- |
 | `ataxia_observe` | Existing observe plus optional capture; default to the selected application's view. Return semantic window identities alongside the image. |
 | `ataxia_act` | Existing bounded `batch`: focus, pointer, keys, typing, launch, waits and a settled capture. Preserve its sequence, timeout and human-takeover rules. |
-| `ataxia_window` | Close, minimize, restore, maximize or fullscreen an explicitly identified window within the task scope. Close requests normal client shutdown and requires observing the result; these controls invalidate prior layout plans and Undo. |
+| `ataxia_window` | Close, minimize, restore, maximize or fullscreen an explicitly identified window. Close requests normal client shutdown and requires observing the result; state changes update the desktop revision. |
 | `ataxia_desktop_snapshot` | Copy groups, workspaces, membership, layout policy, window identities, geometry, minimized/expanded state and output transforms. Include minimized windows and return a layout revision. |
-| `ataxia_layout_preview` | Validate a bounded proposed arrangement against that revision; return a plan ID and a visual/semantic preview. No mutation. |
-| `ataxia_layout_apply` | Apply a validated plan once under the task's layout grant, including `remove-group` deletion that preserves its member windows. Return an undo token and a new snapshot. |
-| `ataxia_layout_undo` | Restore the affected layout when the revision still matches; report conflicts instead of overwriting subsequent human changes. |
+| `ataxia_arrange` | Apply a bounded batch directly with the latest snapshot revision. The World validates and applies atomically, rolling back failure. Return the new desktop state. |
+| `ataxia_lisp` | Inspect or modify the live World on its owner thread; use worker mode for compilation and I/O. |
 | `ataxia_ui_preview` | Load a project-relative RML document in an isolated preview host; return parse diagnostics, rendered image and a preview ID. |
 | `ataxia_ui_update` | Replace a preview revision after successful parsing; keep the previous working document if it fails. |
 
@@ -160,8 +157,8 @@ Check the revision immediately before committing, and reject missing windows,
 wrong outputs and active human drags. A transaction validates the whole plan
 first, snapshots affected state, performs the bounded update on the owner thread,
 and restores that state on failure. Preserve human focus and do not close apps.
-After a successful explicit rearrangement request, apply automatically within the
-grant and expose **Undo**. Ask only if intent or scope is unresolved.
+Apply requested arrangements directly after observation. No retained plan or Undo
+history is needed.
 
 For “create an app using RmlUi”, Codex edits and tests files in the chosen project.
 The preview worker opens an ordinary Wayland window so the existing window-view
@@ -186,9 +183,9 @@ active microphone indicator in the status bar.
 | `item/agentMessage/delta` and completed message | Public commentary and final answer, accumulated by item ID. |
 | `turn/plan/updated` | Current step and completed steps. Omit the checklist if no plan exists. |
 | `item/started`, local computer-use operation | A concrete label such as “Typing in Firefox” or “Checking the layout”, with its target. |
-| Command/file/permission approval request | Exact affected command, paths or resources, with scoped choices in the panel. |
+| Command/file/permission request | Follow the full-access policy automatically; decline after Pause/Stop. |
 | `item/tool/requestUserInput` | The question and available choices. |
-| `turn/completed` | Result, failure or cancellation, with artifacts and layout undo when available. |
+| `turn/completed` | Result, failure or cancellation, with resulting artifacts. |
 
 Show public activity and tool status; do not display raw reasoning events as a
 thought transcript. Render common Markdown through the bounded assistant formatter; escape all model-supplied text before inserting the generated presentation tags into RML. Display real
@@ -221,7 +218,7 @@ execute a request twice. Persist a submission ID for each completed utterance.
 Partial transcripts update the panel without initiating actions.
 
 Talking over an active operation pauses local input before steering the task;
-resume only after the correction is accepted and the user's scope still applies.
+resume only after the correction is accepted and the task remains active.
 The Talk button toggles the mic off; Escape while the voice panel owns focus ends
 voice capture/playback. On permission denial, unavailable voice support, source
 removal or network error, close the mic and retain the typed composer with a clear
@@ -243,12 +240,12 @@ uncertain tool calls or resume physical actions automatically.
 
 Deduplicate tool calls using `(controller epoch, threadId, turnId, callId)`. Keep a bounded metadata journal of accepted calls and completion; retain task artifacts in the conversation and preview registry. If a crash leaves a
 call's outcome unknown, observe the application/layout and reconcile it before
-continuing. Layout commits use transaction IDs; repeating an already-committed
-transaction returns its recorded result. Expire computer-use grants on World or
-output replacement and acquire a new human grant when continuing there.
+continuing. Native actions use session sequence numbers and the assistant caches
+completed call results. Expire computer-use sessions on World/output replacement.
+Layout changes have no separate plan IDs or replay/Undo layer.
 
 Configure task time/action limits and expose them in task details. Stop at a real
-question, permission boundary, exhausted budget or final result. Do not turn an
+question, exhausted budget or final result. Do not turn an
 empty final answer into an unbounded self-prompting loop. Check concrete final
 conditions—layout membership/geometry or rendered preview/test results—before
 claiming success. A failed check can request a bounded continuation of the same
@@ -259,12 +256,12 @@ authorized task, with the failed observation attached.
 | Stage | Deliverable | Acceptance |
 | --- | --- | --- |
 | 1 | `protocol.lisp`, `controller.lisp`, `ui.lisp`, shortcut integration and typed composer | Real text turn streams into RmlUi; child failure leaves the desktop responsive; Pause/Stop work; old events cannot cross task or World epochs. |
-| 2 | `tools.lisp` adapter to native computer use | One human grant, independent agent seat, actual application input and screenshot returned to Codex, human takeover and cancellation during held input. |
-| 3 | `layout.lisp` transactions | “Reorganise my desktop” changes the authorized shared canvas; concurrent human movement rejects stale plans; Undo restores the prior arrangement without lost windows. |
+| 2 | `tools.lisp` adapter to native computer use | Full access, independent agent seat, actual application input and screenshot returned to Codex, human takeover and cancellation during held input. |
+| 3 | Shared CUA arrangement path | Direct batches update the canvas; concurrent human movement rejects stale revisions; a failed batch preserves the previous layout. |
 | 4 | `preview.lisp` and isolated RmlUi host | Codex creates a small app, opens it, exercises a button through computer use, and repairs a parse error while retaining the last good preview. |
 | 5 | `voice.lisp` and native PipeWire adapter | Hotkey starts visible listening; one utterance starts one task; interruption works; missing mic/voice entitlement falls back to text; mic closes on every exit path. |
 
-Use recorded app-server event fixtures for deterministic reducer, approval,
+Use recorded app-server event fixtures for deterministic reducer, full-access policy,
 deduplication and reconnection tests. Run model-backed end-to-end checks separately
 in a disposable project and headless desktop. Keep the existing computer-use and
 shell tests as regressions. Verify that streaming responses and audio I/O cannot

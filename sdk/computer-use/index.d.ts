@@ -61,8 +61,7 @@ export type MetaworldLayoutOperation = Omit<Placement, 'group'> & { op: 'create-
 export type DesktopChangeOptions = { revision?: number };
 export type ViewportCamera = { x?: number; y?: number; zoom?: number; rotation?: number };
 export type FrameOptions = DesktopChangeOptions & { padding?: number; rotation?: number };
-export type LayoutPreview = { plan: string; revision: number; operations: LayoutOperation[] };
-export type DesktopResult = { ok: true; session: NativeSession; desktop: DesktopState; undo?: string };
+export type DesktopResult = { ok: true; session: NativeSession; desktop: DesktopState };
 export interface AtaxiaExtensions {
   connect(options?: { name?: string; purpose?: string; output?: number }): Promise<NativeSession>;
   status(): Promise<NativeSession>;
@@ -72,10 +71,7 @@ export interface AtaxiaExtensions {
   getWorld(options?: ObservationOptions): Promise<WorldState>;
   /** Compatibility alias for getWorld(). */
   getDesktop(options?: ObservationOptions): Promise<DesktopState>;
-  previewLayout(operations: LayoutOperation[], options?: DesktopChangeOptions): Promise<LayoutPreview>;
-  applyLayout(plan: string): Promise<DesktopResult>;
   arrange(operations: LayoutOperation[], options?: DesktopChangeOptions): Promise<DesktopResult>;
-  undoLayout(undo: string): Promise<DesktopResult>;
   moveWindow(id: number, placement: Placement, options?: DesktopChangeOptions): Promise<DesktopResult>;
   setFloating(id: number, floating: boolean, options?: DesktopChangeOptions): Promise<DesktopResult>;
   windowAction(id: number, action: 'close' | 'minimize' | 'restore' | 'maximize' | 'fullscreen', options?: DesktopChangeOptions): Promise<DesktopResult>;

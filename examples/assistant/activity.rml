@@ -46,12 +46,12 @@ scrollbarvertical sliderarrowinc, scrollbarvertical sliderarrowdec { height:0; }
 .small #mic-status { display:none; }
 </style></head><body data-model="state"><div id="panel">
 <div id="header"><div id="heading">Assistant</div><div id="state">Working</div><button id="close">×</button></div>
-<div id="context"><div id="scope">This desktop · layout access</div><div id="elapsed">00:12</div></div>
+<div id="context"><div id="context-label">Ataxia assistant</div><div id="elapsed">00:12</div></div>
 <div id="conversation"><div class="label">You</div><div id="request">Reorganise my desktop.</div>
 <div class="label">Assistant</div><div id="action">Grouping your editor and terminals together. Your reference windows will stay beside them.</div>
 <div id="target">Current step: arranging Development</div>
 <div id="steps"><div class="step"><div class="marker">✓</div><div>Inspect open windows</div></div><div class="step current"><div class="marker">→</div><div>Arrange two groups</div></div><div class="step"><div class="marker">·</div><div>Check the final layout</div></div></div>
-<div id="result">Your desktop is arranged. You can undo the layout change.</div></div>
+<div id="result">Your desktop is arranged. The application windows remain open.</div></div>
 <div id="controls"><button id="pause">Pause</button><button id="stop">Stop</button><button id="details">View activity</button></div>
 <div id="voice"><div id="voice-label">Listening</div><div id="transcript">“Put the reference windows on the right…”</div></div>
 <div id="compose"><textarea id="message" data-value="message" placeholder="Ask or give a correction…"/><div id="compose-actions"><button id="talk">Talk</button><div id="mic-status">Microphone off</div><button id="send">Send</button></div></div>

@@ -1,7 +1,7 @@
 (load (merge-pathnames "support.lisp" *load-truename*))
 (asdf:load-system "ataxia-assistant/metaworld")
 (in-package #:ataxia.infinite-world)
-(let* ((source (format nil "## Desktop updated~%~%Removed **Studio**. Your apps are still open.~%~%- Windows moved to the canvas~%- Use `Undo layout` to restore them~%~%```lisp~%(remove-subworld world studio)~%```~%"))
+(let* ((source (format nil "## Desktop updated~%~%Removed **Studio**. Your apps are still open.~%~%- Windows moved to the canvas~%- Check `getWorld` for their placement~%~%```lisp~%(remove-subworld world studio)~%```~%"))
        (rml (ataxia.assistant::%assistant-markdown-rml source))
        (messages (list (list :role :you :text "Delete the Studio sub-world.") (list :role :assistant :text source))))
   (dolist (part '("md-h2" "md-strong" "md-code" "md-list-row" "md-code-block")) (assert (search part rml)))

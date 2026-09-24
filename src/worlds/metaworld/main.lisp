@@ -38,7 +38,7 @@
            (when (or sly-port assistant-p)
              (setf control (ataxia.sly-control:start-sly-control kernel :port sly-port)))
            (when assistant-p
-             (uiop:symbol-call :ataxia.assistant :enable (ataxia.kernel:kernel-world kernel) :project assistant-project :scope :ataxia))
+             (uiop:symbol-call :ataxia.assistant :enable (ataxia.kernel:kernel-world kernel) :project (or assistant-project (namestring (asdf:system-source-directory "ataxia-metaworld")))))
            (format t "[metaworld] WAYLAND_DISPLAY=~A mode=~A~%"
                    (ataxia.runtime:runtime-socket-name (ataxia.kernel:kernel-runtime kernel))
                    (or standalone :metaworld))

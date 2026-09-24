@@ -14,7 +14,7 @@
          (setf control (ataxia.sly-control:start-sly-control kernel :port nil))
          (setf controller (ataxia.assistant::%assistant-enable world :project (namestring project))
                (ataxia.assistant::assistant-controller-seat controller) (%canvas-seat-seat (first (%seat-states world))))
-         (ataxia.assistant::%assistant-submit controller "In this isolated test desktop, delete the Studio sub-world. Keep its applications open, use snapshot then preview then apply through the Ataxia layout tools, and verify Studio is gone. Do not run shell commands, edit files, use other tools, or delegate. Finish with a short Markdown response using a heading and a bullet.")
+         (ataxia.assistant::%assistant-submit controller "In this isolated test desktop, delete the Studio sub-world. Keep its applications open, use snapshot then arrange through the Ataxia layout tools, and verify Studio is gone. Do not run shell commands, edit files, use other tools, or delegate. Finish with a short Markdown response using a heading and a bullet.")
          (setf test-thread
            (sb-thread:make-thread
             (lambda ()
@@ -26,10 +26,8 @@
                                (assert (eq :done (ataxia.assistant::assistant-controller-task controller)) () "Codex integration: ~A" (ataxia.assistant::assistant-controller-activity controller))
                                (assert (>= (ataxia.assistant::assistant-controller-tool-count controller) 3))
                                (assert (not (find "Studio" (metaworld-subworlds world) :key #'subworld-name :test #'equal)))
-                               (ataxia.assistant::%assistant-layout-undo controller (getf (ataxia.assistant::assistant-controller-undo controller) :token) t)
-                               (assert (find "Studio" (metaworld-subworlds world) :key #'subworld-name :test #'equal))
                                (assert (some (lambda (m) (eq (getf m :role) :assistant)) (ataxia.assistant::assistant-controller-messages controller)))
-                               (format t "PASS: real Codex deleted Studio with validated layout tools; native verification and Undo succeeded.~%")
+                               (format t "PASS: real Codex deleted Studio with validated layout tools; native verification succeeded.~%")
                                (finish-output)
                                t)) :timeout 5d0)
                       (setf done t) (return))

@@ -53,19 +53,16 @@
     (%assistant-install-shortcuts controller)
     (%assistant-refresh controller t)))
 
-(defun %assistant-enable (world &key project (scope :desktop))
-  (unless (member scope '(:desktop :application :project :ataxia)) (error "Unknown assistant scope."))
+(defun %assistant-enable (world &key project)
   (require-world-capabilities world :ui :desktop :window-capture)
   (or (world-service world :assistant)
       (let* ((kernel (ataxia.kernel:world-kernel world))
              (existing-input (world-service world :computer-use))
              (controller
                (%make-assistant-controller
-                :world world :generation (ataxia.kernel:kernel-world-generation kernel) :scope scope
+                :world world :generation (ataxia.kernel:kernel-world-generation kernel)
                 :project (namestring (uiop:ensure-directory-pathname
-                                     (or project (if (eq scope :ataxia)
-                                                     (asdf:system-source-directory "ataxia-assistant")
-                                                     (user-homedir-pathname)))))))
+                                     (or project (user-homedir-pathname))))))
              (started nil))
         (cu:enable world :start-server nil)
         (attach-world-service world :assistant controller)
@@ -140,7 +137,7 @@
                (member (cu:computer-session-state session) '(:paused :closed)))
       (%assistant-pause controller (cu:computer-session-message session)))))
 
-(defun enable (world &key project (scope :desktop)) (%assistant-enable world :project project :scope scope))
+(defun enable (world &key project) (%assistant-enable world :project project))
 (defun disable (world) (%assistant-disable world))
 (defun open-panel (world &optional seat) (%assistant-open (enable world) seat))
 (defun submit (world text) (%assistant-submit (enable world) text))

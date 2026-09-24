@@ -11,7 +11,7 @@ ataxia
 ataxia --assistant-project /path/to/project
 ```
 
-Normal desktop sessions enable the service in **Ataxia** scope. `--no-assistant`
+Normal desktop sessions enable the service with full access. `--no-assistant`
 or `ATAXIA_ASSISTANT=0` opts out; headless sessions still require `--assistant`.
 Attaching the service and opening its panel starts no Codex process and opens no
 audio devices. Connect, Send, or Voice starts the app-server lazily.
@@ -24,14 +24,13 @@ the World; call `(ataxia.assistant:enable world)` on its owner thread to attach 
 | --- | --- |
 | Super+A / Assistant in the bar | Open or focus the panel |
 | Super+Shift+A / Voice | Toggle voice |
-| Send | Authorize the displayed scope and submit a task |
+| Send | Submit a task |
 | Ctrl+Enter | Send the composer; Enter remains a newline |
 | Send during a turn | Steer that turn |
 | Model name | Expand or collapse Model and Effort controls above the composer |
 | Details | Show task activity, plan and limits |
 | Pause / Resume | Release agent input immediately / continue after a human action |
 | Stop | Interrupt the task and close its input session |
-| Undo layout | Restore the last arrangement if the desktop still matches |
 | Escape while the panel has focus | Close the panel and audio |
 | Ctrl+Alt+Escape | Pause all computer-use sessions and assistant audio |
 
@@ -48,8 +47,8 @@ inside the panel, directly above the composer. There is no separate overlay or
 screen-wide input capture; the conversation and draft remain usable. Changes
 save automatically. Done, Escape, or clicking the model name again collapses
 settings without losing the draft. A second Escape closes the assistant.
-Pause and Stop appear during a task; Undo remains available after a layout
-change. Routine activity and limits are under Details. Scope stays in the header.
+Pause and Stop appear during a task. Routine activity and limits are under Details.
+The working directory is editable below the header.
 
 The model picker uses the signed-in Codex account's available models. **Connect**
 loads these without submitting a task or granting desktop input. The first model
@@ -64,25 +63,28 @@ apply to the next new typed task; steering keeps the active task's settings. A
 pending-change note appears while a task runs. Realtime audio uses its separate
 Codex voice configuration.
 
-## Scope
+## Access and layout
 
-Click the scope button to cycle through:
+The assistant always has full access to commands, files, applications, World
+layout and live Lisp. Codex threads start and resume with `sandbox` set to
+`danger-full-access` and `approvalPolicy` set to `never`. There is no scope
+selector, per-task window allowlist or extra execution approval dialog.
+New windows are accessible as soon as they appear. Pause and Stop remain user
+controls over the current task.
 
-- **Desktop:** application interaction, window controls and the shared Metaworld canvas layout.
-  A human Send grants the current windows for layout changes. Layout plans validate
-  all operations, reject intervening changes and active drags, apply once, and
-  support conflict-checked Undo. Application titles and presentation animations
-  do not count as layout edits. `remove-group` deletes a sub-world and moves its
-  remaining windows and widgets onto the canvas. Its deletion can be undone;
-  standalone worlds keep their only sub-world. Layout operations keep client windows open.
-- **Selected app:** native input and window controls are limited to the window focused before opening
-  the panel. The assistant cannot launch or switch to another application.
-- **Project:** Codex may edit the chosen directory using its workspace-write
-  sandbox. Native input and window controls are limited to previews created by this assistant.
-- **Ataxia:** desktop tools, editing the selected source directory, app previews,
-  and the `ataxia_lisp` live-development tool. This is the normal desktop default;
-  its initial directory is the Ataxia source tree. Other Worlds can opt in with
-  `(ataxia.assistant:enable world :scope :ataxia :project "/path/to/source/")`.
+The working directory supplies Codex's `cwd` and resolves relative file paths;
+it is not an access boundary. Metaworld defaults to the Ataxia source tree.
+Other Worlds can choose a directory with
+`(ataxia.assistant:enable world :project "/path/to/project/")`.
+
+`ataxia_arrange` applies a batch directly using the latest desktop snapshot
+revision. The assistant and CUA share the same revision and operation path.
+There are no retained layout plans, apply tokens or Undo history. Validation
+checks the whole batch before mutation, and the World rolls back a failed batch.
+Intervening layout changes and active drags reject stale requests. Titles and
+presentation animations do not count as layout edits. `remove-group` returns
+its remaining windows and widgets to the canvas without closing them;
+standalone Worlds keep their only sub-world.
 
 `ataxia_lisp` reads and compiles one form off the owner thread. `inspect` and
 `apply` bind `WORLD` to the active World and run on its owner thread with a
@@ -91,8 +93,7 @@ work and compilation off the compositor thread with a 30 second budget. It must
 not mutate World state or install class/generic-function definitions. Output is
 bounded to 16 KiB, and errors return to the chat without replacing the World.
 Changes made before an error are not rolled back or automatically replayed.
-This is trusted live development access, not a Lisp sandbox. Pause and scope
-changes reject subsequent calls; they cannot undo a completed change.
+This is trusted live development access, not a Lisp sandbox. Pause and Stop reject subsequent calls; they do not reverse completed changes.
 
 Do not ASDF-reload a live World's dependency tree from a worker. Class redefinition
 can temporarily remove accessors used by frames. Read/compile on workers and
@@ -102,13 +103,12 @@ Runtime implementation changes are needed by this service.
 `ataxia_window` controls a window by its stable ID: `close`, `minimize`, `restore`,
 `maximize`, or `fullscreen`. Closing sends a normal application close request;
 the assistant checks afterward for closure or a save dialog. It does not force-kill
-the application, and closing has no Undo. A window is one application toplevel;
+the application. A window is one application toplevel;
 closing every window of an app requires selecting each matching window.
 Snapshots include minimized windows and window state. Minimize persists across
 layout updates; Restore unminimizes and exits expanded presentation. The launcher
 can also unminimize a window. Maximize and fullscreen fill the containing sub-world
-for grouped windows, or the output for canvas windows. Window controls invalidate
-earlier layout plans and Undo. They do not move the human's focus to another app.
+for grouped windows, or the output for canvas windows. Window state changes update the layout revision. They do not move the human's focus to another app.
 
 `ataxia_observe` without a window returns the window inventory and installed app
 catalog without taking a screenshot or changing the selected target. Supplying
@@ -129,8 +129,8 @@ followed by `button`, key chords use XKB base names such as lowercase `n` with
 native session rather than an external CUA MCP connection with another approval
 flow. Application discovery does not require a second permission request.
 
-Command, file and permission requests required by Codex appear inline. Questions
-support supplied choices and typed answers. Sign in opens the app-server's browser
+Execution requests follow the full-access policy without another prompt. Model
+questions support supplied choices and typed answers. Sign in opens the app-server's browser
 flow; Retry rechecks account state. Credentials are managed by Codex.
 
 ## Response formatting
@@ -144,11 +144,10 @@ Formatting also works as a response streams in, with bounded message rendering.
 ## RmlUi apps
 
 The assistant receives a built-in [UI authoring guide](../src/world/assistant/instructions.md)
-on every new thread, together with its actual scope and project path. It covers
+on every new thread, together with the working directory. It covers
 creating, opening, testing and updating custom UI, light styling, native form
-controls, supported callbacks and storage limitations. Choose **Project** in the
-header, enter a directory, then ask, for example, "Create a simple notepad and
-open it." Every new UI opens as a separate Wayland window in its own dedicated
+controls, supported callbacks and storage limitations. Enter a working directory
+and ask, for example, "Create a simple notepad and open it." Every new UI opens as a separate Wayland window in its own dedicated
 process; it is not embedded in the assistant or compositor. The
 [notepad starter](../examples/assistant/notepad.rml) is a working
 multiline editor with temporary text; closing or reloading clears its contents.
@@ -162,8 +161,9 @@ the last working preview; valid updates replace the document.
 predefined events: `increment`, `decrement`, and `reset` update `counter`;
 `input:change` copies text into `result`; `submit` sets `status`. Native form
 controls also work. These events execute no Lisp or arbitrary application code.
-Project assets are restricted to that directory, with a fixed system-font
-fallback. Up to four preview clients may be open. Stop preserves previews;
+Preview paths may be absolute or relative to the working directory. Each preview
+host resolves assets within the project, or the document directory for a file
+outside the project, with a system-font fallback. Up to four preview clients may be open. Stop preserves previews;
 disabling the assistant or replacing its World closes them. Installing a preview
 as a persistent compositor widget is a separate development action.
 
@@ -223,12 +223,12 @@ The controller has separate connection, task and microphone state. Owner-thread
 mutations are short; subprocess I/O, encoding and audio run in workers. Events
 are bounded and stamped with controller/World identity. The Codex child starts
 only on Send, Voice, or an explicit model-list connection. After 60 seconds
-without a task, approval, pending RPC or voice session, the worker closes its
+without a task, question, pending RPC or voice session, the worker closes its
 stdio connection, lets Codex flush its conversation, and exits along with the
 reader. The next submission starts a child and resumes the same persisted
 thread, including its tool definitions and conversation context. An unused empty
 thread is created anew because Codex does not persist it until its first turn.
-Scope changes and recovery from an uncertain connection failure create a new
+Working-directory changes and recovery from an uncertain connection failure create a new
 thread; physical actions are never replayed automatically.
 
 Defaults are 30 minutes per human submission and 256 local tool calls per turn;
@@ -249,7 +249,7 @@ Unknown outcomes are not replayed after reconnect; begin with a new observation.
 
 On this development laptop, `make benchmark-idle` measured zero worker CPU time
 and voluntary wakeups over five seconds. The isolated World measured zero
-frames, zero allocated bytes, and 0.41 ms process CPU over five seconds, excluding
+frames, zero allocated bytes, and 0.34 ms process CPU over five seconds, excluding
 caret blinking and unrelated desktop activity. Codex 0.156.1 itself used CPU
 while idle in a separate subprocess probe, which is why the child is released
 after the grace period. After release there is no assistant worker, reader, or
@@ -278,13 +278,13 @@ ATAXIA_TEST_CODEX=1 WLR_RENDERER=gles2 sbcl --noinform --disable-debugger \
   --script tests/assistant-ui-codex-world.lisp
 ```
 
-The deterministic suite covers protocol streaming, explicit approvals and answers,
+The deterministic suite covers protocol streaming, full-access protocol settings and question answers,
 duplicate calls, stale epochs, native panel rendering at wide/narrow sizes, idle
-rendering, preview input and update recovery, animated layout Undo, synthetic
+rendering, preview input and update recovery, direct animated arrangements and failure rollback, synthetic
 voice handoff/playback and cleanup, bounded live Lisp evaluation, and idle child
-shutdown/resume. The real Codex test also verifies context and dynamic tools
-survive replacement of the subprocess. Window tests cover actual client closure,
-minimize/restore across both tilers, canvas expansion, scope checks, stale IDs
+shutdown/resume. The real Codex test also verifies a shell write outside the working directory
+without approvals, and that context and dynamic tools survive subprocess replacement. Window tests cover actual client closure,
+minimize/restore across both tilers, canvas expansion, access to newly opened windows, stale IDs
 and focus preservation. The real-model checks exercise registered native tools
 in an isolated headless World, including UI creation from an empty project.
 Notepad tests check multiline editing, scrolling, separate process/window IDs

@@ -82,7 +82,7 @@
   (setf (ataxia.assistant::assistant-controller-turn-id controller) nil)
   (assert (null (ataxia.assistant::%assistant-worker-timeout controller 25d0))))
 
-;; Each grant expires once; a later grant and coincident voice deadline still run.
+;; Each task expires once; a later task and coincident voice deadline still run.
 (let* ((ataxia.assistant::*assistant-time-limit* 100d0)
        (controller (ataxia.assistant::%make-assistant-controller :turn-id "turn" :started 0d0))
        (names '(ataxia.assistant::%assistant-owner ataxia.assistant::%assistant-pause ataxia.assistant::%assistant-voice-close ataxia.assistant::%assistant-state))

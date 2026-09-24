@@ -7,7 +7,7 @@
 (defun %assistant-tool-spec (name description properties &optional required)
   (%assistant-object "type" "function" "name" name "description" description
                      "inputSchema" (%assistant-object-schema properties (or required #()))))
-(defun %assistant-action-schema (world scope)
+(defun %assistant-action-schema (world)
   "Describe the same per-operation fields the native batch executor accepts."
   (let* ((seconds (%assistant-schema "number" "minimum" .016d0 "maximum" 2 "description" "Seconds, not milliseconds."))
          (fields (%assistant-object
@@ -31,8 +31,7 @@
       (coerce
        (loop for (op . allowed) in cu:+batch-action-fields+
              unless (and (equal op "launch")
-                         (or (not (world-supports-p world :launcher))
-                             (not (member scope '(:desktop :ataxia)))))
+                         (not (world-supports-p world :launcher)))
              collect
              (let ((properties (%assistant-object "op" (%assistant-schema "string" "enum" (vector op)))))
                (dolist (field allowed)
@@ -49,35 +48,34 @@
                                                :test #'equal))) 'vector))))
        'vector))))
 
-(defun %assistant-tool-specs (world &optional (scope :desktop))
+(defun %assistant-tool-specs (world)
   (multiple-value-bind (operation description)
       (when (world-supports-p world :layout) (world-layout-schema world))
     (let* ((string (%assistant-schema "string")) (integer (%assistant-schema "integer"))
            (number (%assistant-schema "number")) (boolean (%assistant-schema "boolean"))
-           (action (%assistant-action-schema world scope)))
+           (action (%assistant-action-schema world)))
       (coerce
        (append
-        (when (eq scope :ataxia)
-          (list (%assistant-tool-spec "ataxia_lisp"
-                 "Evaluate one Common Lisp form in this running Ataxia. Ataxia scope only. inspect/apply bind WORLD to the active World on its owner thread, with a 250 ms execution budget; apply also refreshes it. worker runs off the compositor thread for reading/compiling source and file I/O, with a 30 s budget; it must not access mutable World state or install class/generic-function definitions. Never ASDF-reload the live World dependency tree. Parse/compile happens off-thread. Errors are returned without replacing the World; partial mutations are not rolled back or retried. Use regular Ataxia tools for normal application input. Never change kernel/runtime/native code."
+        (list (%assistant-tool-spec "ataxia_lisp"
+                 "Evaluate one Common Lisp form in this running Ataxia. inspect/apply bind WORLD to the active World on its owner thread, with a 250 ms execution budget; apply also refreshes it. worker runs off the compositor thread for reading/compiling source and file I/O, with a 30 s budget; it must not access mutable World state or install class/generic-function definitions. Never ASDF-reload the live World dependency tree. Parse/compile happens off-thread. Errors are returned without replacing the World; partial mutations are not rolled back or retried. Use regular Ataxia tools for normal application input. Never change kernel/runtime/native code."
                  (%assistant-object "code" (%assistant-schema "string" "maxLength" 32768)
-                   "mode" (%assistant-schema "string" "enum" #("inspect" "apply" "worker"))) #("code" "mode"))))
+                   "mode" (%assistant-schema "string" "enum" #("inspect" "apply" "worker"))) #("code" "mode")))
         (list
          (%assistant-tool-spec "ataxia_observe"
-       "Discover approved mapped applications across the World, including offscreen windows. Select an available window by stable ID for its own PNG and local input coordinates, independent of monitor cameras or occlusion. Unavailable windows remain in discovery; inspect their World state. Omit window for discovery without a screenshot or target change. The applications array lists launchable catalog IDs and names, including apps not running. capture defaults true only when window is supplied. The token and sequence are managed by Ataxia."
+       "Discover mapped applications across the World, including offscreen windows. Select an available window by stable ID for its own PNG and local input coordinates, independent of monitor cameras or occlusion. Unavailable windows remain in discovery; inspect their World state. Omit window for discovery without a screenshot or target change. The applications array lists launchable catalog IDs and names, including apps not running. capture defaults true only when window is supplied. The token and sequence are managed by Ataxia."
        (%assistant-object "window" integer "capture" boolean))
          (%assistant-tool-spec "ataxia_act"
        "Execute 1–16 native actions and return the resulting windows; capture defaults true. To launch, use op:launch with application set to an applications catalog ID from observe, capture:false, then observe to verify the new window. Observe before input. To click, move to x/y then use button; button has no coordinates. Key names are XKB base names, e.g. n with Control_L for Ctrl+N, or Return. All durations, timeout and settle are seconds (settle 0–2). Window coordinates apply to the last image. This seat cannot invoke desktop shortcuts or click World controls. Human takeover pauses the session."
        (%assistant-object "actions" (%assistant-schema "array" "items" action "minItems" 1 "maxItems" 16)
                           "capture" boolean "settle" (%assistant-schema "number" "minimum" 0 "maximum" 2 "description" "Seconds; default 0.15.")) #("actions"))
          (%assistant-tool-spec "ataxia_window"
-       "Control an application window by its stable ID from observe or desktop_snapshot. Actions: close, minimize, restore, maximize, fullscreen. Close sends the normal application close request; it has no Undo and may open a save dialog, so verify afterward. Restore unminimizes and exits maximized/fullscreen presentation. Maximize and fullscreen follow the current World's placement policy. Application scope permits only its selected window; Project scope permits only this assistant's previews."
+       "Control an application window by its stable ID from observe or desktop_snapshot. Actions: close, minimize, restore, maximize, fullscreen. Close sends the normal application close request; it may open a save dialog, so verify afterward. Restore unminimizes and exits maximized/fullscreen presentation. Maximize and fullscreen follow the current World's placement policy."
        (%assistant-object "window" integer "action" (%assistant-schema "string" "enum" #("close" "minimize" "restore" "maximize" "fullscreen"))) #("window" "action"))
          (%assistant-tool-spec "ataxia_desktop_snapshot" "Read structured state across the infinite World: stable window IDs, availability, placement, groups/workspaces and independent monitor cameras, plus the layout revision. Includes minimized and hidden-workspace windows. World geometry is not screenshot or click coordinates; each monitor is only a viewport."
                           (%assistant-object)))
         (when (world-supports-p world :viewport-navigation)
           (list (%assistant-tool-spec "ataxia_viewport"
-                 "Change one explicit monitor camera: set x/y world origin, zoom (0.08–8), rotation in radians; pan by world dx/dy; frame-window by stable window ID; or frame-region by world x/y/width/height. Framing preserves rotation unless supplied and fits the work area with padding (32 logical pixels by default). Does not move windows, switch workspaces, restore hidden windows or change human focus. Requires Desktop scope and the latest snapshot revision."
+                 "Change one explicit monitor camera: set x/y world origin, zoom (0.08–8), rotation in radians; pan by world dx/dy; frame-window by stable window ID; or frame-region by world x/y/width/height. Framing preserves rotation unless supplied and fits the work area with padding (32 logical pixels by default). Does not move windows, switch workspaces, restore hidden windows or change human focus. Requires the latest snapshot revision."
                  (%assistant-object "revision" integer "output" integer
                    "action" (%assistant-schema "string" "enum" #("set" "pan" "frame-window" "frame-region"))
                    "x" number "y" number "dx" number "dy" number "zoom" number "rotation" number
@@ -85,19 +83,15 @@
                  #("revision" "output" "action"))))
         (when operation
           (list
-           (%assistant-tool-spec "ataxia_layout_preview"
-       (format nil "Validate a layout plan without changing the desktop. Use the revision from snapshot. ~A" description)
-       (%assistant-object "revision" integer "operations" (%assistant-schema "array" "items" operation "minItems" 1 "maxItems" 64)) #("revision" "operations"))
-           (%assistant-tool-spec "ataxia_layout_apply" "Apply a validated plan once. Rejects intervening human layout changes. Returns an Undo token."
-                          (%assistant-object "plan" string) #("plan"))
-           (%assistant-tool-spec "ataxia_layout_undo" "Undo the last assistant arrangement if no later layout change would be overwritten."
-                          (%assistant-object "undo" string) #("undo"))))
+           (%assistant-tool-spec "ataxia_arrange"
+       (format nil "Apply layout operations directly using the latest snapshot revision. Rejects intervening layout changes. ~A" description)
+       (%assistant-object "revision" integer "operations" (%assistant-schema "array" "items" operation "minItems" 1 "maxItems" 64)) #("revision" "operations"))))
         (list
          (%assistant-tool-spec "ataxia_ui_preview"
-       "Launch a dedicated process and separate interactive Wayland window for a project-relative RML file. Each new custom UI gets its own process and window. Use for small apps such as a notepad with a native textarea. Follow the UI authoring instructions and test behavior with observe/act. Returns preview ID, process PID and application window ID. Project scope only. JavaScript, arbitrary callbacks and file saving are unavailable."
+       "Launch a dedicated process and separate interactive Wayland window for a RML file (absolute path or relative to the working directory). Each new custom UI gets its own process and window. Use for small apps such as a notepad with a native textarea. Follow the UI authoring instructions and test behavior with observe/act. Returns preview ID, process PID and application window ID. JavaScript, arbitrary callbacks and file saving are unavailable."
        (%assistant-object "path" string "width" integer "height" integer) #("path"))
          (%assistant-tool-spec "ataxia_ui_update"
-       "Validate and replace an existing preview document after editing its project RML file. A failed update preserves the previous working preview; a successful update resets unsaved form values. Test the updated UI with observe/act."
+       "Validate and replace an existing preview document after editing its RML file. A failed update preserves the previous working preview; a successful update resets unsaved form values. Test the updated UI with observe/act."
        (%assistant-object "preview" string "path" string) #("preview" "path"))))
        'vector))))
 
@@ -130,8 +124,8 @@
   (%assistant-object "success" :false "contentItems"
     (vector (%assistant-object "type" "inputText" "text" (%assistant-text (princ-to-string cause) 4096)))))
 (defun %assistant-require-task (controller)
-  (unless (and (assistant-controller-grant controller) (not (assistant-controller-blocked controller)))
-    (error "The task is paused or has no human authorization. Wait for the user to Run or Resume.")))
+  (unless (and (assistant-controller-alive controller) (not (assistant-controller-blocked controller)))
+    (error "The task is paused. Wait for the user to Send or Resume.")))
 (defun %assistant-cu-call (controller request)
   (let ((result
          (%assistant-owner controller
@@ -143,45 +137,6 @@
                      (getf request :sequence) (1+ (cu:computer-session-sequence session)))
                (cu:request-on-owner (assistant-controller-world controller) request))))))
     (cu:finish-request result)))
-(defun %assistant-preview-window-p (controller id)
-  (let ((window (find id (world-windows (assistant-controller-world controller))
-                      :key (lambda (w) (ataxia.kernel:object-id (window-application w))))))
-    (and window (loop for preview being the hash-values of (assistant-controller-previews controller)
-                      thereis (equal (assistant-preview-app-id preview)
-                                     (ataxia.kernel:application-app-id (window-application window)))))))
-(defun %assistant-check-action-scope (controller actions)
-  (when (eq (assistant-controller-scope controller) :project)
-    (%assistant-owner controller
-      (lambda ()
-        (loop for action across actions do
-          (when (or (and (getf action :window) (not (%assistant-preview-window-p controller (getf action :window))))
-                    (and (getf action :mode) (not (equal "window" (getf action :mode))))
-                    (member (getf action :op) '("launch" "wait-window") :test #'equal))
-            (error "Project input is limited to this assistant's app previews."))))))
-  (when (eq (assistant-controller-scope controller) :application)
-    (let ((id (getf (assistant-controller-grant controller) :window)))
-      (loop for action across actions do
-        (when (or (and (getf action :window) (not (eql id (getf action :window))))
-                  (and (getf action :mode) (not (equal "window" (getf action :mode))))
-                  (member (getf action :op) '("launch" "wait-window") :test #'equal))
-          (error "This task is limited to the selected application."))))))
-(defun %assistant-control-viewport (controller arguments)
-  (%assistant-require-task controller)
-  (unless (getf (assistant-controller-grant controller) :layout)
-    (error "Viewport navigation requires Desktop scope."))
-  (%assistant-layout-idle controller)
-  (unless (eql (gethash "revision" arguments) (%assistant-layout-revision controller))
-    (error "The World changed. Read a fresh snapshot before moving its camera."))
-  (let* ((session (assistant-controller-session controller))
-         (request (cu:decode-request arguments)))
-    (unless session (error "This task has no computer-use session."))
-    (setf (getf request :op) "viewport"
-          (getf request :token) (cu:computer-session-token session)
-          (getf request :sequence) (1+ (cu:computer-session-sequence session))
-          (getf request :revision) (getf (cu::%computer-desktop-snapshot session) :revision))
-    (cu:request-on-owner (assistant-controller-world controller) request)
-    (%assistant-layout-snapshot controller)))
-
 (defun %assistant-run-tool (controller name arguments)
   (unless (hash-table-p arguments) (error "Tool arguments must be an object."))
   (%assistant-owner controller (lambda () (%assistant-require-task controller)))
@@ -189,7 +144,6 @@
     ((equal name "ataxia_lisp") (%assistant-evaluate-lisp controller arguments))
     ((equal name "ataxia_observe")
      (let ((window (gethash "window" arguments)))
-       (%assistant-check-action-scope controller (vector (list :op "view" :window window :mode "window")))
        (when window (%assistant-cu-call controller (list :op "view" :mode "window" :window window)))
        (let ((result (%assistant-cu-call controller (list :op "observe" :mode "window"))))
          (unless (eq :false (gethash "capture" arguments (if window t :false)))
@@ -198,21 +152,13 @@
          result)))
     ((equal name "ataxia_act")
      (let ((request (cu:decode-request arguments)))
-       (%assistant-check-action-scope controller (getf request :actions))
        (setf (getf request :op) "batch")
        (%assistant-cu-call controller request)))
     ((equal name "ataxia_desktop_snapshot")
      (%assistant-owner controller (lambda () (%assistant-layout-snapshot controller))))
-    ((equal name "ataxia_window")
-     (%assistant-owner controller (lambda () (%assistant-control-window controller arguments))))
-    ((equal name "ataxia_viewport")
-     (%assistant-owner controller (lambda () (%assistant-control-viewport controller arguments))))
-    ((equal name "ataxia_layout_preview")
-     (%assistant-owner controller (lambda () (%assistant-layout-preview controller arguments))))
-    ((equal name "ataxia_layout_apply")
-     (%assistant-owner controller (lambda () (%assistant-layout-apply controller arguments))))
-    ((equal name "ataxia_layout_undo")
-     (%assistant-owner controller (lambda () (%assistant-layout-undo controller (gethash "undo" arguments)))))
+    ((member name '("ataxia_window" "ataxia_viewport" "ataxia_arrange") :test #'equal)
+     (%assistant-owner controller
+       (lambda () (%assistant-desktop-action controller (subseq name 7) arguments))))
     ((equal name "ataxia_ui_preview") (%assistant-preview controller arguments))
     ((equal name "ataxia_ui_update") (%assistant-preview-update controller arguments))
     (t (error "Unknown Ataxia tool ~A." name))))
@@ -239,8 +185,7 @@
       (or (cdr (assoc name '(("ataxia_observe" . "Looking at the application") ("ataxia_act" . "Using the application")
                             ("ataxia_desktop_snapshot" . "Checking the desktop") ("ataxia_window" . "Updating the application window")
                             ("ataxia_viewport" . "Moving the monitor viewport")
-                            ("ataxia_layout_preview" . "Planning the arrangement")
-                            ("ataxia_layout_apply" . "Arranging the desktop") ("ataxia_layout_undo" . "Restoring the arrangement")
+                            ("ataxia_arrange" . "Arranging the desktop")
                             ("ataxia_ui_preview" . "Opening the app preview") ("ataxia_ui_update" . "Updating the app preview")) :test #'equal)) name))
     (let ((epoch (assistant-controller-epoch controller)))
       (setf (assistant-controller-tool-worker controller)

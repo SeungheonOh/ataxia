@@ -3,7 +3,7 @@
 (asdf:load-system "ataxia-assistant/infinite-world")
 (in-package #:ataxia.infinite-world)
 (setf ataxia.assistant::*assistant-command*
-      (list "env" "ATAXIA_EXPECTED_TOOLS=7" "sbcl" "--noinform" "--disable-debugger" "--script"
+      (list "env" "ATAXIA_EXPECTED_TOOLS=8" "sbcl" "--noinform" "--disable-debugger" "--script"
             (namestring (asdf:system-relative-pathname "ataxia-assistant" "tests/assistant-mock-codex.lisp")))
       ataxia.assistant::*assistant-idle-timeout* .15d0)
 (let* ((world (make-infinite-world))

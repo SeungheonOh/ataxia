@@ -20,9 +20,9 @@
            (ataxia.kernel:start-kernel kernel)
            (setf control (ataxia.sly-control:start-sly-control kernel :port nil)
                  controller (ataxia.assistant::%assistant-enable world :project (namestring project))
-                 (ataxia.assistant::assistant-controller-scope controller) :project
+
                  (ataxia.assistant::assistant-controller-seat controller) (%canvas-seat-seat (first (%seat-states world))))
-           (ataxia.assistant::%assistant-grant controller)
+           (ataxia.assistant::%assistant-start-task controller)
            (setf worker
                  (sb-thread:make-thread
                   (lambda ()

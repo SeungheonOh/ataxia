@@ -22,12 +22,16 @@
            (result id (obj "data" (vector (fixture-model "fixture-fast" "low" t)) "nextCursor" nil))
            (result id (obj "data" (vector (fixture-model "fixture-default" "medium" t)) "nextCursor" "page2"))))
       ((equal method "thread/start")
+       (assert (equal "danger-full-access" (gethash "sandbox" (gethash "params" message))))
+       (assert (equal "never" (gethash "approvalPolicy" (gethash "params" message))))
        (assert (eq :false (gethash "ephemeral" (gethash "params" message))))
-       (assert (= (parse-integer (or (uiop:getenv "ATAXIA_EXPECTED_TOOLS") "10"))
+       (assert (= (parse-integer (or (uiop:getenv "ATAXIA_EXPECTED_TOOLS") "9"))
                   (length (gethash "dynamicTools" (gethash "params" message)))))
        (result id (obj "thread" (obj "id" "fixture-thread") "model" "fixture-default" "reasoningEffort" "medium")))
       ((equal method "thread/resume")
        (assert (equal "fixture-thread" (gethash "threadId" (gethash "params" message))))
+       (assert (equal "danger-full-access" (gethash "sandbox" (gethash "params" message))))
+       (assert (equal "never" (gethash "approvalPolicy" (gethash "params" message))))
        (assert (gethash "excludeTurns" (gethash "params" message)))
        (result id (obj "thread" (obj "id" "fixture-thread") "model" "fixture-default" "reasoningEffort" "medium")))
       ((equal method "turn/start")
@@ -53,17 +57,28 @@
        (if (uiop:getenv "ATAXIA_APPROVAL_FIXTURE")
            (send-message (obj "id" 8001 "method" "item/tool/requestUserInput" "params"
              (obj "threadId" "fixture-thread" "turnId" "fixture-turn" "questions"
-               (vector (obj "id" "scope" "header" "Scope" "question" "Inspect this desktop?"
+               (vector (obj "id" "inspect" "header" "Inspect" "question" "Inspect this desktop?"
                             "options" (vector (obj "label" "Inspect" "description" "Read the fixture desktop")))))))
            (send-message (obj "id" 9001 "method" "item/tool/call" "params"
              (obj "threadId" "fixture-thread" "turnId" "fixture-turn" "callId" "fixture-call"
                   "tool" "ataxia_desktop_snapshot" "arguments" (obj))))))
       ((eql id 8001)
-       (assert (equalp #("Inspect") (gethash "answers" (gethash "scope" (gethash "answers" (gethash "result" message))))))
+       (assert (equalp #("Inspect") (gethash "answers" (gethash "inspect" (gethash "answers" (gethash "result" message))))))
        (send-message (obj "id" 8002 "method" "item/commandExecution/requestApproval" "params"
           (obj "threadId" "fixture-thread" "turnId" "fixture-turn" "command" "fixture-only: no command runs"))))
       ((eql id 8002)
        (assert (equal "accept" (gethash "decision" (gethash "result" message))))
+       (send-message (obj "id" 8003 "method" "item/fileChange/requestApproval" "params"
+          (obj "threadId" "fixture-thread" "turnId" "fixture-turn"))))
+      ((eql id 8003)
+       (assert (equal "accept" (gethash "decision" (gethash "result" message))))
+       (send-message (obj "id" 8004 "method" "item/permissions/requestApproval" "params"
+          (obj "threadId" "fixture-thread" "turnId" "fixture-turn"
+               "permissions" (obj "network" (obj "enabled" t))))))
+      ((eql id 8004)
+       (let ((reply (gethash "result" message)))
+         (assert (equal "session" (gethash "scope" reply)))
+         (assert (eq t (gethash "enabled" (gethash "network" (gethash "permissions" reply))))))
        (send-message (obj "id" 9001 "method" "item/tool/call" "params"
          (obj "threadId" "fixture-thread" "turnId" "fixture-turn" "callId" "fixture-call"
               "tool" "ataxia_desktop_snapshot" "arguments" (obj)))))

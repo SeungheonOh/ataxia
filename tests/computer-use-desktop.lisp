@@ -22,16 +22,12 @@
   (values (ataxia.computer-use.wire:decode
            "{\"type\":\"object\",\"properties\":{\"op\":{\"enum\":[\"position\"]},\"value\":{\"type\":\"integer\"}}}")
           "position sets the fixture's one-dimensional placement."))
-(defmethod validate-world-layout ((world desktop-world) operations ids)
-  (assert (equal ids '(42)))
+(defmethod validate-world-layout ((world desktop-world) operations)
   (loop for operation across operations do
     (assert (equal "position" (gethash "op" operation)))
     (assert (integerp (gethash "value" operation)))))
-(defmethod capture-world-layout ((world desktop-world)) (desktop-position world))
-(defmethod restore-world-layout ((world desktop-world) snapshot)
-  (setf (desktop-position world) snapshot))
-(defmethod apply-world-layout ((world desktop-world) operations ids)
-  (declare (ignore ids))
+(defmethod apply-world-layout ((world desktop-world) operations)
+  (validate-world-layout world operations)
   (loop for operation across operations do
     (setf (desktop-position world) (gethash "value" operation))))
 (defmethod navigate-world-viewport ((world desktop-world) output action &key x y dx dy zoom rotation width height window padding)
@@ -61,18 +57,15 @@
          (let ((snapshot (cu::%computer-desktop-snapshot first)))
            (assert (hash-table-p (getf snapshot :layout-schema)))
            (assert (not (getf snapshot :groups))))
-         (let* ((preview (cu::%computer-desktop-action first "layout-preview"
-                          (list :revision (revision first) :operations (operation 75))))
-                (plan (getf preview :plan)))
-           (assert (zerop (desktop-position world)))
+         (let ((revision (revision second)))
+           (cu::%computer-desktop-action first "arrange"
+             (list :revision (revision first) :operations (operation 75)))
+           (assert (= 75 (desktop-position world)))
            (assert (handler-case
-                       (progn (cu::%computer-desktop-action second "layout-apply" (list :plan plan)) nil)
+                       (progn (cu::%computer-desktop-action second "arrange"
+                                (list :revision revision :operations (operation 90))) nil)
                      (cu::computer-use-rejected () t)))
-           (let* ((result (cu::%computer-desktop-action first "layout-apply" (list :plan plan)))
-                  (undo (getf result :undo)))
-             (assert (= 75 (desktop-position world)))
-             (cu::%computer-desktop-action first "layout-undo" (list :undo undo))
-             (assert (zerop (desktop-position world)))))
+           (assert (= 75 (desktop-position world))))
          (cu::%computer-desktop-action first "viewport"
            (list :revision (revision first) :action "set" :output 1 :x -4200))
          (assert (= -4200 (desktop-camera world)))
@@ -84,4 +77,4 @@
          (assert (null (cu::computer-session-desktop-state first)))
          (assert (cu::computer-session-desktop-state second)))
     (detach-world-service world :computer-use)))
-(format t "PASS: host-defined layout operations and explicit viewport navigation; preview/apply/Undo, isolated session state and cleanup.~%")
+(format t "PASS: host-defined layout operations and explicit viewport navigation; direct arrangement and stale revisions, isolated session state and cleanup.~%")

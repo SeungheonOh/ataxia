@@ -93,11 +93,11 @@ Synthetic device creation is also an optional World module.
 ## Session and transaction decisions
 
 Each session owns its separate seat, input state, selected view, desktop
-revision, pending plans, and Undo. Desktop state is stored directly in the session structure. Close releases it with the rest of the session.
+revision. Desktop state is stored directly in the session structure. Close releases it with the rest of the session.
 
 World observations are structured inventories, not monitor captures. Worlds report
 window availability and viewport intersections alongside their own placement data.
-The portable CUA transaction layer passes those fields through without requiring
+The portable CUA desktop layer passes those fields through without requiring
 native window handles from hosts that only provide layout snapshots. Window-mode
 discovery spans all mapped applications; World visibility policy still controls
 input eligibility. An offscreen window does not need to be selected while visible
@@ -108,16 +108,14 @@ input. They call explicit World methods; synthetic key input remains application
 input and cannot accidentally invoke desktop shortcuts. Navigation intentionally
 changes the human view on the session's selected output.
 
-A layout preview validates the complete plan without applying it. Apply checks
-the observed revision again, captures World restoration state, and rolls back
-on a synchronous application failure. Plans and Undo are session-owned,
-single-use, and expire after two minutes. Window controls clear retained layout
-plans and Undo. These are arrangement transactions; they cannot undo client
-side effects or resurrect a closed application. Ordinary input batches are
-sequential and may have partially completed when a later action fails.
+An arrangement checks the observed revision and calls the World's atomic
+`apply-world-layout`. The World validates the complete batch and rolls back a
+synchronous application failure. No layout plans or Undo state are retained.
+Ordinary input batches are sequential and may have partially completed when a
+later action fails.
 
 Revision comparison excludes titles and transient visibility so an animating
-application does not continually invalidate a plan. A World should report
+application does not continually invalidate an observation. A World should report
 intended layout geometry, not interpolated animation positions. Clients retain
 the last observed revision and must refresh after a conflict; they do not
 silently rebase a stale action.

@@ -14,19 +14,19 @@
                              (read-sequence data stream) data))))
     (unwind-protect
          (progn
-           (ensure-directories-exist project)
+           (ensure-directories-exist (merge-pathnames "work/" project))
            (document "<rml><head><style>body { margin:0; width:100%; height:100%; font-family:DejaVu Sans; font-size:24px; color:#24282d; background:#ffffff; } button { position:absolute; left:20px; top:20px; width:140px; height:60px; background:#ddddff; } #counter { position:absolute; left:20px; top:100px; } </style></head><body><button id='increment'>Increment</button><div id='counter'>0</div></body></rml>")
            (ataxia.kernel:start-kernel kernel)
            (setf control (ataxia.sly-control:start-sly-control kernel :port nil))
-           (setf controller (ataxia.assistant::%assistant-enable world :project (namestring project))
-                 (ataxia.assistant::assistant-controller-scope controller) :project
+           (setf controller (ataxia.assistant::%assistant-enable world :project (namestring (merge-pathnames "work/" project)))
+
                  (ataxia.assistant::assistant-controller-seat controller) (%canvas-seat-seat (first (%seat-states world))))
-           (ataxia.assistant::%assistant-grant controller)
+           (ataxia.assistant::%assistant-start-task controller)
            (setf test-thread
              (sb-thread:make-thread
               (lambda ()
                 (handler-case
-                    (let* ((result (ataxia.assistant::%assistant-preview controller (ataxia.assistant::%assistant-object "path" "app.rml" "width" 640 "height" 400)))
+                    (let* ((result (ataxia.assistant::%assistant-preview controller (ataxia.assistant::%assistant-object "path" (namestring (merge-pathnames "app.rml" project)) "width" 640 "height" 400)))
                            (id (getf result :preview))
                            (preview (gethash id (ataxia.assistant::assistant-controller-previews controller))))
                       (assert (getf result :window))
@@ -43,52 +43,34 @@
                           (uiop:copy-file after (asdf:system-relative-pathname "ataxia-assistant" "build/assistant-preview-after.png"))
                           (assert (not (equalp (bytes copy) (bytes after))))))
                       (document "<rml><body><div>broken</body></rml>")
-                      (assert (handler-case (progn (ataxia.assistant::%assistant-preview-update controller (ataxia.assistant::%assistant-object "preview" id "path" "app.rml")) nil) (error () t)))
+                      (assert (handler-case (progn (ataxia.assistant::%assistant-preview-update controller (ataxia.assistant::%assistant-object "preview" id "path" (namestring (merge-pathnames "app.rml" project)))) nil) (error () t)))
                       (assert (= 1 (ataxia.assistant::assistant-preview-revision preview)))
                       (assert (uiop:process-alive-p (ataxia.assistant::assistant-preview-process preview)))
                       (document "<rml><head><style>body { font-family:DejaVu Sans; background:#eaf0ff; }</style></head><body><div>Updated successfully</div></body></rml>")
-                      (let ((updated (ataxia.assistant::%assistant-preview-update controller (ataxia.assistant::%assistant-object "preview" id "path" "app.rml"))))
+                      (let ((updated (ataxia.assistant::%assistant-preview-update controller (ataxia.assistant::%assistant-object "preview" id "path" (namestring (merge-pathnames "app.rml" project))))))
                         (assert (= 2 (getf updated :revision))) (assert (getf updated :image)))
-                      ;; Real mapped window: animated packing must not invalidate its own Undo.
-                      (let ((undo nil) (revision nil) (saved nil))
+                      ;; The preview and updates above use an absolute file outside cwd.
+                      ;; Animated packing must not invalidate its own resulting revision.
+                      (let ((revision nil) (group nil))
                         (owner (lambda ()
-                          (setf (ataxia.assistant::assistant-controller-scope controller) :desktop)
-                          (ataxia.assistant::%assistant-grant controller)
-                          (setf saved (ataxia.world:world-desktop-state world))
-                          (let* ((plan (ataxia.assistant::%assistant-layout-preview controller
-                                        (ataxia.assistant::%assistant-object "revision" (ataxia.assistant::%assistant-layout-revision controller)
-                                          "operations" (vector
-                                            (ataxia.assistant::%assistant-object "op" "create-group" "ref" "test" "name" "Test" "policy" "master" "x" 0 "y" 0)
-                                            (ataxia.assistant::%assistant-object "op" "place-window" "window" (getf result :window) "group" "test" "workspace" 2)))))
-                                 (applied (ataxia.assistant::%assistant-layout-apply controller (ataxia.assistant::%assistant-object "plan" (getf plan :plan)))))
-                            (setf undo (getf applied :undo) revision (getf (getf applied :snapshot) :revision)))))
+                          (let ((applied (ataxia.assistant::%assistant-desktop-action controller "arrange"
+                                           (ataxia.assistant::%assistant-object "revision" (ataxia.assistant::%assistant-layout-revision controller)
+                                             "operations" (vector
+                                               (ataxia.assistant::%assistant-object "op" "create-group" "ref" "test" "name" "Test" "policy" "master" "x" 0 "y" 0)
+                                               (ataxia.assistant::%assistant-object "op" "place-window" "window" (getf result :window) "group" "test" "workspace" 2))))))
+                            (setf revision (getf (getf applied :desktop) :revision)
+                                  group (object-subworld world (ataxia.world:find-world-window world (getf result :window)))))))
                         (sleep 1d0)
                         (owner (lambda ()
-                          (let ((after (ataxia.assistant::%assistant-layout-revision controller)))
-                            (unless (= revision after) (format t "AFTER: ~A~%" (ataxia.assistant::assistant-controller-fingerprint controller)))
-                            (assert (= revision after)))
-                          (ataxia.assistant::%assistant-layout-undo controller undo)
-                          (assert (equalp saved (ataxia.world:world-desktop-state world))))))
-                      ;; Removing an occupied sub-world returns the client to the canvas; Undo restores membership.
-                      (let ((saved nil) (undo nil) (group nil))
-                        (owner (lambda ()
-                          (setf group (first (metaworld-subworlds world)))
-                          (move-object-to-subworld world (ataxia.world:find-world-window world (getf result :window)) group)
+                          (assert (= revision (ataxia.assistant::%assistant-layout-revision controller)))
+                          ;; Removing an occupied group preserves the client on the canvas.
                           (%meta-toggle-fullscreen world (ataxia.world:find-world-window world (getf result :window)) t)
                           (enter-subworld world group (ataxia.assistant::assistant-controller-seat controller))
-                          (setf saved (ataxia.world:world-desktop-state world))
-                          (let* ((plan (ataxia.assistant::%assistant-layout-preview controller
-                                         (ataxia.assistant::%assistant-object "revision" (ataxia.assistant::%assistant-layout-revision controller)
-                                           "operations" (vector (ataxia.assistant::%assistant-object "op" "remove-group" "group" (subworld-id group))))))
-                                 (applied (ataxia.assistant::%assistant-layout-apply controller (ataxia.assistant::%assistant-object "plan" (getf plan :plan)))))
-                            (setf undo (getf applied :undo)))
+                          (ataxia.assistant::%assistant-desktop-action controller "arrange"
+                            (ataxia.assistant::%assistant-object "revision" (ataxia.assistant::%assistant-layout-revision controller)
+                              "operations" (vector (ataxia.assistant::%assistant-object "op" "remove-group" "group" (subworld-id group)))))
                           (assert (not (member group (metaworld-subworlds world))))
                           (assert (null (object-subworld world (ataxia.world:find-world-window world (getf result :window)))))))
-                        (sleep .4d0)
-                        (owner (lambda ()
-                          (ataxia.assistant::%assistant-layout-undo controller undo)
-                          (assert (equalp saved (ataxia.world:world-desktop-state world)))
-                          (assert (eq group (object-subworld world (ataxia.world:find-world-window world (getf result :window)))))))
                         (assert (uiop:process-alive-p (ataxia.assistant::assistant-preview-process preview))))
                       (owner (lambda () (ataxia.assistant::%assistant-disable world)))
                       (setf done t))
@@ -96,7 +78,7 @@
            (ataxia.kernel:run-kernel kernel :run-for 20d0)
            (assert done)
            (when failure (error failure))
-           (format t "PASS: native preview interaction, update recovery, animated layout transaction and exact Undo, occupied sub-world deletion/Undo without closing the client, cleanup.~%"))
+           (format t "PASS: native preview interaction, update recovery, direct animated layout and stable revision, occupied sub-world deletion without closing the client, cleanup.~%"))
       (when control (ataxia.sly-control:stop-sly-control control))
       (ataxia.kernel:destroy-kernel kernel :assistant-preview-test-complete)
       (when (and test-thread (sb-thread:thread-alive-p test-thread)) (sb-thread:terminate-thread test-thread))

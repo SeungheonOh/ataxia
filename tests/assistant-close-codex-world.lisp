@@ -18,9 +18,9 @@
            (ataxia.kernel:start-kernel kernel)
            (setf control (ataxia.sly-control:start-sly-control kernel :port nil)
                  controller (ataxia.assistant::%assistant-enable world :project (namestring project))
-                 (ataxia.assistant::assistant-controller-scope controller) :project
+
                  (ataxia.assistant::assistant-controller-seat controller) (%canvas-seat-seat (first (%seat-states world))))
-           (ataxia.assistant::%assistant-grant controller)
+           (ataxia.assistant::%assistant-start-task controller)
            (setf worker
                  (sb-thread:make-thread
                   (lambda ()
@@ -29,7 +29,6 @@
                                (id (getf result :window))
                                (preview (gethash (getf result :preview) (ataxia.assistant::assistant-controller-previews controller))))
                           (owner (lambda ()
-                                   (setf (ataxia.assistant::assistant-controller-scope controller) :desktop)
                                    (ataxia.assistant::%assistant-submit controller
                                      (format nil "Close application window ~D in this isolated test desktop. It is a disposable test client with no unsaved work. Use the native Ataxia tools and verify that its window disappears. Do not run commands, edit files, or use another connection. Finish with one short sentence." id))))
                           (loop repeat 600 do

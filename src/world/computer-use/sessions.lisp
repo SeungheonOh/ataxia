@@ -6,7 +6,7 @@
 (defstruct computer-view (mode :window) window bounds root-bounds
   (x 0d0) (y 0d0) visible-p)
 (defstruct computer-desktop-state
-  (revision 0) fingerprint undo (plans (make-hash-table :test #'equal)))
+  (revision 0) fingerprint)
 (defstruct (computer-session (:constructor %make-computer-session))
   id token name purpose output world
   (state :pending) (sequence 0) (expires 0d0)

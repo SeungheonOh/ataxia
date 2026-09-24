@@ -4,7 +4,7 @@
 (defparameter +computer-request-fields+
   '(:op :token :sequence :name :purpose :output :x :y :duration :button :state
     :key :modifiers :text :window :application :actions :capture :title :app-id
-    :timeout :focus :mode :settle :format :revision :operations :plan :undo :action :group :workspace
+    :timeout :focus :mode :settle :format :revision :operations :action :group :workspace
     :dx :dy :zoom :rotation :width :height :padding))
 (defun bounded-string (value maximum field &optional (empty-p nil))
   (unless (and (stringp value) (<= (if empty-p 0 1) (length value) maximum))
@@ -142,7 +142,7 @@
                           (not (eq (computer-session-batch session) *computer-running-batch*))))
                  (not (equal op "disconnect")))
         (%computer-reject "busy" "Wait for the current action to finish."))
-      (when (member op '("layout-preview" "layout-apply" "layout-undo" "window" "viewport") :test #'equal)
+      (when (member op '("arrange" "window" "viewport") :test #'equal)
         ;; Consume even a failed attempt; the client reconciles status without replay.
         (incf (computer-session-sequence session))
         (let ((result (%computer-desktop-action session op request)))

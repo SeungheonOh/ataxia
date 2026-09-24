@@ -15,7 +15,6 @@ const native = {
     async read(op) { assert.equal(op, 'desktop'); return { desktop: structuredClone(state) }; },
     async send(op, request) {
       calls.push({ op, request });
-      if (op === 'layout-preview') return { plan: 'p'.repeat(64), revision: state.revision, operations: request.operations };
       state = { ...state, revision: state.revision + 1 };
       return { desktop: structuredClone(state) };
     },
@@ -25,9 +24,12 @@ const desktop = desktopMethods(native, { write() {} });
 
 await desktop.arrange([{ op: 'position', value: 75 }]);
 assert.deepEqual(calls[0], {
-  op: 'layout-preview', request: { revision: 1, operations: [{ op: 'position', value: 75 }] },
+  op: 'arrange', request: { revision: 1, operations: [{ op: 'position', value: 75 }] },
 });
-assert.equal(calls[1].op, 'layout-apply');
+assert.equal(calls.length, 1);
+assert.equal(desktop.undoLayout, undefined);
+assert.equal(desktop.previewLayout, undefined);
+assert.equal(desktop.applyLayout, undefined);
 const beforeUnsupported = calls.length;
 await assert.rejects(desktop.moveWindow(42, { x: 10 }), error => error.code === 'unsupported-operation');
 await assert.rejects(desktop.setFloating(42, true), error => error.code === 'unsupported-operation');

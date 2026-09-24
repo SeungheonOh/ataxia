@@ -66,8 +66,7 @@ export type MetaworldLayoutOperation = Omit<Placement, 'group'> & { op: 'create-
 export type DesktopChangeOptions = { revision?: number };
 export type ViewportCamera = { x?: number; y?: number; zoom?: number; rotation?: number };
 export type FrameOptions = DesktopChangeOptions & { padding?: number; rotation?: number };
-export type LayoutPreview = { plan: string; revision: number; operations: LayoutOperation[] };
-export type DesktopResult = { ok: true; session: NativeSession; desktop: DesktopState; undo?: string };
+export type DesktopResult = { ok: true; session: NativeSession; desktop: DesktopState };
 export interface AtaxiaExtensions {
   connect(options?: { name?: string; purpose?: string; output?: number }): Promise<NativeSession>;
   status(): Promise<NativeSession>;
@@ -77,10 +76,7 @@ export interface AtaxiaExtensions {
   getWorld(options?: ObservationOptions): Promise<WorldState>;
   /** Compatibility alias for getWorld(). */
   getDesktop(options?: ObservationOptions): Promise<DesktopState>;
-  previewLayout(operations: LayoutOperation[], options?: DesktopChangeOptions): Promise<LayoutPreview>;
-  applyLayout(plan: string): Promise<DesktopResult>;
   arrange(operations: LayoutOperation[], options?: DesktopChangeOptions): Promise<DesktopResult>;
-  undoLayout(undo: string): Promise<DesktopResult>;
   moveWindow(id: number, placement: Placement, options?: DesktopChangeOptions): Promise<DesktopResult>;
   setFloating(id: number, floating: boolean, options?: DesktopChangeOptions): Promise<DesktopResult>;
   windowAction(id: number, action: 'close' | 'minimize' | 'restore' | 'maximize' | 'fullscreen', options?: DesktopChangeOptions): Promise<DesktopResult>;
@@ -134,7 +130,7 @@ export class ComputerTransport {
 - `captureViewport` (`captureDesktop` alias) captures the session output's current camera, then restores the prior input view. Its metadata names the output and logical coordinate space. It does not show the entire World or move any camera. Refresh accessibility indices afterwards.
 - `tabMarks` reports deliverable/handoff tabs, and `metrics` counts native/CDP transport requests in this adapter.
 
-For window placement, floating/tiling, groups, workspaces, shell navigation, and native window close/minimize/restore/maximize/fullscreen, use [Ataxia desktop operations](desktop.md). They are exposed as `getWorld` (`getDesktop` alias), `moveWindow`, `setFloating`, `windowAction`, `setViewport`, `panViewport`, `frameWindow`, `frameRegion`, `arrange`, `previewLayout`, `applyLayout`, and `undoLayout` on `cua.ataxia`. Native keys bypass World shortcuts, and native pointers cannot operate World chrome; `captureViewport` (`captureDesktop` alias) and `settle: 0` do not change that routing.
+For window placement, floating/tiling, groups, workspaces, shell navigation, and native window close/minimize/restore/maximize/fullscreen, use [Ataxia desktop operations](desktop.md). They are exposed as `getWorld` (`getDesktop` alias), `moveWindow`, `setFloating`, `windowAction`, `setViewport`, `panViewport`, `frameWindow`, `frameRegion`, and `arrange` on `cua.ataxia`. Native keys bypass World shortcuts, and native pointers cannot operate World chrome; `captureViewport` (`captureDesktop` alias) and `settle: 0` do not change that routing.
 
 ### Continuously updating applications
 

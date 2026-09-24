@@ -11,7 +11,8 @@
   (assert (not (find-package package))))
 
 (defclass fixture-world (ataxia.kernel:world)
-  ((outputs :initarg :outputs :reader world-outputs)
+  ((kernel :accessor ataxia.kernel:world-kernel)
+   (outputs :initarg :outputs :reader world-outputs)
    (windows :initarg :windows :accessor world-windows)
    (focus :initform nil :accessor fixture-focus)
    (capture-count :initform 0 :accessor capture-count)))
@@ -61,7 +62,8 @@
                                            :input-state (cu::make-computer-input-state)))
        (seat (make-instance 'cu::computer-seat :session session))
        (input-capabilities (symbol-function 'ataxia.computer-use::application-seat-input-capabilities)))
-  (setf (cu::computer-session-seat session) seat
+  (setf (ataxia.kernel:world-kernel world) (ataxia.kernel:make-kernel world)
+        (cu::computer-session-seat session) seat
         (cu::computer-controller-sessions controller) (list session))
   (attach-world-service world :computer-use controller)
   (unwind-protect
@@ -89,18 +91,18 @@
            (assert (= 1 (capture-count world)))
            (assert (= 80 (cu::computer-capture-width capture)))
            (assert (every (lambda (byte) (= byte 127)) (cu::computer-capture-pixels capture))))
-         (let* ((assistant (assistant::%make-assistant-controller :world world))
+         (let* ((assistant (assistant::%make-assistant-controller :world world :session session :blocked nil))
                 (snapshot (assistant::%assistant-layout-snapshot assistant))
                 (tools (assistant::%assistant-tool-specs world)))
            (assert (= 42 (getf (aref (getf snapshot :windows) 0) :id)))
-           (assert (= 6 (length tools)))
-           (assert (notany (lambda (tool) (search "layout" (gethash "name" tool))) tools))
+           (assert (= 7 (length tools)))
+           (assert (notany (lambda (tool) (equal "ataxia_arrange" (gethash "name" tool))) tools))
            (let* ((act (find "ataxia_act" tools :key (lambda (tool) (gethash "name" tool)) :test #'equal))
                   (operations (loop for action across (assistant::%assistant-field act "inputSchema" "properties" "actions" "items" "anyOf")
                                     collect (aref (assistant::%assistant-field action "properties" "op" "enum") 0))))
              (assert (not (find "launch" operations :test #'equal))))
            (assert (handler-case
-                       (progn (assistant::%assistant-layout-preview assistant (make-hash-table)) nil)
+                       (progn (assistant::%assistant-desktop-action assistant "arrange" (make-hash-table)) nil)
                      (error () t))))
          ;; Desktop observations use the host's output-space placement.
          (setf (cu::computer-view-mode (cu:computer-session-view session)) :desktop)

@@ -14,14 +14,8 @@
   (let* ((text (assistant-output-text stream)) (newline (position #\Newline text :from-end t)))
     (- (length text) (if newline (1+ newline) 0))))
 
-(defun %assistant-require-lisp (controller)
-  (%assistant-require-task controller)
-  (unless (and (eq :ataxia (assistant-controller-scope controller))
-               (getf (assistant-controller-grant controller) :lisp))
-    (error "Live Lisp requires Ataxia scope and a current user task.")))
-
 (defun %assistant-evaluate-lisp (controller arguments)
-  (%assistant-owner controller (lambda () (%assistant-require-lisp controller)))
+  (%assistant-owner controller (lambda () (%assistant-require-task controller)))
   (let* ((code (cu:bounded-string (gethash "code" arguments) 32768 "code"))
          (mode (gethash "mode" arguments))
          (*package* (find-package :cl-user))
@@ -50,7 +44,7 @@
                    (multiple-value-list (funcall function nil))
                    (%assistant-owner controller
                      (lambda ()
-                       (%assistant-require-lisp controller)
+                       (%assistant-require-task controller)
                        ;; Catch inside the owner request, including timeout. Lisp
                        ;; mistakes must not trigger World replacement/recovery.
                        (handler-case

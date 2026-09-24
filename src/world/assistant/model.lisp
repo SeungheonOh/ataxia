@@ -1,4 +1,4 @@
-;;;; The owner owns the UI and grant. Only the protocol worker writes to Codex.
+;;;; The owner owns the UI and task state. Only the protocol worker writes to Codex.
 (in-package #:ataxia.assistant)
 
 (defparameter *assistant-command* '("codex" "--enable" "realtime_conversation" "app-server" "--stdio"))
@@ -20,11 +20,11 @@
   (model-selection (make-assistant-model-selection))
   (generation-settings (make-assistant-generation-settings))
   refresh-context
-  ;; Task state, authorization and layout transactions.
+  ;; Task state and conversation.
   (connection :offline) (task :idle) (microphone :off)
   (activity "Ready when you are") (messages nil) (plan nil) (request nil)
-  (scope :desktop) project (grant nil) (blocked t) (started 0d0)
-  (models #()) login-url login-id journal-path (revision 0) fingerprint (plans (make-hash-table :test #'equal)) undo
+  project (blocked t) (started 0d0)
+  (models #()) login-url login-id journal-path
   (previews (make-hash-table :test #'equal))
   ;; Protocol worker and its synchronized mailbox.
   worker reader process (queue nil) (queue-bytes 0)

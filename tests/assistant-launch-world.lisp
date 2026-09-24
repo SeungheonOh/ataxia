@@ -23,13 +23,13 @@
                      (merge-pathnames "client.log" root)))
            (ataxia.kernel:start-kernel kernel)
            (setf control (ataxia.sly-control:start-sly-control kernel :port nil)
-                 controller (ataxia.assistant::%assistant-enable world :project (namestring root) :scope :desktop)
+                 controller (ataxia.assistant::%assistant-enable world :project (namestring root))
                  (ataxia.assistant::assistant-controller-seat controller) (%canvas-seat-seat (first (%seat-states world))))
            (setf (%launcher-desktop-entries (%launcher-for-output world (first (ataxia.world:world-outputs world))))
                  (%load-desktop-entries (list root)))
            (if real
                (ataxia.assistant::%assistant-submit controller "Open Firefox and verify that its window appeared. This isolated desktop's Firefox catalog entry is a disposable test client. Use only the registered Ataxia tools; don't run shell commands, edit files, use external MCP tools, or open other apps. Finish with one short sentence.")
-               (ataxia.assistant::%assistant-grant controller))
+               (ataxia.assistant::%assistant-start-task controller))
            (setf worker
                  (sb-thread:make-thread
                   (lambda ()

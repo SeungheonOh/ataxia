@@ -10,12 +10,12 @@
        (controller nil) (control nil) (test-thread nil) (done nil) (failure nil))
   (unwind-protect
        (progn
-         (ensure-directories-exist project)
+         (ensure-directories-exist (merge-pathnames "work/" project))
          (ataxia.kernel:start-kernel kernel)
          (setf control (ataxia.sly-control:start-sly-control kernel :port nil))
-         (setf controller (ataxia.assistant::%assistant-enable world :project (namestring project) :scope :ataxia)
+         (setf controller (ataxia.assistant::%assistant-enable world :project (namestring (merge-pathnames "work/" project)))
                (ataxia.assistant::assistant-controller-seat controller) (%canvas-seat-seat (first (%seat-states world))))
-         (ataxia.assistant::%assistant-submit controller "Remember the phrase copper otter for the next turn. This is an isolated integration test with an empty desktop. Call ataxia_desktop_snapshot exactly once, then call ataxia_lisp with mode inspect and code (length (ataxia.world:world-windows world)). Reply with one short sentence stating how many windows there are. Do not run shell commands, edit files, change the desktop, use other tools, or delegate to agents.")
+         (ataxia.assistant::%assistant-submit controller (format nil "Remember the phrase copper otter for the next turn. This is an isolated integration test with an empty desktop. Call ataxia_desktop_snapshot exactly once, then call ataxia_lisp with mode inspect and code (length (ataxia.world:world-windows world)). Use a shell command to write exactly full-access into the disposable fixture file ~A, which is outside the working directory. Reply with one short sentence stating how many windows there are. Do not change other files, change the desktop, or delegate to agents." (namestring (merge-pathnames "outside-cwd.txt" project))))
          (setf test-thread
            (sb-thread:make-thread
             (lambda ()
@@ -25,9 +25,10 @@
                            (lambda (k w) (declare (ignore k w))
                              (when (member (ataxia.assistant::assistant-controller-task controller) '(:done :failed :needs-input))
                                (assert (eq :done (ataxia.assistant::assistant-controller-task controller)) () "Codex integration: ~A" (ataxia.assistant::assistant-controller-activity controller))
+                               (assert (equal "full-access" (string-trim '(#\Space #\Newline #\Return) (uiop:read-file-string (merge-pathnames "outside-cwd.txt" project)))))
                                (assert (>= (hash-table-count (ataxia.assistant::assistant-controller-seen-calls controller)) 2))
                                (assert (some (lambda (m) (eq (getf m :role) :assistant)) (ataxia.assistant::assistant-controller-messages controller)))
-                               (format t "PASS: installed Codex completed a real turn using World discovery and live Lisp; public reply was received.~%")
+                               (format t "PASS: installed Codex completed a real turn using World discovery, live Lisp and a shell write outside cwd without approvals.~%")
                                (finish-output)
                                t)) :timeout 5d0)
                       (let ((thread-id (ataxia.assistant::assistant-controller-thread-id controller))

@@ -5,11 +5,10 @@
 For the Codex-compatible `cua` API, persistent `cua_repl` tool, agent skill,
 browser providers and compatibility limits, see [CODEX-COMPUTER-USE.md](CODEX-COMPUTER-USE.md).
 The data-only protocol provides capabilities, target PID metadata, seat-local
-paste, desktop snapshots, layout preview/apply/Undo, window controls, and
+paste, desktop snapshots, direct layout arrangement, window controls, and
 navigation; see the [desktop API](../skills/ataxia-computer-use/references/desktop.md).
 These operations use the same native session and honor pause, disconnect, expiry,
-and sequence checks. Desktop mutations require the observed revision (or a plan/Undo
-token tied to it). A desktop snapshot covers the whole current World; camera navigation explicitly names the output to change.
+and sequence checks. Desktop mutations require the observed revision. A desktop snapshot covers the whole current World; camera navigation explicitly names the output to change.
 
 CUA navigation uses `setViewport`, `panViewport`, `frameWindow`, and `frameRegion`,
 with an explicit monitor ID. X/y and pan deltas are world units; rotation is radians.

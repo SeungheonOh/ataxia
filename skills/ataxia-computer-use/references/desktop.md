@@ -72,10 +72,8 @@ await cua.ataxia.getWorld();
 | Pan along world axes | `panViewport(outputId, {dx, dy})` |
 | Fit an available window or world rectangle | `frameWindow(outputId, windowId, {padding?, rotation?})` / `frameRegion(outputId, {x, y, width, height}, {padding?, rotation?})` |
 | Apply several group/window operations as one arrangement | `arrange(operations, {revision?})` |
-| Validate now, apply later | `previewLayout(operations, {revision?})`, then `applyLayout(plan.plan)` |
-| Undo the most recent arrangement | `undoLayout(result.undo)` |
 
-The operations array for `arrange`/`previewLayout` follows the active World's `layout-schema`. Metaworld uses the operation table below. For example, create a group and place windows in it in one transaction:
+The operations array for `arrange` follows the active World's `layout-schema`. Metaworld uses the operation table below. For example, create a group and place windows in it in one transaction:
 
 ```javascript
 var result = await cua.ataxia.arrange([
@@ -84,13 +82,11 @@ var result = await cua.ataxia.arrange([
   {op: 'place-window', window: secondWindowId, group: 'destination', workspace: 2}
 ]);
 await cua.ataxia.getWorld();
-// Later, only if the task calls for reverting and the desktop has not changed:
-// await cua.ataxia.undoLayout(result.undo);
 ```
 
-`getWorld` emits by default. Changes return their resulting `desktop` and, for arrangements, `undo`; they do not emit automatically. Each successful change updates the runtime's observed revision, so sequential changes can use their preceding result. If no desktop has been observed in this session, a convenience operation first reads it. Once observed, the runtime rejects intervening layout changes with `desktop-changed`; it never automatically rebases an old plan. Explicit `revision` options use the revision from a relevant `getWorld` result.
+`getWorld` emits by default. Changes return their resulting `desktop`; they do not emit automatically. Each successful change updates the runtime's observed revision, so sequential changes can use their preceding result. If no desktop has been observed in this session, a convenience operation first reads it. Once observed, the runtime rejects intervening layout changes with `desktop-changed`; it never automatically rebases an old plan. Explicit `revision` options use the revision from a relevant `getWorld` result.
 
-Plans and Undo belong to one native session, expire after 120 seconds, and cannot be replayed. At most eight unapplied plans are retained. Applying a layout validates the whole plan, captures the prior layout, and rolls back on failure. Undo refuses to overwrite later desktop changes. Explicit window controls clear earlier plans and Undo; closing an application cannot be undone. Grouped maximize/fullscreen follows Metaworld's group expansion policy.
+Each arrangement validates the whole batch and applies it directly. A failed batch rolls back before returning. No plans, apply tokens or Undo history are retained. Grouped maximize/fullscreen follows Metaworld's group expansion policy.
 
 `moveWindow(id, {workspace: 2})` preserves the observed group. `group: null` moves to the shared canvas, which has no numbered workspaces. `setFloating` requires group membership. Moving to a hidden workspace makes the window unavailable for input; framing does not change that visibility policy. Group workspace fields describe optional layout membership, not monitor destinations. Desktop operations do not require an application to bind a new input seat.
 
@@ -104,12 +100,11 @@ Lisp APIs to perform the action.
 
 The built-in Ataxia assistant exposes the following tools. They are not methods on `cua.ataxia` and are not automatically available through the `cua_repl` MCP server. Use them only if they are present in the current tool list.
 
-The `ataxia_viewport` tool exposes the same `set`, `pan`, `frame-window`, and `frame-region` actions with explicit `output` and snapshot `revision`, when supported. It requires Desktop scope.
+The `ataxia_viewport` tool exposes the same `set`, `pan`, `frame-window`, and `frame-region` actions with explicit `output` and snapshot `revision`, when supported.
 
 1. Call `ataxia_desktop_snapshot` for window IDs, group IDs, workspace membership, and the current layout revision. It includes minimized windows.
-2. Pass that revision and an `operations` array to `ataxia_layout_preview`. For Metaworld, use the operations below. Other Worlds may advertise a different schema.
-3. Pass the returned `plan` to `ataxia_layout_apply` once. The preview validates data without changing the desktop; it is not an extra user permission prompt. Apply rejects an intervening layout change and returns an Undo token.
-4. Verify the returned snapshot. On a revision conflict, inspect again and replan. `ataxia_layout_undo` accepts the returned `undo` token while no later layout change would be overwritten.
+2. Pass that revision and an `operations` array to `ataxia_arrange`. For Metaworld, use the operations below. Other Worlds may advertise a different schema.
+3. Verify the returned `desktop`. On a revision conflict, inspect again and replan.
 
 | Intent | Metaworld operation |
 | --- | --- |

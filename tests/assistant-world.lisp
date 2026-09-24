@@ -38,7 +38,7 @@
              (ataxia.assistant::%assistant-open-settings controller)
              (assert (= overlays (length (world-overlays world)))))
            (assert (ataxia.assistant::%assistant-settings-open-p controller))
-           (assert (null (ataxia.assistant::assistant-controller-grant controller)))
+           (assert (null (ataxia.assistant::assistant-controller-session controller)))
            (assert (eq (%canvas-seat-focused (first (%seat-states world))) (ataxia.assistant::assistant-controller-panel controller)))
            (key "Escape" nil)
            (assert (null (ataxia.assistant::%assistant-settings-open-p controller)))

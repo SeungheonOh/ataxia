@@ -1,5 +1,8 @@
 # HTML/CSS UI alongside Slint
 
+For real browser HTML/CSS/JavaScript, including React and Svelte, see
+[Browser UI components](WEB-UI.md). This document covers the lighter RmlUi subset.
+
 RmlUi is an optional World-owned UI backend. Slint and RmlUi components can be
 used simultaneously in the same World. Kernel contracts and dependencies are
 unchanged; the shared lifecycle, sizing, and scheduling operations live in

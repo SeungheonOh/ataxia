@@ -1,8 +1,8 @@
 ;;;; Portable computer-use service and its small public entry points.
 (defpackage #:ataxia.computer-use
   (:use #:cl #:ataxia.world)
-  (:import-from #:ataxia.world.rmlui
-                #:rmlui-widget #:set-widget-text #:set-widget-style #:short-ui-text)
+  (:import-from #:ataxia.world.web.ui
+                #:document-widget #:set-widget-text #:set-widget-style #:short-ui-text)
   (:export #:enable #:disable #:request-json
            #:activate-session
            #:change-session-view

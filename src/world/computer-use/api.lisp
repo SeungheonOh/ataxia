@@ -177,7 +177,7 @@
                (when target (%computer-require-input-ready session target :pointer))))
            (unless (equal mode "up") (%computer-button session code t))
            (unless (equal mode "down") (%computer-button session code nil))
-           (ataxia.world.rmlui:set-rmlui-class (overlay-component (computer-session-cursor session)) "tag" "clicked" t)
+           (ataxia.world.web.ui:set-ui-class (overlay-component (computer-session-cursor session)) "tag" "clicked" t)
            (%computer-log session (format nil "~A button · ~A" (string-capitalize button) mode))))
         ((equal op "scroll")
          (unless (%computer-point-target session) (%computer-reject "target-blocked" "Point at an application before scrolling."))

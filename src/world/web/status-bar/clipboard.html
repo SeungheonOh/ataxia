@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Clipboard history</title><style>
+body { margin:0; width:100%; height:100%; font-size:13px; }
+div { display:block; box-sizing:border-box; }
+#panel { width:100%; height:100%; padding:0 var(--inset); border:var(--frame) solid var(--ink); display:flex; flex-direction:column; }
+#header, #summary, #paging { display:flex; align-items:center; gap:0 var(--gap); flex-shrink:0; }
+#header { height:var(--control); }
+#title { font-size:var(--heading); font-weight:bold; }
+#close, #page, #clear { margin-left:auto; }
+#search { display:block; width:100%; box-sizing:border-box; height:var(--field-height); padding:0 var(--inset); border:var(--frame) solid var(--ink); flex-shrink:0; }
+#summary, #hint { font-size:11px; }
+#body { flex:1; min-height:0; display:flex; gap:0 var(--column-gap); }
+#list { width:200px; flex-shrink:0; overflow-y:auto; }
+.item { display:block; width:100%; text-align:left; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+#empty { font-size:12px; }
+#preview { flex:1; min-width:0; overflow-y:auto; white-space:pre-wrap; word-break:break-word; font-size:12px; }
+#paging { flex-wrap:wrap; }
+#hint { flex-shrink:0; }
+.small #body { flex-direction:column; }
+.small #list { width:100%; height:96px; }
+.small #preview { min-height:48px; }
+.empty-results #list { width:100%; height:auto; }
+</style><link rel="stylesheet" href="../ui/document.css"><style>#close { width:auto; min-width:5ch; }</style><script src="../ui/document.js" defer="defer"></script></head><body class="shell shell-clipboard"><div id="panel">
+<div id="header"><div id="title">Clipboard</div><button id="close">Close</button></div>
+<input id="search" type="text" data-value="query" placeholder="Search copied text…" autofocus="autofocus">
+<div id="summary"><div id="count">0 items</div><div id="page">1 / 1</div></div>
+<div id="body"><div id="list"><button id="app0" class="item"></button><button id="app1" class="item"></button><button id="app2" class="item"></button><button id="app3" class="item"></button><button id="app4" class="item"></button><button id="app5" class="item"></button><div id="empty">No copied text yet.</div></div><div id="preview"></div></div>
+<div id="paging"><button id="prev" data-disabled="prev_disabled">Previous</button><button id="next" data-disabled="next_disabled">Next</button><button id="clear" data-disabled="clear_disabled">Clear history</button></div>
+<div id="hint">↑ ↓ Preview · Enter Copy · Esc Close</div>
+</div></body></html>

@@ -2,7 +2,7 @@
 (in-package #:ataxia.infinite-world)
 
 (defmethod ataxia.world:world-supports-p ((world infinite-world) capability)
-  (not (null (member capability '(:ui :desktop :launcher :viewport-navigation)))))
+  (not (null (member capability '(:ui :ui-windows :desktop :launcher :viewport-navigation)))))
 
 (defmethod ataxia.world:world-windows ((world infinite-world))
   (%world-stacking world))

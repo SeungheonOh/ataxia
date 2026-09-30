@@ -1,0 +1,16 @@
+<!doctype html><html><meta charset="utf-8"><style>
+html,body {margin:0;background:transparent;font:16px monospace;}
+#alpha {position:absolute;left:0;top:0;width:80px;height:80px;background:#ff000080;}
+#bottom {position:absolute;left:0;top:200px;width:80px;height:40px;background:#0000ff;}
+#tiny {position:absolute;left:200px;top:30px;width:20px;height:20px;background:#00ff00;}
+select {position:absolute;left:100px;top:100px;width:160px;height:24px;}
+@keyframes slide {from{transform:translateX(0)}to{transform:translateX(50px)}}
+</style><div id="alpha"></div><div id="bottom"></div><div id="tiny"></div>
+<select id="choice"><option>A</option><option>B</option><option>C</option></select>
+<script type="module">
+import {value} from './module.js';
+const data=await fetch('./data.json').then(r=>r.json());
+const canvas=document.createElement('canvas');const gl=canvas.getContext('webgl2');
+ataxia.postMessage('ready',{module:value,fetch:data.ok,grid:CSS.supports('display','grid'),webgl2:!!gl});
+choice.addEventListener('change',()=>ataxia.postMessage('choice',choice.value));
+</script></html>

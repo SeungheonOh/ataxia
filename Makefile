@@ -25,7 +25,7 @@ LDLIBS += $(shell PKG_CONFIG_PATH='$(PKG_CONFIG_PATH)' $(PKG_CONFIG) --libs wlro
 
 .PHONY: all clean
 
-all: $(BUILD_DIR)/libataxia-wlr-client.so $(BUILD_DIR)/libataxia-wlr-drag.so $(GLUE) $(SLINT_LIBRARY) $(BUILD_DIR)/libataxia-rmlui-native.so $(BUILD_DIR)/libataxia-screencast.so
+all: $(BUILD_DIR)/libataxia-wlr-client.so $(BUILD_DIR)/libataxia-wlr-drag.so $(GLUE) $(SLINT_LIBRARY) $(BUILD_DIR)/libataxia-rmlui-native.so $(BUILD_DIR)/libataxia-screencast.so web
 
 $(BUILD_DIR)/libataxia-wlr-client.so: native/ataxia-client.c
 	@mkdir -p $(BUILD_DIR)
@@ -258,3 +258,31 @@ test-shell-controls: all rmlui $(BUILD_DIR)/clipboard-native-test $(BUILD_DIR)/l
 test-shell-backends:
 	dbus-run-session -- sbcl --noinform --disable-debugger --eval '(sb-int:set-floating-point-modes :traps nil)' --script tests/shell-mpris.lisp
 	timeout 30s python3 tests/shell-audio-test.py
+
+# Browser UI for the default desktop shell; Kernel, Slint and RmlUi stay independent.
+# Override CEF_ROOT to use a compatible CEF SDK on another architecture.
+CEF_ROOT ?= $(abspath $(BUILD_DIR)/cef/cef_binary_154.0.32+g682c378+chromium-154.0.8037.58_linux64_minimal)
+.PHONY: web web-example test-web
+web:
+	@test -f '$(CEF_ROOT)/include/cef_app.h' || ./scripts/fetch-cef
+	$(CMAKE) -S src/world/web/native -B $(BUILD_DIR)/web-native -G Ninja -DCMAKE_BUILD_TYPE=Release -DCEF_ROOT='$(CEF_ROOT)'
+	$(CMAKE) --build $(BUILD_DIR)/web-native --parallel 4
+	cp $(BUILD_DIR)/web-native/libataxia-web-native.so $(BUILD_DIR)/libataxia-web-native.so.pending
+	mv $(BUILD_DIR)/libataxia-web-native.so.pending $(BUILD_DIR)/libataxia-web-native.so
+web-example:
+	npm ci --prefix examples/web-ui --ignore-scripts
+	npm run build --prefix examples/web-ui
+test-web: all web web-example
+	python3 tests/web-gles.py
+	WLR_RENDERER=gles2 LD_LIBRARY_PATH='$(abspath $(BUILD_DIR)):$(PREFIX)/lib:$(LD_LIBRARY_PATH)' sbcl --noinform --disable-debugger --eval '(sb-int:set-floating-point-modes :traps nil)' --script tests/web-portable.lisp
+	WLR_RENDERER=gles2 LD_LIBRARY_PATH='$(abspath $(BUILD_DIR)):$(PREFIX)/lib:$(LD_LIBRARY_PATH)' sbcl --noinform --disable-debugger --eval '(sb-int:set-floating-point-modes :traps nil)' --script tests/web-world.lisp
+
+.PHONY: test-web-shell
+test-web-shell: all web
+	WLR_RENDERER=gles2 LD_LIBRARY_PATH='$(abspath $(BUILD_DIR)):$(PREFIX)/lib:$(LD_LIBRARY_PATH)' sbcl --noinform --disable-debugger --eval '(sb-int:set-floating-point-modes :traps nil)' --script tests/web-shell-startup.lisp
+	WLR_RENDERER=gles2 LD_LIBRARY_PATH='$(abspath $(BUILD_DIR)):$(PREFIX)/lib:$(LD_LIBRARY_PATH)' sbcl --noinform --disable-debugger --eval '(sb-int:set-floating-point-modes :traps nil)' --script tests/web-shell-world.lisp
+
+.PHONY: test-web-ui
+test-web-ui: all web
+	WLR_RENDERER=gles2 LD_LIBRARY_PATH='$(abspath $(BUILD_DIR)):$(PREFIX)/lib:$(LD_LIBRARY_PATH)' sbcl --noinform --disable-debugger --eval '(sb-int:set-floating-point-modes :traps nil)' --script tests/web-ui-world.lisp
+	WLR_RENDERER=gles2 LD_LIBRARY_PATH='$(abspath $(BUILD_DIR)):$(PREFIX)/lib:$(LD_LIBRARY_PATH)' sbcl --noinform --disable-debugger --eval '(sb-int:set-floating-point-modes :traps nil)' --script tests/atlas-web-world.lisp

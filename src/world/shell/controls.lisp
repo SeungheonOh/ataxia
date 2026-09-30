@@ -114,7 +114,7 @@
           (cffi:foreign-funcall "close" :int (system-controller-wake-fd controller) :int))
         (error cause)))))
 
-(defclass shell-osd (rmlui-widget)
+(defclass shell-osd (shell-widget)
   ((kind :initarg :kind :accessor %osd-kind) (deadline :initform 0d0 :accessor %osd-deadline)))
 (defmethod overlay-input-enabled-p ((overlay shell-osd)) nil)
 (defun %position-osd (world osd)
@@ -143,24 +143,22 @@
      (shell-service-osd-timer service) (if next (max 1 (ceiling (* 1000 (- next (monotonic-time))))) 0))))
 (defun %paint-osd (osd kind value detail &key muted error)
   (setf (%osd-kind osd) kind)
-  (set-widget-text osd "label" (ecase kind (:brightness "Brightness") (:volume (if muted "Muted" "Volume")) (:media value)))
-  (set-widget-text osd "value" (if (eq kind :media) "" (if value (format nil "~D%" value) "—")))
-  (set-widget-text osd "detail" (or detail ""))
-  (when (numberp value) (set-widget-style osd "fill" "width" (format nil "~D%" (max 0 (min 100 value)))))
+  (set-shell-text osd "label" (ecase kind (:brightness "Brightness") (:volume (if muted "Muted" "Volume")) (:media value)))
+  (set-shell-text osd "value" (if (eq kind :media) "" (if value (format nil "~D%" value) "—")))
+  (set-shell-text osd "detail" (or detail ""))
+  (when (numberp value) (set-shell-style osd "fill" "width" (format nil "~D%" (max 0 (min 100 value)))))
   (dolist (entry (list (cons "muted" muted) (cons "error" error) (cons "media" (eq kind :media))))
     (let ((name (car entry)) (enabled (not (null (cdr entry)))))
-      (cache-widget-value osd (list :class name) enabled
-        (lambda (component) (ataxia.world.rmlui:set-rmlui-class component "panel" name enabled))))))
+      (cache-shell-value osd (list :class name) enabled
+        (lambda (component) (set-shell-class component "panel" name enabled))))))
 (defun %show-osd (world service kind value detail &key output muted error)
   (let* ((output (or output (shell-service-feedback-output service) (first (world-outputs world))))
          (existing (gethash output (shell-service-osds service))))
     (when (and output (member output (world-outputs world)))
-      (let* ((path (asdf:system-relative-pathname "ataxia-rmlui" "src/world/rmlui/status-bar/osd.rml"))
-             (osd (or existing
-                      (setf (gethash output (shell-service-osds service))
-                            (create-agent-widget 'shell-osd world (uiop:read-file-string path)
-                              :component-factory #'ataxia.world.rmlui:make-shell-rmlui-component
-                              :source-path (namestring path) :output output :width 340d0 :height 42d0 :layer 1400)))))
+      (let ((osd (or existing
+                     (setf (gethash output (shell-service-osds service))
+                           (make-shell-widget service world :osd :output output
+                                              :width 340d0 :height 42d0 :layer 1400)))))
         (%paint-osd osd kind value detail :muted muted :error error)
         (setf (%osd-deadline osd) (+ (monotonic-time) 1.6d0))
         (%position-osd world osd) (%schedule-osd world service) osd))))

@@ -1,6 +1,6 @@
 (asdf:defsystem "ataxia-computer-use"
   :description "Visible, user-controlled computer-use sessions for any desktop World"
-  :depends-on ("ataxia-world/synthetic-input" "ataxia-rmlui" "ataxia-sly-control" "sb-bsd-sockets")
+  :depends-on ("ataxia-world/synthetic-input" "ataxia-web/ui" "ataxia-sly-control" "sb-bsd-sockets")
   :serial t
   :components ((:module "src/world/computer-use"
                 :serial t

@@ -12,7 +12,7 @@
            (ui-action (action)
              (let* ((panel (first (ataxia.computer-use::computer-controller-panels (ataxia.computer-use::%computer-controller world))))
                     (component (canvas-overlay-component panel)))
-               (funcall (gethash action (ataxia.world.rmlui::%component-callbacks component)) component ""))))
+               (funcall (gethash action (ataxia.world.web::%callbacks component)) component ""))))
     (unwind-protect
          (progn
            (sb-posix:mkdir directory #o700)

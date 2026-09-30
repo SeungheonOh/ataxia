@@ -29,7 +29,7 @@
   object (workspace 1) (column 0) (width 660d0) (weight 1d0)
   (floating-p nil) (order most-positive-fixnum) restore-geometry)
 
-(defclass meta-note (agent-widget)
+(defclass meta-note (ataxia.world.web.ui:document-widget)
   ((content :initform "" :accessor %meta-note-content)))
 
 

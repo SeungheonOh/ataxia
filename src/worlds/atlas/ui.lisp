@@ -1,74 +1,9 @@
-;;;; Slint component construction for the packed atlas World.
+;;;; HTML component construction for the packed atlas World.
 ;;;;
 ;;;; This module creates and retires native components. Once inserted, they use
 ;;;; the same scene, rendering, damage, focus, and input paths as Wayland apps.
 
 (in-package #:ataxia.atlas-world)
-
-(defparameter +atlas-panel-source+
-  "export component AtaxiaPanel inherits Window {
-    background: #111827ee;
-    in-out property <int> pulse-count: 0;
-    in-out property <string> command: \"type here\";
-
-    HorizontalLayout {
-        padding: 12px;
-        spacing: 12px;
-
-        VerticalLayout {
-            width: 150px;
-            spacing: 2px;
-            Text {
-                text: \"ATAXIA\";
-                color: #f8fafc;
-                font-size: 20px;
-                font-weight: 700;
-            }
-            Text {
-                text: \"SLINT WORLD COMPONENT\";
-                color: #7dd3fc;
-                font-size: 10px;
-            }
-        }
-
-        Rectangle {
-            width: 152px;
-            border-radius: 9px;
-            background: pulse.pressed ? #0ea5e9 : pulse.has-hover ? #0284c7 : #0369a1;
-            animate background { duration: 120ms; easing: ease-out; }
-            Text {
-                text: \"Pulse  \" + root.pulse-count;
-                color: white;
-                font-size: 15px;
-                horizontal-alignment: center;
-                vertical-alignment: center;
-            }
-            pulse := TouchArea {
-                clicked => { root.pulse-count += 1; }
-            }
-        }
-
-        Rectangle {
-            min-width: 220px;
-            border-radius: 9px;
-            border-width: editor.has-focus ? 2px : 1px;
-            border-color: editor.has-focus ? #38bdf8 : #475569;
-            background: #020617cc;
-            animate border-color { duration: 120ms; }
-            editor := TextInput {
-                x: 12px;
-                y: 8px;
-                width: parent.width - 24px;
-                height: parent.height - 16px;
-                text <=> root.command;
-                color: #f8fafc;
-                selection-background-color: #0369a1;
-                font-size: 15px;
-                single-line: true;
-            }
-        }
-    }
-}")
 
 (defun %output-component-size (state)
   (multiple-value-bind (width height) (%output-logical-size state)
@@ -79,9 +14,9 @@
   (multiple-value-bind (width height) (%output-component-size state)
     (let* ((output (%atlas-output-output state))
            (component
-             (ataxia.world.slint:make-slint-component
-              :source +atlas-panel-source+
-              :source-path "atlas-panel.slint"
+             (ataxia.world.web.ui:make-ui-component
+              :world world
+              :source-path (asdf:system-relative-pathname "ataxia-atlas-world" "src/worlds/atlas/panel.html")
               :component-name "AtaxiaPanel"
               :width width :height height
               :scale (ataxia.kernel:output-scale output)))
@@ -92,7 +27,7 @@
                         'atlas-output-mapping
                         :output-state state :x 24d0 :y 24d0)
               :layer 100 :width width :height height)))
-      (ataxia.world.slint:set-slint-component-invalidator
+      (ataxia.world:ui-set-invalidator
        component
        (lambda (ignored)
          (declare (ignore ignored))
@@ -105,7 +40,7 @@
   (let* ((state (%mapping-output-state (%atlas-object-mapping object)))
          (output (%atlas-output-output state)))
     (multiple-value-bind (width height) (%output-component-size state)
-      (ataxia.world.slint:resize-slint-component
+      (ataxia.world:ui-resize
        (atlas-object-component object) width height
        :scale (ataxia.kernel:output-scale output))
       (setf (atlas-object-width object) width
@@ -178,7 +113,7 @@
 (defun %retire-output-component (world output)
   (let ((object (gethash output (%world-output-components world))))
     (when object
-      (ataxia.world.slint:set-slint-component-invalidator
+      (ataxia.world:ui-set-invalidator
        (atlas-object-component object) nil)
       (%remove-scene-object world object)
       (remhash output (%world-output-components world))
@@ -188,9 +123,8 @@
 (defun %reap-retired-components (world)
   (dolist (object (%world-retired-components world))
     (let ((component (atlas-object-component object)))
-      (when (ataxia.world.slint:slint-component-graphics-attached-p component)
-        (ataxia.kernel:drawable-detach-graphics component))
-      (ataxia.world.slint:destroy-slint-component component)))
+      (ataxia.kernel:drawable-detach-graphics component)
+      (ataxia.world:ui-destroy component)))
   (setf (%world-retired-components world) nil)
   world)
 
@@ -199,10 +133,9 @@
    (lambda (output object)
      (declare (ignore output))
      (let ((component (atlas-object-component object)))
-       (ataxia.world.slint:set-slint-component-invalidator component nil)
-       (when (ataxia.world.slint:slint-component-graphics-attached-p component)
-         (ataxia.kernel:drawable-detach-graphics component))
-       (ataxia.world.slint:destroy-slint-component component)))
+       (ataxia.world:ui-set-invalidator component nil)
+       (ataxia.kernel:drawable-detach-graphics component)
+       (ataxia.world:ui-destroy component)))
    (%world-output-components world))
   (clrhash (%world-output-components world))
   (%reap-retired-components world))

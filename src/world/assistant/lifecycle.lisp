@@ -66,7 +66,7 @@
          (seat (assistant-controller-seat controller))
          (panel (assistant-controller-panel controller))
          (project (if panel
-                      (ataxia.world.rmlui:rmlui-model-value (overlay-component panel) "project")
+                      (ataxia.world.web.ui:ui-model-value (overlay-component panel) "project")
                       (assistant-controller-project controller))))
     (unless (and (stringp project) (uiop:directory-exists-p project))
       (error "Enter an existing working directory."))

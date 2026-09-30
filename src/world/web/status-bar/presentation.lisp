@@ -1,0 +1,35 @@
+;;;; Browser presentation only: system policy and controllers belong to ataxia-shell.
+(defpackage #:ataxia.world.web.shell
+  (:use #:cl)
+  (:export #:enable-web-status-bar #:disable-web-status-bar #:web-status-bar))
+(in-package #:ataxia.world.web.shell)
+(defstruct (web-shell-service (:include ataxia.world.shell::shell-service)))
+(defclass web-status-bar (ataxia.world.shell:shell-status-bar ataxia.world.web:web-widget) ())
+(defclass web-shell-popup (ataxia.world.shell::shell-popup ataxia.world.web:web-widget) ())
+(defclass web-shell-osd (ataxia.world.shell::shell-osd ataxia.world.web:web-widget) ())
+(defclass shell-component (ataxia.world.web.ui:document-component) ())
+(defmethod ataxia.world.shell::set-shell-class ((component shell-component) id name enabled)
+  (ataxia.world.web.ui:set-ui-class component id name enabled))
+(defmethod ataxia.world.shell::set-shell-element-style ((component shell-component) id property value)
+  (ataxia.world.web.ui:set-ui-style component id property value))
+(defmethod ataxia.world.shell::set-shell-model ((component shell-component) name value)
+  (ataxia.world.web.ui:set-ui-model component name value))
+(defmethod ataxia.world.shell::shell-model-value ((component shell-component) name)
+  (ataxia.world.web.ui:ui-model-value component name))
+(defmethod ataxia.world.shell::make-shell-widget ((service web-shell-service) world kind &rest options)
+  (declare (ignore service))
+  (let* ((name (case kind (:apps "menu") (:spaces "workspaces") (otherwise (string-downcase kind))))
+         (path (asdf:system-relative-pathname "ataxia-web" (format nil "src/world/web/status-bar/~A.html" name)))
+         (class (case kind (:bar 'web-status-bar) (:osd 'web-shell-osd) (otherwise 'web-shell-popup))))
+    (apply #'ataxia.world:create-agent-widget class world ""
+      :component-factory
+      (lambda (&key source source-path component-name width height scale)
+        (declare (ignore source source-path component-name))
+        (ataxia.world.web.ui:make-ui-component :world world :source-path path :width width :height height :scale scale
+                                             :component-class 'shell-component))
+      :source-path (namestring path) :callbacks '("shell-ready") options)))
+(defun enable-web-status-bar (world &rest options)
+  "Replace the shell presentation with ordinary HTML drawable/interactable widgets."
+  (apply #'ataxia.world.shell:enable-status-bar world (make-web-shell-service) options))
+(defun disable-web-status-bar (world &rest options)
+  (apply #'ataxia.world.shell:disable-status-bar world options))

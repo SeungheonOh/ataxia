@@ -1,0 +1,8 @@
+<!doctype html>
+<html lang="en"><head><title>Screen sharing</title><style>
+body { margin:0; width:100%; height:100%; font-size:13px; }
+div { display:block; box-sizing:border-box; }
+#bar { width:100%; height:100%; padding:0 var(--inset); border:var(--frame) solid var(--ink); display:flex; gap:0 var(--gap); align-items:center; }
+#label { flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:12px; }
+#stop { font-size:11px; }
+</style><meta charset="utf-8"><link rel="stylesheet" href="../web/ui/document.css"><script src="../web/ui/document.js" defer="defer"></script></head><body class="shell screencast-indicator"><div id="bar"><div id="label">Screen sharing is active</div><input class="action" type="button" id="stop" value="Stop sharing"></div></body></html>

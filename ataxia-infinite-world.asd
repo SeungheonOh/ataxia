@@ -6,7 +6,7 @@
   :author "Ataxia contributors"
   :license "Unspecified"
   :depends-on
-  ("ataxia-world" "ataxia-slint" "ataxia-sly-control" "cffi")
+  ("ataxia-world" "ataxia-slint" "ataxia-web/ui" "ataxia-sly-control" "cffi")
   :serial t
   :components
   ((:module "src/worlds/infinite"

@@ -1,6 +1,7 @@
 ;;;; Exercise partial service startup and controller replacement with real UI/timers.
 (load (merge-pathnames "system-support.lisp" *load-truename*))
 (asdf:load-system "ataxia-assistant/infinite-world")
+(asdf:load-system "ataxia-rmlui/status-bar")
 
 (defpackage #:ataxia.test.service-lifecycle
   (:use #:cl #:ataxia.world)
@@ -141,7 +142,7 @@
          ;; Graphics retirement remains the host's responsibility.
          (ataxia.kernel:run-kernel kernel :run-for .2d0)
          (dolist (panel retired-panels)
-           (assert (ataxia.world.rmlui::%component-destroyed-p (overlay-component panel))))
+           (assert (ataxia.world.web::%destroyed (overlay-component panel))))
          (assert (eq :running (ataxia.kernel:kernel-world-status kernel)))
          (format t "PASS: failed service startup releases timers/UI, preserves existing callers, and allows clean replacement.~%"))
     (ataxia.kernel:destroy-kernel kernel :service-lifecycle-test-complete)))

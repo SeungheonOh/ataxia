@@ -1,6 +1,6 @@
 # Attaching UI and assistant services to a World
 
-The assistant, computer-use service, and RmlUi shell depend on `ataxia.world`
+The assistant, computer-use service, and shared shell depend on `ataxia.world`
 protocols. They do not depend on a concrete World's package or scene structures.
 A World supplies placement, visibility, focus, rendering, and optional layout
 policy. The services own their controllers, widgets, input state, timers, and
@@ -13,10 +13,14 @@ workers. These boundaries are checked in fresh Lisp processes.
 | `ataxia-world` | UI hosting, desktop protocols, optional service dispatch, shared geometry and scheduling helpers | None |
 | `ataxia-slint` | Slint components, widgets and notifications | None |
 | `ataxia-rmlui` | RmlUi components, widgets and cached property updates | None |
-| `ataxia-rmlui/status-bar` | Status bar, application menu and power panel | None |
+| `ataxia-shell` | Shared status bar, menus and system controllers | None |
+| `ataxia-web` | Chromium HTML/CSS/JS drawable and interactable components | None |
+| `ataxia-web/ui` | Shared HTML theme, document bindings, clipboard and notifications | None |
+| `ataxia-web/status-bar` | Default HTML shell presentation | None |
+| `ataxia-rmlui/status-bar` | Optional RmlUi shell presentation | None |
 | `ataxia-world/synthetic-input` | Optional World-owned native input devices | None |
 | `ataxia-computer-use` | Sessions, native input, capture coordination, batches and socket API | None |
-| `ataxia-assistant` | Assistant worker, tools, approvals, previews, voice and panels | None |
+| `ataxia-assistant` | Assistant worker, tools, previews, voice and HTML panels | None |
 | `ataxia-computer-use/infinite-world` | Window capture using Infinite World's renderer | Infinite World |
 | `ataxia-computer-use/metaworld` | Shared capture with Metaworld layout and navigation | Metaworld |
 | `ataxia-assistant/infinite-world` | Assistant plus that capture backend | Infinite World |

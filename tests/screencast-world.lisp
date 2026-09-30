@@ -3,7 +3,7 @@
 (in-package #:ataxia.infinite-world)
 (let* ((world (make-metaworld :state-file nil))
        (kernel (ataxia.kernel:create-kernel world :backend :headless :headless-width 1000 :headless-height 700))
-       (runtime (ataxia.kernel:kernel-runtime kernel)) (app nil) (portal nil) (controller nil) (chosen 0) (seen nil)
+       (runtime (ataxia.kernel:kernel-runtime kernel)) (app nil) (portal nil) (controller nil) (chosen 0) (seen nil) (clicked nil) (ready-at nil)
        (capture (symbol-function '%render-window-capture-pixels))
        (tick (symbol-function '%share-tick))
        (render (symbol-function 'ataxia.kernel::%render-output-frame))
@@ -27,13 +27,16 @@
                         (lambda (source)
                           (let ((session (share-controller-current controller))
                                 (window (find-if #'%window-visible-p (%world-stacking world))))
-                            (when (and session window (eq session seen))
-                              (assert (typep (overlay-component (share-controller-picker controller)) 'ataxia.world.rmlui:rmlui-component))
+                            (unless (eq session seen) (setf ready-at (+ (%now) .4d0)))
+                            (when (and session window (eq session seen) ready-at (> (%now) ready-at)
+                                       (plusp (length (ataxia.kernel:drawable-surfaces (overlay-component (share-controller-picker controller))))))
+                              (assert (typep (overlay-component (share-controller-picker controller)) 'ataxia.world.web.ui:document-component))
                               (case (share-session-types session)
                                 (2
                                  ;; Use World input to click the actual source row.
                                  ;; Directly calling selection policy cannot catch
                                  ;; a rendered row with a broken hit-test box.
+                                 (unless (eq clicked session)
                                  (let* ((picker (share-controller-picker controller))
                                         (seat (share-controller-seat controller))
                                         (x (+ (overlay-x picker) 100d0))
@@ -44,7 +47,7 @@
                                    (dolist (state '(:pressed :released))
                                      (ataxia.kernel:world-cursor-button world (%canvas-seat-seat seat)
                                        (ataxia.kernel:make-cursor-button-input :code 272 :state state))))
-                                 (assert (eq window (share-session-window session))))
+                                   (setf clicked session)))
                                 (1
                                  (let ((state (%first-output-state world)))
                                    (setf (%canvas-output-camera-x state) (canvas-window-x window)
@@ -63,6 +66,8 @@
                                    ;; still has to produce the application's pixels.
                                    (setf (%canvas-output-camera-x state) 90000d0 (%canvas-output-zoom state) .2d0)))
                                 (3 (%share-close controller session)))
+                              (when (or (= 3 (share-session-types session))
+                                        (share-session-window session) (share-session-bounds session))
                               (unless (= 3 (share-session-types session))
                                 (assert (not (share-session-active-p session)))
                                 (%share-accept controller session)
@@ -70,7 +75,7 @@
                                   (%share-accept controller session)
                                   (assert (eq pixels (share-session-pixels session))))
                                 (assert (share-controller-indicators controller)))
-                              (incf chosen))
+                              (incf chosen)))
                             (setf seen session))
                           (when (< chosen 3) (ataxia.runtime:update-event-loop-timer source 100))
                           0))))

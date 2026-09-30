@@ -12,20 +12,17 @@
 
 (defstruct share-session id app types window bounds (rotation 0d0) width height pixels active-p)
 (defstruct share-controller world native source timer sessions current picker region indicators seat previous-focus due-p)
-(defclass share-region-component (ataxia.world.rmlui:rmlui-component)
+(defclass share-region-component (ataxia.world.web.ui:document-component)
   ((controller :initarg :controller :reader %share-region-controller)
    (start :initform nil :accessor %share-region-start)))
 
-(defun %share-source (file)
-  (uiop:read-file-string (asdf:system-relative-pathname "ataxia-screencast"
-                          (concatenate 'string "src/world/screencast/" file ".rml"))))
-(defun %share-widget (controller file state width height &key source (layer 5000) factory)
+(defun %share-widget (controller file state width height &key (layer 5000) factory)
   (multiple-value-bind (ow oh) (%output-logical-size state)
-    (ataxia.world:create-agent-widget 'ataxia.world.rmlui:rmlui-widget
-      (share-controller-world controller) (or source (%share-source file))
+    (ataxia.world:create-agent-widget 'ataxia.world.web.ui:document-widget
+      (share-controller-world controller) ""
       :source-path (namestring (asdf:system-relative-pathname "ataxia-screencast"
-                                (format nil "src/world/screencast/~A.rml" file)))
-      :component-factory (or factory #'ataxia.world.rmlui:make-shell-rmlui-component)
+                                (format nil "src/world/screencast/~A.html" file)))
+      :component-factory (or factory (lambda (&rest args) (apply #'ataxia.world.web.ui:make-ui-component :world (share-controller-world controller) args)))
       :output (%canvas-output-output state) :width (min width ow) :height (min height oh)
       :x (max 0d0 (/ (- ow width) 2d0)) :y (max 0d0 (/ (- oh height) 2d0)) :layer layer)))
 
@@ -54,15 +51,15 @@
   (let ((widget (share-controller-picker controller))
         (window (share-session-window session)) (bounds (share-session-bounds session)))
     (when widget
-      (ataxia.world.rmlui:set-widget-text widget "selection"
+      (ataxia.world.web.ui:set-widget-text widget "selection"
         (cond (window (format nil "Application: ~A" (or (ataxia.kernel:application-title (canvas-window-application window)) "Untitled")))
               (bounds (format nil "Canvas region: ~D × ~D" (round (third bounds)) (round (fourth bounds))))
               (t "Choose an application or draw a canvas region.")))
-      (ataxia.world.rmlui:set-rmlui-attribute (overlay-component widget) "share" "disabled" (unless (or window bounds) "disabled"))
-      (loop for candidate in (gethash :share-windows (ataxia.world.rmlui:widget-cache widget))
+      (ataxia.world.web.ui:set-ui-attribute (overlay-component widget) "share" "disabled" (unless (or window bounds) "disabled"))
+      (loop for candidate in (gethash :share-windows (ataxia.world.web.ui:widget-cache widget))
             for i from 0 for id = (format nil "app~D" i) do
-        (ataxia.world.rmlui:cache-widget-value widget (list :selected i) (eq candidate window)
-          (lambda (component) (ataxia.world.rmlui:set-rmlui-class component id "selected" (eq candidate window))))))))
+        (ataxia.world.web.ui:cache-widget-value widget (list :selected i) (eq candidate window)
+          (lambda (component) (ataxia.world.web.ui:set-ui-class component id "selected" (eq candidate window))))))))
 
 (defun %share-select-window (controller session window)
   (when (and (eq session (share-controller-current controller)) (share-controller-picker controller)
@@ -104,7 +101,7 @@
     (multiple-value-bind (width height) (%output-logical-size state)
       (let ((region (%share-widget controller "region" state width height :layer 5100
                       :factory (lambda (&rest args)
-                                 (change-class (apply #'ataxia.world.rmlui:make-shell-rmlui-component args)
+                                 (change-class (apply #'ataxia.world.web.ui:make-ui-component :world world args)
                                                'share-region-component :controller controller)))))
         (setf (share-controller-region controller) region)
         (when (share-controller-seat controller) (%focus-target world (share-controller-seat controller) region))))))
@@ -115,9 +112,9 @@
     (when (and start widget)
       (let ((left (min (first start) x)) (top (min (second start) y))
             (width (abs (- x (first start)))) (height (abs (- y (second start)))))
-        (ataxia.world.rmlui:set-widget-style widget "rectangle" "display" "block")
+        (ataxia.world.web.ui:set-widget-style widget "rectangle" "display" "block")
         (loop for property in '("left" "top" "width" "height") for value in (list left top width height) do
-          (ataxia.world.rmlui:set-widget-style widget "rectangle" property (format nil "~,2Fdp" value)))
+          (ataxia.world.web.ui:set-widget-style widget "rectangle" property (format nil "~,2Fdp" value)))
         (list left top width height)))))
 
 (defmethod ataxia.kernel:interactable-pointer-motion
@@ -161,27 +158,26 @@
       (when session
         (unless state (%share-close controller session) (return-from %share-next-picker nil))
         (let* ((windows (when (logtest 2 (share-session-types session)) (remove-if-not #'%window-visible-p (reverse (%world-stacking world)))))
-               (template (%share-source "picker")) (marker "<!-- sources -->") (offset (search marker template))
-               (source (concatenate 'string (subseq template 0 offset)
-                         (format nil "~{~A~}" (loop for w in windows for i from 0 collect (format nil "<input class='action' type='button' id='app~D' value='Application'/>" i)))
-                         (subseq template (+ offset (length marker)))))
+               (source (format nil "~{~A~}" (loop for w in windows for i from 0
+                         collect (format nil "<input class='action' type='button' id='app~D' value='Application'>" i))))
                ;; Consecutive text rows, plus labels and wrapped narrow hints.
                (height (+ (if (< (nth-value 0 (%output-logical-size state)) 400d0) 130d0 98d0)
                           (* 16d0 (min 12 (max 3 (length windows))))))
-               (widget (%share-widget controller "picker" state 540d0 height :source source)))
+               (widget (%share-widget controller "picker" state 540d0 height)))
+          (ataxia.world.web.ui:set-ui-model (overlay-component widget) "sources" source)
           (setf (share-controller-current controller) session (share-controller-picker controller) widget
                 (share-controller-seat controller) seat (share-controller-previous-focus controller) (and seat (%canvas-seat-focused seat)))
-          (setf (gethash :share-windows (ataxia.world.rmlui:widget-cache widget)) windows)
-          (ataxia.world.rmlui:set-widget-text widget "app"
+          (setf (gethash :share-windows (ataxia.world.web.ui:widget-cache widget)) windows)
+          (ataxia.world.web.ui:set-widget-text widget "app"
             (format nil "~A wants to share your screen"
               (let ((app (share-session-app session)))
                 (cond ((search "firefox" app :test #'char-equal) "Firefox")
                       ((search "discord" app :test #'char-equal) "Discord")
                       ((plusp (length app)) app) (t "An application")))))
-          (unless (logtest 1 (share-session-types session)) (ataxia.world.rmlui:set-widget-style widget "region" "display" "none"))
+          (unless (logtest 1 (share-session-types session)) (ataxia.world.web.ui:set-widget-style widget "region" "display" "none"))
           (loop for window in windows for i from 0 for id = (format nil "app~D" i) do
             (let ((window window))
-              (ataxia.world.rmlui:set-widget-text widget id (or (ataxia.kernel:application-title (canvas-window-application window)) "Untitled application"))
+              (ataxia.world.web.ui:set-widget-text widget id (or (ataxia.kernel:application-title (canvas-window-application window)) "Untitled application"))
               (bind-agent-widget-event widget id (lambda (source event) (declare (ignore source event)) (%share-select-window controller session window)))))
           (bind-agent-widget-event widget "cancel" (lambda (source event) (declare (ignore source event)) (%share-close controller session)))
           (bind-agent-widget-event widget "share" (lambda (source event) (declare (ignore source event)) (%share-accept controller session)))
@@ -198,7 +194,7 @@
       (dolist (state (%output-states world))
         (let ((widget (%share-widget controller "indicator" state 400d0 18d0 :layer 4900)))
           (ataxia.world:configure-agent-widget world widget :y 0d0)
-          (ataxia.world.rmlui:set-widget-text widget "label" (format nil "Sharing ~D source~:P" (length active)))
+          (ataxia.world.web.ui:set-widget-text widget "label" (format nil "Sharing ~D source~:P" (length active)))
           (bind-agent-widget-event widget "stop"
             (lambda (source event) (declare (ignore source event))
               (dolist (session (copy-list (share-controller-sessions controller))) (%share-close controller session))))

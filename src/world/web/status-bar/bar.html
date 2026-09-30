@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Ataxia status bar</title><style>
+body { margin:0; width:100%; height:100%; font-size:12px; }
+div { display:block; box-sizing:border-box; }
+#bar { position:absolute; left:0; right:0; top:0; height:18px; box-sizing:border-box;
+ display:flex; align-items:center; gap:0 var(--gap); padding:0 var(--inset); border-top:1px solid var(--ink); }
+button { height:var(--control); }
+#home { flex-shrink:0; font-weight:bold; }
+#mark { display:none; }
+#brand { line-height:var(--control-line); }
+#context { display:flex; align-items:center; min-width:0; flex:0 1 240px; overflow:hidden; }
+#group { width:100%; min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.arrow { display:none; }
+#workspaces { display:none; }
+.workspace { width:30px; height:var(--control); line-height:var(--control-line); padding:0; }
+.workspace.selected { font-weight:bold; }
+#selection, #focus-label, #apps, #power-note { display:none; }
+#focus { flex:1; min-width:0; overflow:hidden; white-space:nowrap; }
+#title { line-height:var(--control-line); overflow:hidden; white-space:nowrap; }
+#right { display:flex; align-items:center; gap:0 var(--gap); margin-left:auto; flex-shrink:0; }
+#audio, #clipboard { padding:0; }
+#media { display:none; max-width:180px; overflow:hidden; white-space:nowrap; padding:0; }
+#power { padding:0; display:flex; align-items:center; gap:0 var(--gap); white-space:nowrap; }
+#battery { position:relative; width:22px; height:12px; padding:0; border:1px solid var(--ink); }
+#charge { height:100%; width:75%; }
+#battery-tip { position:absolute; right:-4px; top:3px; width:2px; height:4px; }
+#power-copy { line-height:var(--control-line); }
+#power-symbol { font-size:14px; line-height:var(--control-line); }
+#clock { line-height:var(--control-line); white-space:nowrap; }
+#date { white-space:nowrap; }
+#bar.has-media #media { display:block; }
+#bar.compact { gap:0 var(--gap); }
+.compact #focus, .compact #date, #bar.compact #media { display:none; }
+#bar.narrow { gap:0 var(--gap); }
+.narrow #power-text { display:none; }
+.narrow #context { flex-basis:220px; }
+#bar.tiny { gap:0 var(--gap); }
+#bar.tiny #context { flex-basis:72px; }
+#bar.tiny #group { font-size:11px; }
+#bar.tiny #right { gap:0 var(--gap); }
+#bar.tiny #assistant { padding:0; font-size:10px; }
+#bar.tiny #home { padding:0; }
+#bar.tiny #assistant { max-width:64px; overflow:hidden; text-overflow:ellipsis; }
+#assistant { display:none; font-size:11px; }
+#bar.tiny #apps, #bar.tiny #clock, #bar.tiny #clipboard { display:none; }
+#bar.tiny #audio { max-width:38px; overflow:hidden; white-space:nowrap; font-size:11px; }
+</style><link rel="stylesheet" href="../ui/document.css"><style>#close { width:auto; min-width:5ch; } #power-text { display:block !important; } #power { gap:0; } #clipboard { min-width:2ch; }</style><script src="../ui/document.js" defer="defer"></script></head><body class="shell shell-bar">
+<div id="bar">
+ <button id="home"><div id="brand">Apps</div></button>
+
+ <div id="context"><button id="previous" class="arrow">‹</button><button id="group">Overview / Workspaces ▾</button><button id="next" class="arrow">›</button></div>
+ <div id="focus"><div id="focus-label">IN FOCUS</div><div id="title">Desktop</div></div>
+ <div id="right"><button id="assistant">Assistant</button><div id="apps">0 apps</div>
+ <button id="media">Media</button><button id="audio">♪</button><button id="clipboard">▤</button>
+ <button id="power"><div id="power-symbol">↯</div><div id="power-copy"><div id="power-text">AC</div></div></button>
+ <div id="date">THU, SEP 10</div><div id="clock">12:00</div></div>
+</div></body></html>

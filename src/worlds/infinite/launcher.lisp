@@ -1,148 +1,12 @@
-;;;; Slint application launcher overlay.
+;;;; HTML application launcher overlay.
 ;;;;
-;;;; The launcher is one ordinary CANVAS-OVERLAY. Slint owns its visual and
+;;;; The launcher is one ordinary CANVAS-OVERLAY. Chromium owns its visual and
 ;;;; widget state; the World supplies searchable open-window and desktop-entry
-;;;; results, then performs focus or process-launch actions synchronously.
+;;;; results, then performs focus or process-launch actions on its owner thread.
 
 (in-package #:ataxia.infinite-world)
 
 (defconstant +launcher-result-limit+ 6)
-
-(defparameter +launcher-source+
-  "component LauncherRow inherits Rectangle {
-    in property <string> title;
-    in property <int> index;
-    in property <bool> enabled;
-    in property <bool> selected;
-    callback activate(int);
-
-    height: 16px;
-    visible: root.enabled;
-    background: root.selected || touch.has-hover || touch.pressed ? #161616 : transparent;
-    Text {
-        x: 0px;
-        y: 0px;
-        width: parent.width;
-        height: parent.height;
-        text: root.title;
-        color: root.selected || touch.has-hover ? #ffffff : #161616;
-        font-family: \"DejaVu Sans Mono\";
-        font-size: 13px;
-        font-weight: 400;
-        vertical-alignment: center;
-        overflow: elide;
-    }
-    touch := TouchArea { clicked => { root.activate(root.index); } }
-}
-
-export component AtaxiaLauncher inherits Window {
-    background: transparent;
-    in-out property <bool> shown: false;
-    in-out property <string> query: \"\";
-    in-out property <int> selected-index: 0;
-    in property <int> result-count: 0;
-    in property <string> result-title-0: \"\";
-    in property <string> result-title-1: \"\";
-    in property <string> result-title-2: \"\";
-    in property <string> result-title-3: \"\";
-    in property <string> result-title-4: \"\";
-    in property <string> result-title-5: \"\";
-    in property <string> result-detail-0: \"\";
-    in property <string> result-detail-1: \"\";
-    in property <string> result-detail-2: \"\";
-    in property <string> result-detail-3: \"\";
-    in property <string> result-detail-4: \"\";
-    in property <string> result-detail-5: \"\";
-    in property <string> result-kind-0: \"\";
-    in property <string> result-kind-1: \"\";
-    in property <string> result-kind-2: \"\";
-    in property <string> result-kind-3: \"\";
-    in property <string> result-kind-4: \"\";
-    in property <string> result-kind-5: \"\";
-    callback search(string);
-    callback activate(int);
-    callback dismiss();
-
-    changed shown => { if root.shown { editor.focus(); } }
-
-    panel := Rectangle {
-        x: 0px;
-        y: 0px;
-        width: parent.width;
-        height: parent.height;
-        border-width: 1px;
-        border-color: #161616;
-        background: #ffffff;
-
-        search-box := Rectangle {
-            x: 9px;
-            y: 1px;
-            width: parent.width - 18px;
-            height: 18px;
-            border-width: 1px;
-            border-color: #161616;
-            background: #eeeeea;
-            editor := TextInput {
-                x: 9px;
-                y: 1px;
-                width: parent.width - 18px;
-                height: parent.height - 2px;
-                text <=> root.query;
-                color: #161616;
-                selection-background-color: #161616;
-                selection-foreground-color: #ffffff;
-                font-family: \"DejaVu Sans Mono\";
-                font-size: 13px;
-                single-line: true;
-                edited => { root.search(self.text); }
-                accepted => { if root.result-count > 0 { root.activate(root.selected-index); } }
-                key-pressed(event) => {
-                    if event.text == Key.Escape {
-                        root.dismiss();
-                        return accept;
-                    }
-                    if event.text == Key.DownArrow {
-                        root.selected-index = Math.min(root.selected-index + 1, root.result-count - 1);
-                        return accept;
-                    }
-                    if event.text == Key.UpArrow {
-                        root.selected-index = Math.max(root.selected-index - 1, 0);
-                        return accept;
-                    }
-                    return reject;
-                }
-            }
-        }
-
-        VerticalLayout {
-            x: 9px;
-            y: 19px;
-            width: parent.width - 18px;
-            height: 96px;
-            spacing: 0px;
-            LauncherRow { title: root.result-title-0; index: 0; enabled: root.result-count > 0; selected: root.selected-index == 0; activate(index) => { root.activate(index); } }
-            LauncherRow { title: root.result-title-1; index: 1; enabled: root.result-count > 1; selected: root.selected-index == 1; activate(index) => { root.activate(index); } }
-            LauncherRow { title: root.result-title-2; index: 2; enabled: root.result-count > 2; selected: root.selected-index == 2; activate(index) => { root.activate(index); } }
-            LauncherRow { title: root.result-title-3; index: 3; enabled: root.result-count > 3; selected: root.selected-index == 3; activate(index) => { root.activate(index); } }
-            LauncherRow { title: root.result-title-4; index: 4; enabled: root.result-count > 4; selected: root.selected-index == 4; activate(index) => { root.activate(index); } }
-            LauncherRow { title: root.result-title-5; index: 5; enabled: root.result-count > 5; selected: root.selected-index == 5; activate(index) => { root.activate(index); } }
-        }
-
-        Text {
-            x: 9px;
-            y: 19px;
-            width: parent.width - 18px;
-            height: 96px;
-            visible: root.result-count == 0;
-            text: \"No matches\";
-            color: #50504c;
-            font-family: \"DejaVu Sans Mono\";
-            font-size: 13px;
-            horizontal-alignment: center;
-            vertical-alignment: center;
-        }
-    }
-}")
 
 (defstruct (%desktop-entry
              (:constructor %make-desktop-entry (name detail path id)))
@@ -158,7 +22,7 @@ export component AtaxiaLauncher inherits Window {
 
 (defmethod overlay-visibility-changed
     ((overlay launcher-overlay) visible-p)
-  (ataxia.world.slint:set-slint-property
+  (ataxia.world:ui-set-property
    (overlay-component overlay) "shown" visible-p)
   overlay)
 
@@ -168,10 +32,9 @@ export component AtaxiaLauncher inherits Window {
 
 (defmethod destroy-overlay ((overlay launcher-overlay))
   (let ((component (overlay-component overlay)))
-    (ataxia.world.slint:set-slint-component-invalidator component nil)
-    (when (ataxia.world.slint:slint-component-graphics-attached-p component)
-      (ataxia.kernel:drawable-detach-graphics component))
-    (ataxia.world.slint:destroy-slint-component component))
+    (ataxia.world:ui-set-invalidator component nil)
+    (ataxia.kernel:drawable-detach-graphics component)
+    (ataxia.world:ui-destroy component))
   nil)
 
 (defun %desktop-value (lines name)
@@ -282,15 +145,15 @@ export component AtaxiaLauncher inherits Window {
             0 (min +launcher-result-limit+ (length candidates)))))
 
 (defun %set-launcher-result-property (component prefix index value)
-  (ataxia.world.slint:set-slint-property
+  (ataxia.world:ui-set-property
    component (format nil "~A-~D" prefix index) value))
 
 (defun %refresh-launcher (world overlay query)
   (let* ((component (overlay-component overlay))
          (results (coerce (%launcher-candidates world overlay query) 'vector)))
     (setf (%launcher-results overlay) results)
-    (ataxia.world.slint:set-slint-property component "result-count" (length results))
-    (ataxia.world.slint:set-slint-property component "selected-index" 0)
+    (ataxia.world:ui-set-property component "result-count" (length results))
+    (ataxia.world:ui-set-property component "selected-index" 0)
     (loop for index below +launcher-result-limit+
           for entry = (and (< index (length results)) (aref results index))
           do (%set-launcher-result-property
@@ -374,18 +237,18 @@ export component AtaxiaLauncher inherits Window {
             (overlay-y overlay) (/ (- output-height height) 2d0)
             (overlay-width overlay) width
             (overlay-height overlay) height)
-      (ataxia.world.slint:resize-slint-component
+      (ataxia.world:ui-resize
        (overlay-component overlay) width height
-       :scale (ataxia.world.slint:slint-component-scale (overlay-component overlay)))))
+       :scale (ataxia.world:ui-raster-scale (overlay-component overlay)))))
   overlay)
 
 (defun %make-launcher-overlay (world state)
   (multiple-value-bind (width height) (%launcher-size state)
     (let* ((output (%canvas-output-output state))
            (component
-             (ataxia.world.slint:make-slint-component
-              :source +launcher-source+
-              :source-path "ataxia-launcher.slint"
+             (ataxia.world.web.ui:make-ui-component
+              :world world
+              :source-path (asdf:system-relative-pathname "ataxia-infinite-world" "src/worlds/infinite/launcher.html")
               :component-name "AtaxiaLauncher"
               :width width :height height
               :scale (ataxia.kernel:output-scale output)))
@@ -396,7 +259,7 @@ export component AtaxiaLauncher inherits Window {
               :layer 1000 :visible-p nil)))
       (setf (%launcher-desktop-entries overlay) (%load-desktop-entries))
       (%position-launcher overlay state)
-      (ataxia.world.slint:set-slint-component-invalidator
+      (ataxia.world:ui-set-invalidator
        component
        (lambda (ignored)
          (declare (ignore ignored))
@@ -404,19 +267,19 @@ export component AtaxiaLauncher inherits Window {
            (when (overlay-visible-p overlay)
              (%request-output-state-frame world state))
            (%schedule-component-timer world))))
-      (ataxia.world.slint:set-slint-callback
+      (ataxia.world:ui-set-callback
        component "search"
        (lambda (ignored query)
          (declare (ignore ignored))
          (%refresh-launcher world overlay query)))
-      (ataxia.world.slint:set-slint-callback
+      (ataxia.world:ui-set-callback
        component "activate"
        (lambda (ignored index)
          (declare (ignore ignored))
          (let ((value (ignore-errors
                         (parse-integer index :junk-allowed t))))
            (when value (%activate-launcher-result world overlay value)))))
-      (ataxia.world.slint:set-slint-callback
+      (ataxia.world:ui-set-callback
        component "dismiss"
        (lambda (ignored value)
          (declare (ignore ignored value))
@@ -446,7 +309,7 @@ export component AtaxiaLauncher inherits Window {
             (setf (%canvas-seat-previous-focus seat-state)
                   (%canvas-seat-focused seat-state))
             (%refresh-launcher world overlay "")
-            (ataxia.world.slint:set-slint-property
+            (ataxia.world:ui-set-property
              (overlay-component overlay) "query" "")
             (show-overlay world overlay)
             (%focus-target world seat-state overlay)))))

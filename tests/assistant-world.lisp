@@ -1,5 +1,6 @@
 (load (merge-pathnames "support.lisp" *load-truename*))
 (asdf:load-system "ataxia-assistant/metaworld")
+(asdf:load-system "ataxia-rmlui/status-bar")
 (load (merge-pathnames "assistant-voice-fixture.lisp" *load-truename*))
 (in-package #:ataxia.infinite-world)
 (setf ataxia.assistant::*assistant-command* (list "sbcl" "--noinform" "--disable-debugger" "--script"
@@ -33,7 +34,7 @@
            (key "a" '(:logo))
            (assert (null (ataxia.assistant::assistant-controller-worker controller)))
            (assert (eq :off (ataxia.assistant::assistant-controller-microphone controller)))
-           (ataxia.world.rmlui:set-rmlui-model (canvas-overlay-component (ataxia.assistant::assistant-controller-panel controller)) "message" "Keep this draft")
+           (ataxia.world.web.ui:set-ui-model (canvas-overlay-component (ataxia.assistant::assistant-controller-panel controller)) "message" "Keep this draft")
            (let ((overlays (length (world-overlays world))))
              (ataxia.assistant::%assistant-open-settings controller)
              (assert (= overlays (length (world-overlays world)))))
@@ -50,13 +51,16 @@
               (lambda ()
                 (handler-case
                     (progn
-                      (sleep .5d0)
+                      (wait-for (lambda () (let ((component (overlay-component (ataxia.assistant::assistant-controller-panel controller))))
+                                            (plusp (length (ataxia.kernel:drawable-surfaces component))))))
                       (owner (lambda ()
-                               (ataxia.world.rmlui:set-rmlui-model
+                               (ataxia.world.web.ui:set-ui-model
                                 (overlay-component (ataxia.assistant::assistant-controller-panel controller))
                                 "message" "Inspect this isolated desktop.")
-                               (key "Return" '(:control))
-                               (assert (equal "" (ataxia.assistant::%assistant-read-composer controller)))))
+                               ;; Flush host edits before requesting DOM submission.
+                               (ataxia.world.web.ui::%flush (overlay-component (ataxia.assistant::assistant-controller-panel controller)))
+                               (key "Return" '(:control))))
+                      (wait-for (lambda () (equal "" (ataxia.assistant::%assistant-read-composer controller))))
                       (wait-for (lambda () (member (ataxia.assistant::assistant-controller-task controller) '(:done :failed))))
                       (owner (lambda ()
                                (assert (eq :done (ataxia.assistant::assistant-controller-task controller)) () "Assistant failed: ~A" (ataxia.assistant::assistant-controller-activity controller))

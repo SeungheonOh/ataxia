@@ -10,9 +10,8 @@ content above it. Removing the bar restores the full output area.
 
 ## Enable
 
-Metaworld enables the bar by default on desktop backends, independently of the
-assistant. Use `--no-status-bar` to omit it, or `--status-bar` to enable it in a
-headless session. The portable World service can also be enabled explicitly:
+Metaworld now uses the [HTML shell](WEB-UI.md) by default. The RmlUi presentation
+remains available as an explicit alternative through the portable World service:
 
 Build the optional native engine with `make rmlui`, then load:
 
@@ -81,7 +80,8 @@ Opening power details refreshes immediately, then at most 30 seconds apart,
 aligned to minute boundaries. Only changed values invalidate the component. Window and
 workspace context updates with World frames. There is no idle animation or
 continuous status polling. Style lives in `src/world/rmlui/status-bar/bar.rml`;
-Presentation and cached updates live beside it in `status-bar.lisp`; navigation
+Its adapter lives beside it in `presentation.lisp`; shared controllers and cached
+updates live in `src/world/shell/`. Navigation
 policy comes from the World adapter. See [World services](WORLD-SERVICES.md).
 
 ## Verification

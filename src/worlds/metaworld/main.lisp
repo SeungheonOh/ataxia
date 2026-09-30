@@ -7,7 +7,7 @@
        (screen-sharing-p (not (eq backend :headless)))
        (state-file (%meta-state-path standalone)))
   (when assistant-p (asdf:load-system "ataxia-assistant/metaworld"))
-  (when status-bar-p (asdf:load-system "ataxia-rmlui/status-bar"))
+  (when status-bar-p (asdf:load-system "ataxia-web/status-bar"))
   (when screen-sharing-p (asdf:load-system "ataxia-screencast"))
   (let* ((factory (lambda () (make-metaworld :damage-debug-p damage-debug-p
                                              :standalone standalone :state-file state-file)))
@@ -20,7 +20,7 @@
          (progn
            (ataxia.kernel:start-kernel kernel)
            (when status-bar-p
-             (uiop:symbol-call :ataxia.world.shell :enable-rmlui-status-bar
+             (uiop:symbol-call :ataxia.world.web.shell :enable-web-status-bar
                                (ataxia.kernel:kernel-world kernel)))
            (when xwayland-p
              (ataxia.kernel:enable-xwayland kernel)

@@ -1,0 +1,25 @@
+(load (merge-pathnames "system-support.lisp" *load-truename*))
+(asdf:load-system "ataxia-atlas-world")
+(let* ((world (ataxia.atlas-world:make-atlas-world))
+       (kernel (ataxia.kernel:create-kernel world :backend :headless :headless-width 800 :headless-height 600))
+       (component nil) (baseline nil) (done nil))
+ (unwind-protect
+  (progn
+   (ataxia.kernel:start-kernel kernel)
+   (setf component (ataxia.atlas-world:atlas-object-component
+                    (first (loop for v being the hash-values of (ataxia.atlas-world::%world-output-components world) collect v))))
+   (assert (typep component 'ataxia.world.web.ui:document-component))
+   (let ((timer (ataxia.runtime:add-event-loop-timer (ataxia.kernel:kernel-runtime kernel)
+                 (lambda (source)
+                   (assert (null (ataxia.world.web:web-component-error component)))
+                   (let ((stats (ataxia.world.web:web-component-stats component)))
+                     (assert (plusp (getf stats :paints)))
+                     (assert (eq :dma-buf (getf stats :transport)))
+                     (assert (zerop (getf stats :uploaded-bytes)))
+                     (if baseline
+                         (progn (assert (= (getf baseline :paints) (getf stats :paints))) (setf done t))
+                         (progn (setf baseline stats) (ataxia.runtime:update-event-loop-timer source 1000)))) 0))))
+     (ataxia.runtime:update-event-loop-timer timer 2000))
+   (ataxia.kernel:run-kernel kernel :run-for 4d0)
+   (assert done) (format t "PASS: Atlas default HTML panel renders DMA-BUF and idles without repaint.~%"))
+  (ataxia.kernel:destroy-kernel kernel :atlas-html-test)))

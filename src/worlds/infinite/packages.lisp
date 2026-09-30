@@ -47,7 +47,8 @@
    #:bind-agent-widget-event
    #:agent-widget-events
 )
-  (:import-from #:ataxia.world.slint #:make-agent-widget #:show-notification)
+  (:import-from #:ataxia.world.slint #:make-agent-widget)
+  (:import-from #:ataxia.world.web.ui #:show-notification)
   (:export
    #:infinite-world
    #:make-infinite-world

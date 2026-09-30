@@ -1,6 +1,7 @@
 ;;;; Full assistant and shell lifecycle on plain Infinite World, without Metaworld.
 (load (merge-pathnames "system-support.lisp" *load-truename*))
 (asdf:load-system "ataxia-assistant/infinite-world")
+(asdf:load-system "ataxia-rmlui/status-bar")
 
 (defpackage #:ataxia.test.assistant-infinite
   (:use #:cl #:ataxia.world)

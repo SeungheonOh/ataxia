@@ -23,39 +23,39 @@
          (pages (max 1 (ceiling (length groups) 6)))
          (page (max 0 (min (1- pages) (getf state :page)))))
     (setf (getf state :group) (getf selected :id) (getf state :page) page)
-    (set-widget-text popup "location" (if (getf navigation :active)
+    (set-shell-text popup "location" (if (getf navigation :active)
                                         (format nil "You are in ~A / Workspace ~D" (getf navigation :name) (getf navigation :selected))
                                         "You are in the overview"))
-    (set-widget-text popup "group-title" (or (getf selected :name) "No workspace groups"))
-    (set-widget-style popup "group-remove" "display" (if (getf selected :removable) "block" "none"))
-    (set-widget-text popup "group-page" (format nil "~D / ~D" (1+ page) pages))
-    (set-widget-style popup "group-paging" "display" (if (> pages 1) "flex" "none"))
+    (set-shell-text popup "group-title" (or (getf selected :name) "No workspace groups"))
+    (set-shell-style popup "group-remove" "display" (if (getf selected :removable) "block" "none"))
+    (set-shell-text popup "group-page" (format nil "~D / ~D" (1+ page) pages))
+    (set-shell-style popup "group-paging" "display" (if (> pages 1) "flex" "none"))
     (dotimes (i 6)
       (let ((entry (nth (+ (* page 6) i) groups)) (id (format nil "group~D" i)))
-        (set-widget-style popup id "display" (if entry "block" "none"))
+        (set-shell-style popup id "display" (if entry "block" "none"))
         (when entry
-          (set-widget-text popup id (short-ui-text (getf entry :name) 23))
-          (cache-widget-value popup (list :group i) (eql (getf entry :id) (getf selected :id))
-            (lambda (component) (ataxia.world.rmlui:set-rmlui-class component id "selected"
+          (set-shell-text popup id (short-ui-text (getf entry :name) 23))
+          (cache-shell-value popup (list :group i) (eql (getf entry :id) (getf selected :id))
+            (lambda (component) (set-shell-class component id "selected"
                                  (eql (getf entry :id) (getf selected :id))))))))
     (loop for number from 1 to 9
           for entry = (find number (getf selected :workspaces) :key (lambda (x) (getf x :number)))
           for count = (getf entry :count 0)
           for current = (and (eql (getf selected :id) (getf navigation :group)) (= number (getf navigation :selected 0))) do
-      (set-widget-style popup (format nil "workspace-card~D" number) "display"
+      (set-shell-style popup (format nil "workspace-card~D" number) "display"
                         (if (member number visible) "block" "none"))
-      (set-widget-style popup (format nil "workspace-remove~D" number) "display"
+      (set-shell-style popup (format nil "workspace-remove~D" number) "display"
                         (if (and (member number visible) (getf entry :removable)) "block" "none"))
-      (set-widget-text popup (format nil "workspace-name~D" number) (format nil "Workspace ~D" number))
-      (set-widget-text popup (format nil "workspace-detail~D" number)
+      (set-shell-text popup (format nil "workspace-name~D" number) (format nil "Workspace ~D" number))
+      (set-shell-text popup (format nil "workspace-detail~D" number)
                        (if current "Current workspace" (if (zerop count) "Empty" (format nil "~D item~:P" count))))
-      (set-widget-text popup (format nil "workspace-preview~D" number)
+      (set-shell-text popup (format nil "workspace-preview~D" number)
                        (short-ui-text (or (first (getf entry :titles)) "") 24))
-      (cache-widget-value popup (list :workspace number) (list (not (null selected)) current)
+      (cache-shell-value popup (list :workspace number) (list (not (null selected)) current)
         (lambda (component)
-          (ataxia.world.rmlui:set-rmlui-class component (format nil "workspace~D" number) "selected" current))))
-    (set-widget-style popup "workspace-grid" "display" (if selected "flex" "none"))
-    (set-widget-style popup "workspace-new" "display" (if (%next-empty-workspace selected) "block" "none"))))
+          (set-shell-class component (format nil "workspace~D" number) "selected" current))))
+    (set-shell-style popup "workspace-grid" "display" (if selected "flex" "none"))
+    (set-shell-style popup "workspace-new" "display" (if (%next-empty-workspace selected) "block" "none"))))
 
 (defun %choose-workspace (world popup number)
   (let* ((state (%workspace-popup-state popup)) (output (overlay-output popup))

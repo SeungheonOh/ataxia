@@ -703,7 +703,7 @@
   input)
 
 (defmethod ataxia.kernel:world-client-request :around
-    ((world metaworld) (application ataxia.kernel:wayland-application) request)
+    ((world metaworld) (application ataxia.kernel:interactable) request)
   (let* ((window (find-canvas-window world application))
          (group (and window (object-subworld world window))))
     (when (and window (typep request '(or ataxia.kernel:move-client-request
@@ -787,7 +787,7 @@
   window)
 
 (defmethod ataxia.kernel:world-register-object :after
-    ((world metaworld) (application ataxia.kernel:wayland-application))
+    ((world metaworld) (application ataxia.kernel:interactable))
   (let ((window (find-canvas-window world application)))
     (when window
       (%meta-install-engagement-hooks window)
@@ -813,7 +813,7 @@
       (%meta-adopt-window world window))))
 
 (defmethod ataxia.kernel:world-object-changed :after ((world metaworld) object change)
-  (when (typep object 'ataxia.kernel:wayland-application)
+  (when (typep object 'ataxia.kernel:interactable)
     (let ((window (find-canvas-window world object)))
       (when window
         (when (eq :mapped (ataxia.kernel:object-change-kind change))
@@ -822,7 +822,7 @@
         (%meta-changed world)))))
 
 (defmethod ataxia.kernel:world-object-invalidated :around ((world metaworld) object invalidation)
-  (let* ((window (and (typep object 'ataxia.kernel:wayland-application) (find-canvas-window world object)))
+  (let* ((window (and (typep object 'ataxia.kernel:interactable) (find-canvas-window world object)))
          (geometry (and window (object-subworld world window) (%meta-object-geometry window))))
     (call-next-method)
     (when geometry
@@ -837,7 +837,7 @@
   object)
 
 (defmethod ataxia.kernel:world-unregister-object :before
-    ((world metaworld) (application ataxia.kernel:wayland-application) reason)
+    ((world metaworld) (application ataxia.kernel:interactable) reason)
   (declare (ignore reason))
   (let* ((window (find-canvas-window world application))
          (group (and window (object-subworld world window))))
@@ -911,7 +911,7 @@
       (%meta-focus world (subworld-member-object member) seat nil))))
 
 (defmethod ataxia.kernel:world-unregister-object :after
-    ((world metaworld) (application ataxia.kernel:wayland-application) reason)
+    ((world metaworld) (application ataxia.kernel:interactable) reason)
   (declare (ignore application reason))
   (dolist (group (metaworld-subworlds world))
     (%meta-raise-floating world group)))

@@ -9,47 +9,6 @@
 (defconstant +view-shift-ramp-distance+ 150d0)
 (defconstant +view-shift-max-speed+ 900d0)
 
-(defparameter +view-shift-ui-source+
-  "export component ViewShiftHud inherits Window {
-    background: transparent;
-    in property <float> anchor-x: 80;
-    in property <float> anchor-y: 80;
-    in property <float> cursor-x: 80;
-    in property <float> cursor-y: 80;
-
-    private property <float> delta-x: root.cursor-x - root.anchor-x;
-    private property <float> delta-y: root.cursor-y - root.anchor-y;
-    private property <length> anchor-left: root.anchor-x * 1px;
-    private property <length> anchor-top: root.anchor-y * 1px;
-    private property <length> distance: sqrt(root.delta-x * root.delta-x
-                                             + root.delta-y * root.delta-y) * 1px;
-    private property <angle> direction: atan2(root.delta-y, root.delta-x);
-    // Anchor, velocity direction and dead-zone boundary are the only marks.
-    // The contrasting backing keeps them visible over arbitrary client pixels.
-    Rectangle {
-        x: root.anchor-left; y: root.anchor-top - 1.5px;
-        width: root.distance; height: 3px; background: #ffffff;
-        transform-rotation: root.direction;
-        transform-origin: { x: 0px, y: 1.5px };
-        visible: root.distance > 4px;
-        Rectangle { y: 1px; width: parent.width; height: 1px; background: #161616; }
-    }
-    Rectangle {
-        x: root.anchor-left - 43px; y: root.anchor-top - 43px;
-        width: 86px; height: 86px; border-radius: 43px;
-        border-width: 3px; border-color: #ffffff; background: transparent;
-        Rectangle {
-            x: 1px; y: 1px; width: 84px; height: 84px; border-radius: 42px;
-            border-width: 1px; border-color: #161616; background: transparent;
-        }
-    }
-    Rectangle {
-        x: root.anchor-left - 3px; y: root.anchor-top - 3px;
-        width: 6px; height: 6px;
-        background: #161616; border-width: 1px; border-color: #ffffff;
-    }
-  }")
-
 (defclass %view-shift-state ()
   ((output-state :initarg :output-state :reader %view-shift-output-state)
    (anchor-x :initarg :anchor-x :reader %view-shift-anchor-x)
@@ -63,12 +22,12 @@
 (defun %set-view-shift-properties (shift cursor-x cursor-y)
   (let ((component
           (overlay-component (%view-shift-overlay shift))))
-    (ataxia.world.slint:set-slint-property
+    (ataxia.world:ui-set-property
      component "anchor-x" (%view-shift-anchor-x shift))
-    (ataxia.world.slint:set-slint-property
+    (ataxia.world:ui-set-property
      component "anchor-y" (%view-shift-anchor-y shift))
-    (ataxia.world.slint:set-slint-property component "cursor-x" cursor-x)
-    (ataxia.world.slint:set-slint-property component "cursor-y" cursor-y))
+    (ataxia.world:ui-set-property component "cursor-x" cursor-x)
+    (ataxia.world:ui-set-property component "cursor-y" cursor-y))
   shift)
 
 (defun %make-view-shift-overlay (world state)
@@ -79,17 +38,17 @@
       (handler-case
           (progn
             (setf component
-                  (ataxia.world.slint:make-slint-component
-                   :source +view-shift-ui-source+
-                   :source-path "ataxia-view-shift-hud.slint"
+                  (ataxia.world.web.ui:make-ui-component
+                   :world world
+                   :source-path (asdf:system-relative-pathname "ataxia-infinite-world" "src/worlds/infinite/view-shift.html")
                    :component-name "ViewShiftHud"
                    :width width :height height
                    :scale (ataxia.kernel:output-scale output))
                   overlay
-                  (make-overlay
-                   component output 0d0 0d0 width height
+                  (make-instance 'ataxia.world.web.ui:document-overlay
+                   :component component :output output :x 0d0 :y 0d0 :width width :height height
                    :layer 1900 :visible-p t :opacity 1d0))
-            (ataxia.world.slint:set-slint-component-invalidator
+            (ataxia.world:ui-set-invalidator
              component
              (lambda (ignored)
                (declare (ignore ignored))
@@ -100,8 +59,8 @@
           (unless (and overlay
                        (member overlay (world-overlays world) :test #'eq))
             (when component
-              (ataxia.world.slint:set-slint-component-invalidator component nil)
-              (ataxia.world.slint:destroy-slint-component component)))
+              (ataxia.world:ui-set-invalidator component nil)
+              (ataxia.world:ui-destroy component)))
           (error cause))))
     overlay))
 
@@ -114,9 +73,9 @@
         (%damage-overlay world overlay)
         (setf (overlay-width overlay) width
               (overlay-height overlay) height)
-        (ataxia.world.slint:resize-slint-component
+        (ataxia.world:ui-resize
          (overlay-component overlay) width height
-         :scale (ataxia.world.slint:slint-component-scale
+         :scale (ataxia.world:ui-raster-scale
                  (overlay-component overlay)))
         (%damage-overlay world overlay)))
     (%set-view-shift-properties

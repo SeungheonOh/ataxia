@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en"><head><title>Ataxia assistant</title><style>
+body { margin:0; width:100%; height:100%; font-size:14px; }
+div { display:block; box-sizing:border-box; }
+#panel { width:100%; height:100%; padding:0 var(--column-gap); border:var(--frame) solid var(--ink); display:flex; flex-direction:column; }
+#header, #header-actions, #identity, #controls, #compose-actions, #footer, #connection-actions { display:flex; flex-wrap:wrap; align-items:center; gap:0 var(--column-gap); flex-shrink:0; }
+#header { padding:var(--gap) 0; }
+#heading { font-size:var(--heading); font-weight:bold; }
+#state { font-size:12px; margin-top:0; }
+#header-actions { margin-left:auto; min-width:0; }
+#identity { min-width:0; }
+#heading { white-space:nowrap; }
+#close { padding:0; font-size:12px; }
+#project { display:block; box-sizing:border-box; margin:0; width:100%; height:var(--field-height); padding:0 var(--inset); border:var(--frame) solid var(--ink); font-size:12px; flex-shrink:0; }
+#conversation { flex:1; min-height:0; width:100%; overflow-y:auto; padding:var(--gap) 0; }
+#transcript { line-height:16px; word-break:break-word; }
+.chat-message { margin-bottom:var(--gap); }
+.chat-role { font-size:12px; font-weight:bold; margin-bottom:0; }
+.chat-user-text { white-space:pre-wrap; }
+.md-paragraph { margin-bottom:0; }
+.md-heading { font-weight:bold; margin-top:0; margin-bottom:0; line-height:16px; }
+.md-h1 { font-size:14px; } .md-h2 { font-size:16px; } .md-h3 { font-size:14px; }
+.md-strong { font-weight:bold; } .md-em { font-style:italic; }
+.md-code { font-size:12px; padding:0; }
+.md-code-block { margin:0; padding:0 var(--inset); }
+.md-code-label { font-size:11px; margin-bottom:0; }
+.md-pre { font-size:12px; line-height:16px; white-space:pre-wrap; }
+.md-list-row { display:flex; align-items:flex-start; gap:0 var(--gap); margin-bottom:0; }
+.md-marker { display:block; width:16px; flex-shrink:0; }
+.md-list-body { flex:1; min-width:0; }
+.md-quote { border-left:var(--frame) solid var(--ink); padding:0 var(--inset); margin:0; }
+.md-rule { border-top:var(--frame) solid var(--ink); margin:0; }
+.md-table { margin:0; border:var(--frame) solid var(--ink); }
+.md-table-row { display:flex; border-bottom:var(--frame) solid var(--ink); }
+.md-table-heading { font-weight:bold; }
+.md-table-cell { flex:1; min-width:0; padding:0 var(--inset); font-size:12px; }
+#plan { display:none; white-space:pre-wrap; font-size:12px; line-height:16px; margin-top:0; }
+#activity { display:none; font-size:12px; line-height:16px; margin:0; }
+#request { display:none; border:var(--frame) solid var(--ink); padding:0 var(--inset); margin:0; }
+#question { white-space:pre-wrap; line-height:16px; margin-bottom:0; }
+#choices { display:flex; flex-direction:column; gap:0; }
+.choice { display:none; width:100%; height:auto; min-height:var(--control); line-height:16px; padding:0; text-align:left; white-space:normal; }
+#controls { display:none; flex-wrap:wrap; margin:0; }
+#pause, #stop { font-size:12px; }
+#compose { margin:0; flex-shrink:0; }
+#message { display:block; box-sizing:border-box; width:100%; height:80px; padding:0 var(--inset); border:var(--frame) solid var(--ink); font-size:14px; line-height:16px; }
+#compose-actions { flex-wrap:wrap; padding:var(--gap) 0 0; }
+#settings-open, #fast-toggle, #talk, #mic-mute { font-size:12px; }
+#settings-open { max-width:190px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+#voice-controls { display:none; align-items:center; gap:0 var(--column-gap); flex-wrap:wrap; }
+#mic-status { font-size:12px; }
+#voice-caption { display:none; max-height:48px; overflow-y:auto; font-size:12px; white-space:pre-wrap; word-break:break-word; }
+#fast-toggle.enabled { background:var(--ink); color:var(--paper); }
+#send { margin-left:auto; font-size:12px; }
+#footer { flex-wrap:wrap; padding:0 0 var(--gap); font-size:12px; }
+#details { margin-left:auto; font-size:12px; }
+#hint { flex:1; min-width:0; font-size:12px; }
+#limits { display:none; font-size:10px; line-height:16px; margin-top:0; }
+#connection-actions { display:none; margin:0; }
+#login, #retry { font-size:12px; }
+.small #hint { max-width:180px; white-space:normal; }
+#model-settings { display:none; margin-bottom:var(--gap); }
+.setting { display:flex; align-items:center; gap:0 var(--column-gap); margin-bottom:4px; }
+.setting-label { width:56px; flex-shrink:0; font-size:12px; }
+#model-field, #effort-field { position:relative; flex:1; min-width:0; height:var(--field-height); }
+select { appearance:none; padding:0 var(--inset); display:block; width:100%; height:var(--field-height); box-sizing:border-box; border:var(--frame) solid var(--ink); font-size:12px; }
+#model-chevron, #effort-chevron { position:absolute; top:0; right:var(--gap); pointer-events:none; }
+select option { display:block; padding:0 var(--inset); }
+#settings-actions { display:flex; align-items:center; gap:0 var(--column-gap); }
+#models-load, #settings-done { font-size:12px; }
+#settings-done { margin-left:auto; }
+#model-note { display:none; font-size:12px; }
+</style><meta charset="utf-8"><link rel="stylesheet" href="../web/ui/document.css"><script src="../web/ui/document.js" defer="defer"></script></head><body class="shell assistant-panel" data-model="state"><div id="panel">
+<div id="header"><div id="identity"><div><div id="heading">Assistant</div><div id="state">Ready</div></div></div><div id="header-actions"><button id="close">Close</button></div></div>
+<input id="project" type="text" data-value="project" placeholder="Working directory">
+<div id="conversation"><div id="transcript" data-html="transcript"></div><div id="plan"></div><div id="activity"></div>
+<div id="connection-actions"><button id="login">Sign in</button><button id="retry">Retry</button></div>
+<div id="request"><div id="question"></div><div id="choices"><button id="choice0" class="choice"></button><button id="choice1" class="choice"></button><button id="choice2" class="choice"></button><button id="choice3" class="choice"></button><button id="choice4" class="choice"></button><button id="choice5" class="choice"></button></div></div><div id="limits"></div></div>
+<div id="controls"><button id="pause">Pause</button><button id="stop">Stop</button></div>
+<div id="compose"><div id="model-settings">
+<div id="model-setting" class="setting"><div class="setting-label">Model</div><div id="model-field" data-html="model_options"><select id="model-select" data-value="selected_model"><option value="">Codex default</option></select><div id="model-chevron">▾</div></div></div>
+<div id="effort-setting" class="setting"><div class="setting-label">Effort</div><div id="effort-field" data-html="effort_options"><select id="effort-select" data-value="selected_effort"><option value="">Auto</option></select><div id="effort-chevron">▾</div></div></div>
+<div id="model-note"></div><div id="settings-actions"><button id="models-load">Connect</button><button id="settings-done">Done</button></div>
+</div><div id="voice-controls"><div id="mic-status">Microphone off</div><button id="mic-mute">Mute mic</button></div><div id="voice-caption"></div>
+<textarea id="message" data-value="message" autofocus="autofocus" placeholder="Describe a task…"></textarea>
+<div id="compose-actions"><button id="settings-open">Model settings</button><button id="fast-toggle" data-disabled="fast_disabled">Fast off</button><button id="talk">Voice</button><button id="send">Send</button></div></div>
+<div id="footer"><div id="hint">Ctrl+Enter send · Esc close</div><button id="details">Details</button></div>
+</div><script>document.addEventListener('ui-submit',()=>{ataxiaUiSend('model:message',document.getElementById('message').value);ataxiaUiSend('send',null);});</script></body></html>

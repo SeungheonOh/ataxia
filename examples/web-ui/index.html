@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ataxia · Browser UI</title>
+<style>
+:root { font:16px/1.25 monospace; color:#fff; background:#111; }
+* { box-sizing:border-box; } body { margin:0; } header {padding:4px 12px;border-bottom:2px solid;}
+main { display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:8px 12px; }
+h2,p {font:inherit;margin:0 0 8px;} section+section {border-left:2px dotted;padding-left:12px;}
+button,input,select {font:inherit;border:0;border-radius:0;color:inherit;background:inherit;padding:0 4px;}
+button:hover,button:focus-visible {background:#fff;color:#111;outline:0;} input {border-bottom:1px solid;width:100%;}
+#animation {height:4px;background:currentColor;transform-origin:left;}
+.animate #animation {animation:grow .6s ease-in-out;} @keyframes grow {from{transform:scaleX(.1)}to{transform:scaleX(1)}}
+</style>
+<header>Browser UI / React + Svelte</header><main><section id="react"></section><section id="svelte"></section></main>
+<div id="animation"></div><script type="module" src="./app.js"></script></html>

@@ -1,5 +1,6 @@
 (load (merge-pathnames "support.lisp" *load-truename*))
 (asdf:load-system "ataxia-assistant/metaworld")
+(asdf:load-system "ataxia-rmlui/status-bar")
 (in-package #:ataxia.infinite-world)
 (load (merge-pathnames "assistant-voice-fixture.lisp" *load-truename*))
 (setf ataxia.assistant::*assistant-command* (list "env" "ATAXIA_VOICE_FIXTURE=1" "sbcl" "--noinform" "--disable-debugger" "--script"

@@ -1,6 +1,6 @@
 (in-package #:ataxia.world.shell)
 
-(defclass rmlui-shell-popup (rmlui-widget)
+(defclass shell-popup (shell-widget)
   ((kind :initform :apps :accessor %shell-popup-kind)
    (bar :initform nil :accessor %shell-popup-bar)
    (entries :initform nil :accessor %shell-popup-entries)
@@ -10,8 +10,8 @@
    (search-focused-p :initform t :accessor %shell-search-focused-p)))
 
 (defun %shell-class (popup name value)
-  (cache-widget-value popup (list :class name) value
-               (lambda (component) (ataxia.world.rmlui:set-rmlui-class component "panel" name value))))
+  (cache-shell-value popup (list :class name) value
+               (lambda (component) (set-shell-class component "panel" name value))))
 (defun %bar-close-popup (world bar)
   (let ((popup (%bar-popup bar)))
     (when popup
@@ -29,7 +29,7 @@
                (size (ecase kind (:apps '(400d0 180d0)) (:power '(340d0 132d0))
                                (:spaces '(560d0 260d0)) (:media '(380d0 84d0)) (:clipboard '(560d0 180d0))))
                (width (max 1d0 (min (first size) (- ow 16d0))))
-               (preferred (gethash :preferred-height (widget-cache popup) (second size)))
+               (preferred (gethash :preferred-height (shell-cache popup) (second size)))
                (height (max 1d0 (min (+ preferred (if (and (eq kind :clipboard) (< width 480d0)
                                                                           (%shell-popup-matches popup)) 48d0 0d0))
                                      (- oh 18d0))))
@@ -42,25 +42,25 @@
             ;; RmlUi's nested scroll/flex percentage widths need a definite
             ;; containing width on the stacked narrow layout.
             (dolist (id '("body" "groups" "workspaces" "workspace-grid"))
-              (set-widget-style popup id "width"
+              (set-shell-style popup id "width"
                 (if (< width 480d0) (format nil "~Ddp" (max 1 (floor (- width 18d0))))
                     (if (equal id "groups") "160dp" "auto"))))))))))
 (defun %bar-update-power-popup (popup power)
   (let ((capacity (getf power :capacity)) (health (getf power :health))
         (cycles (getf power :cycles)) (tone (%bar-power-tone power)))
-    (set-widget-text popup "percent" (if capacity (format nil "~D%" capacity) (if (eq :ac (getf power :status)) "AC" "—")))
-    (set-widget-text popup "state" (case (getf power :status)
+    (set-shell-text popup "percent" (if capacity (format nil "~D%" capacity) (if (eq :ac (getf power :status)) "AC" "—")))
+    (set-shell-text popup "state" (case (getf power :status)
                                      (:full "Fully charged") (:paused "Not charging")
                                      (t (%bar-power-status power))))
-    (set-widget-text popup "estimate" (if (getf power :minutes) (%bar-power-estimate power) ""))
-    (set-widget-style popup "estimate" "display" (if (getf power :minutes) "block" "none"))
-    (set-widget-text popup "health" (if health (format nil "~D% of design" health) "Unavailable"))
-    (set-widget-text popup "cycles" (if cycles (princ-to-string cycles) "Unavailable"))
-    (set-widget-text popup "source" (if (or (getf power :online) (eq :ac (getf power :status))) "AC adapter" "Battery"))
-    (set-widget-text popup "note" (case tone (:critical "Battery is very low. Connect your charger soon.")
+    (set-shell-text popup "estimate" (if (getf power :minutes) (%bar-power-estimate power) ""))
+    (set-shell-style popup "estimate" "display" (if (getf power :minutes) "block" "none"))
+    (set-shell-text popup "health" (if health (format nil "~D% of design" health) "Unavailable"))
+    (set-shell-text popup "cycles" (if cycles (princ-to-string cycles) "Unavailable"))
+    (set-shell-text popup "source" (if (or (getf power :online) (eq :ac (getf power :status))) "AC adapter" "Battery"))
+    (set-shell-text popup "note" (case tone (:critical "Battery is very low. Connect your charger soon.")
                                  (:low "Battery is running low.")
                                  (t "")))
-    (set-widget-style popup "note" "display" (if (member tone '(:low :critical)) "block" "none"))
+    (set-shell-style popup "note" "display" (if (member tone '(:low :critical)) "block" "none"))
     (%shell-class popup "low" (eq tone :low))
     (%shell-class popup "critical" (eq tone :critical))
     (%power-popup-height popup)))
@@ -76,25 +76,25 @@
   (let ((count (min 6 (max 0 (- (length (%shell-popup-matches popup)) (* 6 (%shell-popup-page popup)))))))
     (setf (%shell-popup-selected popup) (max 0 (min (1- count) index)))
     (loop for i below 6 do
-      (cache-widget-value popup (list :selected i) (= i (%shell-popup-selected popup))
-                   (lambda (component) (ataxia.world.rmlui:set-rmlui-class component (format nil "app~D" i) "selected" (= i (%shell-popup-selected popup))))))
+      (cache-shell-value popup (list :selected i) (= i (%shell-popup-selected popup))
+                   (lambda (component) (set-shell-class component (format nil "app~D" i) "selected" (= i (%shell-popup-selected popup))))))
     (when (eq :clipboard (%shell-popup-kind popup))
       (let ((entry (nth (+ (* 6 (%shell-popup-page popup)) (%shell-popup-selected popup))
                         (%shell-popup-matches popup))))
         ;; Bound layout work while retaining line breaks; copying uses the full entry.
-        (set-widget-text popup "preview" (if entry (short-ui-text entry 2048) ""))))))
+        (set-shell-text popup "preview" (if entry (short-ui-text entry 2048) ""))))))
 (defun %shell-results (popup)
   (let* ((matches (%shell-popup-matches popup)) (count (length matches))
          (pages (max 1 (ceiling count 6)))
          (page (max 0 (min (1- pages) (%shell-popup-page popup)))))
     (setf (%shell-popup-page popup) page)
-    (set-widget-text popup "count" (format nil "~D application~:P" count))
-    (set-widget-text popup "page" (format nil "~D / ~D" (1+ page) pages))
-    (set-widget-style popup "empty" "display" (if (zerop count) "block" "none"))
+    (set-shell-text popup "count" (format nil "~D application~:P" count))
+    (set-shell-text popup "page" (format nil "~D / ~D" (1+ page) pages))
+    (set-shell-style popup "empty" "display" (if (zerop count) "block" "none"))
     (loop for i below 6 for entry = (nth (+ (* page 6) i) matches) do
-      (set-widget-style popup (format nil "app~D" i) "display" (if entry "flex" "none"))
+      (set-shell-style popup (format nil "app~D" i) "display" (if entry "flex" "none"))
       (when entry
-        (set-widget-text popup (format nil "name~D" i) (getf entry :name))))
+        (set-shell-text popup (format nil "name~D" i) (getf entry :name))))
     (%shell-select popup 0)))
 (defun %shell-search (popup query)
   (let ((query (string-trim '(#\Space #\Tab) query)))
@@ -118,14 +118,8 @@
     (when (and existing (eq kind (%shell-popup-kind existing))) (return-from %bar-toggle-popup nil)))
   (let* ((output (overlay-output bar))
          (seat (world-seat-on-output world output))
-         (path (asdf:system-relative-pathname "ataxia-rmlui"
-                 (format nil "src/world/rmlui/status-bar/~A.rml"
-                         (ecase kind (:apps "menu") (:power "power") (:spaces "workspaces")
-                                     (:media "media") (:clipboard "clipboard")))))
-         (popup (create-agent-widget 'rmlui-shell-popup world (uiop:read-file-string path)
-                                      :component-factory #'ataxia.world.rmlui:make-shell-rmlui-component
-                                      :source-path (namestring path) :output (overlay-output bar)
-                                      :width 400d0 :height 180d0 :layer 1300)))
+         (popup (make-shell-widget (world-service world :shell) world kind
+                                   :output output :width 400d0 :height 180d0 :layer 1300)))
     (setf (%shell-popup-kind popup) kind (%shell-popup-bar popup) bar (%bar-popup bar) popup)
     (handler-case
         (progn
@@ -138,7 +132,7 @@
                 ((member kind '(:spaces :media :clipboard)) (%initialize-extra-popup world popup))
                 (t
                 (setf (%shell-popup-entries popup) (%shell-apps world (overlay-output bar)))
-                (ataxia.world.rmlui:set-rmlui-model (overlay-component popup) "query" "")
+                (set-shell-model (overlay-component popup) "query" "")
                 (bind-agent-widget-event popup "model:query"
                                          (lambda (widget event) (%shell-search widget (agent-widget-event-value event))))
                 (bind-agent-widget-event popup "search:focus"
@@ -164,7 +158,7 @@
 (defun %shell-popup-on-seat (world seat)
   (let ((output (world-seat-output world seat)))
     (find-if (lambda (widget)
-               (and (typep widget 'rmlui-shell-popup) (eq output (overlay-output widget))))
+               (and (typep widget 'shell-popup) (eq output (overlay-output widget))))
              (world-overlays world))))
 (defun %shell-pointer-inside-p (world seat widget)
   (multiple-value-bind (x y) (world-pointer-position world seat)

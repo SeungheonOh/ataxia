@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Battery and power</title><style>
+body { margin:0; width:100%; height:100%; font-size:13px; }
+div { display:block; box-sizing:border-box; }
+#panel { width:100%; height:100%; padding:0 var(--inset); border:var(--frame) solid var(--ink); display:flex; flex-direction:column; }
+#heading, #summary, .row, #brightness-controls, #sleep-row { display:flex; align-items:center; gap:0 var(--gap); }
+#heading { height:var(--control); flex-shrink:0; font-size:var(--heading); font-weight:bold; }
+#close { margin-left:auto; font-size:13px; font-weight:normal; }
+#content { flex:1; min-height:0; overflow-y:auto; }
+#percent { flex-shrink:0; font-weight:bold; }
+#state { min-width:0; }
+#estimate, #note, .hint { font-size:11px; line-height:16px; word-break:break-word; }
+#estimate, #note, #brightness-note { display:none; }
+.row { font-size:12px; gap:0 var(--column-gap); }
+.row .label { width:88px; flex-shrink:0; }
+.value { flex:1; min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+#brightness-row { font-weight:bold; }
+#brightness { flex:1; min-width:0; height:var(--field-height); }
+#brightness:disabled { opacity:0.4; }
+.step { width:var(--control); text-align:center; }
+#sleep-row { align-items:flex-start; gap:0 var(--column-gap); }
+#sleep-note { flex:1; min-width:0; }
+</style><link rel="stylesheet" href="../ui/document.css"><style>#close { width:auto; min-width:5ch; }</style><script src="../ui/document.js" defer="defer"></script></head><body class="shell shell-power"><div id="panel">
+<div id="heading"><div>Battery &amp; power</div><input class="button" id="close" type="button" value="Close"></div>
+<div id="content"><div id="summary"><div id="percent">100%</div><div id="state">Fully charged</div></div>
+<div id="estimate"></div>
+<div id="details"><div class="row"><div class="label">Health</div><div id="health" class="value">Unavailable</div></div>
+<div class="row"><div class="label">Cycles</div><div id="cycles" class="value">Unavailable</div></div>
+<div class="row"><div class="label">Source</div><div id="source" class="value">AC adapter</div></div></div>
+<div id="note"></div>
+<div id="brightness-row" class="row"><div class="label">Brightness</div><div id="brightness-value" class="value">Unavailable</div></div>
+<div id="brightness-controls"><input class="button step" id="brightness-down" type="button" value="−" data-disabled="brightness_disabled">
+<input id="brightness" type="range" min="1" max="100" step="1" value="1" data-value="brightness" data-disabled="brightness_disabled">
+<input class="button step" id="brightness-up" type="button" value="+" data-disabled="brightness_disabled"></div>
+<div id="brightness-note" class="hint"></div>
+<div id="sleep-row"><input class="button" id="sleep" type="button" value="Sleep" data-disabled="sleep_disabled">
+<div id="sleep-note" class="hint">Suspend · power button wakes</div></div>
+</div></div></body></html>

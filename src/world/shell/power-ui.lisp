@@ -2,16 +2,16 @@
 (in-package #:ataxia.world.shell)
 
 (defun %power-model (popup name value)
-  (cache-widget-value popup (list :model name) value
-    (lambda (component) (ataxia.world.rmlui:set-rmlui-model component name value))))
+  (cache-shell-value popup (list :model name) value
+    (lambda (component) (set-shell-model component name value))))
 (defun %power-popup-height (popup)
   ;; Size from cached presentation state; never poll the backend during layout.
-  (setf (gethash :preferred-height (widget-cache popup))
+  (setf (gethash :preferred-height (shell-cache popup))
         (+ 132d0
-           (if (equal "block" (gethash '("estimate" "display") (widget-cache popup))) 16d0 0d0)
-           (if (equal "block" (gethash '("note" "display") (widget-cache popup))) 32d0 0d0)
-           (if (equal "block" (gethash '("brightness-note" "display") (widget-cache popup))) 32d0 0d0)
-           (if (gethash :sleep-detail (widget-cache popup)) 32d0 0d0))))
+           (if (equal "block" (gethash '("estimate" "display") (shell-cache popup))) 16d0 0d0)
+           (if (equal "block" (gethash '("note" "display") (shell-cache popup))) 32d0 0d0)
+           (if (equal "block" (gethash '("brightness-note" "display") (shell-cache popup))) 32d0 0d0)
+           (if (gethash :sleep-detail (shell-cache popup)) 32d0 0d0))))
 (defun %update-power-controls (popup service view)
   (let* ((backlight (getf view :backlight))
          (percent (or (shell-service-brightness-target service) (getf backlight :percent)))
@@ -24,18 +24,18 @@
     ;; native value without changing our cached last confirmed percentage.
     (when (and slider-value
                (not (equal slider-value
-                           (ataxia.world.rmlui:rmlui-model-value (overlay-component popup) "brightness"))))
-      (ataxia.world.rmlui:set-rmlui-model (overlay-component popup) "brightness" slider-value))
-    (set-widget-text popup "brightness-value" (if percent (format nil "~D%" percent) "Unavailable"))
-    (set-widget-text popup "brightness-note"
+                           (shell-model-value (overlay-component popup) "brightness"))))
+      (set-shell-model (overlay-component popup) "brightness" slider-value))
+    (set-shell-text popup "brightness-value" (if percent (format nil "~D%" percent) "Unavailable"))
+    (set-shell-text popup "brightness-note"
                      (or (getf view :brightness-error)
                          (if backlight "" "No controllable display backlight")))
-    (set-widget-style popup "brightness-note" "display"
+    (set-shell-style popup "brightness-note" "display"
                       (if (or (getf view :brightness-error) (null backlight)) "block" "none"))
-    (setf (gethash :sleep-detail (widget-cache popup))
+    (setf (gethash :sleep-detail (shell-cache popup))
           (or (getf view :suspend-error) (not (eq capability :yes))))
-    (set-widget-text popup "sleep" (if sleeping "Sleeping…" "Sleep"))
-    (set-widget-text popup "sleep-note"
+    (set-shell-text popup "sleep" (if sleeping "Sleeping…" "Sleep"))
+    (set-shell-text popup "sleep-note"
                      (or (getf view :suspend-error)
                          (case capability
                            (:yes "Suspend · power button wakes")
@@ -70,7 +70,7 @@
       (%sync-power-controls world service))))
 (defun %bind-power-controls (world popup)
   (let ((service (world-service world :shell)))
-    (ataxia.world.rmlui:set-rmlui-model (overlay-component popup) "brightness" "1")
+    (set-shell-model (overlay-component popup) "brightness" "1")
     (dolist (entry '(("brightness-down" . -5) ("brightness-up" . 5)))
       (let ((step (cdr entry)))
         (bind-agent-widget-event popup (car entry)

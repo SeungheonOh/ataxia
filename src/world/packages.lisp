@@ -6,6 +6,8 @@
 (defpackage #:ataxia.world
   (:use #:cl)
   (:export
+   #:ui-application #:ui-application-component #:make-ui-application
+   #:show-ui-application #:hide-ui-application #:remove-ui-application
    #:attach-world-service #:detach-world-service #:world-service
    #:service-quiescing #:service-output-added #:service-output-changed
    #:service-output-removing #:service-object-removing #:service-object-changed

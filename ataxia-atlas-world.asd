@@ -5,7 +5,7 @@
   :version "0.1.0"
   :author "Ataxia contributors"
   :license "Unspecified"
-  :depends-on ("ataxia-world" "ataxia-slint" "ataxia-sly-control" "cffi")
+  :depends-on ("ataxia-world" "ataxia-slint" "ataxia-web/ui" "ataxia-sly-control" "cffi")
   :serial t
   :components
   ((:module "src/worlds/atlas"
@@ -14,6 +14,6 @@
      (:file "model")
      (:file "packing")
      (:file "renderer")
-     (:file "slint")
+     (:file "ui")
      (:file "world")
      (:file "main")))))

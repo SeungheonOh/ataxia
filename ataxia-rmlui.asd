@@ -14,22 +14,9 @@
   :components ())
 
 (asdf:defsystem "ataxia-rmlui/status-bar"
-  :description "Portable RmlUi status bar and application menu"
-  :depends-on ("ataxia-rmlui")
-  :serial t
-  :components ((:file "src/world/rmlui/status-bar/packages")
-               (:file "src/world/rmlui/status-bar/status-bar")
-               (:file "src/world/rmlui/status-bar/controls")
-               (:file "src/world/rmlui/status-bar/audio")
-               (:file "src/world/rmlui/status-bar/media")
-               (:file "src/world/rmlui/status-bar/power")
-               (:file "src/world/rmlui/status-bar/brightness")
-               (:file "src/world/rmlui/status-bar/power-control")
-               (:file "src/world/rmlui/status-bar/menu")
-               (:file "src/world/rmlui/status-bar/workspaces")
-               (:file "src/world/rmlui/status-bar/power-ui")
-               (:file "src/world/rmlui/status-bar/clipboard")
-               (:file "src/world/rmlui/status-bar/controls-ui")))
+  :description "RmlUi presentation for the shared World shell"
+  :depends-on ("ataxia-rmlui" "ataxia-shell")
+  :components ((:file "src/world/rmlui/status-bar/presentation")))
 
 (asdf:defsystem "ataxia-rmlui/status-bar/infinite-world"
   :description "Compatibility names for Infinite World shell callers"

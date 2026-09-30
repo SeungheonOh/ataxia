@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Ataxia applications</title><style>
+body { margin:0; width:100%; height:100%; font-size:13px; }
+div { display:block; box-sizing:border-box; }
+#panel { width:100%; height:100%; padding:0 var(--inset); border:var(--frame) solid var(--ink); display:flex; flex-direction:column; gap:var(--section); }
+#panel { overflow-y:auto; }
+#heading { display:flex; align-items:center; justify-content:space-between; gap:0 var(--gap); height:var(--control); flex-shrink:0; }
+#hello { font-size:var(--heading); font-weight:bold; }
+#close, #prev, #next { width:var(--control); padding:0; text-align:center; font-size:14px; }
+#search { display:block; box-sizing:border-box; width:100%; height:var(--field-height); padding:0 var(--inset); font-size:13px; border:var(--frame) solid var(--ink); flex-shrink:0; }
+#section { display:flex; align-items:center; justify-content:space-between; flex-shrink:0; font-size:11px; }
+#grid { display:flex; flex-direction:column; flex:none; min-height:96px; flex-shrink:0; }
+.app { width:100%; display:flex; align-items:center; text-align:left; }
+.name { flex:1; min-width:0; text-align:left; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; font-size:13px; }
+#empty { display:none; padding:0; }
+#footer { display:flex; flex-wrap:wrap; justify-content:flex-start; align-items:center; gap:0 var(--gap); flex-shrink:0; }
+#page { white-space:nowrap; flex-shrink:0; font-size:11px; margin-left:auto; }
+#hint { font-size:10px; }
+.small #hint { display:none; }
+</style><link rel="stylesheet" href="../ui/document.css"><style>#close { width:auto; min-width:5ch; }</style><script src="../ui/document.js" defer="defer"></script></head><body class="shell shell-menu">
+<div id="panel"><div id="heading"><div><div id="hello">Applications</div></div><button id="close">Close</button></div>
+<input id="search" type="text" data-value="query" autofocus="autofocus" placeholder="Search applications…">
+<div id="section"><div id="section-name">Installed</div><div id="count">All applications</div></div>
+<div id="grid">
+<button id="app0" class="app selected"><div id="name0" class="name">Application</div></button>
+<button id="app1" class="app"><div id="name1" class="name">Application</div></button>
+<button id="app2" class="app"><div id="name2" class="name">Application</div></button>
+<button id="app3" class="app"><div id="name3" class="name">Application</div></button>
+<button id="app4" class="app"><div id="name4" class="name">Application</div></button>
+<button id="app5" class="app"><div id="name5" class="name">Application</div></button>
+<div id="empty">No applications match your search.</div></div>
+<div id="footer"><button id="overview">Overview</button><button id="power">Power</button><div id="page">1 / 1</div><button id="prev">‹</button><button id="next">›</button></div>
+<div id="hint">↑ ↓ Select Enter Open Esc Close</div></div></body></html>

@@ -2,7 +2,7 @@
 
 (defvar *meta-property-cache* (make-hash-table :test #'eq :weakness :key))
 
-(defclass meta-chrome-widget (agent-widget)
+(defclass meta-chrome-widget (ataxia.world.web.ui:document-widget)
   ((present-p :initform nil :accessor %meta-chrome-present-p)))
 
 (defclass meta-title-widget (meta-chrome-widget) ())
@@ -27,8 +27,8 @@
 (defun %meta-ui-widget (world name component state width height &key (layer 1200))
   (ataxia.world:create-agent-widget
    (if (string= name "header") 'meta-title-widget 'meta-chrome-widget) world ""
-   :component-factory #'ataxia.world.slint:make-slint-component
-   :source-path (format nil "ataxia-builtin:~A" name) :component-name component
+   :component-factory (lambda (&rest args) (apply #'ataxia.world.web.ui:make-ui-component :world world args))
+   :source-path (namestring (asdf:system-relative-pathname "ataxia-metaworld" (format nil "src/worlds/metaworld/~A.html" name))) :component-name component
    :output (%canvas-output-output state) :width width :height height :layer layer
    :visible-p nil :opacity 0d0))
 
@@ -139,12 +139,13 @@
           (bind-agent-widget-event
            widget "enter"
            (lambda (source event)
-             (declare (ignore source event))
+             (declare (ignore event))
+             (let ((*meta-action-seat* (ataxia.world.web.ui:input-seat (overlay-component source))))
              (if (eq group (%meta-view-active view))
                  (if (%meta-standalone world)
                      (%meta-command world *meta-action-seat* "mode-canvas")
                      (leave-subworld world *meta-action-seat*))
-                 (enter-subworld world group *meta-action-seat*))))
+                 (enter-subworld world group *meta-action-seat*)))))
           (setf (gethash group headers) widget)))))
 
 (defun %meta-toolbar (world state)
@@ -154,8 +155,7 @@
           (bind-agent-widget-event
            widget "action"
            (lambda (source event)
-             (declare (ignore source))
-             (%meta-command world *meta-action-seat* (agent-widget-event-value event))))
+             (%meta-command world (ataxia.world.web.ui:input-seat (overlay-component source)) (agent-widget-event-value event))))
           (setf (%meta-view-panel view) widget)))))
 
 (defun %meta-prune-widgets (world)
@@ -284,8 +284,8 @@
          (state (or (and seat-state (%canvas-seat-output seat-state)) (%first-output-state world)))
          (widget (ataxia.world:create-agent-widget
                   'meta-note world ""
-                  :component-factory #'ataxia.world.slint:make-slint-component
-                  :source-path "ataxia-builtin:note"
+                  :component-factory (lambda (&rest args) (apply #'ataxia.world.web.ui:make-ui-component :world world args))
+                  :source-path (namestring (asdf:system-relative-pathname "ataxia-metaworld" "src/worlds/metaworld/note.html"))
                   :component-name "MetaworldNote" :output (%canvas-output-output state)
                   :width 430d0 :height 320d0 :layer 20)))
     (setf (%meta-note-content widget)
@@ -300,8 +300,9 @@
      widget "close"
      (lambda (source event)
        (declare (ignore event))
-       (%meta-focus world source *meta-action-seat*)
-       (%meta-command world *meta-action-seat* "close")))
+       (let ((seat (ataxia.world.web.ui:input-seat (overlay-component source))))
+         (%meta-focus world source seat)
+         (%meta-command world seat "close"))))
     (setf (gethash widget (%meta-spatial-widgets world))
           (or geometry (list (+ (%canvas-output-camera-x state) 120d0)
                              (+ (%canvas-output-camera-y state) 150d0) 430d0 320d0)))

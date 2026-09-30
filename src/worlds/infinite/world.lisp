@@ -1010,7 +1010,8 @@
     (loop for seat being the hash-keys of table using (hash-value drop)
           do (when (> now (second drop)) (remhash seat table)))
     (when (plusp (hash-table-count table))
-      (let ((client (ataxia.kernel:application-client-identity application)))
+      (let ((client (and (typep application 'ataxia.kernel:wayland-application)
+                         (ataxia.kernel:application-client-identity application))))
         (loop for seat being the hash-keys of table using (hash-value drop)
               when (eql client (first drop))
                 do (remhash seat table)
@@ -1190,7 +1191,7 @@
   world)
 
 (defmethod ataxia.kernel:world-register-object
-    ((world infinite-world) (application ataxia.kernel:wayland-application))
+    ((world infinite-world) (application ataxia.kernel:interactable))
   (unless (find-canvas-window world application)
     (let ((window (%make-window-binding world application)))
       (setf (gethash application (%world-windows world)) window
@@ -1199,6 +1200,7 @@
             (%canvas-window-mapped-p window)
             (ataxia.kernel:application-mapped-p application))
       (when (%canvas-window-mapped-p window)
+        (%sync-window-size window)
         (run-window-animation-hook world window :visible))
       (%damage-window world window)
       (%update-window-membership world window)
@@ -1206,7 +1208,7 @@
   application)
 
 (defmethod ataxia.kernel:world-unregister-object
-    ((world infinite-world) (application ataxia.kernel:wayland-application) reason)
+    ((world infinite-world) (application ataxia.kernel:interactable) reason)
   (declare (ignore reason))
   (let ((window (find-canvas-window world application)))
     (when window
@@ -1236,7 +1238,7 @@
 (defmethod ataxia.kernel:world-object-changed
     ((world infinite-world) object change)
   (typecase object
-    (ataxia.kernel:wayland-application
+    (ataxia.kernel:interactable
      (let ((window (find-canvas-window world object)))
        (when window
          (case (ataxia.kernel:object-change-kind change)
@@ -1270,7 +1272,7 @@
 (defmethod ataxia.kernel:world-object-invalidated
     ((world infinite-world) object invalidation)
   (typecase object
-    (ataxia.kernel:wayland-application
+    (ataxia.kernel:interactable
      (let ((window (find-canvas-window world object)))
        (when window
          (let ((size-changed-p nil))
@@ -1557,7 +1559,7 @@
   request)
 
 (defmethod ataxia.kernel:world-client-request
-    ((world infinite-world) (application ataxia.kernel:wayland-application)
+    ((world infinite-world) (application ataxia.kernel:interactable)
      request)
   (let ((window (find-canvas-window world application)))
     (when window

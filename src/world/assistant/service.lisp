@@ -2,13 +2,9 @@
 (in-package #:ataxia.assistant)
 
 (defun %assistant-bind-bar (controller bar)
-  ;; Existing bars may predate loading the optional assistant.
-  (let ((path (asdf:system-relative-pathname
-               "ataxia-rmlui" "src/world/rmlui/status-bar/bar.rml"))
-        (world (assistant-controller-world controller)))
-    (ataxia.world.rmlui:reload-rmlui-component
-     (overlay-component bar) (uiop:read-file-string path) :source-path (namestring path))
-    (clrhash (widget-cache bar))
+  (let ((world (assistant-controller-world controller)))
+    (ataxia.world.shell:set-shell-style bar "assistant" "display" "block")
+    (ataxia.world.shell:set-shell-text bar "assistant" (%assistant-label controller))
     (bind-agent-widget-event
      bar "assistant"
      (lambda (widget event)
@@ -92,12 +88,12 @@
         (setf (assistant-controller-timer controller) nil))
       (clear-shortcuts (assistant-controller-shortcuts controller))
       (dolist (bar (status-bars world))
-        (set-widget-style bar "assistant" "display" "none"))
+        (ataxia.world.shell:set-shell-style bar "assistant" "display" "none"))
       (detach-world-service world :assistant)))
   world)
 
 (defmethod initialize-status-bar-controls
-    ((world ataxia.kernel:world) (bar rmlui-status-bar))
+    ((world ataxia.kernel:world) (bar shell-status-bar))
   (let ((controller (world-service world :assistant)))
     (when controller (%assistant-bind-bar controller bar))))
 

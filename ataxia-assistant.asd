@@ -1,7 +1,7 @@
 (asdf:defsystem "ataxia-assistant"
   :description "World-owned Codex assistant, native desktop tools and optional talk mode"
   :version "0.1.0"
-  :depends-on ("ataxia-agent" "ataxia-rmlui/status-bar")
+  :depends-on ("ataxia-agent" "ataxia-web/ui" "ataxia-shell")
   :serial t
   :components ((:module "src/world/assistant"
                 :serial t

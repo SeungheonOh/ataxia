@@ -1,5 +1,5 @@
 (in-package #:ataxia.assistant)
-(defclass assistant-panel (rmlui-widget) ())
+(defclass assistant-panel (document-widget) ())
 (defun %assistant-settings-open-p (controller)
   (let ((panel (assistant-controller-panel controller)))
     (and panel (gethash :settings-open (widget-cache panel)))))
@@ -8,14 +8,14 @@
     (when panel
       (remhash :settings-open (widget-cache panel))
       (set-widget-style panel "model-settings" "display" "none")
-      (ataxia.world.rmlui:set-rmlui-class (overlay-component panel) "settings-open" "selected" nil))))
+      (ataxia.world.web.ui:set-ui-class (overlay-component panel) "settings-open" "selected" nil))))
 (defun %assistant-open-settings (controller)
   (let ((panel (assistant-controller-panel controller)))
     (unless panel (error "Open the assistant before changing settings."))
     (setf (gethash :settings-open (widget-cache panel)) t)
     (%assistant-render-models controller panel)
     (set-widget-style panel "model-settings" "display" "block")
-    (ataxia.world.rmlui:set-rmlui-class (overlay-component panel) "settings-open" "selected" t)
+    (ataxia.world.web.ui:set-ui-class (overlay-component panel) "settings-open" "selected" t)
     panel))
 (defun %assistant-dismiss (controller)
   (if (%assistant-settings-open-p controller) (%assistant-close-settings controller)
@@ -39,19 +39,12 @@
                           (eq (world-seat-focus world seat) (assistant-controller-panel controller))))
         :press-handler (lambda (target seat input)
                          (declare (ignore target seat input))
-                         (%assistant-ui-call controller
-                           (lambda ()
-                             (%assistant-submit controller (%assistant-read-composer controller))
-                             (%assistant-clear-composer controller)))))
+                         ;; Browser input is asynchronous. Queue submission behind
+                         ;; pending DOM edits instead of reading a stale host model.
+                         (ataxia.world.web:evaluate-web-javascript
+                          (overlay-component (assistant-controller-panel controller))
+                          "document.dispatchEvent(new CustomEvent('ui-submit'))")))
       :if-exists :replace)))
-(defvar *assistant-fonts-loaded* nil)
-(defun %assistant-load-fonts ()
-  (unless *assistant-fonts-loaded*
-    (dolist (name '("dejavu/DejaVuSans-Bold.ttf" "dejavu/DejaVuSansMono.ttf" "liberation/LiberationSans-Italic.ttf"))
-      (let ((path (merge-pathnames name #P"/usr/share/fonts/truetype/")))
-        (when (probe-file path) (ataxia.world.rmlui:load-rmlui-font path))))
-    (setf *assistant-fonts-loaded* t)))
-
 (defun %assistant-label (controller)
   (cond ((eq :listening (assistant-controller-microphone controller)) "Listening")
         ((eq :muted (assistant-controller-microphone controller)) "Voice · mic muted")
@@ -68,7 +61,7 @@
         (let ((width (max 1d0 (min 480d0 (- ow 24d0)))) (height (max 1d0 (min 760d0 (- oh 76d0)))))
           (position-widget world panel (max 0d0 (- ow width 8d0)) (max 0d0 (- oh height 52d0)) width height)
           (cache-widget-value panel :small (< width 360d0)
-            (lambda (component) (ataxia.world.rmlui:set-rmlui-class component "panel" "small" (< width 360d0)))))))))
+            (lambda (component) (ataxia.world.web.ui:set-ui-class component "panel" "small" (< width 360d0)))))))))
 (defun %assistant-question (request)
   (let* ((params (getf request :params)) (questions (%assistant-field params "questions"))
          (index (getf request :index 0)))
@@ -90,9 +83,9 @@
 (defun %assistant-render (controller)
   (let ((world (assistant-controller-world controller)) (panel (assistant-controller-panel controller)))
     (dolist (bar (world-overlays world))
-      (when (typep bar 'rmlui-status-bar)
-        (set-widget-style bar "assistant" "display" "block")
-        (set-widget-text bar "assistant" (%assistant-label controller))))
+      (when (typep bar 'shell-status-bar)
+        (ataxia.world.shell:set-shell-style bar "assistant" "display" "block")
+        (ataxia.world.shell:set-shell-text bar "assistant" (%assistant-label controller))))
     (when panel
       (%assistant-position controller)
       (when (%assistant-settings-open-p controller)
@@ -120,7 +113,7 @@
       (set-widget-text panel "state" (let ((label (%assistant-label controller))) (if (equal label "Assistant") "Ready" label)))
       (cache-widget-value panel :transcript (%assistant-visible-messages controller)
         (lambda (component)
-          (ataxia.world.rmlui:set-rmlui-model component "transcript"
+          (ataxia.world.web.ui:set-ui-model component "transcript"
             (%assistant-transcript-rml (%assistant-visible-messages controller)))))
       (set-widget-text panel "plan"
         (with-output-to-string (out)
@@ -136,9 +129,9 @@
         (set-widget-text panel "settings-open" (if model (%assistant-model-name controller model) "Model settings"))
         (set-widget-text panel "fast-toggle" (if (equal "default" (%assistant-effective-tier controller)) "Fast off" "Fast on"))
         (cache-widget-value panel :fast-enabled (not (null fast))
-          (lambda (component) (ataxia.world.rmlui:set-rmlui-model component "fast_disabled" (null fast))))
+          (lambda (component) (ataxia.world.web.ui:set-ui-model component "fast_disabled" (null fast))))
         (cache-widget-value panel :fast-active (not (equal "default" (%assistant-effective-tier controller)))
-          (lambda (component) (ataxia.world.rmlui:set-rmlui-class component "fast-toggle" "enabled"
+          (lambda (component) (ataxia.world.web.ui:set-ui-class component "fast-toggle" "enabled"
                                 (not (equal "default" (%assistant-effective-tier controller)))))))
       (set-widget-text panel "talk" (if (eq :off (assistant-controller-microphone controller)) "Voice" "End voice"))
       (set-widget-style panel "voice-controls" "display" (if (eq :off (assistant-controller-microphone controller)) "none" "flex"))
@@ -195,14 +188,14 @@
                     (write-string "</select><div id=\"model-chevron\">▾</div>" out))))
     (cache-widget-value panel :model-options options
       (lambda (component)
-        (ataxia.world.rmlui:set-rmlui-model component "model_options" options)))
+        (ataxia.world.web.ui:set-ui-model component "model_options" options)))
     ;; Set only on a change; this leaves a keyboard-open dropdown undisturbed.
     (cache-widget-value panel :selected-model (list selected options)
-      (lambda (component) (ataxia.world.rmlui:set-rmlui-model component "selected_model" (or selected ""))))
+      (lambda (component) (ataxia.world.web.ui:set-ui-model component "selected_model" (or selected ""))))
     (cache-widget-value panel :effort-options effort-options
-      (lambda (component) (ataxia.world.rmlui:set-rmlui-model component "effort_options" effort-options)))
+      (lambda (component) (ataxia.world.web.ui:set-ui-model component "effort_options" effort-options)))
     (cache-widget-value panel :selected-effort (list effort effort-options)
-      (lambda (component) (ataxia.world.rmlui:set-rmlui-model component "selected_effort" (or effort ""))))
+      (lambda (component) (ataxia.world.web.ui:set-ui-model component "selected_effort" (or effort ""))))
     (set-widget-style panel "models-load" "display" (if (plusp (length models)) "none" "block"))
     (set-widget-text panel "models-load" (if (eq :connecting (assistant-controller-connection controller)) "…" "Connect"))
     (set-widget-style panel "effort-setting" "display" (if (plusp (length models)) "flex" "none"))
@@ -266,10 +259,10 @@
   (%assistant-refresh controller t))
 (defun %assistant-read-composer (controller)
   (let ((panel (assistant-controller-panel controller)))
-    (if panel (or (ataxia.world.rmlui:rmlui-model-value (overlay-component panel) "message") "") "")))
+    (if panel (or (ataxia.world.web.ui:ui-model-value (overlay-component panel) "message") "") "")))
 (defun %assistant-clear-composer (controller)
   (when (assistant-controller-panel controller)
-    (ataxia.world.rmlui:set-rmlui-model (overlay-component (assistant-controller-panel controller)) "message" "")))
+    (ataxia.world.web.ui:set-ui-model (overlay-component (assistant-controller-panel controller)) "message" "")))
 (defun %assistant-open (controller &optional seat)
   (let* ((world (assistant-controller-world controller)) (seat (or seat (assistant-controller-seat controller)
                                                                  (find-if-not #'agent-seat-p (world-seats world))))
@@ -281,14 +274,12 @@
     (let ((panel (assistant-controller-panel controller))
           (new-panel-p (null (assistant-controller-panel controller))))
       (unless panel
-        (%assistant-load-fonts)
-        (let ((path (asdf:system-relative-pathname "ataxia-assistant" "src/world/assistant/panel.rml")))
-          (setf panel (create-agent-widget 'assistant-panel world (uiop:read-file-string path)
-                      :component-factory #'ataxia.world.rmlui:make-shell-rmlui-component :source-path (namestring path)
+        (let ((path (asdf:system-relative-pathname "ataxia-assistant" "src/world/assistant/panel.html")))
+          (setf panel (ataxia.world.web.ui:make-ui-widget 'assistant-panel world path
                       :output output :width 480d0 :height 760d0 :layer 1400)
                 (assistant-controller-panel controller) panel))
-        (ataxia.world.rmlui:set-rmlui-model (overlay-component panel) "message" "")
-        (ataxia.world.rmlui:set-rmlui-model (overlay-component panel) "project" (assistant-controller-project controller))
+        (ataxia.world.web.ui:set-ui-model (overlay-component panel) "message" "")
+        (ataxia.world.web.ui:set-ui-model (overlay-component panel) "project" (assistant-controller-project controller))
         (%assistant-bind-panel-settings controller panel)
         (labels ((bind (id function)
                    (bind-agent-widget-event panel id (lambda (widget event) (declare (ignore widget event))

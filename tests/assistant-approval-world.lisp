@@ -1,5 +1,6 @@
 (load (merge-pathnames "support.lisp" *load-truename*))
 (asdf:load-system "ataxia-assistant/metaworld")
+(asdf:load-system "ataxia-rmlui/status-bar")
 (in-package #:ataxia.infinite-world)
 (setf ataxia.assistant::*assistant-command* (list "env" "ATAXIA_APPROVAL_FIXTURE=1" "sbcl" "--noinform" "--disable-debugger" "--script"
                            (namestring (asdf:system-relative-pathname "ataxia-assistant" "tests/assistant-mock-codex.lisp"))))

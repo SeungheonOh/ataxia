@@ -20,6 +20,7 @@
      (:file "widgets")
      (:file "desktop")
      (:file "services")
+     (:file "ui-application")
      (:file "shortcuts")
      (:file "animation")
      (:file "damage")

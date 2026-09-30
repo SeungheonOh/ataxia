@@ -1,7 +1,7 @@
 ;;;; Output-local shell presentation; the host owns desktop navigation policy.
 (in-package #:ataxia.world.shell)
 
-(defclass rmlui-status-bar (rmlui-widget)
+(defclass shell-status-bar (shell-widget)
   ((popup :initform nil :accessor %bar-popup)))
 (defstruct shell-service timer power brightness-target audio media clipboard
   osd-timer (osds (make-hash-table :test #'eq)) feedback-output
@@ -10,14 +10,14 @@
   (:documentation "Optional services can bind their controls when a bar is created.")
   (:method (world bar) (declare (ignore world bar)) nil))
 (defun status-bars (world)
-  (remove-if-not (lambda (widget) (typep widget 'rmlui-status-bar)) (world-overlays world)))
+  (remove-if-not (lambda (widget) (typep widget 'shell-status-bar)) (world-overlays world)))
 (defmethod service-output-insets ((service shell-service) world output)
   (declare (ignore service))
   (values 0d0 0d0 0d0
           (if (find output (status-bars world) :key #'overlay-output) 18d0 0d0)))
 (defun set-bar-class (bar name value)
-  (cache-widget-value bar (list :class name) value
-    (lambda (component) (ataxia.world.rmlui:set-rmlui-class component "bar" name value))))
+  (cache-shell-value bar (list :class name) value
+    (lambda (component) (set-shell-class component "bar" name value))))
 
 (defun %bar-sync (world bar output)
   (multiple-value-bind (width height) (output-logical-size output)
@@ -35,24 +35,24 @@
       (set-bar-class bar "compact" (< bar-width 1050d0))
       (set-bar-class bar "narrow" (< bar-width 680d0))
       (set-bar-class bar "tiny" tiny)
-      (set-widget-text bar "group"
+      (set-shell-text bar "group"
                        (if active
                            (format nil "~A / Workspace ~D ▾" (short-ui-text (getf navigation :name) 18) selected)
                            (if (world-supports-p world :shell-navigation) "Overview / Workspaces ▾" "Desktop")))
-      (set-widget-text bar "title"
+      (set-shell-text bar "title"
                  (short-ui-text
                   (if (window-application focused)
                       (or (ataxia.kernel:application-title (window-application focused)) "Untitled")
                       (if active (format nil "~A · workspace ~D" (getf navigation :name) selected)
                           "Desktop")) 90))
-      (set-widget-text bar "apps" (format nil "~D apps" (length (world-windows world))))
-      (set-widget-style bar "selection" "opacity" (if active "1" "0"))
+      (set-shell-text bar "apps" (format nil "~D apps" (length (world-windows world))))
+      (set-shell-style bar "selection" "opacity" (if active "1" "0"))
       (loop for position from 0 below 9 do
         (set-bar-class bar (format nil "position-~D" position) (= position (max 0 (- selected first-slot)))))
       (loop for index from 1 to 9 for id = (format nil "ws~D" index) do
-        (set-widget-style bar id "display" (if (<= first-slot index (min count (+ first-slot slots -1))) "block" "none"))
-        (cache-widget-value bar (list :selected index) (= index selected)
-                     (lambda (component) (ataxia.world.rmlui:set-rmlui-class component id "selected" (= index selected))))))))
+        (set-shell-style bar id "display" (if (<= first-slot index (min count (+ first-slot slots -1))) "block" "none"))
+        (cache-shell-value bar (list :selected index) (= index selected)
+                     (lambda (component) (set-shell-class component id "selected" (= index selected))))))))
 
 
 (defun %bar-maintenance-delay (now power-popup-p)
@@ -89,11 +89,8 @@
          (when (world-supports-p world :shell-navigation)
            (world-shell-action world output seat action number)))))))
 (defun %bar-create (world output)
-  (let* ((path (asdf:system-relative-pathname "ataxia-rmlui" "src/world/rmlui/status-bar/bar.rml"))
-         (bar (create-agent-widget 'rmlui-status-bar world (uiop:read-file-string path)
-                                   :component-factory #'ataxia.world.rmlui:make-shell-rmlui-component
-                                   :source-path (namestring path) :output output
-                                   :width 1000d0 :height 18d0 :layer 1150)))
+  (let ((bar (make-shell-widget (world-service world :shell) world :bar
+                                :output output :width 1000d0 :height 18d0 :layer 1150)))
     (dolist (entry '(("home" . :menu) ("power" . :power) ("group" . :spaces)
                      ("audio" . :media) ("media" . :media) ("clipboard" . :clipboard)
                      ("previous" . :previous) ("next" . :next)))
@@ -109,7 +106,7 @@
     (world-output-work-area-changed world output)
     bar))
 
-(defun disable-rmlui-status-bar (world &key (reflow-p t))
+(defun disable-status-bar (world &key (reflow-p t))
   "Remove the bars and their maintenance timer. Call on the World owner thread."
   (let ((service (world-service world :shell)))
     (when service (%stop-shell-controls world service))
@@ -122,11 +119,11 @@
     (remove-agent-widget world bar)
     (when reflow-p (world-output-work-area-changed world (overlay-output bar))))
   world)
-(defun enable-rmlui-status-bar (world &key (power-backend #'%system-power-action) (system-controls-p t))
-  "Install one responsive RmlUi bar per output. Repeated calls are safe."
+(defun enable-status-bar (world service &key (power-backend #'%system-power-action) (system-controls-p t))
+  "Install one responsive shell bar per output. Repeated calls are safe."
   (require-world-capabilities world :ui :desktop)
-  (disable-rmlui-status-bar world)
-  (let ((service (make-shell-service)))
+  (disable-status-bar world)
+  (let ((service service))
     (attach-world-service world :shell service)
     (handler-case
         (progn
@@ -140,7 +137,7 @@
                  (lambda (source) (%bar-maintain world source) 0)))
           (%bar-maintain world (shell-service-timer service))
           world)
-      (error (cause) (disable-rmlui-status-bar world) (error cause)))))
+      (error (cause) (disable-status-bar world) (error cause)))))
 
 (defmethod service-before-render ((service shell-service) world lease)
   (dolist (bar (status-bars world))
@@ -156,4 +153,4 @@
   (%sync-system-controls world service))
 (defmethod service-quiescing ((service shell-service) world reason)
   (declare (ignore reason))
-  (disable-rmlui-status-bar world :reflow-p nil))
+  (disable-status-bar world :reflow-p nil))

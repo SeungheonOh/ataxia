@@ -18,8 +18,9 @@ padding and gaps.
 
 ## Run
 
-Build the native libraries with `make`, using the same wlroots, Slint, and Lisp
-dependencies as the existing infinite world. Launch on Linux:
+Build the native libraries with `make`, including the Chromium/CEF helper for
+the default [HTML status bar and menus](WEB-UI.md). See that guide for browser
+dependencies and Ubuntu sandbox setup. Launch on Linux:
 
 ```sh
 sbcl --eval '(sb-int:set-floating-point-modes :traps nil)' --script scripts/run-metaworld.lisp
@@ -32,6 +33,10 @@ boundaries or a containing canvas. Switching modes through the attached controls
 replaces the World while retaining live Wayland clients. All live clients become
 available to the standalone layout; this is not a second compositor process.
 The Canvas action returns to the saved metaworld arrangement.
+
+The HTML shell starts on desktop backends with or without the assistant.
+`--no-status-bar` omits it; headless sessions enable it only when requested with
+`--status-bar` or the assistant.
 
 `--state-file PATH` selects a layout file, retained when returning from another
 mode. `--no-persist` disables persistence,

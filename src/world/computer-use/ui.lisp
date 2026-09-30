@@ -1,19 +1,18 @@
 (in-package #:ataxia.computer-use)
-(defclass computer-panel (rmlui-widget)
+(defclass computer-panel (document-widget)
   ((sessions :initform nil :accessor %computer-panel-sessions)))
-(defclass computer-cursor-label (rmlui-widget) ())
+(defclass computer-cursor-label (document-widget) ())
 (defmethod overlay-input-enabled-p ((widget computer-cursor-label)) nil)
 (defparameter +computer-colors+ '("#365dc0" "#35664f" "#9a651b" "#99517a"))
 (defparameter +computer-tints+ '((.21d0 .36d0 .75d0 1d0) (.21d0 .40d0 .31d0 1d0) (.60d0 .40d0 .11d0 1d0) (.60d0 .32d0 .48d0 1d0)))
 (defun %computer-color (session) (nth (mod (1- (computer-session-id session)) 4) +computer-colors+))
 (defun %computer-widget (class world file output width height layer)
   (let ((path (asdf:system-relative-pathname "ataxia-computer-use" (concatenate 'string "src/world/computer-use/" file))))
-    (create-agent-widget class world (uiop:read-file-string path)
-                          :source-path (namestring path) :output output :component-factory #'ataxia.world.rmlui:make-shell-rmlui-component
+    (ataxia.world.web.ui:make-ui-widget class world path :output output
                           :width width :height height :layer layer)))
 (defun %computer-create-panel (world output)
   (let* ((controller (%computer-controller world))
-         (panel (%computer-widget 'computer-panel world "panel.rml" output 380d0 110d0 1450)))
+         (panel (%computer-widget 'computer-panel world "panel.html" output 380d0 110d0 1450)))
     (push panel (computer-controller-panels controller))
     (bind-agent-widget-event panel "pause-all"
                              (lambda (widget event) (declare (ignore widget event))
@@ -76,14 +75,14 @@
                   (set-widget-text panel (format nil "stop~D" i) "Disconnect")
                   (%computer-update-cursor session))))))))
 (defun %computer-create-cursor (session)
-  (let ((cursor (%computer-widget 'computer-cursor-label (computer-session-world session) "cursor.rml"
+  (let ((cursor (%computer-widget 'computer-cursor-label (computer-session-world session) "cursor.html"
                                   (computer-session-output session) 180d0 34d0 1500)))
     (setf (computer-session-cursor session) cursor)
     (set-widget-style cursor "" "--accent" (%computer-color session))
     (set-widget-text cursor "name" (short-ui-text (computer-session-name session) 24))
     (bind-agent-widget-event cursor "tag:animationend"
                              (lambda (widget event) (declare (ignore event))
-                               (ataxia.world.rmlui:set-rmlui-class (overlay-component widget) "tag" "clicked" nil)))
+                               (ataxia.world.web.ui:set-ui-class (overlay-component widget) "tag" "clicked" nil)))
     (%computer-update-cursor session)))
 (defun %computer-update-cursor (session)
   (let* ((world (computer-session-world session)) (state (%computer-seat-state session))

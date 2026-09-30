@@ -62,24 +62,3 @@
          (format t "PASS: real Metaworld status bar, repeated enable, workspace commands, responsive resize, zero settled frames, removal and quiesce cleanup.~%"))
     (setf (symbol-function 'ataxia.kernel::%render-output-frame) original)
     (ataxia.kernel:destroy-kernel kernel :status-bar-test-complete)))
-
-;; Exercise the entrypoint without the assistant: shell startup must not depend
-;; on an assistant service being loaded or enabled.
-(let ((original (symbol-function 'ataxia.kernel:run-kernel)))
-  (unwind-protect
-       (dolist (enabled '(t nil))
-         (let ((checked nil))
-           (setf (symbol-function 'ataxia.kernel:run-kernel)
-                 (lambda (kernel &rest arguments)
-                   (let ((world (ataxia.kernel:kernel-world kernel)))
-                     (assert (eq enabled (not (null (ataxia.world:world-service world :shell)))))
-                     (assert (= (if enabled 1 0) (length (ataxia.world.shell:status-bars world))))
-                     (setf checked t))
-                   (apply original kernel arguments)))
-           (assert (zerop (metaworld-main
-                           (list "--backend" "headless" "--no-sly" "--no-persist"
-                                 "--no-xwayland" "--no-screen-sharing" "--run-for" "0.2"
-                                 (if enabled "--status-bar" "--no-status-bar")))))
-           (assert checked)))
-    (setf (symbol-function 'ataxia.kernel:run-kernel) original)))
-(format t "PASS: status bar startup and explicit opt-out without the assistant.~%")

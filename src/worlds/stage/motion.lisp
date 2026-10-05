@@ -5,22 +5,26 @@
 ;;;; their momentum and interrupted tweens continue from what is on screen.
 ;;;; Springs use the closed-form damped oscillator: sampling is exact and
 ;;;; independent of the frame rate, and settled channels request no frames.
+;;;; Keyframe tracks are pure functions of time that animation layers sample on
+;;;; top of a property's value.
 
 (in-package #:ataxia.stage-world)
 
 (defstruct (motion (:constructor make-motion
-                       (kind &key (stiffness 170d0) (damping 26d0) (mass 1d0)
-                                  (duration 0.25d0) ease (delay 0d0) (repeat 0) (rest 0d0))))
+                       (kind &key stiffness damping mass duration ease points delay repeat rest)))
   "Immutable transition. EASE is a CSS cubic-bezier (X1 Y1 X2 Y2) or NIL for linear.
-A :DECAY motion coasts with its starting velocity and time constant DURATION, settling
-once less than REST remains. Tweens may REPEAT a number of extra times or :FOREVER,
-restarting from their start."
-  (kind :instant :type (member :instant :spring :tween :decay) :read-only t)
+A :CURVE runs like a tween along POINTS, its progress sampled evenly over DURATION, so
+any easing function the director can evaluate works. A :DECAY motion coasts with its
+starting velocity and time constant DURATION, settling once less than REST remains.
+Tweens and curves may REPEAT a number of extra times or :FOREVER, restarting from
+their start."
+  (kind :instant :type (member :instant :spring :tween :curve :decay) :read-only t)
   (stiffness 170d0 :type double-float :read-only t)
   (damping 26d0 :type double-float :read-only t)
   (mass 1d0 :type double-float :read-only t)
   (duration 0.25d0 :type double-float :read-only t)
   (ease nil :type list :read-only t)
+  (points #() :type simple-vector :read-only t)
   (delay 0d0 :type double-float :read-only t)
   (repeat 0 :type (or (integer 0) (eql :forever)) :read-only t)
   (rest 0d0 :type double-float :read-only t))
@@ -117,8 +121,17 @@ restarting from their start."
                         0d0
                         (/ (%bezier-slope y1 y2 parameter) slope))))))))
 
+(defun %curve-progress (points progress)
+  "Value at PROGRESS of POINTS, sampled evenly over 0..1, and its slope."
+  (let* ((last (1- (length points)))
+         (position (* (max 0d0 (min 1d0 progress)) last))
+         (index (min (1- last) (floor position)))
+         (low (svref points index))
+         (high (svref points (1+ index))))
+    (values (+ low (* (- high low) (- position index))) (* (- high low) last))))
+
 (defun %tween-state (motion start target elapsed)
-  "Value, velocity and completion of a possibly repeating tween."
+  "Value, velocity and completion of a possibly repeating tween or curve."
   (let* ((duration (motion-duration motion))
          (repeat (motion-repeat motion))
          (iteration (floor elapsed duration))
@@ -126,7 +139,10 @@ restarting from their start."
     (if done-p
         (values target 0d0 t)
         (multiple-value-bind (progress slope)
-            (%eased-progress (motion-ease motion) (/ (- elapsed (* iteration duration)) duration))
+            (let ((fraction (/ (- elapsed (* iteration duration)) duration)))
+              (if (eq (motion-kind motion) :curve)
+                  (%curve-progress (motion-points motion) fraction)
+                  (%eased-progress (motion-ease motion) fraction)))
           (let ((distance (- target start)))
             (values (+ start (* distance progress)) (/ (* distance slope) duration) nil))))))
 
@@ -142,7 +158,7 @@ restarting from their start."
          (unless (and (< (abs displacement) tolerance)
                       (< (abs velocity) (* 20d0 tolerance)))
            (values (+ target displacement) velocity))))
-      (:tween
+      ((:tween :curve)
        (multiple-value-bind (value velocity done-p) (%tween-state motion start target elapsed)
          (unless done-p (values value velocity))))
       (:decay
@@ -224,3 +240,57 @@ TIME-CONSTANT until less than REST units remain."
         (channel-velocity channel) (coerce velocity 'double-float)
         (channel-motion channel) nil)
   (channel-retarget channel (channel-target channel) motion time))
+
+;;; Keyframe tracks.
+
+(defstruct (track (:constructor make-track
+                      (keyframes offsets &key ease (duration 1d0) (delay 0d0) (iterations 1)
+                                           (direction :normal))))
+  "KEYFRAMES (numbers, or color vectors) at OFFSETS in 0..1 of each iteration,
+run ITERATIONS times (or :FOREVER) of DURATION seconds after DELAY. EASE, a CSS
+cubic-bezier or NIL, shapes each iteration's progress; values between keyframes are
+linear. DIRECTION is :NORMAL, :REVERSE, :ALTERNATE or :ALTERNATE-REVERSE."
+  (keyframes #() :type simple-vector :read-only t)
+  (offsets #() :type simple-vector :read-only t)
+  (ease nil :type list :read-only t)
+  (duration 1d0 :type double-float :read-only t)
+  (delay 0d0 :type double-float :read-only t)
+  (iterations 1 :type (or (integer 0) (eql :forever)) :read-only t)
+  (direction :normal :type (member :normal :reverse :alternate :alternate-reverse) :read-only t))
+
+(defun track-endless-p (track)
+  (eq (track-iterations track) :forever))
+
+(defun %lerp-value (from to fraction)
+  (if (vectorp from)
+      (map 'vector (lambda (low high) (+ low (* (- high low) fraction))) from to)
+      (+ from (* (- to from) fraction))))
+
+(defun track-sample (track elapsed)
+  "TRACK's value ELAPSED seconds after it started: :PENDING during its delay, :DONE
+once its iterations have run."
+  (let ((elapsed (- elapsed (track-delay track)))
+        (duration (track-duration track)))
+    (if (minusp elapsed)
+        :pending
+        (let ((iteration (floor elapsed duration))
+              (iterations (track-iterations track)))
+          (if (and (integerp iterations) (>= iteration iterations))
+              :done
+              (let* ((fraction (/ (- elapsed (* iteration duration)) duration))
+                     (backward-p (ecase (track-direction track)
+                                   (:normal nil)
+                                   (:reverse t)
+                                   (:alternate (oddp iteration))
+                                   (:alternate-reverse (evenp iteration))))
+                     (progress (%eased-progress (track-ease track)
+                                                (if backward-p (- 1d0 fraction) fraction)))
+                     (offsets (track-offsets track))
+                     (keyframes (track-keyframes track))
+                     (index (or (position-if (lambda (offset) (> offset progress)) offsets :start 1)
+                                (1- (length offsets))))
+                     (start (svref offsets (1- index)))
+                     (span (- (svref offsets index) start)))
+                ;; Easing that overshoots extrapolates the first or last segment, as CSS does.
+                (%lerp-value (svref keyframes (1- index)) (svref keyframes index)
+                             (if (plusp span) (/ (- progress start) span) 1d0))))))))

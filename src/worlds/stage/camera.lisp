@@ -49,34 +49,42 @@
   (let ((inverse (affine-invert (camera-transform stage-output))))
     (if inverse (affine-apply inverse x y) (values x y))))
 
+(defun %world-delta (camera dx dy zoom)
+  "World-space displacement shown as the screen-space (DX, DY) at ZOOM."
+  (let ((rotation (channel-value (stage-camera-rotation camera))))
+    (values (/ (- (* (cos rotation) dx) (* (sin rotation) dy)) zoom)
+            (/ (+ (* (sin rotation) dx) (* (cos rotation) dy)) zoom))))
+
 (defun %anchored-center (camera stage-output zoom)
   "Camera center keeping the anchor's world point under its screen point at ZOOM."
   (destructuring-bind (world-x world-y screen-x screen-y) (stage-camera-anchor camera)
     (multiple-value-bind (width height) (%camera-viewport stage-output)
-      (let* ((rotation (channel-value (stage-camera-rotation camera)))
-             (dx (/ (- screen-x (/ width 2d0)) zoom))
-             (dy (/ (- screen-y (/ height 2d0)) zoom)))
-        (values (- world-x (- (* (cos rotation) dx) (* (sin rotation) dy)))
-                (- world-y (+ (* (sin rotation) dx) (* (cos rotation) dy))))))))
+      (multiple-value-bind (dx dy)
+          (%world-delta camera (- screen-x (/ width 2d0)) (- screen-y (/ height 2d0)) zoom)
+        (values (- world-x dx) (- world-y dy))))))
 
 (defun %follow-anchor (camera stage-output)
-  (multiple-value-bind (x y) (%anchored-center camera stage-output (camera-zoom camera))
-    (channel-jump (stage-camera-x camera) x)
-    (channel-jump (stage-camera-y camera) y)))
+  "Keep the anchor under its screen point now, aiming x/y where it holds at the zoom target."
+  (let ((x (stage-camera-x camera))
+        (y (stage-camera-y camera)))
+    (multiple-value-bind (now-x now-y) (%anchored-center camera stage-output (camera-zoom camera))
+      (channel-jump x now-x)
+      (channel-jump y now-y))
+    (multiple-value-bind (target-x target-y)
+        (%anchored-center camera stage-output (exp (channel-target (stage-camera-zoom camera))))
+      (setf (channel-target x) target-x
+            (channel-target y) target-y))))
 
 (defun camera-sample (stage-output time)
-  "Advance STAGE-OUTPUT's camera to TIME. Return true while it moves."
+  "Advance STAGE-OUTPUT's camera to TIME."
   (let* ((camera (stage-output-camera stage-output))
-         (zooming-p (channel-sample (stage-camera-zoom camera) time))
-         (rotating-p (channel-sample (stage-camera-rotation camera) time)))
-    (if (stage-camera-anchor camera)
-        (progn
-          (%follow-anchor camera stage-output)
-          (unless zooming-p (setf (stage-camera-anchor camera) nil))
-          (or zooming-p rotating-p))
-        (let ((x-p (channel-sample (stage-camera-x camera) time))
-              (y-p (channel-sample (stage-camera-y camera) time)))
-          (or zooming-p rotating-p x-p y-p)))))
+         (zooming-p (channel-sample (stage-camera-zoom camera) time)))
+    (channel-sample (stage-camera-rotation camera) time)
+    (cond ((stage-camera-anchor camera)
+           (%follow-anchor camera stage-output)
+           (unless zooming-p (setf (stage-camera-anchor camera) nil)))
+          (t (channel-sample (stage-camera-x camera) time)
+             (channel-sample (stage-camera-y camera) time)))))
 
 (defun camera-moving-p (stage-output)
   (let ((camera (stage-output-camera stage-output)))
@@ -117,10 +125,7 @@
         (destructuring-bind (world-x world-y screen-x screen-y) (stage-camera-anchor camera)
           (setf (stage-camera-anchor camera) (list world-x world-y (+ screen-x dx) (+ screen-y dy)))
           (%follow-anchor camera stage-output))
-        (let* ((zoom (camera-zoom camera))
-               (rotation (channel-value (stage-camera-rotation camera)))
-               (world-dx (/ (- (* (cos rotation) dx) (* (sin rotation) dy)) zoom))
-               (world-dy (/ (+ (* (sin rotation) dx) (* (cos rotation) dy)) zoom)))
+        (multiple-value-bind (world-dx world-dy) (%world-delta camera dx dy (camera-zoom camera))
           (channel-jump (stage-camera-x camera) (- (channel-value (stage-camera-x camera)) world-dx))
           (channel-jump (stage-camera-y camera) (- (channel-value (stage-camera-y camera)) world-dy))))
     camera))
@@ -128,16 +133,12 @@
 (defun camera-fling (stage-output velocity-x velocity-y &optional (time (%now)))
   "Let the camera coast after a pan released with a screen-space velocity."
   (let* ((camera (stage-output-camera stage-output))
-         (zoom (camera-zoom camera))
-         (rotation (channel-value (stage-camera-rotation camera))))
+         (zoom (camera-zoom camera)))
     ;; Coast until less than half a screen pixel remains.
     (unless (stage-camera-anchor camera)
-      (channel-fling (stage-camera-x camera)
-                     (- (/ (- (* (cos rotation) velocity-x) (* (sin rotation) velocity-y)) zoom))
-                     +fling-time-constant+ (/ 0.5d0 zoom) time)
-      (channel-fling (stage-camera-y camera)
-                     (- (/ (+ (* (sin rotation) velocity-x) (* (cos rotation) velocity-y)) zoom))
-                     +fling-time-constant+ (/ 0.5d0 zoom) time))
+      (multiple-value-bind (world-x world-y) (%world-delta camera velocity-x velocity-y zoom)
+        (channel-fling (stage-camera-x camera) (- world-x) +fling-time-constant+ (/ 0.5d0 zoom) time)
+        (channel-fling (stage-camera-y camera) (- world-y) +fling-time-constant+ (/ 0.5d0 zoom) time)))
     camera))
 
 (defun camera-zoom-at (stage-output factor screen-x screen-y &key motion (time (%now)))
@@ -153,10 +154,6 @@
         (setf (stage-camera-anchor camera) (list world-x world-y screen-x screen-y))))
     (setf (stage-camera-placed-p camera) t)
     (channel-retarget zoom-channel (log target) motion time)
-    ;; Targets report where the camera settles; the samples derive x/y from the anchor.
-    (multiple-value-bind (x y) (%anchored-center camera stage-output target)
-      (setf (channel-target (stage-camera-x camera)) x
-            (channel-target (stage-camera-y camera)) y))
     (%follow-anchor camera stage-output)
     (unless (channel-active-p zoom-channel)
       (setf (stage-camera-anchor camera) nil))

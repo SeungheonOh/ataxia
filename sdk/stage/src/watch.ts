@@ -15,8 +15,13 @@ export class SourceWatcher {
 
   constructor(private readonly rebuild: () => void) {}
 
+  /**
+   * Watch INPUTS, as esbuild's metafile names them. Inputs in other namespaces
+   * ("ns:path") and esbuild's own ("<stdin>") are not files; watching where they
+   * would resolve, the working directory, would wake the director for nothing.
+   */
   track(inputs: string[]): void {
-    this.files = new Set(inputs.filter((input) => !input.includes("node_modules"))
+    this.files = new Set(inputs.filter((input) => !input.includes("node_modules") && !/^([\w-]+:|<)/.test(input))
                                .map((input) => resolve(input)));
     const directories = new Set([...this.files].map((file) => dirname(file)));
     for (const [directory, watcher] of this.watchers) {
@@ -27,9 +32,19 @@ export class SourceWatcher {
     }
     for (const directory of directories) {
       if (this.watchers.has(directory)) continue;
-      this.watchers.set(directory, watch(directory, (_event, name) => {
-        if (name && this.files.has(join(directory, name))) this.schedule();
-      }));
+      try {
+        const watcher = watch(directory, (_event, name) => {
+          if (name && this.files.has(join(directory, name))) this.schedule();
+        });
+        // A watched directory that disappears stops reporting; the next build tracks it again.
+        watcher.on("error", () => {
+          watcher.close();
+          this.watchers.delete(directory);
+        });
+        this.watchers.set(directory, watcher);
+      } catch {
+        // Gone before it could be watched; nothing in it can change the build.
+      }
     }
   }
 

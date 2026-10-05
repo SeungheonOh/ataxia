@@ -175,6 +175,7 @@ test-drag: all $(BUILD_DIR)/computer-use-client $(BUILD_DIR)/libataxia-synthetic
 .PHONY: test-screencast
 test-screencast: all $(BUILD_DIR)/computer-use-client
 	WLR_RENDERER=gles2 LD_LIBRARY_PATH='$(abspath $(BUILD_DIR)):$(PREFIX)/lib:$(LD_LIBRARY_PATH)' dbus-run-session -- sbcl --noinform --disable-debugger --eval '(sb-int:set-floating-point-modes :traps nil)' --script tests/screencast-world.lisp
+	WLR_RENDERER=gles2 LD_LIBRARY_PATH='$(abspath $(BUILD_DIR)):$(PREFIX)/lib:$(LD_LIBRARY_PATH)' dbus-run-session -- sbcl --noinform --disable-debugger --eval '(sb-int:set-floating-point-modes :traps nil)' --script tests/stage-screencast.lisp
 
 .PHONY: benchmark-desktop-idle
 benchmark-desktop-idle: all $(BUILD_DIR)/computer-use-client $(BUILD_DIR)/xwayland-client

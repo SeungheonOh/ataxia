@@ -1,9 +1,28 @@
+import type { LayoutBox } from "./layout.js";
 import type { WireEvent, WireValue } from "./protocol.js";
 
 export type Modifier = "shift" | "control" | "alt" | "logo";
 
+/** A rendered node, as refs and event targets see it. */
+export interface StageElement {
+  readonly id: number;
+  readonly type: string;
+  /** Its box in its parent's space once a <Box> laid it out, else null. */
+  readonly layout: LayoutBox | null;
+}
+
+/** Pointer events bubble from the node under the pointer through its ancestors, as in the DOM. */
+export interface StageBubblingEvent {
+  /** The node the event happened on. */
+  target: StageElement;
+  /** The node whose handler is running. */
+  currentTarget: StageElement;
+  /** Keep the event from reaching the ancestors of the current node. */
+  stopPropagation(): void;
+}
+
 /** Pointer position in every space a handler may need. */
-export interface StagePointerEvent {
+export interface StagePointerEvent extends StageBubblingEvent {
   /** Output under the pointer and the position in its logical pixels. */
   output: string;
   screenX: number;
@@ -22,6 +41,8 @@ export interface StagePointerEvent {
   button?: number;
   /** For bindings: the window under the pointer, if any. */
   window?: number | null;
+  /** For pointerenter and pointerleave: the node the pointer came from or went to. */
+  relatedTarget?: StageElement | null;
 }
 
 export interface StageWheelEvent extends StagePointerEvent {
@@ -73,17 +94,8 @@ export interface StageErrorEvent {
   message: string;
 }
 
-/** A shell navigation request, e.g. from the status bar's workspace buttons. */
-export interface StageNavigateEvent {
-  action: "workspace" | "select-workspace" | "previous" | "next" | "overview";
-  /** Output the request came from. */
-  output: string;
-  /** Target workspace for "workspace" and "select-workspace". */
-  workspace?: number | null;
-}
-
 export type StageEvent = StagePointerEvent | StageWheelEvent | StageGestureEvent | StageRequestEvent
-  | StageDragEvent | StageResizeEvent | StageMeasureEvent | StageErrorEvent | StageNavigateEvent;
+  | StageDragEvent | StageResizeEvent | StageMeasureEvent | StageErrorEvent;
 
 /** Convert a wire event's kebab-case fields into a handler argument. */
 export function toStageEvent(message: WireEvent): StageEvent {

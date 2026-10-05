@@ -94,9 +94,7 @@
 (defun %emit-progress (world node name &rest fields)
   "Send a coalesced progress event; only the latest per node survives a flush."
   (when (node-handles-p node name)
-    (%send world (list* :type "event" :node (stage-node-id node)
-                        :name (string-downcase (symbol-name name)) fields)
-           :coalesce (cons (stage-node-id node) name))))
+    (%send world (%event-message node name fields) :coalesce (cons (stage-node-id node) name))))
 
 ;;; Targets.
 
@@ -131,43 +129,41 @@
           (when (channel-active-p channel) (channel-jump channel (channel-value channel)))))
       (setf (stage-seat-manipulation seat-state) manipulation))))
 
-(defun begin-move (world seat-state node)
-  "Start moving NODE with the pointer; return the manipulation."
+(defun %begin-node-manipulation (world seat-state node kind origin &rest initargs)
+  "Start a KIND manipulation of NODE from its ORIGIN values, a plist, anchored at the
+pointer; the director's values for those keys wait until it ends. Return it."
   (let ((stage-output (%seat-output world seat-state)))
     (when stage-output
-      (let* ((manipulation (%make-manipulation :kind :move :stage-output stage-output :node node))
-             (x (node-number node :x 0d0))
-             (y (node-number node :y 0d0)))
+      (let ((manipulation (apply #'%make-manipulation :kind kind :stage-output stage-output :node node
+                                                      :origin origin initargs)))
         (multiple-value-bind (screen-x screen-y) (%manipulation-point seat-state manipulation)
           (multiple-value-bind (px py) (%parent-point world stage-output node screen-x screen-y)
             (setf (manipulation-anchor-x manipulation) px
-                  (manipulation-anchor-y manipulation) py
-                  (manipulation-origin manipulation) (list :x x :y y))))
-        (setf (stage-node-held node) (union '(:x :y) (stage-node-held node))
-              (stage-seat-manipulation seat-state) manipulation)
-        (%emit-event world node :dragstart :x x :y y)
-        manipulation))))
+                  (manipulation-anchor-y manipulation) py)))
+        (setf (stage-node-held node) (union (loop for (key) on origin by #'cddr collect key)
+                                            (stage-node-held node))
+              (stage-seat-manipulation seat-state) manipulation)))))
+
+(defun begin-move (world seat-state node)
+  "Start moving NODE with the pointer; return the manipulation."
+  (let* ((x (node-number node :x 0d0))
+         (y (node-number node :y 0d0))
+         (manipulation (%begin-node-manipulation world seat-state node :move (list :x x :y y))))
+    (when manipulation (%emit-event world node :dragstart :x x :y y))
+    manipulation))
 
 (defun begin-resize (world seat-state node window edges)
   "Start resizing window NODE from EDGES with the pointer; return the manipulation."
-  (let ((stage-output (%seat-output world seat-state)))
-    (when stage-output
-      (multiple-value-bind (width height) (%node-size world node)
-        (let* ((manipulation (%make-manipulation :kind :resize :stage-output stage-output
-                                                 :node node :window window :edges edges))
-               (x (node-number node :x 0d0))
-               (y (node-number node :y 0d0)))
-          (multiple-value-bind (screen-x screen-y) (%manipulation-point seat-state manipulation)
-            (multiple-value-bind (px py) (%parent-point world stage-output node screen-x screen-y)
-              (setf (manipulation-anchor-x manipulation) px
-                    (manipulation-anchor-y manipulation) py
-                    (manipulation-origin manipulation)
-                    (list :x x :y y :width width :height height))))
-          (setf (stage-node-held node) (union '(:x :y :width :height) (stage-node-held node))
-                (stage-seat-manipulation seat-state) manipulation)
-          (ataxia.kernel:request-object-state (stage-window-application window) world :resizing t)
-          (%emit-event world node :resizestart :x x :y y :width width :height height)
-          manipulation)))))
+  (multiple-value-bind (width height) (%node-size world node)
+    (let* ((x (node-number node :x 0d0))
+           (y (node-number node :y 0d0))
+           (manipulation (%begin-node-manipulation world seat-state node :resize
+                                                   (list :x x :y y :width width :height height)
+                                                   :window window :edges edges)))
+      (when manipulation
+        (ataxia.kernel:request-object-state (stage-window-application window) world :resizing t)
+        (%emit-event world node :resizestart :x x :y y :width width :height height))
+      manipulation)))
 
 (defun %update-pan (world seat-state manipulation)
   (multiple-value-bind (x y) (%manipulation-point seat-state manipulation)

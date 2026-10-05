@@ -15,6 +15,10 @@
   (e 0d0 :type double-float :read-only t)
   (f 0d0 :type double-float :read-only t))
 
+;; Transforms are applied to every item on every frame: the small operations are
+;; inlined with double-float arithmetic, so applying one allocates nothing.
+(declaim (inline affine-apply affine-multiply affine-determinant))
+
 (defun make-affine (a b c d e f)
   (%make-affine (coerce a 'double-float) (coerce b 'double-float)
                 (coerce c 'double-float) (coerce d 'double-float)
@@ -27,6 +31,7 @@
 
 (defun affine-multiply (outer inner)
   "Return the transform applying INNER first, then OUTER."
+  (declare (type affine outer inner))
   (let ((a (affine-a outer)) (b (affine-b outer)) (c (affine-c outer))
         (d (affine-d outer)) (e (affine-e outer)) (f (affine-f outer)))
     (%make-affine
@@ -38,10 +43,13 @@
      (+ (* b (affine-e inner)) (* d (affine-f inner)) f))))
 
 (defun affine-apply (transform x y)
-  (values (+ (* (affine-a transform) x) (* (affine-c transform) y) (affine-e transform))
-          (+ (* (affine-b transform) x) (* (affine-d transform) y) (affine-f transform))))
+  (declare (type affine transform) (type real x y))
+  (let ((x (float x 1d0)) (y (float y 1d0)))
+    (values (+ (* (affine-a transform) x) (* (affine-c transform) y) (affine-e transform))
+            (+ (* (affine-b transform) x) (* (affine-d transform) y) (affine-f transform)))))
 
 (defun affine-determinant (transform)
+  (declare (type affine transform))
   (- (* (affine-a transform) (affine-d transform))
      (* (affine-b transform) (affine-c transform))))
 
@@ -51,6 +59,7 @@
 
 (defun affine-invert (transform)
   "Return the inverse transform, or NIL when TRANSFORM collapses an axis."
+  (declare (type affine transform))
   (let ((determinant (affine-determinant transform)))
     (unless (< (abs determinant) 1d-12)
       (let ((a (/ (affine-d transform) determinant))
@@ -61,25 +70,41 @@
                       (- (+ (* a (affine-e transform)) (* c (affine-f transform))))
                       (- (+ (* b (affine-e transform)) (* d (affine-f transform)))))))))
 
-(defun affine-rectangle-bounds (transform x y width height)
-  "Axis-aligned bounds of the transformed rectangle, as an ATAXIA.WORLD rectangle."
-  (let ((left most-positive-double-float) (top most-positive-double-float)
-        (right most-negative-double-float) (bottom most-negative-double-float))
-    (dolist (corner (list (cons x y) (cons (+ x width) y)
-                          (cons x (+ y height)) (cons (+ x width) (+ y height))))
-      (multiple-value-bind (px py) (affine-apply transform (car corner) (cdr corner))
-        (setf left (min left px) top (min top py)
-              right (max right px) bottom (max bottom py))))
-    (ataxia.world:make-rectangle left top (- right left) (- bottom top))))
+(defun affine-rectangle-bounds (transform x y width height &optional (margin 0d0))
+  "Axis-aligned bounds of the transformed rectangle, grown by MARGIN on every side,
+as an ATAXIA.WORLD rectangle."
+  (declare (type affine transform) (type real x y width height margin))
+  (let* ((x (float x 1d0)) (y (float y 1d0))
+         (x1 (+ x (float width 1d0))) (y1 (+ y (float height 1d0)))
+         (left most-positive-double-float) (top most-positive-double-float)
+         (right most-negative-double-float) (bottom most-negative-double-float))
+    (declare (type double-float x y x1 y1 left top right bottom))
+    (flet ((corner (cx cy)
+             (declare (type double-float cx cy))
+             (multiple-value-bind (px py) (affine-apply transform cx cy)
+               (setf left (min left px) top (min top py) right (max right px) bottom (max bottom py)))))
+      (declare (inline corner))
+      (corner x y)
+      (corner x1 y)
+      (corner x y1)
+      (corner x1 y1))
+    (let ((margin (float margin 1d0)))
+      (ataxia.world:make-rectangle (- left margin) (- top margin)
+                                   (+ (- right left) margin margin) (+ (- bottom top) margin margin)))))
 
 (defun node-affine (x y scale rotation origin-x origin-y)
   "Translate by (X, Y), then scale and rotate about the local ORIGIN point."
-  (let* ((cosine (* scale (cos rotation)))
-         (sine (* scale (sin rotation))))
+  (let* ((x (float x 1d0)) (y (float y 1d0)) (scale (float scale 1d0))
+         (origin-x (float origin-x 1d0)) (origin-y (float origin-y 1d0))
+         (rotation (float rotation 1d0))
+         ;; An unrotated node, the common case, needs no trigonometry.
+         (cosine (if (zerop rotation) scale (* scale (cos rotation))))
+         (sine (if (zerop rotation) 0d0 (* scale (sin rotation)))))
+    (declare (type double-float x y scale origin-x origin-y rotation cosine sine))
     ;; T(x+ox, y+oy) · R · S · T(-ox, -oy), expanded.
-    (make-affine cosine sine (- sine) cosine
-                 (+ x origin-x (- (- (* cosine origin-x) (* sine origin-y))))
-                 (+ y origin-y (- (+ (* sine origin-x) (* cosine origin-y)))))))
+    (%make-affine cosine sine (- sine) cosine
+                  (+ x origin-x (- (- (* cosine origin-x) (* sine origin-y))))
+                  (+ y origin-y (- (+ (* sine origin-x) (* cosine origin-y)))))))
 
 (defun camera-affine (x y zoom rotation viewport-width viewport-height)
   "Map world space to output-logical space, centering world point (X, Y)."

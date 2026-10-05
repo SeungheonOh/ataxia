@@ -47,10 +47,11 @@
                                        :initial-value 1d0)
                         :invalidator (lambda (component)
                                        (declare (ignore component))
-                                       (when (and web (not (%quiescing-p world)))
-                                         (%request-frames world (%web-outputs world web))))
+                                       (when web (%request-frames world (%web-outputs world web))))
                         (%web-source-arguments source)))
              (error (cause)
+               ;; Not retried until the node names another source.
+               (setf (gethash node (%failed-pages world)) source)
                (%emit-event world node :error :message (princ-to-string cause))
                nil))))
     (when component
@@ -68,7 +69,7 @@
                      (declare (ignore value))
                      (setf (stage-web-loaded-p web) t
                            (stage-web-data web) nil)
-                     (%sync-web world web)
+                     (%sync-web web)
                      (%emit-event world (stage-web-node web) :load)))
         (on "error" (lambda (message)
                       (%emit-event world (stage-web-node web) :error :message message)))
@@ -78,9 +79,8 @@
       (push web (%webs world))
       web)))
 
-(defun %sync-web (world web)
+(defun %sync-web (web)
   "Bring WEB's page size, props and revision up to its node's declarations."
-  (declare (ignore world))
   (let ((node (stage-web-node web))
         (component (stage-web-component web)))
     (multiple-value-bind (width height) (%web-size node)
@@ -108,10 +108,7 @@
         (focus-panel world seat-state nil)))
     (dolist (stage-output (%outputs world))
       (remhash web (stage-output-window-transforms stage-output)))
-    (when (%renderer world)
-      (ataxia.runtime:call-with-egl-context
-       (ataxia.runtime:runtime-egl (ataxia.kernel:kernel-runtime (ataxia.kernel:world-kernel world)))
-       (lambda () (ataxia.kernel:drawable-detach-graphics component))))
+    (%call-with-gl world (lambda () (ataxia.kernel:drawable-detach-graphics component)))
     (ataxia.world:ui-destroy component)))
 
 (defun refresh-web-nodes (world nodes)
@@ -125,7 +122,7 @@ the scene go to new nodes with the same source; the rest are destroyed."
         (when (and web (not (equal source (stage-web-source web))))
           (%destroy-web world web)
           (setf web nil))
-        (when (and source (null web))
+        (when (and source (null web) (not (equal source (gethash node (%failed-pages world)))))
           (let ((orphan (find source orphans :key #'stage-web-source :test #'equal)))
             (setf web (if orphan
                           (progn (setf orphans (remove orphan orphans)
@@ -134,7 +131,7 @@ the scene go to new nodes with the same source; the rest are destroyed."
                           (%create-web world node))
                   (stage-node-cache node) web)))
         (when web
-          (%sync-web world web)
+          (%sync-web web)
           (%sync-web-auto-focus world web node))))
     (mapc (lambda (web) (%destroy-web world web)) orphans)))
 
@@ -193,9 +190,11 @@ move settled pages to the raster scale they are seen at."
                 (adjoin stage-output (stage-web-outputs web))
                 (remove stage-output (stage-web-outputs web))))
       (ataxia.world.web:set-web-visible component (stage-web-outputs web))
-      (let ((wanted (stage-web-wanted-scale web))
+      ;; A page on several outputs rasters for the sharpest of them.
+      (let ((wanted (loop for (output scale) on (stage-web-wanted-scales web) by #'cddr
+                          when (member output (stage-web-outputs web)) maximize scale))
             (current (ataxia.world.web:web-component-scale component)))
-        (when (and wanted (> (abs (- wanted current)) (* 0.15d0 current)))
+        (when (and (plusp wanted) (> (abs (- wanted current)) (* 0.15d0 current)))
           (ataxia.world.web:resize-web-component
            component (ataxia.world.web:web-component-width component)
            (ataxia.world.web:web-component-height component)
@@ -214,8 +213,7 @@ move settled pages to the raster scale they are seen at."
     (multiple-value-bind (width height) (%node-size world node)
       (when (and web (plusp width) (plusp height))
         (let* ((component (stage-web-component web))
-               (radius (max 0d0 (node-number node :radius 0d0)))
-               (border (max 0d0 (node-number node :border-width 0d0)))
+               (radius (%emit-decorations context node transform width height opacity))
                (content (make-affine (/ width (ataxia.world.web:web-component-width component)) 0 0
                                      (/ height (ataxia.world.web:web-component-height component))
                                      0 0))
@@ -224,12 +222,6 @@ move settled pages to the raster scale they are seen at."
                            (ataxia.world:rectangle-intersection (display-context-clip context)
                                                                 (display-context-bounds context))
                            (display-context-bounds context))))
-          (%emit-shadow context node transform width height radius opacity)
-          (%emit-box context node :border transform (- border) (- border)
-                     (+ width (* 2 border)) (+ height (* 2 border)) (+ radius border) border
-                     +clear-paint+
-                     (%node-paint node :border-color :border-color-end :border-angle opacity))
-          (%emit-backdrop-blur context node transform width height radius opacity)
           ;; Presence follows the box, not the frames, so a page shows up as soon
           ;; as its first frame arrives.
           (when (and screen (ataxia.world:rectangle-intersection box screen))
@@ -241,7 +233,7 @@ move settled pages to the raster scale they are seen at."
               (multiple-value-bind (scale changing-p)
                   (%scale-change context node (affine-scale-factor transform))
                 (unless changing-p
-                  (setf (stage-web-wanted-scale web)
+                  (setf (getf (stage-web-wanted-scales web) (display-context-stage-output context))
                         (max (car +web-scale-range+)
                              (min (cdr +web-scale-range+)
                                   (* scale (/ width (ataxia.world.web:web-component-width

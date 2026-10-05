@@ -139,8 +139,15 @@ export async function run(options: RunOptions): Promise<void> {
       setup(build) {
         build.onResolve({ filter: /^(react|react\/jsx-runtime|@ataxia\/stage)$/ },
                         (args) => ({ path: shared[args.path]!, external: true }));
-        // `import photo from "./photo.jpg"` yields the file's absolute path for
-        // <Image src>; the file is watched, so editing it reloads the world.
+        // `import photo from "./photo.jpg"` and `import page from "./page.tsx?url"`
+        // yield the file's absolute path, for <Image src> and <Web src>. Images
+        // are watched, so editing one reloads the world; pages reload themselves.
+        build.onResolve({ filter: /\?url$/ }, (args) => ({
+          path: resolve(args.resolveDir, args.path.slice(0, -"?url".length)), namespace: "stage-url",
+        }));
+        build.onLoad({ filter: /.*/, namespace: "stage-url" }, (args) => ({
+          contents: `export default ${JSON.stringify(args.path)};`, loader: "js",
+        }));
         build.onLoad({ filter: imageFiles }, (args) => ({
           contents: `export default ${JSON.stringify(args.path)};`, loader: "js",
         }));

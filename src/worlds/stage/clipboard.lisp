@@ -14,7 +14,8 @@
 (defparameter +secret-types+
   '("x-kde-passwordManagerHint" "application/x-kde-passwordManagerHint" "application/x-keepassxc"))
 
-(defstruct (selection-read (:constructor %make-selection-read (fd callback)))
+(defstruct (selection-read (:constructor %make-selection-read (world fd callback)))
+  (world nil :read-only t)
   (fd nil)
   (callback nil :read-only t)
   (source nil)
@@ -23,10 +24,17 @@
 
 (defun %finish-selection-read (read text)
   (when (selection-read-fd read)
+    (let ((world (selection-read-world read)))
+      (setf (%selection-reads world) (remove read (%selection-reads world))))
     (dolist (source (list (selection-read-source read) (selection-read-timer read)))
       (when source (ataxia.runtime:remove-event-loop-source source)))
     (sb-posix:close (shiftf (selection-read-fd read) nil))
     (funcall (selection-read-callback read) text)))
+
+(defun stop-selection-reads (world)
+  "Give up the reads still in flight, e.g. as WORLD is replaced."
+  (dolist (read (%selection-reads world))
+    (%finish-selection-read read nil)))
 
 (defun %selection-readable (read)
   (cffi:with-foreign-object (buffer :uint8 16384)
@@ -58,7 +66,8 @@ marked secret, is too large or does not arrive within two seconds."
           (sb-posix:fcntl read-fd sb-posix:f-setfl sb-posix:o-nonblock)
           (sb-posix:fcntl read-fd sb-posix:f-setfd 1) ; FD_CLOEXEC
           (let* ((runtime (ataxia.kernel:kernel-runtime (ataxia.kernel:world-kernel world)))
-                 (read (%make-selection-read read-fd callback)))
+                 (read (%make-selection-read world read-fd callback)))
+            (push read (%selection-reads world))
             (setf (selection-read-source read)
                   (ataxia.runtime:add-event-loop-fd
                    runtime read-fd ataxia.runtime:+event-readable+

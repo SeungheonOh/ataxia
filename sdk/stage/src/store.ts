@@ -4,7 +4,7 @@
 
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import type { ServerMessage, WireApplication, WireCamera, WireOutput, WireWindow } from "./protocol.js";
+import type { ServerMessage, WireCamera, WireOutput, WireShare, WireWindow } from "./protocol.js";
 
 export interface WindowInfo {
   readonly id: number;
@@ -16,7 +16,7 @@ export interface WindowInfo {
   readonly height: number;
 }
 
-export interface Box {
+export interface Rectangle {
   readonly x: number;
   readonly y: number;
   readonly width: number;
@@ -30,8 +30,8 @@ export interface OutputInfo {
   readonly width: number;
   readonly height: number;
   readonly scale: number;
-  /** Output-local area left for windows after shell reservations such as a status bar. */
-  readonly workArea: Box;
+  /** Output-local area left for windows after reservations such as a bar. */
+  readonly workArea: Rectangle;
 }
 
 /** Where an output's camera is headed. Pans and zooms update it as they happen. */
@@ -45,7 +45,7 @@ export interface CameraInfo {
   readonly rotation: number;
 }
 
-export type ApplicationInfo = Readonly<WireApplication>;
+export type ShareInfo = Readonly<WireShare>;
 
 type Listener = () => void;
 
@@ -72,8 +72,8 @@ export class Store {
   private cameraMap = new Map<string, CameraInfo>();
   private windowList: readonly WindowInfo[] = [];
   private outputList: readonly OutputInfo[] = [];
-  private applicationList: readonly ApplicationInfo[] | null = null;
   private clipboardList: readonly string[] = [];
+  private shareList: readonly ShareInfo[] = [];
   private persistPath: string | null = null;
   private persistTimer: NodeJS.Timeout | null = null;
   private readonly listeners = new Set<Listener>();
@@ -92,8 +92,8 @@ export class Store {
     output === undefined ? this.cameraMap.values().next().value : this.cameraMap.get(output);
   focus = (seat?: string): number | null =>
     seat === undefined ? this.focusMap.values().next().value ?? null : this.focusMap.get(seat) ?? null;
-  /** Installed applications, or null until the compositor has sent its catalog. */
-  applications = (): readonly ApplicationInfo[] | null => this.applicationList;
+  /** Screen-sharing requests and running shares. */
+  shares = (): readonly ShareInfo[] => this.shareList;
   /** Text copied this session, newest first; kept in memory only. */
   clipboard = (): readonly string[] => this.clipboardList;
 
@@ -119,6 +119,7 @@ export class Store {
         this.outputMap = new Map(message.outputs.map((output) => [output.name, toOutput(output)]));
         this.focusMap = new Map(message.focus.map((focus) => [focus.seat, focus.window]));
         this.cameraMap = new Map(message.cameras.map((camera) => [camera.output, toCamera(camera)]));
+        this.shareList = Object.freeze(message.shares ?? []);
         windows = outputs = true;
         break;
       case "camera":
@@ -141,12 +142,12 @@ export class Store {
       case "focus":
         this.focusMap.set(message.seat, message.window);
         break;
-      case "applications":
-        this.applicationList = Object.freeze(message.applications.map((entry) => Object.freeze(entry)));
-        break;
       case "clipboard":
         this.rememberClipboard(message.text);
         return true;
+      case "shares":
+        this.shareList = Object.freeze(message.shares);
+        break;
       default:
         return false;
     }

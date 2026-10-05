@@ -121,10 +121,20 @@
              (multiple-value-bind (parent-x parent-y) (affine-apply (hit-parent-inverse hit) x y)
                (list :x parent-x :y parent-y :local-x local-x :local-y local-y)))))))))
 
+(defun %event-message (node name fields)
+  (list* :type "event" :node (stage-node-id node) :name (string-downcase (symbol-name name)) fields))
+
 (defun %emit-event (world node name &rest fields)
-  (when (node-handles-p node name)
-    (%send world (list* :type "event" :node (stage-node-id node)
-                        :name (string-downcase (symbol-name name)) fields))))
+  "Send event NAME to NODE when it or, for pointer events, an ancestor handles it;
+the director passes pointer events up through the ancestors."
+  (when (node-receives-p node name)
+    (%send world (%event-message node name fields))))
+
+(defun %pointer-event-name (node name)
+  "NAME, a :POINTER... event, as NODE receives it: bindings get :DOWN, :MOVE and :UP."
+  (if (eq (stage-node-kind node) :pointer-binding)
+      (ecase name (:pointerdown :down) (:pointermove :move) (:pointerup :up))
+      name))
 
 (defun %capture-hit (world seat-state)
   "Recompute the capturing node's hit, which may have moved since the press."
@@ -158,22 +168,29 @@
 (defun %set-hovered (world seat-state hit)
   "Move pointer focus to HIT's client, or clear it."
   (let ((old (stage-seat-hovered seat-state)))
-    (when (and old (not (and hit (eq (hit-client old) (hit-client hit)))))
-      (cond ((%client-live-p (hit-client old))
-             (ataxia.kernel:interactable-pointer-leave (hit-client old) world (stage-seat-seat seat-state)))
-            ((hit-window old)
-             (ataxia.kernel:clear-wayland-focus (stage-seat-seat seat-state) :pointer t))))
+    (unless (eq (and old (hit-client old)) (and hit (hit-client hit)))
+      ;; A newly entered client sets its own cursor.
+      (setf (stage-seat-cursor-set-p seat-state) nil)
+      (when old
+        (cond ((%client-live-p (hit-client old))
+               (ataxia.kernel:interactable-pointer-leave (hit-client old) world (stage-seat-seat seat-state)))
+              ((hit-window old)
+               (ataxia.kernel:clear-wayland-focus (stage-seat-seat seat-state) :pointer t)))))
     (setf (stage-seat-hovered seat-state) hit)))
 
 (defun %set-entered (world seat-state node)
-  "Send pointerleave/pointerenter as the topmost node under the pointer changes."
+  "Send pointerleave and pointerenter as the topmost node under the pointer changes.
+Each names the other node, so the director can tell which ancestors the pointer left
+or entered."
   (let ((old (stage-seat-entered seat-state)))
     (unless (eq old node)
-      (when (and old (eq (stage-node-state old) :live))
-        (apply #'%emit-event world old :pointerleave (%pointer-payload world seat-state)))
       (setf (stage-seat-entered seat-state) node)
+      (when (and old (eq (stage-node-state old) :live))
+        (apply #'%emit-event world old :pointerleave :to (and node (stage-node-id node))
+               (%pointer-payload world seat-state)))
       (when node
-        (apply #'%emit-event world node :pointerenter (%pointer-payload world seat-state))))))
+        (apply #'%emit-event world node :pointerenter :from (and old (stage-node-id old))
+               (%pointer-payload world seat-state))))))
 
 (defun %client-grab (seat-state)
   "Client hit holding an implicit grab because one of its buttons is pressed."
@@ -186,9 +203,7 @@
       ((stage-seat-manipulation seat-state) (update-manipulation world seat-state))
       ((stage-seat-capture seat-state)
        (%send-capture-event world seat-state
-                            (if (member (stage-node-kind (stage-seat-capture seat-state))
-                                        '(:pointer-binding))
-                                :move :pointermove)))
+                            (%pointer-event-name (stage-seat-capture seat-state) :pointermove)))
       ((and (%client-grab seat-state) (not (ataxia.kernel:seat-pointer-drag-active-p seat)))
        (%deliver-to-client world seat-state (%client-grab seat-state)
                            #'ataxia.kernel:interactable-pointer-motion input))
@@ -214,10 +229,9 @@
 (defun %forget-pointer-client (world client)
   (dolist (seat-state (%seat-states world))
     (let ((buttons (stage-seat-buttons seat-state)))
-      (loop for code in (loop for code being the hash-keys of buttons using (hash-value target)
-                              when (and (hit-p target) (eq client (hit-client target)))
-                                collect code)
-            do (remhash code buttons)))
+      (maphash (lambda (code target)
+                 (when (and (hit-p target) (eq client (hit-client target))) (remhash code buttons)))
+               buttons))
     (let ((hovered (stage-seat-hovered seat-state)))
       (when (and hovered (eq client (hit-client hovered)))
         (setf (stage-seat-hovered seat-state) nil)))))
@@ -228,9 +242,7 @@
     (when (stage-seat-capture seat-state)
       (setf (stage-seat-capture seat-state) nil)
       (let ((buttons (stage-seat-buttons seat-state)))
-        (loop for code in (loop for code being the hash-keys of buttons using (hash-value target)
-                                when (eq target :capture) collect code)
-              do (remhash code buttons))))
+        (maphash (lambda (code target) (when (eq target :capture) (remhash code buttons))) buttons)))
     (setf (stage-seat-gesture seat-state) nil
           (stage-seat-entered seat-state) nil)))
 
@@ -360,8 +372,7 @@
       ((stage-seat-capture seat-state)
        (setf (gethash code buttons) :capture)
        (%send-capture-event world seat-state
-                            (if (eq (stage-node-kind (stage-seat-capture seat-state)) :pointer-binding)
-                                :down :pointerdown)
+                            (%pointer-event-name (stage-seat-capture seat-state) :pointerdown)
                             :button code))
       ((plusp (hash-table-count buttons))
        ;; Further buttons follow the window that already holds the grab.
@@ -387,14 +398,11 @@
          (let ((source (manipulation-source (stage-seat-manipulation seat-state))))
            (end-manipulation world seat-state)
            (when source
-             (apply #'%emit-event world source
-                    (if (eq (stage-node-kind source) :pointer-binding) :up :pointerup)
+             (apply #'%emit-event world source (%pointer-event-name source :pointerup)
                     :button code (%pointer-payload world seat-state))))))
       ((eq target :capture)
        (let ((node (stage-seat-capture seat-state)))
-         (%send-capture-event world seat-state
-                              (if (eq (stage-node-kind node) :pointer-binding) :up :pointerup)
-                              :button code)
+         (%send-capture-event world seat-state (%pointer-event-name node :pointerup) :button code)
          (when (zerop (hash-table-count buttons))
            (setf (stage-seat-capture seat-state) nil))))
       ((hit-p target)
@@ -414,7 +422,9 @@
          (remhash code (stage-seat-buttons seat-state)))
         ((eq (ataxia.kernel:cursor-button-input-state input) :pressed)
          (%press world seat-state code input))
-        (t (%release world seat-state code input)))))
+        (t (%release world seat-state code input)))
+      ;; Presses start and end moves and captures, which change the cursor.
+      (%damage-cursor world seat-state)))
   input)
 
 (defun %axis-fields (input)
@@ -432,7 +442,7 @@
           (wheel-pan world seat-state orientation delta)))))
 
 (defun %wheel-target-p (node)
-  (or (node-handles-p node :wheel)
+  (or (node-receives-p node :wheel)
       (and (eq (stage-node-kind node) :background) (node-prop node :pan))))
 
 (defmethod ataxia.kernel:world-cursor-axis ((world stage-world) seat input)
@@ -564,10 +574,14 @@
                (value (if (ataxia.kernel:state-client-request-value request) t :false)))
            (case name
              (:activation
+              ;; The window's node may decide how to show it, e.g. on its workspace.
               (let ((seat-state (or (gethash (ataxia.kernel:client-request-seat request) (%seats world))
                                     (%default-seat-state world))))
-                (when (and seat-state (%focusable-p window))
-                  (%focus-window world seat-state window))))
+                (cond ((and node (node-handles-p node :activaterequest)
+                            (stage-director-connected-p world))
+                       (%emit-event world node :activaterequest))
+                      ((and seat-state (%focusable-p window))
+                       (%focus-window world seat-state window)))))
              ((:fullscreen :maximized :minimized)
               (let ((event (ecase name
                              (:fullscreen :fullscreenrequest)

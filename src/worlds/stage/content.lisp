@@ -23,10 +23,8 @@
 (defvar *text-revision* 0)
 
 (defun %text-style-equal (left right)
-  (every (lambda (reader) (equal (funcall reader left) (funcall reader right)))
-         '(text-style-text text-style-markup-p text-style-font text-style-size text-style-weight
-           text-style-italic-p text-style-align text-style-width text-style-line-height
-           text-style-max-lines)))
+  ;; EQUALP ignores letter case, so the text itself is compared exactly.
+  (and (string= (text-style-text left) (text-style-text right)) (equalp left right)))
 
 (defun node-text-layout (node)
   "NODE's text layout, measured again only after its style changed; NIL without Pango."
@@ -98,7 +96,7 @@ frame. A change asks for a refining frame, which sees the scale settled."
                      (key (list (text-layout-revision layout) color raster-scale)))
                 (%touch-raster (display-context-world context) slot)
                 (%emit context (list (stage-node-id node) :text)
-                       (%inflate (affine-rectangle-bounds transform left top width height) 1)
+                       (affine-rectangle-bounds transform left top width height 1)
                        (list transform key opacity)
                        (lambda (renderer)
                          (let ((raster (renderer-raster
@@ -114,7 +112,7 @@ frame. A change asks for a refining frame, which sees the scale settled."
                                  (text-raster-box metrics raster-scale)
                                (draw-stage-raster renderer transform raster left top width height
                                                   +full-texture-uv+ 0d0 opacity))))))))))
-        (when (%input-target-p node)
+        (when (%hit-target-p context node)
           (multiple-value-call #'%add-hit context node screen-inverse parent-inverse
             (text-node-size node)))))))
 
@@ -164,7 +162,9 @@ frame. A change asks for a refining frame, which sees the scale settled."
                                      :height (stage-image-height image))))))
 
 (defun %queue-image (world image)
-  (setf (stage-image-state image) :decoding)
+  ;; Libraries load on the owner thread, so the decoder only ever reads their state.
+  (unless (%media-available-p 'stage-gobject 'stage-pixbuf)
+    (return-from %queue-image (%finish-image world image nil "gdk-pixbuf is unavailable" 0 0)))
   (let ((loader (or (%image-loader world)
                     (setf (%image-loader world)
                           (start-image-loader
@@ -304,6 +304,7 @@ and the image appears again when it finishes."
             (border (max 0d0 (node-number node :border-width 0d0))))
         (when (and (plusp width) (plusp height))
           (%emit-shadow context node transform width height radius opacity)
+          (%emit-backdrop-blur context node transform width height radius opacity)
           (when (and image (%image-loaded-p image) (%image-shown-p world image))
             (setf (stage-image-touched image) (%now))
             (%touch-raster world (list :image (stage-image-serial image)))
@@ -312,7 +313,7 @@ and the image appears again when it finishes."
               (let ((local (affine-multiply transform (affine-translation x y)))
                     (rounding (if (eq (node-prop node :fit) :contain) 0d0 radius)))
                 (%emit context (list (stage-node-id node) :image)
-                       (%inflate (affine-rectangle-bounds local 0 0 quad-width quad-height) 1)
+                       (affine-rectangle-bounds local 0 0 quad-width quad-height 1)
                        (list local quad-width quad-height uv rounding opacity
                              (stage-image-serial image))
                        (lambda (renderer)
@@ -322,7 +323,7 @@ and the image appears again when it finishes."
                                                 quad-height uv rounding opacity))))))))
           (%emit-box context node :border transform 0 0 width height radius border +clear-paint+
                      (%node-paint node :border-color :border-color-end :border-angle opacity))
-          (when (%input-target-p node)
+          (when (%hit-target-p context node)
             (%add-hit context node screen-inverse parent-inverse width height)))))))
 
 (defun stop-images (world)

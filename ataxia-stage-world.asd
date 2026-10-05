@@ -5,8 +5,8 @@
   :version "0.1.0"
   :author "Ataxia contributors"
   :license "Unspecified"
-  :depends-on ("ataxia-world" "ataxia-web" "ataxia-xwayland" "ataxia-sly-control" "cffi"
-               "sb-bsd-sockets" "sb-posix")
+  :depends-on ("ataxia-world" "ataxia-web" "ataxia-xwayland" "ataxia-screencast/native"
+               "ataxia-sly-control" "cffi" "sb-bsd-sockets" "sb-posix")
   :serial t
   :components
   ((:module "src/worlds/stage"
@@ -23,12 +23,16 @@
      (:file "media")
      (:file "renderer")
      (:file "display")
+     (:file "effect")
      (:file "content")
      (:file "web")
      (:file "link")
      (:file "clipboard")
      (:file "manipulation")
      (:file "input")
+     (:file "cursor")
      (:file "desktop")
      (:file "applications")
+     (:file "capture")
+     (:file "screencast")
      (:file "main")))))

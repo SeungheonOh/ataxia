@@ -1,9 +1,10 @@
-;;;; Installed applications for the shell's launcher and the assistant.
+;;;; Installed applications for the desktop protocol: the assistant and computer
+;;;; use list and launch them. Directors keep their own catalog.
 ;;;;
-;;;; Desktop entries are read on a worker thread, never on the owner thread;
-;;;; the catalog answers from the last scan and refreshes in the background.
-;;;; Launching runs `gio launch` on a worker too, so neither process creation
-;;;; nor filesystem lookups can stall a frame.
+;;;; Desktop entries are read on a worker thread; the catalog answers from the
+;;;; last scan and refreshes in the background, and only a request before the
+;;;; first scan finished waits for it. Launching runs `gio launch` on a worker
+;;;; too, so process creation never stalls a frame.
 
 (in-package #:ataxia.stage-world)
 
@@ -13,6 +14,7 @@
 (defvar *catalog* nil "Plists with :ID, :NAME, :DETAIL and :PATH, sorted by name.")
 (defvar *catalog-scanned-at* nil)
 (defvar *catalog-ready-p* nil "Whether any scan has completed.")
+(defvar *catalog-scan* nil "The thread of the latest scan.")
 (defvar *catalog-lock* (sb-thread:make-mutex :name "Stage application catalog"))
 
 (defun %desktop-directories ()
@@ -68,25 +70,22 @@
   "Rescan desktop entries on a worker thread unless the catalog is fresh."
   (sb-thread:with-mutex (*catalog-lock*)
     (unless (and *catalog-scanned-at* (< (- (%now) *catalog-scanned-at*) +catalog-lifetime+))
-      (setf *catalog-scanned-at* (%now))
-      (sb-thread:make-thread
-       (lambda ()
-         (let ((entries (%scan-applications)))
-           (sb-thread:with-mutex (*catalog-lock*)
-             (setf *catalog* entries *catalog-ready-p* t))))
-       :name "Stage application scan"))))
+      (setf *catalog-scanned-at* (%now)
+            *catalog-scan* (sb-thread:make-thread
+                            (lambda ()
+                              (let ((entries (%scan-applications)))
+                                (sb-thread:with-mutex (*catalog-lock*)
+                                  (setf *catalog* entries *catalog-ready-p* t))))
+                            :name "Stage application scan")))))
 
 (defun application-catalog ()
-  "Installed applications as plists with :ID, :NAME and :DETAIL. Scans now, once, if
-no scan has finished yet, e.g. when a director asks right after the World started."
+  "Installed applications as plists with :ID, :NAME and :DETAIL. Before the first
+scan finished, e.g. when asked right after the World started, waits for it."
   (refresh-application-catalog)
-  (let ((entries (sb-thread:with-mutex (*catalog-lock*) (and *catalog-ready-p* *catalog*))))
-    (unless (sb-thread:with-mutex (*catalog-lock*) *catalog-ready-p*)
-      (setf entries (%scan-applications))
-      (sb-thread:with-mutex (*catalog-lock*) (setf *catalog* entries *catalog-ready-p* t)))
-    (mapcar (lambda (entry) (list :id (getf entry :id) :name (getf entry :name)
-                                  :detail (getf entry :detail)))
-            entries)))
+  (unless (sb-thread:with-mutex (*catalog-lock*) *catalog-ready-p*)
+    (sb-thread:join-thread *catalog-scan* :default nil))
+  (mapcar (lambda (entry) (list :id (getf entry :id) :name (getf entry :name) :detail (getf entry :detail)))
+          (sb-thread:with-mutex (*catalog-lock*) *catalog*)))
 
 (defmethod ataxia.world:world-application-catalog ((world stage-world) output)
   (declare (ignore output))

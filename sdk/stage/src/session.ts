@@ -3,13 +3,14 @@
 // and actions reach through `currentSession`.
 
 import { spawn } from "node:child_process";
+import { readFile, rm } from "node:fs/promises";
 import type { ReactNode } from "react";
 import { Connection } from "./connection.js";
 import { Container, createRoot, reconciler } from "./host.js";
 import type { ServerMessage } from "./protocol.js";
 import { type Motion } from "./motion.js";
 import { wireMotion } from "./props.js";
-import { Store } from "./store.js";
+import { Store, type Rectangle } from "./store.js";
 
 export interface CameraMove {
   x?: number;
@@ -17,6 +18,16 @@ export interface CameraMove {
   zoom?: number;
   /** Degrees. */
   rotation?: number;
+}
+
+/** A window, or an output or a region of it in its logical pixels. */
+export type ShareSource = { window: number } | { output?: string; region?: Rectangle };
+
+/** Straight-alpha RGBA pixels, top row first. */
+export interface Screenshot {
+  width: number;
+  height: number;
+  pixels: Uint8Array;
 }
 
 export interface SessionOptions {
@@ -42,19 +53,29 @@ export class Session {
   private readonly connection: Connection;
   private readonly onError: (error: unknown) => void;
   private readonly onRejected: (reason: string) => void;
-  private applicationsWanted = false;
+  private readonly screenshots = new Map<number, {
+    resolve: (shot: Screenshot) => void; reject: (error: Error) => void }>();
+  private nextScreenshot = 1;
 
   constructor(options: SessionOptions) {
     if (current) throw new Error("A Stage session is already running.");
     current = this;
     this.onError = options.onError ?? ((error) => console.error("[stage]", error));
     this.onRejected = options.onRejected ?? (() => undefined);
-    this.container = new Container((ops) => this.connection.send({ type: "commit", ops }));
+    this.container = new Container({
+      send: (ops) => this.connection.send({ type: "commit", ops }),
+      measure: (requests) => this.connection.send({ type: "measure", requests }),
+      onError: this.onError,
+    });
     this.root = createRoot(this.container, this.onError);
     this.connection = new Connection(options.socket, {
       message: (message) => this.receive(message),
       // Whatever is committed while disconnected is replayed on reconnect.
-      closed: () => this.container.requestResync(),
+      closed: () => {
+        this.container.requestResync();
+        for (const { reject } of this.screenshots.values()) reject(new Error("The compositor went away."));
+        this.screenshots.clear();
+      },
     }, options.parentPid);
   }
 
@@ -80,14 +101,41 @@ export class Session {
     this.connection.send({ type: "close", window });
   }
 
-  /** Ask for the installed applications; they arrive in the store. */
-  requestApplications(): void {
-    this.applicationsWanted = true;
-    this.connection.send({ type: "applications" });
+  /** Share WINDOW, or OUTPUT (or a REGION of it), for screen-sharing request ID. */
+  acceptShare(id: number, source: ShareSource): void {
+    this.connection.send({ type: "share-accept", id, ...source });
   }
 
-  launchApplication(id: string): void {
-    this.connection.send({ type: "launch-application", id });
+  /** Decline a screen-sharing request, or stop a running share. */
+  cancelShare(id: number): void {
+    this.connection.send({ type: "share-cancel", id });
+  }
+
+  /** Capture SOURCE at full resolution, as the outputs show it now. */
+  screenshot(source: ShareSource = {}): Promise<Screenshot> {
+    if (!this.connection.connected) return Promise.reject(new Error("Not connected to the compositor."));
+    const id = this.nextScreenshot++;
+    return new Promise((resolve, reject) => {
+      this.screenshots.set(id, { resolve, reject });
+      this.connection.send({ type: "capture", id, ...source });
+    });
+  }
+
+  private async receiveScreenshot(message: Extract<ServerMessage, { type: "captured" }>): Promise<void> {
+    const pending = this.screenshots.get(message.id);
+    this.screenshots.delete(message.id);
+    if (!message.path) {
+      pending?.reject(new Error(message.error ?? "The compositor could not take the screenshot."));
+      return;
+    }
+    try {
+      const pixels = await readFile(message.path);
+      pending?.resolve({ width: message.width ?? 0, height: message.height ?? 0, pixels });
+    } catch (error) {
+      pending?.reject(error as Error);
+    } finally {
+      await rm(message.path, { force: true });
+    }
   }
 
   /** Put TEXT on the clipboard, as if a client had copied it. */
@@ -130,13 +178,18 @@ export class Session {
             this.onRejected(message.message);
           }
           break;
+        case "captured":
+          void this.receiveScreenshot(message);
+          break;
+        case "measured":
+          this.container.receiveMeasurements(message.results);
+          break;
         case "welcome":
           this.store.apply(message);
           this.container.requestResync();
           // Before React's first commit there is nothing to show yet; replaying
           // an empty tree would briefly hide every window.
           if (this.container.committed) this.container.flush();
-          if (this.applicationsWanted) this.requestApplications();
           break;
         default:
           this.store.apply(message);

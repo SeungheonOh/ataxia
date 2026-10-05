@@ -41,16 +41,15 @@
          (%damage world) (stage-output-output stage-output)
          (if rectangles
              (mapcar (lambda (rectangle)
-                       (%inflate (affine-rectangle-bounds transform
+                       (affine-rectangle-bounds transform
                                                           (ataxia.world:rectangle-x rectangle)
                                                           (ataxia.world:rectangle-y rectangle)
                                                           (ataxia.world:rectangle-width rectangle)
-                                                          (ataxia.world:rectangle-height rectangle))
-                                 1))
+                                                          (ataxia.world:rectangle-height rectangle) 1))
                      rectangles)
              (multiple-value-bind (x y width height)
                  (ataxia.kernel:drawable-local-bounds (ataxia.world:overlay-component overlay))
-               (list (%inflate (affine-rectangle-bounds transform x y width height) 1)))))
+               (list (affine-rectangle-bounds transform x y width height 1)))))
         (%request-frames world (list stage-output))))))
 
 (defmethod ataxia.world:damage-overlay ((world stage-world) overlay)
@@ -224,7 +223,7 @@
                          (width (ataxia.kernel:drawable-surface-width surface))
                          (height (ataxia.kernel:drawable-surface-height surface)))
                      (%emit context (list overlay index)
-                            (%inflate (affine-rectangle-bounds transform x y width height) 1)
+                            (affine-rectangle-bounds transform x y width height 1)
                             (list transform x y width height opacity
                                   (ataxia.kernel:drawable-surface-texture-coordinates surface))
                             (lambda (renderer)
@@ -274,33 +273,9 @@
 
 ;;; Desktop protocol.
 
+;; Workspaces are the director's own idea, so shell navigation is not offered.
 (defmethod ataxia.world:world-supports-p ((world stage-world) capability)
-  (or (not (null (member capability '(:ui :desktop :window-capture :viewport-navigation :launcher))))
-      ;; Workspaces exist while the director declares them.
-      (and (eq capability :shell-navigation) (%shell world) t)))
-
-(defmethod ataxia.world:world-shell-state ((world stage-world) output)
-  (let ((node (%shell world)))
-    (if node
-        (let ((name (or (node-prop node :name) "Workspaces"))
-              (count (min 99 (node-prop node :count)))
-              (selected (node-prop node :selected)))
-          (list :name name :selected selected :count count :active (node-prop node :active)
-                :group 1
-                :groups (list (list :id 1 :name name :selected t
-                                    :workspaces (loop for number from 1 to count
-                                                      collect (list :number number :count 0
-                                                                    :titles nil))))))
-        (call-next-method))))
-
-(defmethod ataxia.world:world-shell-action ((world stage-world) output seat action &optional destination)
-  (declare (ignore seat))
-  (let ((node (or (%shell world) (error "The Stage director declares no workspaces."))))
-    (%emit-event world node :navigate
-                 :action (string-downcase (symbol-name action))
-                 :output (ataxia.kernel:output-name output)
-                 ;; A workspace number, or the number within a (group number) destination.
-                 :workspace (if (consp destination) (second destination) destination))))
+  (not (null (member capability '(:ui :desktop :window-capture :viewport-navigation :launcher)))))
 
 (defmethod ataxia.world:window-application ((window stage-window))
   (stage-window-application window))
@@ -434,43 +409,13 @@
       (%request-frames world (list stage-output)))))
 
 (defmethod ataxia.world:capture-window-pixels ((world stage-world) window bounds width height pixels)
-  (destructuring-bind (left top logical-width logical-height) bounds
-    (let ((renderer (%renderer world))
-          (target nil)
-          (viewport-width 0d0)
-          (viewport-height 0d0))
-      (unless renderer (error "Stage World has no graphics to capture with."))
-      (setf viewport-width (stage-renderer-viewport-width renderer)
-            viewport-height (stage-renderer-viewport-height renderer)
-            target (make-render-target width height))
-      (unwind-protect
-           (call-with-render-target
-            target
-            (lambda ()
-              (begin-stage-frame renderer width height)
-              (set-stage-scissor renderer 0 0 width height)
-              (ataxia.world.gles:gles-clear 0.035d0 0.04d0 0.05d0 1d0)
-              ;; Application-local bounds fill the capture, top row first.
-              (let ((transform (make-affine (/ width logical-width) 0 0 (/ height logical-height)
-                                            (- (* left (/ width logical-width)))
-                                            (- (* top (/ height logical-height))))))
-                (loop for surface across (ataxia.kernel:drawable-surfaces
-                                          (stage-window-application window))
-                      do (draw-stage-surface renderer transform surface
-                                             (ataxia.kernel:drawable-surface-local-x surface)
-                                             (ataxia.kernel:drawable-surface-local-y surface)
-                                             (ataxia.kernel:drawable-surface-width surface)
-                                             (ataxia.kernel:drawable-surface-height surface)
-                                             0 0 0d0 1d0)))
-              (finish-stage-frame)
-              (gl-read-pixels width height pixels)))
-        (destroy-render-target target)
-        (setf (stage-renderer-viewport-width renderer) viewport-width
-              (stage-renderer-viewport-height renderer) viewport-height)))))
+  (unless (%renderer world) (error "Stage World has no graphics to capture with."))
+  (let ((target (make-render-target width height)))
+    (unwind-protect (read-window-pixels world window bounds width height pixels target)
+      (destroy-render-target target))))
 
 (defparameter +window-actions+
-  '((:minimize :minimizerequest t) (:maximize :maximizerequest t)
-    (:fullscreen :fullscreenrequest t))
+  '((:minimize . :minimizerequest) (:maximize . :maximizerequest) (:fullscreen . :fullscreenrequest))
   "Window actions and the client request event the director handles for each.")
 
 (defmethod ataxia.world:control-world-window ((world stage-world) window action output)
@@ -490,7 +435,7 @@
         (otherwise
          (let ((entry (assoc action +window-actions+)))
            (unless entry (error "Unknown window action ~S." action))
-           (request (second entry) (third entry))))))))
+           (request (cdr entry) t)))))))
 
 (defun %window-world-bounds (window stage-output)
   "WINDOW's presented box in world coordinates through STAGE-OUTPUT's camera."

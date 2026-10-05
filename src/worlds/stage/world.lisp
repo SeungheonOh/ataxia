@@ -1,8 +1,8 @@
 ;;;; Stage World aggregate and Kernel lifecycle.
 ;;;;
 ;;;; The World owns the scene, window records, outputs, seats, damage history
-;;;; and renderer. The director link only proposes scene changes; every Kernel
-;;;; mechanism is invoked from here, synchronously on the owner thread.
+;;;; and renderer. The director link only proposes scene changes; Kernel
+;;;; mechanisms are invoked from World code, synchronously on the owner thread.
 
 (in-package #:ataxia.stage-world)
 
@@ -30,21 +30,27 @@
   (buffer-width 1 :type integer)
   (buffer-height 1 :type integer)
   (transform 0 :type integer)
-  ;; The scene's display list as (ITEMS PRESENTED ANIMATING-P), its hit list,
-  ;; and whether they still match the scene. Pointer motion over a still scene
-  ;; reuses them and only rebuilds the cursor.
+  ;; The scene's display list as (ITEMS PRESENTED ANIMATING-P RASTER-SCALES), its
+  ;; hit list, when they were built, and whether they still match the scene.
+  ;; Pointer motion over a still scene reuses them and only rebuilds the cursor.
   (display nil :type list)
   (hits nil :type list)
+  (built-at 0d0 :type double-float)
   (display-valid-p nil)
   ;; Whether the cached display has been diffed into damage.
   (diffed-p nil)
-  ;; Last diffed scene and cursor items: item key -> (damage rectangles . signature).
+  ;; Last diffed scene and cursor items: item key -> (damage rectangles . signature),
+  ;; and the tables the next diff fills.
   (items (make-hash-table :test #'equal))
   (seat-items (make-hash-table :test #'equal))
+  (spare-items (make-hash-table :test #'equal))
+  (spare-seat-items (make-hash-table :test #'equal))
   ;; Window or page -> content-to-buffer transforms of its presented nodes.
   (window-transforms (make-hash-table :test #'eq) :read-only t)
   ;; Whether the last frame showed something moving; endless loops wake only these.
   (animating-p nil)
+  ;; Whether its display has effects that read the pointer, which cursor motion rebuilds.
+  (pointer-effects-p nil)
   ;; Text node id -> exact raster scale on the last rendered frame.
   (raster-scales (make-hash-table :test #'eql))
   (camera (make-stage-camera) :read-only t))
@@ -69,7 +75,9 @@
   (gesture-manipulation nil)
   ;; Held modifier names, as reported by the seat keyboard.
   (modifiers nil :type list)
+  ;; The cursor surface the hovered client set, once it set one; NIL hides it.
   (cursor nil)
+  (cursor-set-p nil)
   (cursor-x 0 :type integer)
   (cursor-y 0 :type integer)
   ;; Web page or shell overlay holding keyboard focus instead of the focused
@@ -91,13 +99,14 @@
   (loaded-p nil)
   ;; Whether an autoFocus node already gave the page the keyboard.
   (auto-focused-p nil)
-  ;; Outputs whose last frame showed the node, and its settled on-screen scale.
+  ;; Outputs whose last frame showed the node, and its settled scale on each, as a plist.
   (outputs nil :type list)
-  (wanted-scale nil))
+  (wanted-scales nil :type list))
 
 (defclass stage-world (ataxia.world:ui-host ataxia.kernel:world)
   ((kernel :initform nil :accessor ataxia.kernel:world-kernel)
    (socket-path :initarg :socket-path :initform nil :reader stage-director-socket)
+   (screen-sharing-p :initarg :screen-sharing-p :initform nil :reader %screen-sharing-p)
    (scene :reader %scene)
    (fallback :reader %fallback)
    (windows :initform (make-hash-table :test #'eq) :reader %windows)
@@ -107,7 +116,6 @@
    (outputs :initform nil :accessor %outputs)
    (seats :initform (make-hash-table :test #'eq) :reader %seats)
    (cameras :initform nil :accessor %cameras)
-   (shell :initform nil :accessor %shell)
    (bindings :initform nil :accessor %bindings)
    (shortcuts :initform (ataxia.world:make-shortcut-controller)
               :reader ataxia.world:world-shortcut-controller)
@@ -119,7 +127,15 @@
    ;; Absolute path -> STAGE-IMAGE, and the worker decoding them.
    (images :initform (make-hash-table :test #'equal) :reader %images)
    (image-loader :initform nil :accessor %image-loader)
+   ;; (Shape . pixel size) -> THEME-CURSOR, or NIL where the theme lacks it.
+   (cursor-images :initform (make-hash-table :test #'equal) :reader %cursor-images)
    (webs :initform nil :accessor %webs)
+   ;; Clipboard transfers in flight.
+   (selection-reads :initform nil :accessor %selection-reads)
+   ;; Web node -> source whose page could not be created, so it is not retried.
+   (failed-pages :initform (make-hash-table :test #'eq :weakness :key) :reader %failed-pages)
+   ;; Node -> EFFECT-STATE, for nodes drawn through an effect.
+   (effect-states :initform (make-hash-table :test #'eq :weakness :key) :reader %effect-states)
    ;; Shell overlays in layer order, overlays awaiting graphics retirement, and
    ;; the timer servicing UI engines between frames.
    (overlays :initform nil :accessor ataxia.world:world-overlays)
@@ -130,14 +146,23 @@
   (:documentation
    "World presenting a retained scene declared by an external director process."))
 
+(defun %call-with-gl (world function)
+  "Call FUNCTION with WORLD's GL context current, outside a frame; nothing happens without graphics."
+  (when (%renderer world)
+    (ataxia.runtime:call-with-egl-context
+     (ataxia.runtime:runtime-egl (ataxia.kernel:kernel-runtime (ataxia.kernel:world-kernel world)))
+     function)))
+
 (defmethod initialize-instance :after ((world stage-world) &key)
   (flet ((natural (node key) (%natural-node-value world node key)))
     (setf (slot-value world 'scene) (make-scene :natural-value #'natural)
           (slot-value world 'fallback) (make-scene :natural-value #'natural))))
 
-(defun make-stage-world (&key socket-path damage-debug-p)
-  "Create a Stage World listening for its director on SOCKET-PATH."
-  (make-instance 'stage-world :socket-path socket-path :damage-debug-p damage-debug-p))
+(defun make-stage-world (&key socket-path damage-debug-p screen-sharing-p)
+  "Create a Stage World listening for its director on SOCKET-PATH. With
+SCREEN-SHARING-P it serves the desktop portal's screen sharing while attached."
+  (make-instance 'stage-world :socket-path socket-path :damage-debug-p damage-debug-p
+                              :screen-sharing-p screen-sharing-p))
 
 (defmethod ataxia.world:damage-debug-mode-p ((world stage-world))
   (%damage-debug-p world))
@@ -182,8 +207,7 @@ of the compositor."
 (defun %full-damage (world)
   (dolist (stage-output (%outputs world))
     (ataxia.world:damage-full-output (%damage world) (stage-output-output stage-output)))
-  (%invalidate-display world)
-  (%request-frames world))
+  (%scene-changed world))
 
 (defmethod ataxia.world:refresh-world ((world stage-world))
   (%full-damage world))
@@ -307,10 +331,6 @@ Anything releasing a resource that a display item draws must call this too."
             for token = (ataxia.kernel:drawable-surface-presentation-token surface)
             when token do (ataxia.kernel:set-wayland-surface-output-membership token outputs)))))
 
-(defun %director-scene-active-p (world)
-  (let ((link (%link world)))
-    (and link (link-scene-active-p link))))
-
 (defun %sync-fallback (world)
   "Cascade windows on the first output while no director scene presents them."
   (let ((fallback (%fallback world))
@@ -343,8 +363,7 @@ Anything releasing a resource that a display item draws must call this too."
 
 (defun %reindex (world)
   "Rebuild World indexes after the director scene changed."
-  (let ((cameras nil) (bindings nil) (shortcuts nil) (media nil) (webs nil) (shell nil)
-        (reserves nil))
+  (let ((cameras nil) (bindings nil) (shortcuts nil) (media nil) (webs nil) (reserves nil))
     (loop for window being the hash-values of (%windows world)
           do (setf (stage-window-nodes window) nil))
     (map-scene-nodes
@@ -354,7 +373,6 @@ Anything releasing a resource that a display item draws must call this too."
           (let ((window (%node-window world node)))
             (when window (push node (stage-window-nodes window)))))
          (:camera (push node cameras))
-         (:shell (unless shell (setf shell node)))
          (:reserve (push node reserves))
          (:shortcut (push node shortcuts))
          ((:pointer-binding :wheel-binding :gesture-binding) (push node bindings))
@@ -365,8 +383,7 @@ Anything releasing a resource that a display item draws must call this too."
           do (setf (stage-window-nodes window)
                    (sort (stage-window-nodes window) #'< :key #'stage-node-id)))
     (setf (%cameras world) (nreverse cameras)
-          (%bindings world) (nreverse bindings)
-          (%shell world) shell)
+          (%bindings world) (nreverse bindings))
     (%install-shortcuts world (nreverse shortcuts))
     (dolist (stage-output (%outputs world))
       (let ((node (%find-camera world (%output-name stage-output))))
@@ -462,10 +479,12 @@ Anything releasing a resource that a display item draws must call this too."
     (setf (stage-seat-history seat-state) (remove window (stage-seat-history seat-state)))
     (when (eq window (stage-seat-focused seat-state))
       (setf (stage-seat-focused seat-state) nil)
-      ;; A quiescing World is being torn down; its clients need no new focus.
+      ;; Focus returns to the latest window still on screen. A quiescing World is
+      ;; being torn down; its clients need no new focus.
       (unless (%quiescing-p world)
         (%focus-window world seat-state
-                       (find-if #'%focusable-p (stage-seat-history seat-state)))))))
+                       (find-if (lambda (window) (and (%focusable-p window) (stage-window-outputs window)))
+                                (stage-seat-history seat-state)))))))
 
 (defun %default-seat-state (world)
   (first (sort (%seat-states world) #'<
@@ -480,6 +499,9 @@ Anything releasing a resource that a display item draws must call this too."
     (setf (%link world) (start-link world (stage-director-socket world))))
   (unless (ataxia.world:world-service world :stage-reservations)
     (ataxia.world:attach-world-service world :stage-reservations (%make-stage-reservations)))
+  (when (%screen-sharing-p world)
+    (handler-case (enable-screen-sharing world)
+      (error (cause) (%log "screen sharing is unavailable: ~A" cause))))
   (refresh-application-catalog)
   world)
 
@@ -492,6 +514,7 @@ Anything releasing a resource that a display item draws must call this too."
     (stop-link (%link world))
     (setf (%link world) nil))
   (stop-images world)
+  (stop-selection-reads world)
   (destroy-webs world)
   (%release-snapshots world)
   (stop-component-timer world)
@@ -521,17 +544,22 @@ Anything releasing a resource that a display item draws must call this too."
       (%report-window world window)))
   application)
 
+(defun %window-gone (world window)
+  "WINDOW stopped showing: it loses pointer and keyboard focus and stops any share."
+  (%forget-pointer-client world (stage-window-application window))
+  (note-window-changed world window :gone-p t)
+  (%forget-window-focus world window))
+
 (defmethod ataxia.kernel:world-unregister-object
     ((world stage-world) (application ataxia.kernel:wayland-application) reason)
   (declare (ignore reason))
   (let ((window (gethash application (%windows world))))
     (when window
-      (%forget-pointer-client world application)
+      (%window-gone world window)
       (remhash application (%windows world))
       (remhash (stage-window-id window) (%windows-by-id world))
       (dolist (stage-output (%outputs world))
         (remhash window (stage-output-window-transforms stage-output)))
-      (%forget-window-focus world window)
       (let ((node (shiftf (stage-window-fallback window) nil)))
         (when node
           (scene-remove (%fallback world) 0 (stage-node-id node))
@@ -628,8 +656,7 @@ Anything releasing a resource that a display item draws must call this too."
                  (let ((seat-state (%default-seat-state world)))
                    (when (and seat-state (%focusable-p window))
                      (%focus-window world seat-state window)))
-                 (progn (%forget-pointer-client world (stage-window-application window))
-                        (%forget-window-focus world window)))
+                 (%window-gone world window))
              (%scene-changed world))
            (%report-window world window))))
       (ataxia.kernel:surface-node
@@ -647,6 +674,7 @@ Anything releasing a resource that a display item draws must call this too."
        (when window
          ;; New buffers replace the surface records display items draw.
          (%invalidate-display world)
+         (note-window-changed world window)
          (%damage-content world window (ataxia.kernel:drawable-invalidation-damage invalidation))
          (%update-snapshot window)
          ;; New subsurfaces and popups join the window's current outputs.
@@ -716,6 +744,9 @@ Anything releasing a resource that a display item draws must call this too."
             (ataxia.world:damage-reset-output (%damage world) output)
             (%layout-outputs world)
             (center-unplaced-camera stage-output)
+            ;; A smaller mode or larger scale can leave the pointer outside.
+            (dolist (seat-state (%seat-states world))
+              (%clamp-seat world seat-state))
             (%invalidate-display world)
             (%report-outputs world)
             (%report-cameras world)))
@@ -725,6 +756,8 @@ Anything releasing a resource that a display item draws must call this too."
 (defmethod ataxia.kernel:world-output-removing ((world stage-world) output)
   (let ((stage-output (%find-stage-output world output)))
     (when stage-output
+      ;; Pages shown only there stop painting.
+      (sync-web-presence world stage-output (make-hash-table))
       (setf (%outputs world) (remove stage-output (%outputs world)))
       (ataxia.world:damage-forget-output (%damage world) output)
       (loop for window being the hash-values of (%windows world)
@@ -757,6 +790,7 @@ Anything releasing a resource that a display item draws must call this too."
   (let ((seat-state (gethash seat (%seats world))))
     (when seat-state
       (setf (stage-seat-cursor seat-state) (ataxia.kernel:cursor-surface-request-surface request)
+            (stage-seat-cursor-set-p seat-state) t
             (stage-seat-cursor-x seat-state) (ataxia.kernel:cursor-surface-request-hotspot-x request)
             (stage-seat-cursor-y seat-state) (ataxia.kernel:cursor-surface-request-hotspot-y request))
       (%damage-cursor world seat-state)))

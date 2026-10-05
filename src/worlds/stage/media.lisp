@@ -113,7 +113,6 @@
   (pixbuf :pointer) (substitute :boolean) (red :uint8) (green :uint8) (blue :uint8))
 (cffi:defcfun ("gdk_pixbuf_get_width" %pixbuf-width) :int (pixbuf :pointer))
 (cffi:defcfun ("gdk_pixbuf_get_height" %pixbuf-height) :int (pixbuf :pointer))
-(cffi:defcfun ("gdk_pixbuf_get_rowstride" %pixbuf-rowstride) :int (pixbuf :pointer))
 (cffi:defcfun ("gdk_pixbuf_get_pixels" %pixbuf-pixels) :pointer (pixbuf :pointer))
 
 (defconstant +pango-scale+ 1024)
@@ -136,22 +135,29 @@
   (line-height nil :read-only t)
   (max-lines nil :read-only t))
 
-(defun node-text-style (node)
-  (let ((width (and (node-declared-p node :width) (node-number node :width))))
+(defun text-style (lookup)
+  "The text style that LOOKUP, a function from property key to declared or default
+value, describes; ranges keep every value inside Pango's integer units."
+  (let ((width (funcall lookup :width))
+        (line-height (funcall lookup :line-height))
+        (max-lines (funcall lookup :max-lines)))
     (%make-text-style
-     :text (or (node-prop node :text) "")
-     :markup-p (node-prop node :markup)
-     :font (or (node-prop node :font) "sans-serif")
-     ;; Ranges keep every value inside Pango's integer units.
-     :size (max 1d0 (min 2048d0 (node-prop node :font-size)))
-     :weight (max 100 (min 1000 (round (node-prop node :font-weight))))
-     :italic-p (node-prop node :italic)
-     :align (node-prop node :align)
+     :text (or (funcall lookup :text) "")
+     :markup-p (funcall lookup :markup)
+     :font (or (funcall lookup :font) "sans-serif")
+     :size (max 1d0 (min 2048d0 (funcall lookup :font-size)))
+     :weight (max 100 (min 1000 (round (funcall lookup :font-weight))))
+     :italic-p (funcall lookup :italic)
+     :align (funcall lookup :align)
      :width (and width (max 1d0 (min 100000d0 width)))
-     :line-height (let ((value (node-prop node :line-height)))
-                    (and value (max 0.1d0 (min 10d0 value))))
-     :max-lines (let ((value (node-prop node :max-lines)))
-                  (and value (max 1 (min 10000 value)))))))
+     :line-height (and line-height (max 0.1d0 (min 10d0 line-height)))
+     :max-lines (and max-lines (max 1 (min 10000 max-lines))))))
+
+(defun node-text-style (node)
+  (text-style (lambda (key)
+                (if (eq key :width)
+                    (and (node-declared-p node :width) (node-number node :width))
+                    (node-prop node key)))))
 
 (defstruct (text-metrics (:constructor %make-text-metrics))
   ;; Logical size: the box the node occupies.
@@ -335,9 +341,7 @@ then call FUNCTION with the premultiplied BGRA pixels, their width and height."
 (defun decode-image (path)
   "Decode PATH into a premultiplied RGBA pixbuf at most *MAX-RASTER-PIXELS* on a side.
 Return the pixbuf, NIL and the intrinsic size, or NIL and an error message. Safe on
-any thread."
-  (unless (%media-available-p 'stage-gobject 'stage-pixbuf)
-    (return-from decode-image (values nil "gdk-pixbuf is unavailable")))
+any thread once the owner thread found gdk-pixbuf available."
   (cffi:with-foreign-objects ((width :int) (height :int) (error :pointer))
     (setf (cffi:mem-ref error :pointer) (cffi:null-pointer))
     (let ((format (%pixbuf-file-info path width height)))
@@ -375,7 +379,6 @@ any thread."
   ;; (IMAGE PIXBUF ERROR WIDTH HEIGHT) results awaiting the owner thread.
   (finished nil :type list)
   (stopped-p nil)
-  thread
   ;; Pipe the worker writes to; the owner thread watches the read end.
   read-fd write-fd source)
 
@@ -398,9 +401,8 @@ the image, its pixbuf or NIL, an error message, and the intrinsic width and heig
                                  (prog1 (nreverse (image-loader-finished loader))
                                    (setf (image-loader-finished loader) nil))))
                  (apply on-finished result))
-               0))
-            (image-loader-thread loader)
-            (sb-thread:make-thread (lambda () (%image-worker loader)) :name "Stage image decoder"))
+               0)))
+      (sb-thread:make-thread (lambda () (%image-worker loader)) :name "Stage image decoder")
       loader)))
 
 (defun %image-worker (loader)

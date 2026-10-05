@@ -10,6 +10,7 @@
 (cffi:defcfun ("glGenTextures" %gl-gen-textures) :void (count :int32) (textures :pointer))
 (cffi:defcfun ("glDeleteTextures" %gl-delete-textures) :void (count :int32) (textures :pointer))
 (cffi:defcfun ("glBindTexture" %gl-bind-texture) :void (target :uint32) (texture :uint32))
+(cffi:defcfun ("glActiveTexture" %gl-active-texture) :void (unit :uint32))
 (cffi:defcfun ("glTexImage2D" %gl-tex-image-2d) :void
   (target :uint32) (level :int32) (internal-format :int32) (width :int32) (height :int32)
   (border :int32) (format :uint32) (type :uint32) (pixels :pointer))
@@ -33,6 +34,7 @@
   (pixels :pointer))
 
 (defconstant +gl-texture-2d+ #x0de1)
+(defconstant +gl-texture-0+ #x84c0)
 (defconstant +gl-rgba+ #x1908)
 ;; EXT_texture_format_BGRA8888, which wlroots' GLES2 renderer requires.
 (defconstant +gl-bgra+ #x80e1)
@@ -137,11 +139,27 @@
         (%gl-viewport (cffi:mem-aref viewport :int32 0) (cffi:mem-aref viewport :int32 1)
                       (cffi:mem-aref viewport :int32 2) (cffi:mem-aref viewport :int32 3))))))
 
-(defun gl-copy-framebuffer (target x y width height)
-  "Copy a rectangle of the bound framebuffer into the same place in TARGET's texture."
+(defun gl-copy-framebuffer (target x y width height &optional (source-x x) (source-y y))
+  "Copy WIDTH x HEIGHT pixels at (SOURCE-X, SOURCE-Y) of the bound framebuffer to (X, Y)
+of TARGET's texture."
   (%gl-bind-texture +gl-texture-2d+ (render-target-texture target))
-  (%gl-copy-tex-sub-image-2d +gl-texture-2d+ 0 x y x y width height)
+  (%gl-copy-tex-sub-image-2d +gl-texture-2d+ 0 x y source-x source-y width height)
   (%gl-bind-texture +gl-texture-2d+ 0))
+
+(defun call-with-offset-target (target x y buffer-width buffer-height function)
+  "Draw into TARGET as into a BUFFER-WIDTH x BUFFER-HEIGHT buffer whose pixel (X, Y)
+is TARGET's first, then restore the previous framebuffer and viewport."
+  (let ((previous (gl-framebuffer-binding)))
+    (cffi:with-foreign-object (viewport :int32 4)
+      (%gl-get-integerv +gl-viewport+ viewport)
+      (unwind-protect
+           (progn
+             (%gl-bind-framebuffer +gl-framebuffer+ (render-target-framebuffer target))
+             (%gl-viewport (- x) (- y) buffer-width buffer-height)
+             (funcall function))
+        (%gl-bind-framebuffer +gl-framebuffer+ previous)
+        (%gl-viewport (cffi:mem-aref viewport :int32 0) (cffi:mem-aref viewport :int32 1)
+                      (cffi:mem-aref viewport :int32 2) (cffi:mem-aref viewport :int32 3))))))
 
 (defun gl-read-pixels (width height pixels)
   "Read the bound framebuffer's WIDTH x HEIGHT RGBA pixels into octet vector PIXELS."

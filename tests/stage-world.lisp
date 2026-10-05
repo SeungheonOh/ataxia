@@ -68,10 +68,69 @@
     (assert (equal '(2 4) (mapcar #'stage-node-id (stage-node-children (scene-root scene))))))
   (dolist (bad (list (lambda () (scene-create scene 9 "rect" (object "zoom" 2) 0d0))
                      (lambda () (scene-create scene 9 "sprite" (object) 0d0))
-                     (lambda () (scene-update scene 4 (object "color" #(1 0)) 0d0))
+                     (lambda () (scene-update scene 4 (object "x" 50 "color" #(1 0)) 0d0))
                      (lambda () (scene-insert scene 4 2 nil) (scene-insert scene 2 4 nil))))
-    (assert (handler-case (progn (funcall bad) nil) (stage-protocol-error () t)))))
-(format t "PASS: layout identity survives remounts, exits animate, invalid ops are rejected.~%")
+    (assert (handler-case (progn (funcall bad) nil) (stage-protocol-error () t))))
+  ;; A rejected op changes nothing, not even the values it named before the bad one.
+  (assert (= 300d0 (node-prop (scene-node scene 4) :x))))
+(format t "PASS: layout identity survives remounts, exits animate, invalid ops change nothing.~%")
+
+;;; Keyframe layers compose over values; curves and effect uniforms animate like props.
+(let ((scene (make-scene))
+      (shake (object "id" "shake" "property" "x" "keyframes" #(0 10 -10 0) "duration" 1
+                     "composite" "add")))
+  (scene-create scene 1 "rect" (object "x" 100 "animate" (vector shake)) 0d0)
+  (scene-create scene 2 "group" (object "shader" "" "uniforms" (object "progress" 1)
+                                         "initial" (object "uniforms" (object "progress" 0))
+                                         "exit" (object "uniforms" (object "progress" 0))
+                                         "transition" (object "uniforms" (object "type" "curve"
+                                                                                 "duration" 1
+                                                                                 "points" #(0 1.5 1))))
+                0d0)
+  (scene-insert scene 0 1 nil)
+  (scene-insert scene 0 2 nil)
+  (scene-finish-commit scene 0d0)
+  (flet ((progress () (channel-value (svref (cdr (first (stage-node-uniforms (scene-node scene 2)))) 0))))
+    (scene-advance scene 0.25d0)
+    (near 107.5d0 (node-number (scene-node scene 1) :x))
+    (near 0.75d0 (progress))
+    (assert (scene-settling-p scene))
+    (scene-advance scene 2d0)
+    (near 100d0 (node-number (scene-node scene 1) :x))
+    (near 1d0 (progress))
+    ;; Declared again beside a new animation, the finished one does not replay.
+    (scene-update scene 1 (object "animate" (vector shake (object "id" "spin" "property" "rotation"
+                                                                  "keyframes" #(0 1) "duration" 1
+                                                                  "iterations" "forever")))
+                  2d0)
+    (scene-advance scene 2.5d0)
+    (near 100d0 (node-number (scene-node scene 1) :x))
+    (near 0.5d0 (node-number (scene-node scene 1) :rotation))
+    (assert (not (scene-settling-p scene)))
+    (let ((effect (scene-node scene 2)))
+      (scene-remove scene 0 2)
+      (scene-finish-commit scene 3d0)
+      (assert (eq :exiting (stage-node-state effect)))
+      (scene-advance scene 5d0)
+      (assert (eq :dead (stage-node-state effect)))))
+  (assert (handler-case (scene-update scene 1 (object "uniforms" (object "x" 1)) 0d0)
+            (stage-protocol-error () t))))
+(format t "PASS: keyframe layers, curve transitions and animated effect uniforms.~%")
+
+;;; Damage: a reorder damages only what moved; a blur area is repainted whole, in one pass.
+(assert (equal '(:a) (%reordered (list (list 1 :b) (list 2 :c) (list 0 :a) (list 3 :d)))))
+(flet ((rectangle (x y width height) (ataxia.world:make-rectangle x y width height)))
+  (let* ((glass (%make-item '(:glass) (rectangle 0 0 100 20) nil nil))
+         (items (list glass))
+         (cursor (rectangle 50 10 10 30)))
+    (setf (item-blur-area glass) (item-bounds glass))
+    (let ((passes (%blur-passes (list cursor) items 200 200)))
+      (assert (member (rectangle 0 0 100 20) passes :test #'equalp))
+      (assert (= (+ (* 100 20) (* 10 20)) (reduce #'+ passes :key #'ataxia.world:rectangle-area))))
+    (assert (equalp (list (rectangle 0 0 200 200))
+                    (%blur-passes (list (rectangle 0 0 200 200)) items 200 200)))
+    (assert (equalp (list cursor) (%blur-passes (list cursor) nil 200 200)))))
+(format t "PASS: damage reorders and blur passes.~%")
 
 ;;; A director session against real Wayland clients on the headless backend.
 (defclass stage-test-world (stage-world)
@@ -129,11 +188,22 @@
                                              "props" (object "color" #(0.9 0.9 0.9 1)
                                                              "handlers" #("pointerdown" "pointerup")))
                                      (object "op" "insert" "parent" 0 "id" 1)
+                                     ;; The window draws through an effect of its own.
                                      (object "op" "create" "id" 2 "type" "window"
                                              "props" (object "window" (stage-window-id window)
                                                              "x" 100 "y" 100 "width" 480 "height" 300
-                                                             "originX" 0 "originY" 0))
+                                                             "originX" 0 "originY" 0 "local" t
+                                                             "shader" "vec4 effect(vec2 p) { return content(p); }"))
                                      (object "op" "insert" "parent" 0 "id" 2)
+                                     (object "op" "create" "id" 5 "type" "group"
+                                             "props" (object "x" 600 "y" 400 "width" 100 "height" 100
+                                                             "shader" "vec4 effect(vec2 p) { return tint * content(p).a; }"
+                                                             "uniforms" (object "tint" #(0 1 0 1))))
+                                     (object "op" "insert" "parent" 0 "id" 5)
+                                     (object "op" "create" "id" 7 "type" "rect"
+                                             "props" (object "width" 100 "height" 100
+                                                             "color" #(1 1 1 1)))
+                                     (object "op" "insert" "parent" 5 "id" 7)
                                      (object "op" "create" "id" 3 "type" "text"
                                              "props" (object "text" "Stage" "fontSize" 20
                                                              "handlers" #("measure")))
@@ -162,8 +232,18 @@
                (11 (assert (received-p "\"name\":\"pointerdown\",\"button\":272,\"output\":\"HEADLESS-1\""))
                    (assert (received-p "\"world-x\":900.000000"))
                    (assert (received-p "\"name\":\"pointerup\""))
-                   (setf frames (test-frames world)))
-               ((12 13))
+                   (setf frames (test-frames world))
+                   (send :type "capture" :id 9 :region (object "x" 620 "y" 420 "width" 8 "height" 8)))
+               ;; The effect turned its white content into its green uniform.
+               (12 (let* ((start (+ (search "\"path\":\"" received) 8))
+                          (path (subseq received start (position #\" received :start start)))
+                          (pixels (with-open-file (in path :element-type '(unsigned-byte 8))
+                                    (let ((octets (make-array 4 :element-type '(unsigned-byte 8))))
+                                      (read-sequence octets in)
+                                      octets))))
+                     (delete-file path)
+                     (assert (equalp pixels #(0 255 0 255)) () "Effect pixel ~A" pixels)))
+               ((13))
                ;; Settled scenes with static clients schedule no frames at all.
                (14 (assert (= frames (test-frames world)) () "~D idle frames"
                            (- (test-frames world) frames))
@@ -195,5 +275,5 @@
       (ignore-errors (sb-bsd-sockets:socket-close director))
       (ataxia.kernel:destroy-kernel kernel :test)
       (uiop:delete-directory-tree root :validate t :if-does-not-exist :ignore))))
-(format t "PASS: handshake, fallback placement, configure, picking through transforms, ~
-director events, text measurement, reservations and an idle settled scene.~%")
+(format t "PASS: handshake, fallback placement, configure, picking through transforms and ~
+effects, effect shaders, director events, text measurement, reservations and an idle settled scene.~%")

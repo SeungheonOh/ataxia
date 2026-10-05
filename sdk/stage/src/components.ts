@@ -1,10 +1,9 @@
 // Host components. Each renders one scene node of the same name.
 
-import type { FC } from "react";
-import type { BackgroundProps, CameraProps, GestureBindingProps, GroupProps, HostType,
-  ImageProps, PointerBindingProps, RectProps, ReserveProps, ScreenProps, ShellProps, ShortcutProps,
-  TextProps,
-  WheelBindingProps, WindowProps } from "./props.js";
+import { createElement, type FC } from "react";
+import type { BackgroundProps, BoxProps, CameraProps, GestureBindingProps, GroupProps, HostType,
+  ImageProps, PointerBindingProps, RectProps, ReserveProps, ScreenProps, ShortcutProps,
+  TextProps, WheelBindingProps, WindowProps } from "./props.js";
 
 function host<P>(type: HostType): FC<P> {
   return type as unknown as FC<P>;
@@ -14,6 +13,16 @@ function host<P>(type: HostType): FC<P> {
 export const Group = host<GroupProps>("group");
 /** Rounded rectangle with optional border and soft shadow. */
 export const Rect = host<RectProps>("rect");
+/**
+ * A Rect that lays out its children like a `display: flex` div:
+ * `<Box flexDirection="column" padding={8} gap={4}>`. A Box inside a Box is
+ * laid out with it; an outermost Box is placed by its own x/y.
+ */
+export const Box = host<BoxProps>("box");
+/** Takes up the free space along its Box's main axis, pushing its siblings apart. */
+export function Spacer() {
+  return createElement(Box, { flexGrow: 1 });
+}
 /** Text laid out by Pango; `<Text size={14}>Hello {name}</Text>`. */
 export const Text = host<TextProps>("text");
 /** Decoded image file, optionally rounded, bordered and shadowed like a Rect. */
@@ -28,8 +37,6 @@ export const Camera = host<CameraProps>("camera");
 export const Screen = host<ScreenProps>("screen");
 /** Screen space kept for this world's own UI; windows' work areas leave it free. */
 export const Reserve = host<ReserveProps>("reserve");
-/** Workspaces for the shell's status bar; the first one in the tree counts. */
-export const Shell = host<ShellProps>("shell");
 /** Keyboard shortcut, consumed before the focused window sees it. */
 export const Shortcut = host<ShortcutProps>("shortcut");
 /** Modifier+button drag anywhere, e.g. Super+drag to move windows. */

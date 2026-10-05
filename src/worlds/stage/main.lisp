@@ -22,14 +22,15 @@
     (&key (backend :auto) (width 1280) (height 720) run-for debug-p damage-debug-p
           (sly-port 4005) (socket (default-director-socket))
           (script (asdf:system-relative-pathname "ataxia-stage-world" "examples/stage/canvas.tsx"))
-          (director-p t) (xwayland-p t)
+          (director-p t) (xwayland-p t) (screen-sharing-p (not (eq backend :headless)))
           ;; Worlds draw their own bars; the shared web status bar is optional.
           status-bar-p
           (assistant-p (not (eq backend :headless))) assistant-project)
   "Run a Stage compositor. With DIRECTOR-P, launch the TypeScript runtime on SCRIPT."
   (when status-bar-p (asdf:load-system "ataxia-web/status-bar"))
   (when assistant-p (asdf:load-system "ataxia-assistant"))
-  (let* ((factory (lambda () (make-stage-world :socket-path socket :damage-debug-p damage-debug-p)))
+  (let* ((factory (lambda () (make-stage-world :socket-path socket :damage-debug-p damage-debug-p
+                                               :screen-sharing-p screen-sharing-p)))
          (kernel (ataxia.kernel:create-kernel
                   (funcall factory) :world-factory factory
                   :recovery-world-factory #'ataxia.world:make-rescue-world
@@ -46,6 +47,14 @@
            (when xwayland-p
              (ataxia.kernel:enable-xwayland kernel)
              (sb-posix:setenv "DISPLAY" (ataxia.kernel:xwayland-display-name kernel) 1))
+           ;; A direct desktop session also points portals and activated services
+           ;; at this display; the script runs apart so slow D-Bus never stalls frames.
+           (unless (eq backend :headless)
+             (uiop:launch-program
+              (list "env" (format nil "WAYLAND_DISPLAY=~A" display) "sh"
+                    (namestring (asdf:system-relative-pathname "ataxia-stage-world"
+                                                               "scripts/setup-desktop-session")))
+              :output nil :error-output nil))
            (when status-bar-p
              (uiop:symbol-call :ataxia.world.web.shell :enable-web-status-bar
                                (ataxia.kernel:kernel-world kernel)))
@@ -69,7 +78,7 @@
 (defun %print-usage ()
   (format t "Usage: run-stage-world [--script PATH | --no-director] [--socket PATH] ~
 [--status-bar|--no-status-bar] [--assistant|--no-assistant] [--assistant-project DIR] ~
-[--no-xwayland] [--backend auto|headless] [--width N] [--height N] [--run-for SECONDS] ~
+[--no-xwayland] [--screen-sharing|--no-screen-sharing] [--backend auto|headless] [--width N] [--height N] [--run-for SECONDS] ~
 [--debug] [--damage-debug] [--sly-port N|--no-sly]~%"))
 
 (defun main (&optional (arguments (uiop:command-line-arguments)))
@@ -88,6 +97,8 @@
                     (setf (getf stage-options :director-p) nil))
                    ((string= option "--no-xwayland")
                     (setf (getf stage-options :xwayland-p) nil))
+                   ((member option '("--screen-sharing" "--no-screen-sharing") :test #'string=)
+                    (setf (getf stage-options :screen-sharing-p) (string= option "--screen-sharing")))
                    ((member option '("--status-bar" "--no-status-bar") :test #'string=)
                     (setf (getf stage-options :status-bar-p) (string= option "--status-bar")))
                    ((member option '("--assistant" "--no-assistant") :test #'string=)

@@ -5,6 +5,7 @@
 ;;;; connection replaces the current director, so a restarted runtime takes
 ;;;; over the live scene; its first commit replaces the old scene in place,
 ;;;; letting windows animate from where they are.
+;;;; docs/STAGE-PROTOCOL.md specifies every message in full.
 
 (in-package #:ataxia.stage-world)
 
@@ -48,8 +49,10 @@
     (namestring (merge-pathnames (format nil "ataxia-stage-~D.sock" (sb-posix:getpid))
                                  (uiop:ensure-directory-pathname root)))))
 
-(defun link-scene-active-p (link)
-  (let ((director (stage-link-director link)))
+(defun %director-scene-active-p (world)
+  "True once the connected director has committed a scene, which replaces the fallback layout."
+  (let* ((link (%link world))
+         (director (and link (stage-link-director link))))
     (and director (director-committed-p director))))
 
 (defun stage-director-connected-p (world)
@@ -201,10 +204,14 @@
 
 (defun %handle-line (link director text)
   (let ((message (handler-case
-                     (ataxia.world.wire:decode text :max-string 65536 :max-nodes 1000000
+                     ;; Lines are already bounded, so a string may be as long as one.
+                     (ataxia.world.wire:decode text :max-string *max-message-bytes* :max-nodes 1000000
                                                     :max-depth 16)
                    (error (cause)
-                     (%reject-director link director (format nil "Invalid JSON: ~A" cause))
+                     ;; Newline framing survives a bad line, so a ready director is only told.
+                     (if (director-ready-p director)
+                         (%send-to director (list :type "error" :message (format nil "Invalid JSON: ~A" cause)))
+                         (%reject-director link director (format nil "Invalid JSON: ~A" cause)))
                      (return-from %handle-line)))))
     (unless (hash-table-p message)
       (%reject-director link director "Messages must be JSON objects.")
@@ -222,6 +229,7 @@
               (%scene-changed (stage-link-world link))))
           (if (and (equal type "hello") (eql (gethash "protocol" message) +protocol-version+))
               (progn
+                (%log "director ~A connected" (or (gethash "client" message) "(unnamed)"))
                 (setf (director-ready-p director) t)
                 (%send-to director (%welcome (stage-link-world link)))
                 (%flush-director link director))
@@ -235,11 +243,9 @@
        (let ((ops (gethash "ops" message)))
          (unless (and (vectorp ops) (not (stringp ops)))
            (protocol-error "commit requires an ops array."))
+         ;; From its first commit the director's scene replaces the fallback layout.
+         (setf (director-committed-p director) t)
          (let ((errors (%apply-commit world ops)))
-           (unless (director-committed-p director)
-             (setf (director-committed-p director) t)
-             (%sync-fallback world)
-             (%scene-changed world))
            (when errors
              (protocol-error "~D op~:P rejected; first: ~A" (length errors) (first errors))))))
       ((equal type "focus")
@@ -250,25 +256,71 @@
                           (and id (or (gethash id (%windows-by-id world))
                                       (protocol-error "Unknown window ~S." id)))))))
       ((equal type "close")
-       (let ((window (gethash (gethash "window" message) (%windows-by-id world))))
-         (when window
-           (ataxia.kernel:request-object-state (stage-window-application window) world :close t))))
+       (let* ((id (gethash "window" message))
+              (window (or (gethash id (%windows-by-id world)) (protocol-error "Unknown window ~S." id))))
+         (ataxia.kernel:request-object-state (stage-window-application window) world :close t)))
       ((equal type "camera") (%move-cameras world message))
-      ((equal type "applications")
-       (%send-to director (list :type "applications"
-                                :applications (coerce (application-catalog) 'vector)))
-       (%flush-director link director))
+      ((equal type "share-accept")
+       (apply #'accept-share world (gethash "id" message) (%message-source world message)))
+      ((equal type "share-cancel") (cancel-share world (gethash "id" message)))
+      ((equal type "measure") (%measure-texts link director message))
+      ((equal type "capture")
+       (let ((id (gethash "id" message)))
+         (unless (typep id '(integer 0 #.most-positive-fixnum))
+           (protocol-error "capture requires a numeric id."))
+         (apply #'capture-for-director world id (%message-source world message))))
       ((equal type "set-clipboard")
        (let ((text (gethash "text" message))
              (seat-state (%default-seat-state world)))
          (unless (stringp text) (protocol-error "set-clipboard requires text."))
          (when seat-state (set-seat-clipboard (stage-seat-seat seat-state) text))))
-      ((equal type "launch-application")
-       (let ((id (gethash "id" message)))
-         (unless (stringp id) (protocol-error "launch-application requires an id."))
-         (handler-case (ataxia.world:launch-world-application world nil id)
-           (error (cause) (protocol-error "~A" cause)))))
       (t (protocol-error "Unknown message type ~S." type)))))
+
+(defparameter +text-measure-props+
+  '("text" "markup" "font" "fontSize" "fontWeight" "italic" "align" "width" "lineHeight" "maxLines")
+  "Text node properties a measure request may give.")
+
+(defun %measure-texts (link director message)
+  "Answer a measure request with the size Pango gives each text, as a text node would show it."
+  (let ((requests (%json-list (gethash "requests" message) "requests")))
+    (when (> (length requests) 1000) (protocol-error "At most 1000 texts per measure request."))
+    (%send-to
+     director
+     (list :type "measured"
+           :results
+           (map 'vector
+                (lambda (request)
+                  (unless (hash-table-p request) (protocol-error "Measure requests must be objects."))
+                  (let* ((props (or (gethash "props" request) (make-hash-table)))
+                         (values (progn
+                                   (unless (hash-table-p props) (protocol-error "props must be an object."))
+                                   (loop for name in +text-measure-props+
+                                         for spec = (gethash name +prop-specs+)
+                                         collect (prop-spec-key spec)
+                                         collect (decode-prop-value spec (gethash name props)))))
+                         (metrics (measure-text (text-style (lambda (key) (getf values key))))))
+                    (list :key (gethash "key" request)
+                          :width (if metrics (text-metrics-width metrics) 0d0)
+                          :height (if metrics (text-metrics-height metrics) 0d0))))
+                requests)))
+    (%flush-director link director)))
+
+(defun %message-source (world message)
+  "Keyword arguments naming the window, or the output and region, MESSAGE picks."
+  (let ((output-name (gethash "output" message))
+        (window-id (gethash "window" message))
+        (region (gethash "region" message)))
+    (if window-id
+        (list :window (or (gethash window-id (%windows-by-id world))
+                          (protocol-error "Unknown window ~S." window-id)))
+        (list :output (or (if output-name
+                              (find output-name (%outputs world) :key #'%output-name :test #'equal)
+                              (first (%outputs world)))
+                          (protocol-error "Unknown output ~S." output-name))
+              :region (when region
+                        (unless (hash-table-p region) (protocol-error "region must be an object."))
+                        (mapcar (lambda (key) (%finite-number (gethash key region) key))
+                                '("x" "y" "width" "height")))))))
 
 (defun %move-cameras (world message)
   "Apply a programmatic camera move to one output, or to every output."
@@ -304,7 +356,7 @@
 
 (defun %apply-commit (world ops)
   "Apply OPS as one scene transaction and return the messages of rejected ops.
-A rejected op is skipped; the rest still applies, keeping a live session usable."
+A rejected op changes nothing; the rest still applies, keeping a live session usable."
   (let ((scene (%scene world))
         (time (%now))
         (errors nil))
@@ -322,6 +374,7 @@ A rejected op is skipped; the rest still applies, keeping a live session usable.
                   (ataxia.kernel:kernel-runtime (ataxia.kernel:world-kernel world)))
         :outputs (map 'vector (lambda (stage-output) (%output-description world stage-output))
                       (%outputs world))
+        :shares (share-descriptions world)
         :windows (map 'vector (lambda (window)
                                 (setf (stage-window-report window) (%window-metadata window)))
                       (sort (loop for window being the hash-values of (%windows world)

@@ -1,32 +1,32 @@
-export { Background, Camera, GestureBinding, Group, Image, PointerBinding, Rect, Reserve, Screen,
-  Shell, Shortcut, Text, WheelBinding, Window } from "./components.js";
-export { changeBrightness, changeVolume, mediaCommand, setBrightness, setPowerProfile, setVolume,
-  toggleMute, useBattery, useBrightness, useMedia, usePowerProfile, useTime,
-  useVolume } from "./system.js";
-export type { BatteryInfo, BrightnessInfo, MediaInfo, PowerProfileInfo, VolumeInfo } from "./system.js";
-export { useApplications, useCamera, useClipboard, useFocusedWindow, useOutputs, usePersistentState,
-  useWindow, useWindows } from "./hooks.js";
-export { instant, spring, tween } from "./motion.js";
+export { Background, Box, Camera, GestureBinding, Group, Image, PointerBinding, Rect, Reserve,
+  Screen, Shortcut, Spacer, Text, WheelBinding, Window } from "./components.js";
+export { useCamera, useClipboard, useFocusedWindow, useOutputs,
+  usePersistentReducer, usePersistentState, useShares, useWindow, useWindowIds, useWindows } from "./hooks.js";
+export { ease, instant, spring, tween } from "./motion.js";
+export type { AnimatableValues, Animation, AnimationTiming, Keyframes } from "./animation.js";
 export { columns, dwindle, grid, inset, masterStack } from "./layouts.js";
 export type { Area, ColumnOptions, GapOptions, MasterOptions, Placement } from "./layouts.js";
 export { Web } from "./web.js";
 export type { WebProps } from "./web.js";
-export type { CubicBezier, Easing, Motion, SpringOptions, TweenOptions } from "./motion.js";
+export type { CubicBezier, Easing, EasingFunction, Motion, SpringOptions,
+  TweenOptions } from "./motion.js";
 export type { Color } from "./color.js";
-export type { AnimatedValues, BackgroundProps, BindingAction, Border, CameraProps, DragProps,
-  GestureBindingProps, Grid, GroupProps, ImageProps, ModifierName, Paint, PaintValues,
-  PointerBindingProps, RectProps, ReserveProps, ScreenProps, Shadow, ShellProps, ShortcutProps,
-  TextContent,
-  TextProps,
-  Transition, WheelBindingProps, WindowProps } from "./props.js";
-export type { Modifier, StageDragEvent, StageErrorEvent, StageEvent, StageGestureEvent,
-  StageLoadEvent, StageMeasureEvent, StageNavigateEvent, StagePointerEvent, StageRequestEvent,
-  StageResizeEvent,
+export type { AnimatedValues, BackgroundProps, BindingAction, Border, BoxProps, CameraProps, Cursor,
+  DragProps, Effect, EffectProps, ElementProps, GestureBindingProps, Grid, GroupProps, ImageProps, ModifierName, Paint,
+  PaintValues, PointerBindingProps, RectProps, ReserveProps, ScreenProps, Shadow, ShapeProps,
+  ShortcutProps, Style, TextContent, TextProps, Transition, UniformValue,
+  WheelBindingProps, WindowProps } from "./props.js";
+export type { Dimension, FlexContainerProps, FlexItemProps, LayoutBox } from "./layout.js";
+export type { Modifier, StageBubblingEvent, StageDragEvent, StageElement,
+  StageErrorEvent, StageEvent, StageGestureEvent, StageLoadEvent, StageMeasureEvent,
+  StagePointerEvent, StageRequestEvent, StageResizeEvent,
   StageWheelEvent } from "./events.js";
-export type { ApplicationInfo, Box, CameraInfo, OutputInfo, WindowInfo } from "./store.js";
-export type { CameraMove } from "./session.js";
+export type { CameraInfo, OutputInfo, Rectangle, ShareInfo, WindowInfo } from "./store.js";
+import type { CameraInfo } from "./store.js";
+export type { CameraMove, Screenshot, ShareSource } from "./session.js";
+export { encodePng } from "./png.js";
 import type { Motion } from "./motion.js";
-import { currentSession, type CameraMove } from "./session.js";
+import { currentSession, type CameraMove, type Screenshot, type ShareSource } from "./session.js";
 
 /** Give keyboard focus to WINDOW on the first seat, or clear it with null. */
 export function focus(window: number | null): void {
@@ -38,14 +38,32 @@ export function close(window: number): void {
   currentSession().close(window);
 }
 
-/** Launch an installed application by its useApplications() id. */
-export function launchApplication(id: string): void {
-  currentSession().launchApplication(id);
+/** Answer screen-sharing request ID with what to share. */
+export function acceptShare(id: number, source: ShareSource): void {
+  currentSession().acceptShare(id, source);
+}
+
+/** Decline screen-sharing request ID, or stop that share. */
+export function cancelShare(id: number): void {
+  currentSession().cancelShare(id);
+}
+
+/** Capture a window, or an output or a region of it (the first output by default). */
+export function screenshot(source?: ShareSource): Promise<Screenshot> {
+  return currentSession().screenshot(source);
 }
 
 /** Start a Wayland client of this compositor; a string runs through /bin/sh. */
 export function launch(command: string | readonly string[]): void {
   currentSession().launch(command);
+}
+
+/**
+ * Where OUTPUT's camera (or the first output's) is headed now, without
+ * subscribing: for event handlers that need it once, e.g. to fly from it.
+ */
+export function getCamera(output?: string): CameraInfo | undefined {
+  return currentSession().store.camera(output);
 }
 
 /** Move a camera (every output's, unless OUTPUT is given), always, even to where it already was. */

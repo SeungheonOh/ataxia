@@ -38,11 +38,8 @@
       (remhash node (scene-active scene)))
   node)
 
-(defun %channel-target (spec value)
-  (if (eq (prop-spec-space spec) :log) (log value) value))
-
 (defun %set-animated (scene node spec value time from)
-  "Retarget KEY's channels to VALUE; FROM is the starting value for a new channel."
+  "Retarget SPEC's channels to VALUE; FROM is the starting value for a new channel."
   (let* ((key (prop-spec-key spec))
          (motion (node-motion node key))
          (existing (gethash key (stage-node-channels node))))
@@ -56,15 +53,14 @@
                 for component across value
                 do (channel-retarget channel component motion time)))
         (let ((channel (or existing
-                           (make-channel (%channel-target spec (or from value))
-                                         (prop-spec-tolerance spec)))))
+                           (make-channel (to-channel spec (or from value)) (prop-spec-tolerance spec)))))
           (setf (gethash key (stage-node-channels node)) channel)
-          (channel-retarget channel (%channel-target spec value) motion time))))
+          (channel-retarget channel (to-channel spec value) motion time))))
   (%track-activity scene node))
 
-(defun %set-prop (scene node spec raw time &optional creating-p)
+(defun %set-prop (scene node spec raw value time creating-p)
+  "Declare SPEC's VALUE, decoded from RAW (NIL resets it), animating it when it animates."
   (let* ((key (prop-spec-key spec))
-         (value (decode-prop-value spec raw))
          (animated-p (and (prop-spec-animated-p spec)
                           (node-kind-animates-p (stage-node-kind node))
                           ;; A held key keeps its manipulated value; the declaration
@@ -86,14 +82,9 @@
             (creating-p (getf (stage-node-initial node) key))
             ((gethash key (stage-node-channels node)) nil)
             ;; A gradient appearing on a solid paint starts from that paint.
-            ((assoc key +gradient-ends+) (multiple-value-call #'vector (node-color node key)))
+            ((assoc key +gradient-ends+)
+             (multiple-value-call #'vector (node-color node (cdr (assoc key +gradient-ends+)))))
             (t (funcall (scene-natural-value scene) node key)))))))))
-
-(defun %prop-spec-for (node name)
-  (let ((spec (gethash name +prop-specs+)))
-    (unless (and spec (member (prop-spec-key spec) (kind-props (stage-node-kind node))))
-      (protocol-error "A ~(~A~) node has no property ~S." (stage-node-kind node) name))
-    spec))
 
 (defun %decode-targets (node object)
   "Decode an initial/exit object into a plist of animated property values."
@@ -101,59 +92,108 @@
     (protocol-error "Expected an object of property values."))
   (let ((targets nil))
     (maphash (lambda (name raw)
-               (let ((spec (%prop-spec-for node name)))
-                 (unless (prop-spec-animated-p spec)
-                   (protocol-error "Property ~A cannot animate." name))
-                 (setf (getf targets (prop-spec-key spec)) (decode-prop-value spec raw))))
+               (if (equal name "uniforms")
+                   (setf (getf targets :uniforms) (%effect-uniforms node raw))
+                   (let ((spec (%prop-spec-for node name)))
+                     (unless (prop-spec-animated-p spec)
+                       (protocol-error "Property ~A cannot animate." name))
+                     (when (null raw)
+                       (protocol-error "Animation target ~A needs a value." name))
+                     (setf (getf targets (prop-spec-key spec)) (decode-prop-value spec raw)))))
              object)
     targets))
 
+(defun %effect-uniforms (node raw)
+  (unless (kind-effects-p (stage-node-kind node))
+    (protocol-error "A ~(~A~) node has no effect uniforms." (stage-node-kind node)))
+  (and raw (decode-uniforms raw)))
+
+(defun %set-uniforms (scene node uniforms time creating-p)
+  "Declare NODE's UNIFORMS; changed values animate with the `uniforms` transition and
+new ones start from `initial` when the node is created."
+  (let ((motion (node-motion node :uniforms))
+        (initial (and creating-p (getf (stage-node-initial node) :uniforms))))
+    (setf (stage-node-uniforms node)
+          (loop for (name . value) in uniforms
+                for previous = (cdr (assoc name (stage-node-uniforms node) :test #'equal))
+                for start = (or (and previous (= (length previous) (length value)) previous)
+                                (let ((from (cdr (assoc name initial :test #'equal))))
+                                  (map 'vector #'make-channel
+                                       (if (and from (= (length from) (length value))) from value))))
+                do (map nil (lambda (channel component) (channel-retarget channel component motion time))
+                        start value)
+                collect (cons name start))))
+  (%track-activity scene node))
+
 (defun %decode-motions (node object)
-  (clrhash (stage-node-motions node))
-  (when object
-    (unless (hash-table-p object)
-      (protocol-error "transition must be an object."))
-    (maphash (lambda (name spec)
-               (let ((key (if (equal name "default")
-                              :default
-                              (prop-spec-key (or (gethash name +prop-specs+)
-                                                 (protocol-error "Unknown property ~S." name))))))
-                 ;; A motion for a property this kind lacks is moot, not an error:
-                 ;; a shared transition object may name more than one kind uses.
-                 (when (or (eq key :default) (member key (kind-props (stage-node-kind node))))
-                   (setf (gethash key (stage-node-motions node)) (decode-motion spec)))))
-             object)))
+  "Alist of property key (or :DEFAULT) to motion from a transition OBJECT."
+  (unless (or (null object) (hash-table-p object))
+    (protocol-error "transition must be an object."))
+  (let ((motions nil))
+    (when object
+      (maphash (lambda (name spec)
+                 (let ((key (cond ((equal name "default") :default)
+                                  ((equal name "uniforms") :uniforms)
+                                  (t (prop-spec-key (or (gethash name +prop-specs+)
+                                                        (protocol-error "Unknown property ~S." name)))))))
+                   ;; A motion for a property this kind lacks is moot, not an error:
+                   ;; a shared transition object may name more than one kind uses.
+                   (when (or (eq key :default)
+                             (and (eq key :uniforms) (kind-effects-p (stage-node-kind node)))
+                             (member key (kind-props (stage-node-kind node))))
+                     (push (cons key (decode-motion spec)) motions))))
+               object))
+    motions))
 
 (defun %apply-props (scene node props time &optional creating-p)
+  "Apply PROPS to NODE. Everything is decoded first, so a rejected op changes nothing."
   (unless (hash-table-p props)
     (protocol-error "Node properties must be an object."))
-  ;; Metadata first: a commit changing both a transition and a value animates
-  ;; that value with the new transition.
-  (multiple-value-bind (motions present-p) (gethash "transition" props)
-    (when present-p (%decode-motions node motions)))
-  (multiple-value-bind (initial present-p) (gethash "initial" props)
-    (when (and present-p creating-p initial)
-      (setf (stage-node-initial node) (%decode-targets node initial))))
-  (multiple-value-bind (exit present-p) (gethash "exit" props)
-    (when present-p
-      (setf (stage-node-exit node) (and exit (%decode-targets node exit)))))
-  (multiple-value-bind (layout-id present-p) (gethash "layoutId" props)
-    (when present-p
-      (unless (or (null layout-id) (stringp layout-id))
-        (protocol-error "layoutId must be a string."))
-      (setf (stage-node-layout-id node) layout-id)))
-  (multiple-value-bind (handlers present-p) (gethash "handlers" props)
-    (when present-p
-      (setf (stage-node-handlers node)
-            (loop for name in (and handlers (%json-list handlers "handlers"))
-                  for event = (cdr (assoc name +event-names+ :test #'equal))
-                  when event collect event))))
-  (maphash (lambda (name raw)
-             (unless (member name '("transition" "initial" "exit" "layoutId" "handlers")
-                             :test #'equal)
-               (%set-prop scene node (%prop-spec-for node name) raw time creating-p)))
-           props)
+  (let ((values nil) (metadata nil) (uniforms :absent))
+    (maphash (lambda (name raw)
+               (cond
+                 ((equal name "uniforms") (setf uniforms (%effect-uniforms node raw)))
+                 ((equal name "transition") (push (cons :motions (%decode-motions node raw)) metadata))
+                 ((equal name "initial")
+                  (when (and creating-p raw) (push (cons :initial (%decode-targets node raw)) metadata)))
+                 ((equal name "exit") (push (cons :exit (and raw (%decode-targets node raw))) metadata))
+                 ((equal name "layoutId")
+                  (unless (or (null raw) (stringp raw)) (protocol-error "layoutId must be a string."))
+                  (push (cons :layout-id raw) metadata))
+                 ((equal name "animate") (push (cons :layers (decode-layers node raw)) metadata))
+                 ((equal name "handlers")
+                  (push (cons :handlers (loop for name in (and raw (%json-list raw "handlers"))
+                                              for event = (cdr (assoc name +event-names+ :test #'equal))
+                                              when event collect event))
+                        metadata))
+                 (t (let ((spec (%prop-spec-for node name)))
+                      (push (list spec raw (decode-prop-value spec raw)) values)))))
+             props)
+    ;; Metadata first: a commit changing both a transition and a value animates
+    ;; that value with the new transition.
+    (loop for (field . value) in metadata
+          do (ecase field
+               (:motions (clrhash (stage-node-motions node))
+                (loop for (key . motion) in value do (setf (gethash key (stage-node-motions node)) motion)))
+               (:initial (setf (stage-node-initial node) value))
+               (:exit (setf (stage-node-exit node) value))
+               (:layout-id (setf (stage-node-layout-id node) value))
+               (:handlers (setf (stage-node-handlers node) value))
+               (:layers (%start-layers scene node value time))))
+    (loop for (spec raw value) in values do (%set-prop scene node spec raw value time creating-p))
+    (unless (eq uniforms :absent) (%set-uniforms scene node uniforms time creating-p)))
   node)
+
+(defun %start-layers (scene node layers time)
+  "Make LAYERS NODE's animations. One whose id was declared before keeps its start,
+so it runs on (or stays finished); the others start at TIME."
+  (dolist (layer layers)
+    (let ((previous (find (layer-id layer) (stage-node-layers node) :key #'layer-id :test #'equal)))
+      (setf (layer-start layer) (if previous (layer-start previous) time)
+            (layer-done-p layer) (and previous (layer-done-p previous)))))
+  (setf (stage-node-layers node) layers)
+  (sample-layers node time)
+  (%track-activity scene node))
 
 (defun scene-create (scene id type props time)
   (unless (and (integerp id) (plusp id))
@@ -260,10 +300,7 @@ director may reuse the old node ids."
   "Destination of KEY: its channel target while one exists, else the declared value."
   (let ((channel (gethash key (stage-node-channels node))))
     (if (and channel (not (vectorp channel)))
-        (let ((spec (find-prop-spec key)))
-          (if (eq (prop-spec-space spec) :log)
-              (exp (channel-target channel))
-              (channel-target channel)))
+        (from-channel (find-prop-spec key) (channel-target channel))
         (node-prop node key))))
 
 (defun node-jump (scene node key value)
@@ -272,7 +309,7 @@ director may reuse the old node ids."
     (channel-jump (or (gethash key (stage-node-channels node))
                       (setf (gethash key (stage-node-channels node))
                             (make-channel 0d0 (prop-spec-tolerance spec))))
-                  (%channel-target spec value))
+                  (to-channel spec value))
     (%track-activity scene node)))
 
 (defun %displayed-value (scene node spec)
@@ -282,10 +319,22 @@ director may reuse the old node ids."
         (or (node-number node key) (funcall (scene-natural-value scene) node key) 0d0))))
 
 (defun %begin-exit (scene node time)
-  (setf (stage-node-state node) :exiting)
+  (setf (stage-node-state node) :exiting
+        ;; An endless animation would keep the node from ever leaving.
+        (stage-node-layers node) (remove-if (lambda (layer) (track-endless-p (layer-track layer)))
+                                            (stage-node-layers node)))
   (loop for (key value) on (stage-node-exit node) by #'cddr
-        for spec = (find-prop-spec key)
-        do (%set-animated scene node spec value time (%displayed-value scene node spec)))
+        do (if (eq key :uniforms)
+               (loop with motion = (node-motion node :uniforms)
+                     for (name . components) in value
+                     for channels = (cdr (assoc name (stage-node-uniforms node) :test #'equal))
+                     when (and channels (= (length channels) (length components)))
+                       do (map nil (lambda (channel component)
+                                     (channel-retarget channel component motion time))
+                               channels components))
+               (let ((spec (find-prop-spec key)))
+                 (%set-animated scene node spec value time (%displayed-value scene node spec)))))
+  (%track-activity scene node)
   (if (node-moving-p node)
       (push node (scene-exiting scene))
       (%destroy-node scene node)))
@@ -328,23 +377,32 @@ director may reuse the old node ids."
                  do (if (vectorp value)
                         (map nil (lambda (channel) (channel-sample channel time)) value)
                         (channel-sample value time)))
+           (loop for (nil . channels) in (stage-node-uniforms node)
+                 do (map nil (lambda (channel) (channel-sample channel time)) channels))
+           (sample-layers node time)
            (%track-activity scene node))
   (dolist (node (copy-list (scene-exiting scene)))
     (unless (node-moving-p node)
       (%destroy-node scene node)))
-  (plusp (hash-table-count (scene-active scene))))
+  (scene-moving-p scene))
 
 (defun scene-moving-p (scene)
   (plusp (hash-table-count (scene-active scene))))
 
 (defun scene-settling-p (scene)
-  "True while any channel runs a motion that will finish, as opposed to an endless loop."
+  "True while any channel or layer runs a motion that will finish, as opposed to an endless loop."
   (loop for node being the hash-keys of (scene-active scene)
-          thereis (loop for value being the hash-values of (stage-node-channels node)
-                          thereis (some (lambda (channel)
-                                          (and (channel-active-p channel)
-                                               (not (motion-loops-p (channel-motion channel)))))
-                                        (if (vectorp value) value (list value))))))
+          thereis (or (layers-running-p node t)
+                      (loop for (nil . channels) in (stage-node-uniforms node)
+                              thereis (some (lambda (channel)
+                                              (and (channel-active-p channel)
+                                                   (not (motion-loops-p (channel-motion channel)))))
+                                            channels))
+                      (loop for value being the hash-values of (stage-node-channels node)
+                              thereis (some (lambda (channel)
+                                              (and (channel-active-p channel)
+                                                   (not (motion-loops-p (channel-motion channel)))))
+                                            (if (vectorp value) value (list value)))))))
 
 (defun map-scene-nodes (function scene)
   "Call FUNCTION on every live node in paint order."

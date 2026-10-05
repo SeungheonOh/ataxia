@@ -13,11 +13,12 @@ import type { BuildOptions } from "esbuild";
 import { createElement, useEffect, useSyncExternalStore } from "react";
 import { bundle, describeFailure } from "./build.js";
 import type { StageErrorEvent, StageEvent } from "./events.js";
-import type { BoxProps, MotionProps } from "./props.js";
+import type { CursorProps, EffectProps, ElementProps, MotionProps, ShapeProps } from "./props.js";
 import { resolveAsset } from "./props.js";
 import { SourceWatcher } from "./watch.js";
 
-export interface WebProps extends BoxProps, MotionProps {
+export interface WebProps extends ShapeProps, MotionProps, CursorProps, EffectProps,
+  ElementProps<WebProps> {
   /**
    * A React module (.tsx, .jsx, .ts, .js) whose default export renders the page,
    * an .html file, a built app directory, or a URL. Paths are relative to the
@@ -152,7 +153,7 @@ class Bundle {
   private async build(): Promise<void> {
     if (!this.options || this.disposed) return;
     try {
-      const result = await bundle({ ...this.options, metafile: true });
+      const result = await bundle(this.options);
       this.inputs = Object.keys(result.metafile!.inputs);
       this.revision++;
       for (const listener of this.listeners) listener();

@@ -166,8 +166,9 @@ uniform float u_lines;
 uniform float u_pixel;
 uniform vec4 u_row_x;
 uniform vec4 u_row_y;
+uniform vec2 u_origin;
 void main() {
-  vec3 point = vec3(gl_FragCoord.xy, 1.0);
+  vec3 point = vec3(gl_FragCoord.xy + u_origin, 1.0);
   vec2 local = vec2(dot(u_row_x.xyz, point), dot(u_row_y.xyz, point));
   // Distance to the nearest grid point, per axis, in output pixels.
   vec2 cell = abs(fract(local / u_spacing + 0.5) - 0.5) * u_spacing / u_pixel;
@@ -227,12 +228,13 @@ uniform vec2 u_size;
 uniform float u_radius;
 uniform float u_pixel;
 uniform float u_opacity;
+uniform vec2 u_origin;
 " +box-distance+
    "void main() {
   vec2 half_size = u_size * 0.5;
   float radius = min(u_radius, min(half_size.x, half_size.y));
   float coverage = clamp(0.5 - box_distance(v_local - half_size, half_size, radius) / u_pixel, 0.0, 1.0);
-  vec2 uv = clamp(gl_FragCoord.xy / u_viewport, u_bounds.xy, u_bounds.zw);
+  vec2 uv = clamp((gl_FragCoord.xy + u_origin) / u_viewport, u_bounds.xy, u_bounds.zw);
   gl_FragColor = vec4(texture2D(u_texture, uv).rgb, 1.0) * (coverage * u_opacity);
 }"))
 
@@ -242,14 +244,21 @@ uniform float u_opacity;
   (vertices (make-array 36 :element-type 'single-float) :read-only t)
   (viewport-width 1d0 :type double-float)
   (viewport-height 1d0 :type double-float)
+  ;; Buffer pixel of the bound target's first pixel: nonzero inside an effect's
+  ;; content, which covers only the effect's area.
+  (origin-x 0 :type fixnum)
+  (origin-y 0 :type fixnum)
   ;; Buffer-space scissor of the damage rectangle being repainted.
   (scissor nil :type list)
-  ;; (WIDTH . HEIGHT) -> list of render targets halving in size, and when each
-  ;; chain was last used.
+  ;; (WIDTH . HEIGHT) -> (render targets halving in size . when last used).
   (blur-chains (make-hash-table :test #'equal) :read-only t)
-  (blur-used (make-hash-table :test #'equal) :read-only t)
   ;; Slot -> RASTER: uploaded text and image textures.
-  (rasters (make-hash-table :test #'equal) :read-only t))
+  (rasters (make-hash-table :test #'equal) :read-only t)
+  ;; Effect source and uniform layout -> (program or error message . when last used).
+  (effects (make-hash-table :test #'equal) :read-only t)
+  ;; (WIDTH HEIGHT DEPTH ROLE) -> (render target . when last used), for nested effects.
+  (effect-targets (make-hash-table :test #'equal) :read-only t)
+  (effect-depth 0 :type fixnum))
 
 ;; A texture the World uploads itself, such as rendered text or a decoded image.
 (defstruct (raster (:constructor %make-raster))
@@ -299,10 +308,15 @@ uniform float u_opacity;
                            (stage-renderer-blur-down renderer) (stage-renderer-blur-up renderer)
                            (stage-renderer-backdrop renderer)))
       (ataxia.world.gles:destroy-gles-program program))
-    (loop for chain being the hash-values of (stage-renderer-blur-chains renderer)
-          do (mapc #'destroy-render-target chain))
+    (loop for entry being the hash-values of (stage-renderer-blur-chains renderer)
+          do (mapc #'destroy-render-target (car entry)))
     (clrhash (stage-renderer-blur-chains renderer))
-    (clrhash (stage-renderer-blur-used renderer))
+    (loop for entry being the hash-values of (stage-renderer-effects renderer)
+          unless (stringp (car entry)) do (ataxia.world.gles:destroy-gles-program (car entry)))
+    (clrhash (stage-renderer-effects renderer))
+    (loop for entry being the hash-values of (stage-renderer-effect-targets renderer)
+          do (destroy-render-target (car entry)))
+    (clrhash (stage-renderer-effect-targets renderer))
     (loop for raster being the hash-values of (stage-renderer-rasters renderer)
           do (gl-delete-texture (raster-texture raster)))
     (clrhash (stage-renderer-rasters renderer))
@@ -312,13 +326,17 @@ uniform float u_opacity;
 
 (defun begin-stage-frame (renderer width height)
   (setf (stage-renderer-viewport-width renderer) (coerce width 'double-float)
-        (stage-renderer-viewport-height renderer) (coerce height 'double-float))
+        (stage-renderer-viewport-height renderer) (coerce height 'double-float)
+        (stage-renderer-origin-x renderer) 0
+        (stage-renderer-origin-y renderer) 0)
   (ataxia.world.gles:gles-reset-state)
   (ataxia.world.gles:gles-set-scissor-enabled t))
 
 (defun set-stage-scissor (renderer x y width height)
+  "Limit drawing to buffer pixels (X, Y, WIDTH, HEIGHT) of the bound target."
   (setf (stage-renderer-scissor renderer) (list x y width height))
-  (ataxia.world.gles:gles-set-scissor x y width height))
+  (ataxia.world.gles:gles-set-scissor (- x (stage-renderer-origin-x renderer))
+                                      (- y (stage-renderer-origin-y renderer)) width height))
 
 (defun finish-stage-frame ()
   (ataxia.world.gles:gles-set-scissor-enabled nil)
@@ -331,6 +349,9 @@ uniform float u_opacity;
   (ataxia.world.gles:gles-uniform-2f program "u_viewport"
                                      (stage-renderer-viewport-width renderer)
                                      (stage-renderer-viewport-height renderer))
+  (ataxia.world.gles:gles-uniform-2f program "u_origin"
+                                     (stage-renderer-origin-x renderer)
+                                     (stage-renderer-origin-y renderer))
   program)
 
 (defun %draw-quad (renderer transform x y width height &optional uv)
@@ -365,17 +386,19 @@ texture coordinates of its top-left, top-right, bottom-left and bottom-right cor
   (ataxia.world.gles:gles-uniform-4f program name
                                      (aref color 0) (aref color 1) (aref color 2) (aref color 3)))
 
+(deftype color () '(simple-array double-float (4)))
+
 (defstruct (paint (:constructor make-paint (start end angle)))
   "A premultiplied color, or a two-stop linear gradient at ANGLE radians."
-  (start nil :type simple-vector :read-only t)
-  (end nil :type simple-vector :read-only t)
+  (start nil :type color :read-only t)
+  (end nil :type color :read-only t)
   (angle 0d0 :type double-float :read-only t))
 
-(defun %uniform-paint (program prefix paint)
-  (%uniform-color program prefix (paint-start paint))
-  (%uniform-color program (concatenate 'string prefix "_end") (paint-end paint))
-  (ataxia.world.gles:gles-uniform-2f program (concatenate 'string prefix "_direction")
-                                     (cos (paint-angle paint)) (sin (paint-angle paint))))
+(defun %uniform-paint (program start end direction paint)
+  "Set PAINT's colors and gradient direction in the uniforms named START, END and DIRECTION."
+  (%uniform-color program start (paint-start paint))
+  (%uniform-color program end (paint-end paint))
+  (ataxia.world.gles:gles-uniform-2f program direction (cos (paint-angle paint)) (sin (paint-angle paint))))
 
 (defun draw-stage-rect (renderer transform width height radius border fill stroke)
   "Fill and inner border of a rounded rectangle, painted with FILL and STROKE paints."
@@ -386,8 +409,8 @@ texture coordinates of its top-left, top-right, bottom-left and bottom-right cor
     (ataxia.world.gles:gles-uniform-1f program "u_radius" radius)
     (ataxia.world.gles:gles-uniform-1f program "u_border" border)
     (ataxia.world.gles:gles-uniform-1f program "u_pixel" pixel)
-    (%uniform-paint program "u_fill" fill)
-    (%uniform-paint program "u_stroke" stroke)
+    (%uniform-paint program "u_fill" "u_fill_end" "u_fill_direction" fill)
+    (%uniform-paint program "u_stroke" "u_stroke_end" "u_stroke_direction" stroke)
     (%draw-quad renderer transform (- margin) (- margin)
                 (+ width (* 2 margin)) (+ height (* 2 margin)))))
 
@@ -521,14 +544,23 @@ Return the raster, or NIL while none holds KEY."
       raster)))
 
 (defun sweep-rasters (renderer now)
-  "Delete rasters no frame has drawn within their lifetime, and blur targets of a
-buffer size no longer drawn, e.g. after a mode change."
+  "Delete rasters unused for their lifetime before NOW, blur and effect targets unused
+for two seconds, and effect programs unused for a minute."
   (let ((chains (stage-renderer-blur-chains renderer)))
-    (loop for key being the hash-keys of chains using (hash-value chain)
-          when (> (- now (gethash key (stage-renderer-blur-used renderer))) 2d0)
-            do (mapc #'destroy-render-target chain)
-               (remhash key chains)
-               (remhash key (stage-renderer-blur-used renderer))))
+    (loop for key being the hash-keys of chains using (hash-value entry)
+          when (> (- now (cdr entry)) 2d0)
+            do (mapc #'destroy-render-target (car entry))
+               (remhash key chains)))
+  (let ((targets (stage-renderer-effect-targets renderer)))
+    (loop for key being the hash-keys of targets using (hash-value entry)
+          when (> (- now (cdr entry)) 2d0)
+            do (destroy-render-target (car entry))
+               (remhash key targets)))
+  (let ((effects (stage-renderer-effects renderer)))
+    (loop for key being the hash-keys of effects using (hash-value entry)
+          when (> (- now (cdr entry)) 60d0)
+            do (unless (stringp (car entry)) (ataxia.world.gles:destroy-gles-program (car entry)))
+               (remhash key effects)))
   (let ((rasters (stage-renderer-rasters renderer)))
     (loop for slot being the hash-keys of rasters using (hash-value raster)
           when (> (- now (raster-used raster)) (raster-lifetime raster))
@@ -553,13 +585,13 @@ buffer size no longer drawn, e.g. after a mode change."
 (defun %blur-chain (renderer width height passes)
   "Render targets for levels 0..PASSES of a WIDTH x HEIGHT buffer, created on demand."
   (let* ((key (cons width height))
-         (chain (gethash key (stage-renderer-blur-chains renderer))))
+         (chain (car (gethash key (stage-renderer-blur-chains renderer)))))
     (loop for level from (length chain) to passes
           do (setf chain (append chain (list (make-render-target
                                               (max 1 (ceiling width (expt 2 level)))
                                               (max 1 (ceiling height (expt 2 level))))))))
-    (setf (gethash key (stage-renderer-blur-used renderer)) (%now)
-          (gethash key (stage-renderer-blur-chains renderer)) chain)))
+    (setf (gethash key (stage-renderer-blur-chains renderer)) (cons chain (%now)))
+    chain))
 
 (defun %level-area (x y width height level)
   "A buffer-space area in LEVEL's pixels, rounded outwards."
@@ -588,7 +620,7 @@ the scale from target to source pixels: 2 when downsampling, 1/2 when upsampling
                                               (/ (- (+ sx sw) 0.5d0) source-width)
                                               (/ (- (+ sy sh) 0.5d0) source-height))
            (ataxia.world.gles:gles-uniform-1i program "u_texture" 0)
-           (ataxia.world.gles:gles-bind-texture ataxia.world.gles:+texture-2d+ (render-target-texture source))
+           (ataxia.world.gles:gles-bind-texture +gl-texture-2d+ (render-target-texture source))
            (let ((u0 (/ (* tx ratio) source-width)) (v0 (/ (* ty ratio) source-height))
                  (u1 (/ (* (+ tx tw) ratio) source-width)) (v1 (/ (* (+ ty th) ratio) source-height)))
              (%draw-quad renderer +identity-affine+ tx ty tw th
@@ -605,7 +637,9 @@ inside the rounded local box WIDTH x HEIGHT through TRANSFORM."
           (let ((chain (%blur-chain renderer buffer-width buffer-height passes))
                 (areas (loop for level from 0 to passes
                              collect (%level-area x y area-width area-height level))))
-            (gl-copy-framebuffer (first chain) x y area-width area-height)
+            (gl-copy-framebuffer (first chain) x y area-width area-height
+                                 (- x (stage-renderer-origin-x renderer))
+                                 (- y (stage-renderer-origin-y renderer)))
             (ataxia.world.gles:gles-set-scissor-enabled nil)
             (ataxia.world.gles:gles-set-blending-enabled nil)
             (unwind-protect
@@ -622,7 +656,7 @@ inside the rounded local box WIDTH x HEIGHT through TRANSFORM."
                     (stage-renderer-viewport-height renderer) (coerce buffer-height 'double-float))
               (ataxia.world.gles:gles-set-blending-enabled t)
               (ataxia.world.gles:gles-set-scissor-enabled t)
-              (apply #'ataxia.world.gles:gles-set-scissor (stage-renderer-scissor renderer)))
+              (apply #'set-stage-scissor renderer (stage-renderer-scissor renderer)))
             (let ((program (%use renderer (stage-renderer-backdrop renderer)))
                   (pixel (/ 1d0 (max 1d-9 (affine-scale-factor transform)))))
               (ataxia.world.gles:gles-uniform-4f program "u_bounds"
@@ -634,6 +668,6 @@ inside the rounded local box WIDTH x HEIGHT through TRANSFORM."
               (ataxia.world.gles:gles-uniform-1f program "u_pixel" pixel)
               (ataxia.world.gles:gles-uniform-1f program "u_opacity" opacity)
               (ataxia.world.gles:gles-uniform-1i program "u_texture" 0)
-              (ataxia.world.gles:gles-bind-texture ataxia.world.gles:+texture-2d+
+              (ataxia.world.gles:gles-bind-texture +gl-texture-2d+
                                                    (render-target-texture (first chain)))
               (%draw-quad renderer transform 0d0 0d0 width height))))))))

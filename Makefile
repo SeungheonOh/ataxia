@@ -286,3 +286,12 @@ test-web-shell: all web
 test-web-ui: all web
 	WLR_RENDERER=gles2 LD_LIBRARY_PATH='$(abspath $(BUILD_DIR)):$(PREFIX)/lib:$(LD_LIBRARY_PATH)' sbcl --noinform --disable-debugger --eval '(sb-int:set-floating-point-modes :traps nil)' --script tests/web-ui-world.lisp
 	WLR_RENDERER=gles2 LD_LIBRARY_PATH='$(abspath $(BUILD_DIR)):$(PREFIX)/lib:$(LD_LIBRARY_PATH)' sbcl --noinform --disable-debugger --eval '(sb-int:set-floating-point-modes :traps nil)' --script tests/atlas-web-world.lisp
+
+# Stage World and its TypeScript director SDK; nothing else depends on either.
+.PHONY: stage test-stage
+stage:
+	npm ci --prefix sdk/stage --ignore-scripts
+	npm run build --prefix sdk/stage
+test-stage: all stage $(BUILD_DIR)/computer-use-client $(BUILD_DIR)/libataxia-synthetic-input.so
+	npm test --prefix sdk/stage
+	WLR_RENDERER=gles2 LD_LIBRARY_PATH='$(abspath $(BUILD_DIR)):$(PREFIX)/lib:$(LD_LIBRARY_PATH)' sbcl --noinform --disable-debugger --eval '(sb-int:set-floating-point-modes :traps nil)' --script tests/stage-world.lisp

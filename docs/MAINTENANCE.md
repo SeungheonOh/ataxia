@@ -12,7 +12,7 @@ CUA sessions, helpers, or optional-feature definitions belong in Kernel/Runtime.
 | `native/`, `src/runtime/` | Native ABI, object lifetime, event dispatch and callback containment. |
 | `src/kernel/` | Stable application/seat/output identities, protocol delivery, frame transactions and World recovery. |
 | `src/world/` | Shared geometry, damage, animation, shortcuts, UI/desktop protocols, service dispatch and command-line parsing. |
-| `src/worlds/` | Placement, camera, focus and layout policy for each World. Metaworld extends Infinite World. |
+| `src/worlds/` | Placement, camera, focus and layout policy for each World. Metaworld extends Infinite World. [Stage](STAGE-WORLD.md) takes its scene from a TypeScript director in `sdk/stage/`. |
 | `src/world/{slint,rmlui}/` | UI engine adapters and graphics resources. Their native libraries own engine state. |
 | `src/world/synthetic-input/` | Optional World-owned native devices; Runtime only adopts them and dispatches their events. |
 | `src/world/computer-use/` | Optional native bridge, sessions, input, captures, batches and the local request server. `service.lisp` owns enable/disable and startup rollback. |
@@ -117,6 +117,8 @@ their coverage so previously skipped pixels are reconstructed.
   offscreen windows, popup grabs, clipboard, concurrent sessions and socket API.
 - `make test-rmlui-shell test-rmlui-shell-world`: shell pixels, layout and World
   integration when changing shell chrome.
+- `make test-stage`: Stage SDK reconciler tests, scene/motion semantics and a
+  headless director session with a real client, ending in an idle settled scene.
 - `make benchmark-idle`: a five-second assistant-worker sample, a five-second
   headless Metaworld sample after warmup, and Slint timer/animation checks across
   two headless outputs. It starts no model service and does not modify the live

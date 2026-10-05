@@ -140,10 +140,10 @@
 (defun %assistant-reader-main (controller epoch process)
   (handler-case
       (loop while (%assistant-worker-current-p controller epoch)
-            for line = (ataxia.computer-use.wire:read-line-bytes
+            for line = (ataxia.world.wire:read-line-bytes
                         (uiop:process-info-output process) +assistant-frame-limit+)
             do (%assistant-queue controller :message
-                                 (ataxia.computer-use.wire:decode line :max-string +assistant-frame-limit+
+                                 (ataxia.world.wire:decode line :max-string +assistant-frame-limit+
                                                                   :max-nodes 100000 :max-depth 32)
                                  (length line) epoch))
     (error (cause)

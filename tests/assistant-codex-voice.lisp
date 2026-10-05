@@ -8,13 +8,13 @@
 
 (let ((server nil) (host nil) (next-id 0) (thread-id nil))
   (labels ((read-message ()
-             (ataxia.computer-use.wire:decode
-              (ataxia.computer-use.wire:read-line-bytes (uiop:process-info-output server) +assistant-frame-limit+)
+             (ataxia.world.wire:decode
+              (ataxia.world.wire:read-line-bytes (uiop:process-info-output server) +assistant-frame-limit+)
               :max-string +assistant-frame-limit+ :max-nodes 100000 :max-depth 32))
            (request (method params)
              (incf next-id)
-             (ataxia.computer-use.wire:write-line-bytes (uiop:process-info-input server)
-               (ataxia.computer-use.wire:encode (%assistant-object "id" next-id "method" method "params" params)))
+             (ataxia.world.wire:write-line-bytes (uiop:process-info-input server)
+               (ataxia.world.wire:encode (%assistant-object "id" next-id "method" method "params" params)))
              (loop for message = (read-message)
                    when (eql next-id (%assistant-field message "id")) do
                      (assert (not (%assistant-field message "error")))
@@ -36,7 +36,7 @@
                                               :element-type '(unsigned-byte 8)))
              (request "initialize" (%assistant-object "clientInfo" (%assistant-object "name" "ataxia_voice_test" "version" "1")
                                                        "capabilities" (%assistant-object "experimentalApi" t)))
-             (ataxia.computer-use.wire:write-line-bytes (uiop:process-info-input server) "{\"method\":\"initialized\"}")
+             (ataxia.world.wire:write-line-bytes (uiop:process-info-input server) "{\"method\":\"initialized\"}")
              (assert (equal "chatgpt" (%assistant-field (request "account/read" (%assistant-object)) "account" "type")))
              (setf thread-id (%assistant-field
                               (request "thread/start" (%assistant-object "ephemeral" t "cwd" "/tmp" "sandbox" "read-only" "approvalPolicy" "on-request"))

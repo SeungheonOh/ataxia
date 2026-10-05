@@ -263,7 +263,7 @@
       (list :ok t :session (%computer-session-data session)))))
 
 (defun %computer-json (value)
-  (ataxia.computer-use.wire:encode value))
+  (ataxia.world.wire:encode value))
 (defun %request (request &key expected-world expected-generation expected-server)
   "Run validated data on the owner thread; wait only on the calling worker."
   (handler-case

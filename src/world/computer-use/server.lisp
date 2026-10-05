@@ -42,14 +42,14 @@
                     (handler-case
                         (ataxia.computer-use::%request
                          (decode-request
-                          (ataxia.computer-use.wire:decode (ataxia.computer-use.wire:read-line-bytes stream)))
+                          (ataxia.world.wire:decode (ataxia.world.wire:read-line-bytes stream)))
                          :expected-world (computer-server-world server)
                          :expected-generation (computer-server-generation server)
                          :expected-server server)
                       (computer-use-rejected (cause)
                         (list :ok :false :error (%computer-error-code cause) :message (%computer-error-message cause)))
                       (error (cause) (list :ok :false :error "invalid-request" :message (princ-to-string cause))))))
-               (ataxia.computer-use.wire:write-line-bytes stream (%computer-json reply))))
+               (ataxia.world.wire:write-line-bytes stream (%computer-json reply))))
          (error () nil))
     (sb-thread:with-mutex ((computer-server-lock server))
       (ignore-errors (sb-bsd-sockets:socket-close socket :abort t))

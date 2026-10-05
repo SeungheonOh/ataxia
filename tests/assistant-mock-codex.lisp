@@ -1,10 +1,10 @@
 ;;;; A deterministic local app-server fixture; no model or network is involved.
 (require :asdf)
-(load (merge-pathnames "../src/world/computer-use/json.lisp" *load-truename*))
+(load (merge-pathnames "../src/world/wire.lisp" *load-truename*))
 (defun obj (&rest entries)
   (let ((h (make-hash-table :test #'equal))) (loop for (k v) on entries by #'cddr do (setf (gethash k h) v)) h))
 (defun send-message (message)
-  (write-line (ataxia.computer-use.wire:encode message)) (finish-output))
+  (write-line (ataxia.world.wire:encode message)) (finish-output))
 (defun result (id value) (send-message (obj "id" id "result" value)))
 (defun event (method params) (send-message (obj "method" method "params" params)))
 (defun fixture-model (name effort &optional fast)
@@ -12,7 +12,7 @@
        "supportedReasoningEfforts" (vector (obj "reasoningEffort" "low") (obj "reasoningEffort" "medium") (obj "reasoningEffort" "high"))
        "serviceTiers" (if fast (vector (obj "id" "priority" "name" "Fast" "description" "Faster replies")) #())))
 (loop for line = (read-line *standard-input* nil nil) while line do
-  (let* ((message (ataxia.computer-use.wire:decode line :max-depth 32 :max-string 8388608))
+  (let* ((message (ataxia.world.wire:decode line :max-depth 32 :max-string 8388608))
          (id (gethash "id" message)) (method (gethash "method" message)))
     (cond
       ((equal method "initialize") (result id (obj "userAgent" "ataxia-test")))

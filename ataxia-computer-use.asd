@@ -4,7 +4,7 @@
   :serial t
   :components ((:module "src/world/computer-use"
                 :serial t
-                :components ((:file "packages") (:file "native") (:file "json") (:file "sessions") (:file "view") (:file "input") (:file "ui")
+                :components ((:file "packages") (:file "native") (:file "sessions") (:file "view") (:file "input") (:file "ui")
                              (:file "capture") (:file "api") (:file "batch") (:file "desktop")
                              (:file "server") (:file "service")))))
 

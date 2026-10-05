@@ -10,7 +10,8 @@
   :components
   ((:module "src/world"
     :components
-    ((:file "packages")
+    ((:file "wire")
+     (:file "packages")
      (:file "command-line")
      (:file "ui")
      (:file "geometry")

@@ -49,11 +49,11 @@
                       (sb-bsd-sockets:socket-connect socket socket-path)
                       (with-open-stream (stream (sb-bsd-sockets:socket-make-stream socket :input t :output t
                                                                                  :element-type '(unsigned-byte 8) :buffering :full :timeout 10))
-                        (ataxia.computer-use.wire:write-line-bytes
-                         stream (ataxia.computer-use.wire:encode
+                        (ataxia.world.wire:write-line-bytes
+                         stream (ataxia.world.wire:encode
                                  (append (list :op op :token (ataxia.computer-use::computer-session-token (aref sessions index))
                                                :sequence (1+ (aref sequences index))) fields)))
-                        (let ((reply (ataxia.computer-use.wire:decode (ataxia.computer-use.wire:read-line-bytes stream 262144))))
+                        (let ((reply (ataxia.world.wire:decode (ataxia.world.wire:read-line-bytes stream 262144))))
                           (when (field reply "session") (setf (aref sequences index) (field reply "session" "sequence")))
                           reply)))
                  (ignore-errors (sb-bsd-sockets:socket-close socket)))))
@@ -66,7 +66,7 @@
                               '(:op "key" :key "Return")
                               (list :op "wait-window" :window (aref windows index) :title "Batch complete" :timeout 2d0))))
            (check-image (index reply)
-             (assert (eq t (field reply "ok")) () "~A" (ataxia.computer-use.wire:encode reply))
+             (assert (eq t (field reply "ok")) () "~A" (ataxia.world.wire:encode reply))
              (assert (= 7 (field reply "completed")))
              (assert (= (aref windows index) (field reply "image" "window")))
              (assert (equal (nth index colors) (concurrent-png-pixel (field reply "image" "path") 45 55)))))
@@ -129,7 +129,7 @@
                             (if (= i 1)
                                 (progn
                                   (assert (equal "batch-interrupted" (field (aref replies i) "error"))
-                                          () "Unexpected pause result: ~A" (ataxia.computer-use.wire:encode (aref replies i)))
+                                          () "Unexpected pause result: ~A" (ataxia.world.wire:encode (aref replies i)))
                                   (assert (= 4 (field (aref replies i) "completed")))
                                   (assert (equal "paused" (field (aref replies i) "session" "state"))))
                                 (check-image i (aref replies i))))

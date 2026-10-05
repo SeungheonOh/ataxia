@@ -6,8 +6,8 @@
 
 ;; The public computer-use parser retains its original bounds.
 (let ((nested "[[[[[[[[[[0]]]]]]]]]]"))
-  (assistant-test-rejects (lambda () (ataxia.computer-use.wire:decode nested)))
-  (assert (vectorp (ataxia.computer-use.wire:decode nested :max-depth 32))))
+  (assistant-test-rejects (lambda () (ataxia.world.wire:decode nested)))
+  (assert (vectorp (ataxia.world.wire:decode nested :max-depth 32))))
 (loop for text in '("" "f" "fo" "foo" "foob" "fooba" "foobar")
       for encoded in '("" "Zg==" "Zm8=" "Zm9v" "Zm9vYg==" "Zm9vYmE=" "Zm9vYmFy")
       do (assert (equal encoded (ataxia.assistant::%assistant-base64 (sb-ext:string-to-octets text)))))
@@ -47,7 +47,7 @@
   (ataxia.assistant::%assistant-toggle-fast controller)
   (assert (equal "default" (ataxia.assistant::%assistant-effective-tier controller))))
 (let* ((tools (ataxia.assistant::%assistant-tool-specs (make-metaworld :state-file nil)))
-       (decoded (ataxia.computer-use.wire:decode (ataxia.computer-use.wire:encode tools) :max-depth 32)))
+       (decoded (ataxia.world.wire:decode (ataxia.world.wire:encode tools) :max-depth 32)))
   (assert (= 3 (length decoded)))
   (assert (equal '("ataxia_lisp" "ataxia_ui_preview" "ataxia_ui_update")
                  (map 'list (lambda (tool) (gethash "name" tool)) decoded)))

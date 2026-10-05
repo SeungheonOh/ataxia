@@ -3,9 +3,9 @@
 (defun %assistant-write (controller message)
   (when (and *assistant-operation-epoch* (/= *assistant-operation-epoch* (assistant-controller-epoch controller)))
     (error "The assistant connection was replaced."))
-  (let ((text (ataxia.computer-use.wire:encode message)))
+  (let ((text (ataxia.world.wire:encode message)))
     (when (> (length text) +assistant-frame-limit+) (error "Assistant message exceeds 8 MiB."))
-    (ataxia.computer-use.wire:write-line-bytes
+    (ataxia.world.wire:write-line-bytes
      (uiop:process-info-input (or *assistant-operation-process* (assistant-controller-process controller))) text)))
 (defun %assistant-rpc (controller method params callback)
   (let ((id (incf (assistant-controller-next-id controller))))
@@ -121,7 +121,7 @@
             (close stream)
             (with-open-file (clear path :direction :output :if-exists :supersede) (declare (ignorable clear)))
             (return-from %assistant-journal nil))
-          (write-line (ataxia.computer-use.wire:encode
+          (write-line (ataxia.world.wire:encode
                        (apply #'%assistant-object "time" (get-universal-time) "event" event
                               "epoch" (assistant-controller-epoch controller) "thread" (assistant-controller-thread-id controller) fields)) stream)))
     (error () nil)))

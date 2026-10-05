@@ -3,7 +3,7 @@
 (require :sb-posix)
 (require :sb-bsd-sockets)
 (asdf:load-system "cffi")
-(load (merge-pathnames "../src/world/computer-use/json.lisp" *load-truename*))
+(load (merge-pathnames "../src/world/wire.lisp" *load-truename*))
 
 (defun field (object &rest names)
   (reduce (lambda (value name) (gethash name value)) names :initial-value object))
@@ -52,14 +52,14 @@
                   (sb-bsd-sockets:socket-connect socket socket-path)
                   (with-open-stream (stream (sb-bsd-sockets:socket-make-stream socket :input t :output t
 									       :element-type '(unsigned-byte 8) :buffering :full :timeout 40))
-                    (ataxia.computer-use.wire:write-line-bytes stream text)
-                    (ataxia.computer-use.wire:decode (ataxia.computer-use.wire:read-line-bytes stream 262144))))
+                    (ataxia.world.wire:write-line-bytes stream text)
+                    (ataxia.world.wire:decode (ataxia.world.wire:read-line-bytes stream 262144))))
              (ignore-errors (sb-bsd-sockets:socket-close socket)))))
-       (request (data) (raw (ataxia.computer-use.wire:encode data)))
+       (request (data) (raw (ataxia.world.wire:encode data)))
        (send (op &rest fields)
          (let ((reply (request (append (list :op op :token token :sequence (1+ sequence)) fields))))
            (when (field reply "session") (setf sequence (field reply "session" "sequence"))) reply))
-       (ok (reply) (assert (eq t (field reply "ok")) () "~A" (ataxia.computer-use.wire:encode reply)) reply)
+       (ok (reply) (assert (eq t (field reply "ok")) () "~A" (ataxia.world.wire:encode reply)) reply)
        (mark (name) (with-open-file (out (merge-pathnames name directory) :direction :output :if-exists :supersede)))
        (wait-state (state)
          (loop repeat 100 for reply = (send "status")
@@ -80,7 +80,7 @@
                     "{\"op\":\"move\",\"x\":NaN}" "{\"op\":\"outputs\",\"op\":\"connect\"}"
                     "{\"op\":\"connect\",\"name\":\"\\uD800\"}"))
       (assert (eq :false (field (raw text) "ok"))))
-    (let ((reply (ataxia.computer-use.wire:decode
+    (let ((reply (ataxia.world.wire:decode
                   (uiop:run-program (list (namestring (merge-pathnames "scripts/ataxia-computer-use" root))
                                           "--socket" socket-path "request" "{\"op\":\"outputs\"}") :output :string))))
       (ok reply) (assert (= 1100 (field (aref (field reply "outputs") 0) "width"))))

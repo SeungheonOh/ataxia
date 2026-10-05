@@ -50,14 +50,14 @@
                       (with-open-stream (stream (sb-bsd-sockets:socket-make-stream
                                                 socket :input t :output t :element-type '(unsigned-byte 8)
                                                 :buffering :full :timeout 10))
-                        (ataxia.computer-use.wire:write-line-bytes
-                         stream (ataxia.computer-use.wire:encode
+                        (ataxia.world.wire:write-line-bytes
+                         stream (ataxia.world.wire:encode
                                  (append (list :op op :token (ataxia.computer-use::computer-session-token session)
                                                :sequence (1+ sequence)) fields)))
-                        (let ((reply (ataxia.computer-use.wire:decode
-                                      (ataxia.computer-use.wire:read-line-bytes stream 262144))))
+                        (let ((reply (ataxia.world.wire:decode
+                                      (ataxia.world.wire:read-line-bytes stream 262144))))
                           (when (field reply "session") (setf sequence (field reply "session" "sequence")))
-                          (assert (eq t (field reply "ok")) () "~A" (ataxia.computer-use.wire:encode reply))
+                          (assert (eq t (field reply "ok")) () "~A" (ataxia.world.wire:encode reply))
                           reply)))
                  (ignore-errors (sb-bsd-sockets:socket-close socket)))))
            (screen-point (x y)

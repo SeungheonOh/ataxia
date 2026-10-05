@@ -1,9 +1,10 @@
-;;;; Bounded JSON data reader shared by the local listener and the Lisp CLI.
+;;;; Bounded JSON data codec for local line-oriented World protocols.
 ;;;; No input is passed to the Lisp reader, evaluator, or package interner.
-(defpackage #:ataxia.computer-use.wire
+;;;; The file stands alone so command-line clients can load it without ASDF.
+(defpackage #:ataxia.world.wire
   (:use #:cl)
   (:export #:decode #:encode #:read-line-bytes #:write-line-bytes))
-(in-package #:ataxia.computer-use.wire)
+(in-package #:ataxia.world.wire)
 
 (defun read-line-bytes (stream &optional (maximum 65536))
   (let ((bytes (make-array 256 :element-type '(unsigned-byte 8) :adjustable t :fill-pointer 0)))

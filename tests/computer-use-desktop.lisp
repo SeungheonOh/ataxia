@@ -19,7 +19,7 @@
   (list :windows (vector (list :id 42 :title "Fixture" :position (desktop-position world)))
         :outputs #() :camera (desktop-camera world)))
 (defmethod world-layout-schema ((world desktop-world))
-  (values (ataxia.computer-use.wire:decode
+  (values (ataxia.world.wire:decode
            "{\"type\":\"object\",\"properties\":{\"op\":{\"enum\":[\"position\"]},\"value\":{\"type\":\"integer\"}}}")
           "position sets the fixture's one-dimensional placement."))
 (defmethod validate-world-layout ((world desktop-world) operations)

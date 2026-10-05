@@ -41,7 +41,7 @@
 
 (defun %assistant-voice-launch ()
   (let* ((root (%assistant-voice-package))
-         (manifest (ataxia.computer-use.wire:decode
+         (manifest (ataxia.world.wire:decode
                     (uiop:read-file-string (merge-pathnames "codex-resources/voice/manifest.json" root))
                     :max-nodes 4096))
          (commit (%assistant-field manifest "buildCommit"))
@@ -64,13 +64,13 @@
         (unless (<= 1 size 131072) (error "Invalid frame size."))
         (let ((bytes (make-array size :element-type '(unsigned-byte 8))))
           (unless (= size (read-sequence bytes stream)) (error "Incomplete frame."))
-          (values (ataxia.computer-use.wire:decode (sb-ext:octets-to-string bytes :external-format :utf-8)
+          (values (ataxia.world.wire:decode (sb-ext:octets-to-string bytes :external-format :utf-8)
                                                  :max-string 65536 :max-nodes 32 :max-depth 4)
                   size)))
     (error () (error "Codex voice runtime closed or returned an invalid control frame."))))
 
 (defun %assistant-voice-write-frame (stream message)
-  (let ((bytes (sb-ext:string-to-octets (ataxia.computer-use.wire:encode message) :external-format :utf-8)))
+  (let ((bytes (sb-ext:string-to-octets (ataxia.world.wire:encode message) :external-format :utf-8)))
     (unless (<= (length bytes) 131072) (error "Voice control frame is too large."))
     (loop for shift in '(24 16 8 0) do (write-byte (ldb (byte 8 shift) (length bytes)) stream))
     (write-sequence bytes stream)

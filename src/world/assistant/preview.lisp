@@ -13,11 +13,11 @@
   (let* ((process (assistant-preview-process preview)) (input (uiop:process-info-input process))
          (output (uiop:process-info-output process)))
     (unless (uiop:process-alive-p process) (error "This preview window has closed. Open a new preview."))
-    (ataxia.computer-use.wire:write-line-bytes input (concatenate 'string "LOAD" (string #\Tab) path))
+    (ataxia.world.wire:write-line-bytes input (concatenate 'string "LOAD" (string #\Tab) path))
     (unless (sb-sys:wait-until-fd-usable (sb-sys:fd-stream-fd output) :input 15d0)
       (ignore-errors (uiop:terminate-process process))
       (error "The preview renderer timed out."))
-    (let ((reply (ataxia.computer-use.wire:read-line-bytes output 4096)))
+    (let ((reply (ataxia.world.wire:read-line-bytes output 4096)))
       (unless (equal reply "OK") (error "~A" (if (> (length reply) 6) (subseq reply 6) reply))))))
 (defun %assistant-preview-image (controller preview)
   (let* ((result (%assistant-native-request controller

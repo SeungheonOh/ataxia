@@ -54,7 +54,7 @@
               (concatenate 'string "data:image/png;base64," (%assistant-base64 (%assistant-image-bytes image)))) items))
     (when (getf result :image) (setf (getf metadata :image) (%assistant-image-metadata (getf result :image))))
     (when (getf result :images) (setf (getf metadata :images) (map 'vector #'%assistant-image-metadata (getf result :images))))
-    (push (%assistant-object "type" "inputText" "text" (ataxia.computer-use.wire:encode metadata)) items)
+    (push (%assistant-object "type" "inputText" "text" (ataxia.world.wire:encode metadata)) items)
     (%assistant-object "success" (if (eq :false (getf result :ok)) :false t)
                        "contentItems" (coerce (nreverse items) 'vector))))
 (defun %assistant-tool-failure (cause)

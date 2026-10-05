@@ -75,7 +75,7 @@
       (set-widget-text panel "question"
         (if question
             (format nil "~A~%~A" (or (%assistant-field question "header") "Your answer") (%assistant-field question "question"))
-            (%assistant-text (ataxia.computer-use.wire:encode (getf request :params)) 8192))))
+            (%assistant-text (ataxia.world.wire:encode (getf request :params)) 8192))))
     (dotimes (i 6)
       (let ((choice (and (vectorp choices) (< i (length choices)) (aref choices i))) (id (format nil "choice~D" i)))
         (set-widget-style panel id "display" (if choice "block" "none"))

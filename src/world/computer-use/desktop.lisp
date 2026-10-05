@@ -29,7 +29,7 @@
                            (dolist (field '(:title :visible :available :on-outputs)) (remf copy field))
                            copy))
                (getf state :windows)))
-    (let ((fingerprint (ataxia.computer-use.wire:encode semantic)))
+    (let ((fingerprint (ataxia.world.wire:encode semantic)))
       (unless (equal fingerprint (computer-desktop-state-fingerprint memory))
         (incf (computer-desktop-state-revision memory))
         (setf (computer-desktop-state-fingerprint memory) fingerprint)))

@@ -7,7 +7,7 @@ if [ -z "${ATAXIA_SHADER_TEST_DIR:-}" ]; then
 fi
 export ATAXIA_SHADER_TEST_DIR
 ./build/gesture-native-test
-for test in tests/kernel-*.lisp tests/world-*.lisp tests/metaworld-*.lisp tests/slint-builtins.lisp; do
+for test in tests/kernel-*.lisp tests/world-*.lisp tests/metaworld-*.lisp; do
     printf '\nRunning %s\n' "$test"
     "${SBCL:-sbcl}" --noinform --eval '(sb-int:set-floating-point-modes :traps nil)' --script "$test"
 done

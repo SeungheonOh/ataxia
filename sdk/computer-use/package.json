@@ -1,7 +1,0 @@
-{
-  "name": "@ataxia/computer-use",
-  "type": "module",
-  "exports": { ".": { "types": "./index.d.ts", "import": "./index.mjs" } },
-  "engines": { "node": ">=22" },
-  "private": true
-}

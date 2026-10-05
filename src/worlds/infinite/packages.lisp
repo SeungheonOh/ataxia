@@ -47,7 +47,6 @@
    #:bind-agent-widget-event
    #:agent-widget-events
 )
-  (:import-from #:ataxia.world.slint #:make-agent-widget)
   (:import-from #:ataxia.world.web.ui #:show-notification)
   (:export
    #:infinite-world
@@ -65,17 +64,6 @@
    #:canvas-window-elevation
    #:canvas-window-effect
    #:canvas-window-animation-hooks
-   #:canvas-overlay
-   #:make-canvas-overlay
-   #:canvas-overlay-component
-   #:canvas-overlay-output
-   #:canvas-overlay-x
-   #:canvas-overlay-y
-   #:canvas-overlay-width
-   #:canvas-overlay-height
-   #:canvas-overlay-layer
-   #:canvas-overlay-visible-p
-   #:canvas-overlay-opacity
    #:agent-widget
    #:agent-widget-id
    #:agent-widget-event
@@ -88,7 +76,6 @@
    #:remove-overlay
    #:show-overlay
    #:hide-overlay
-   #:make-agent-widget
    #:find-agent-widget
    #:list-agent-widgets
    #:remove-agent-widget

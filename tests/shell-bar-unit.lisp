@@ -1,5 +1,5 @@
 (load (merge-pathnames "system-support.lisp" *load-truename*))
-(asdf:load-system "ataxia-rmlui/status-bar")
+(asdf:load-system "ataxia-shell")
 (in-package #:ataxia.world.shell)
 (assert (= 60000 (%bar-maintenance-delay 0 nil)))
 (assert (= 59000 (%bar-maintenance-delay 1 nil)))

@@ -60,7 +60,7 @@
                 :project (namestring (uiop:ensure-directory-pathname
                                      (or project (user-homedir-pathname))))))
              (started nil))
-        (cu:enable world :start-server nil)
+        (cu:enable world)
         (attach-world-service world :assistant controller)
         (unwind-protect
              (progn
@@ -77,7 +77,6 @@
     (when controller
       (%assistant-stop controller)
       (%assistant-close-panel controller)
-      (%assistant-close-previews controller)
       (setf (assistant-controller-alive controller) nil)
       (incf (assistant-controller-epoch controller))
       (when (assistant-controller-process controller)

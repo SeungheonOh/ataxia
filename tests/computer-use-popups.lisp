@@ -28,7 +28,7 @@
     (unwind-protect
          (progn
            (ataxia.kernel:start-kernel kernel)
-           (ataxia.computer-use:enable world :start-server nil)
+           (ataxia.computer-use:enable world)
            (ataxia.computer-use:request-on-owner world '(:op "connect" :name "Popup test"
                                       :purpose "Verify committed popup placement and input"))
            (setf session (first (ataxia.computer-use::computer-controller-sessions (ataxia.computer-use::%computer-controller world))))

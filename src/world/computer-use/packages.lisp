@@ -2,20 +2,18 @@
 (defpackage #:ataxia.computer-use
   (:use #:cl #:ataxia.world)
   (:import-from #:ataxia.world.web.ui
-                #:document-widget #:set-widget-text #:set-widget-style #:short-ui-text)
-  (:export #:enable #:disable #:request-json
+                #:document-widget #:set-widget-text #:set-widget-style)
+  (:export #:enable #:disable
            #:activate-session
            #:change-session-view
            #:close-session
            #:pause-session
            #:emergency-stop
            #:session-state-changed
-           #:decode-request
            #:request-on-owner
            #:bounded-string
            #:bounded-number
            #:random-token
-           #:+batch-action-fields+
            #:connect-session
            #:finish-request
            #:computer-session

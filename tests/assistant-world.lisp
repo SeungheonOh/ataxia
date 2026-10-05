@@ -1,6 +1,6 @@
 (load (merge-pathnames "support.lisp" *load-truename*))
 (asdf:load-system "ataxia-assistant/metaworld")
-(asdf:load-system "ataxia-rmlui/status-bar")
+(asdf:load-system "ataxia-web/status-bar")
 (load (merge-pathnames "assistant-voice-fixture.lisp" *load-truename*))
 (in-package #:ataxia.infinite-world)
 (setf ataxia.assistant::*assistant-command* (list "sbcl" "--noinform" "--disable-debugger" "--script"
@@ -22,7 +22,7 @@
          (progn
            (ataxia.kernel:start-kernel kernel)
            (setf control (ataxia.sly-control:start-sly-control kernel :port nil))
-           (ataxia.world.shell:enable-rmlui-status-bar world)
+           (ataxia.world.web.shell:enable-web-status-bar world)
            (setf controller (ataxia.assistant::%assistant-enable world :project (namestring (asdf:system-source-directory "ataxia-assistant"))))
            (%meta-present-ui world (%meta-toolbar world (%first-output-state world)) t)
            (key "a" '(:logo))
@@ -30,11 +30,10 @@
            ;; Escape must win over the existing Metaworld dismiss shortcut.
            (key "Escape" nil)
            (assert (null (ataxia.assistant::assistant-controller-panel controller)))
-           (%meta-dismiss-menu world)
            (key "a" '(:logo))
            (assert (null (ataxia.assistant::assistant-controller-worker controller)))
            (assert (eq :off (ataxia.assistant::assistant-controller-microphone controller)))
-           (ataxia.world.web.ui:set-ui-model (canvas-overlay-component (ataxia.assistant::assistant-controller-panel controller)) "message" "Keep this draft")
+           (ataxia.world.web.ui:set-ui-model (overlay-component (ataxia.assistant::assistant-controller-panel controller)) "message" "Keep this draft")
            (let ((overlays (length (world-overlays world))))
              (ataxia.assistant::%assistant-open-settings controller)
              (assert (= overlays (length (world-overlays world)))))

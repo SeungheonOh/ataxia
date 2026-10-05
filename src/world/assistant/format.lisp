@@ -1,8 +1,8 @@
-;;;; Bounded Markdown presentation. Only our own tags/classes enter RmlUi;
-;;;; message HTML, URLs, and code remain escaped text, never active RML.
+;;;; Bounded Markdown presentation. Only our own tags and classes enter the panel;
+;;;; message HTML, URLs and code remain escaped text, never active markup.
 (in-package #:ataxia.assistant)
 
-(defun %assistant-escape-rml (text)
+(defun %assistant-escape-html (text)
   (with-output-to-string (out)
     (loop for char across text do
       (write-string (case char (#\& "&amp;") (#\< "&lt;") (#\> "&gt;")
@@ -10,19 +10,19 @@
                           (#\{ "&#123;") (#\} "&#125;")
                           (t (string char))) out))))
 (defun %assistant-md-inline (text &optional (depth 0))
-  (when (>= depth 6) (return-from %assistant-md-inline (%assistant-escape-rml text)))
+  (when (>= depth 6) (return-from %assistant-md-inline (%assistant-escape-html text)))
   (with-output-to-string (out)
     (loop with size = (length text) for i from 0 below size do
       (let ((char (char text i)))
         (cond
           ((and (char= char #\\) (< (1+ i) size) (find (char text (1+ i)) "\\`*_{}[]()#+-.!|>"))
-           (write-string (%assistant-escape-rml (string (char text (incf i)))) out))
+           (write-string (%assistant-escape-html (string (char text (incf i)))) out))
           ((char= char #\`)
            (let* ((end (or (position-if-not (lambda (c) (char= c #\`)) text :start i) size))
                   (marker (subseq text i end)) (close (search marker text :start2 end)))
              (if close
                  (progn (format out "<span class=\"md-code\">~A</span>"
-                                (%assistant-escape-rml (substitute #\Space #\Newline (subseq text end close))))
+                                (%assistant-escape-html (substitute #\Space #\Newline (subseq text end close))))
                         (setf i (1- (+ close (length marker)))))
                  (progn (write-string marker out) (setf i (1- end))))))
           ((and (find char "*_")
@@ -44,10 +44,10 @@
                  (progn
                    (format out "<span class=\"md-link-label\">~A</span><span class=\"md-link-target\"> (~A)</span>"
                            (%assistant-md-inline (subseq text (1+ i) label-end) (1+ depth))
-                           (%assistant-escape-rml (subseq text url-start url-end)))
+                           (%assistant-escape-html (subseq text url-start url-end)))
                    (setf i url-end))
                  (write-char char out))))
-          (t (write-string (%assistant-escape-rml (string char)) out)))))))
+          (t (write-string (%assistant-escape-html (string char)) out)))))))
 (defun %assistant-md-list-item (line)
   (let* ((trimmed (string-left-trim '(#\Space #\Tab) line))
          (indent (- (length line) (length trimmed)))
@@ -67,7 +67,7 @@
   (let ((cells (%assistant-md-cells line)))
     (and (find #\| line) cells (<= (length cells) 8)
          (every (lambda (cell) (and (>= (count #\- cell) 3) (every (lambda (c) (find c "-: ")) cell))) cells))))
-(defun %assistant-markdown-rml (text)
+(defun %assistant-markdown-html (text)
   (let* ((lines (coerce (uiop:split-string (%assistant-text text) :separator '(#\Newline)) 'vector))
          (count (min 1024 (length lines))) (paragraph nil) (code nil) (fence nil) (language ""))
     (with-output-to-string (out)
@@ -81,9 +81,9 @@
                    (write-string "</div>" out) (setf paragraph nil)))
                (flush-code ()
                  (write-string "<div class=\"md-code-block\">" out)
-                 (unless (equal language "") (format out "<div class=\"md-code-label\">~A</div>" (%assistant-escape-rml (%assistant-text language 40))))
+                 (unless (equal language "") (format out "<div class=\"md-code-label\">~A</div>" (%assistant-escape-html (%assistant-text language 40))))
                  (format out "<div class=\"md-pre\">~A</div></div>"
-                         (%assistant-escape-rml (format nil "~{~A~^~%~}" (nreverse code))))
+                         (%assistant-escape-html (format nil "~{~A~^~%~}" (nreverse code))))
                  (setf code nil fence nil language ""))
                (table-row (cells heading)
                  (format out "<div class=\"md-table-row~A\">" (if heading " md-table-heading" ""))
@@ -134,12 +134,12 @@
         (push (list :role (getf message :role) :text text) messages)
         (decf remaining (length text))))
     messages))
-(defun %assistant-transcript-rml (messages)
+(defun %assistant-transcript-html (messages)
   (if (null messages) ""
       (with-output-to-string (out)
         (dolist (message messages)
           (let ((human (eq :you (getf message :role))))
             (format out "<div class=\"chat-message ~A\"><div class=\"chat-role\">~A</div><div class=\"chat-content\">~A</div></div>"
                     (if human "chat-user" "chat-assistant") (if human "You" "Assistant")
-                    (if human (format nil "<div class=\"chat-user-text\">~A</div>" (%assistant-escape-rml (getf message :text)))
-                        (%assistant-markdown-rml (getf message :text)))))))))
+                    (if human (format nil "<div class=\"chat-user-text\">~A</div>" (%assistant-escape-html (getf message :text)))
+                        (%assistant-markdown-html (getf message :text)))))))))

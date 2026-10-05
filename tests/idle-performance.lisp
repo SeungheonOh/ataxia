@@ -1,6 +1,7 @@
 ;;;; Run with make benchmark-idle. Measurements are diagnostic, not timing gates.
 (load (merge-pathnames "support.lisp" *load-truename*))
 (asdf:load-system "ataxia-assistant/metaworld")
+(asdf:load-system "ataxia-web/status-bar")
 (in-package #:ataxia.infinite-world)
 
 (defun idle-thread-counters (thread)
@@ -49,7 +50,7 @@
   (unwind-protect
        (progn
          (ataxia.kernel:start-kernel kernel)
-         (ataxia.world.shell:enable-rmlui-status-bar world)
+         (ataxia.world.web.shell:enable-web-status-bar world)
          (ataxia.assistant::%assistant-enable world :project (namestring (asdf:system-source-directory "ataxia-assistant")))
          (setf (symbol-function 'ataxia.kernel::%render-output-frame)
                (lambda (output)

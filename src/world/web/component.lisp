@@ -192,19 +192,11 @@ ASSET-ROOT serves a built web app at ataxia://ui/ with normal module/fetch seman
   "Queue JavaScript on the browser's main frame; never wait on the World owner."
   (%command component 11 :text code))
 (defun navigate-web-component (component url) (%command component 12 :text url))
-(defun %json-string (value)
-  (with-output-to-string (out)
-    (write-char #\" out)
-    (loop for ch across value for code = (char-code ch) do
-      (case ch (#\" (write-string "\\\"" out)) (#\\ (write-string "\\\\" out))
-        (otherwise (if (or (< code 32) (= code #x2028) (= code #x2029))
-                       (format out "\\u~4,'0X" code) (write-char ch out)))))
-    (write-char #\" out)))
 (defun post-web-message (component name json)
   "Dispatch ataxia-message in the page with {name,value}; JSON is parsed in the browser."
   (evaluate-web-javascript component
     (format nil "dispatchEvent(new CustomEvent('ataxia-message',{detail:{name:~A,value:JSON.parse(~A)}}))"
-            (%json-string name) (%json-string json))))
+            (ataxia.world.wire:encode name) (ataxia.world.wire:encode json))))
 (defun web-component-stats (component)
   (let ((native (%live component)))
     (list :paints (ataxia.world.web.raw::%paints native) :uploads (ataxia.world.web.raw::%uploads native)
@@ -225,5 +217,5 @@ ASSET-ROOT serves a built web app at ataxia://ui/ with normal module/fetch seman
 (defmethod ataxia.world:ui-set-property ((c web-component) name value)
   (post-web-message c name
     (etypecase value
-      (string (%json-string value)) (boolean (if value "true" "false"))
+      (string (ataxia.world.wire:encode value)) (boolean (if value "true" "false"))
       (real (format nil "~F" (coerce value 'double-float))))))

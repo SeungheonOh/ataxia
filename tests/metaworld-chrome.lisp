@@ -3,6 +3,8 @@
 (in-package #:ataxia.infinite-world)
 
 (defclass test-chrome-drawable (ataxia.kernel:drawable ataxia.kernel:interactable) ())
+;; Chrome reads the seat that last used an HTML component; this stand-in has none.
+(defmethod ataxia.world.web.ui:input-seat ((component test-chrome-drawable)) nil)
 (let* ((clock 0d0) (handler nil) (command nil)
        (names '(%now %output-logical-size %damage-overlay %request-all-frames
                 %request-output-state-frame %schedule-component-timer %meta-property
@@ -25,8 +27,8 @@
                (symbol-function '%canvas-to-screen) (lambda (state x y) (declare (ignore state)) (values x y))
                (symbol-function '%meta-reposition-ui)
                (lambda (world w x y width height) (declare (ignore world))
-                 (setf (canvas-overlay-x w) x (canvas-overlay-y w) y
-                       (canvas-overlay-width w) width (canvas-overlay-height w) height))
+                 (setf (overlay-x w) x (overlay-y w) y
+                       (overlay-width w) width (overlay-height w) height))
                (symbol-function 'bind-agent-widget-event)
                (lambda (widget name function) (declare (ignore widget name)) (setf handler function))
                (symbol-function '%meta-ui-widget)

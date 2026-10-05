@@ -6,13 +6,12 @@
   :author "Ataxia contributors"
   :license "Unspecified"
   :depends-on
-  ("ataxia-world" "ataxia-slint" "ataxia-web/ui" "ataxia-sly-control" "cffi")
+  ("ataxia-world" "ataxia-web/ui" "ataxia-sly-control" "cffi")
   :serial t
   :components
   ((:module "src/worlds/infinite"
     :components
     ((:file "packages")
-     (:file "ui-compat")
      (:file "model")
      (:file "occlusion")
      (:file "renderer")
@@ -30,5 +29,5 @@
 
 (asdf:defsystem "ataxia-infinite-world/capture"
   :description "Offscreen application and fixed canvas-region capture"
-  :depends-on ("ataxia-infinite-world" "ataxia-rmlui")
+  :depends-on ("ataxia-infinite-world")
   :components ((:file "src/worlds/infinite/capture")))

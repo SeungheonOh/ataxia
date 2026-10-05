@@ -2,5 +2,4 @@
 (defpackage #:ataxia.world.shell
   (:use #:cl #:ataxia.world)
   (:export #:enable-status-bar #:disable-status-bar #:shell-status-bar #:status-bars
-           #:initialize-status-bar-controls #:set-shell-text #:set-shell-style #:shell-cache
-           #:enable-rmlui-status-bar #:disable-rmlui-status-bar #:rmlui-status-bar))
+           #:initialize-status-bar-controls #:set-shell-text #:set-shell-style #:shell-cache))

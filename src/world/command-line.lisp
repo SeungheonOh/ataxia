@@ -10,7 +10,7 @@
       value)))
 
 (defun parse-compositor-options (arguments)
-  "Return a fresh option plist, or :HELP. Used by Atlas, Infinite and Tiling."
+  "Return a fresh option plist, or :HELP. Used by every World's launcher."
   (let ((options (list :backend :auto :width 1280 :height 720
                        :run-for nil :debug-p nil :damage-debug-p nil
                        :sly-port 4005)))

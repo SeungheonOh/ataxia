@@ -3,7 +3,7 @@
 Metaworld is an infinite canvas containing movable, single-level window groups.
 Each group owns either a scrolling-column layout inspired by Niri or a dynamic
 tiling layout inspired by Hyprland. Groups contain real application windows and
-spatial Slint widgets, not screenshots or nested compositor instances. Unowned
+spatial HTML widgets, not screenshots or nested compositor instances. Unowned
 windows and notes remain ordinary canvas objects. Groups cannot contain groups.
 
 Niri workspaces are full-size pages stacked vertically. Each page has its own
@@ -116,7 +116,7 @@ Live World switches match the Kernel's stable application identity within the
 current compositor session. After a compositor restart, applications are matched
 by application ID and title, with application-ID fallback. Saving a layout does
 not relaunch external applications after the compositor exits. Identical application IDs and titles cannot uniquely identify
-multiple restarted clients. Arbitrary agent-created Slint programs are not
+multiple restarted clients. Arbitrary agent-created widgets are not
 serialized; built-in notes are.
 
 ## World-side API
@@ -163,9 +163,8 @@ host compositor to forward them.
 
 ## Rendering and motion
 
-Built-in Slint controls compile with the native library. Custom agent widgets
-use the interpreter. Each control owns keyboard state backed by a shared
-immutable keymap. Dismissed controls stop accepting input immediately, then fade
+Controls are HTML documents. Each control owns keyboard state backed by a
+shared immutable keymap. Dismissed controls stop accepting input immediately, then fade
 out. Explicit menus and direct manipulation suppress automatic hover controls.
 
 Layout animations retain separate displayed and destination rectangles. They
@@ -179,9 +178,8 @@ group also translates its children's active animation paths. Fresh camera
 pan/zoom transitions follow straight screen paths; interrupted transitions bend
 smoothly toward the new target, and rotations take the shortest arc.
 
-Slint timers advance before rendering each output frame, so control animations
-follow the display refresh rate rather than a 16 ms polling timer. Application
-timers still use their own deadlines. Animation damage samples only animated
+Control animations follow the display refresh rate rather than a 16 ms polling
+timer. Application timers still use their own deadlines. Animation damage samples only animated
 windows and does no coverage work when the animator is idle. Callback-driven
 cancellation and chaining preserve newly scheduled animations.
 
@@ -208,7 +206,7 @@ fall back to a grid. Group packing preserves a 40-unit contact gap and starts
 moving neighbors at a 96-unit gap. These layouts cannot fit arbitrarily many
 minimum-sized windows into a fixed region.
 
-Slint raster density follows displayed size and output scale, with half-octave
+HTML raster density follows displayed size and output scale, with half-octave
 allocation buckets and shrink hysteresis. Textures respect the GPU dimension
 limit and a 16-megapixel budget per component. Application buffers remain
 client-owned. Minified surfaces use a bounded area filter, while magnification
@@ -228,7 +226,7 @@ without waiting for disk. `save-metaworld` is asynchronous; shutdown drains
 pending writes after the Kernel stops. The bounded launch queue handles both
 terminals and desktop entries. Unique terminal application IDs retain the
 requested group, workspace, and stack target across out-of-order arrivals.
-Workers never access live World, Wayland, Slint, or GLES objects.
+Workers never access live World, Wayland, or GLES objects.
 
 Hover dwell, dismissal, and save deadlines use one-shot timers. Idle timers are
 disarmed, and workers wait on semaphores. Runtime flushes client messages before
@@ -241,10 +239,7 @@ portal configuration, avoiding unavailable GNOME portal services. It preserves e
 when no ScreenCast preference exists, and does nothing in nested sessions. Portal
 setup and application launch failures are logged to stderr.
 
-Native library installation uses atomic replacement. The Slint bridge resolves
-functions through an explicit library handle to prevent mixed native versions.
-Destroy existing components before switching handles; old libraries stay mapped
-for their thread-local destructors.
+Native library installation uses atomic replacement.
 
 ## Validation
 
@@ -259,8 +254,8 @@ exercises the production minification shaders on a surfaceless GLES context.
 The shader checks require Python 3, Pillow, and DejaVu fonts. Set
 `ATAXIA_SHADER_TEST_DIR` to retain the comparison gallery; otherwise its temporary
 files are removed. `ATAXIA_LISP_DEPS` and `ATAXIA_DEPS` work as in the launcher.
-Individual Lisp scripts can also run through SBCL; native Slint tests need the
-floating-point configuration shown in the launch commands above.
+Individual Lisp scripts can also run through SBCL with the floating-point
+configuration shown in the launch commands above.
 
 See [the QA checklist](METAWORLD-QA.md) for coverage and headless smoke commands.
 Render-call timings do not measure end-to-end physical pointer latency.

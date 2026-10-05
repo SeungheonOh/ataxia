@@ -4,26 +4,78 @@
 (defmethod ataxia.world:world-supports-p :around ((world infinite-world) capability)
   (or (eq capability :window-capture) (call-next-method)))
 
+(defun %gl-integers (parameter count)
+  (cffi:with-foreign-object (buffer :int count)
+    (cffi:foreign-funcall "glGetIntegerv" :uint parameter :pointer buffer :void)
+    (loop for index below count collect (cffi:mem-aref buffer :int index))))
+
+(defun %gl-integer (parameter)
+  (first (%gl-integers parameter 1)))
+
+(defparameter +capture-capabilities+ '(#x0BE2 #x0C11 #x0B71 #x0B90 #x0B44 #x8C89)
+  "Blend, scissor, depth, stencil, face culling and rasterizer discard.")
+
+(defparameter +capture-pixel-stores+ '(#x0D05 #x0D02 #x0D04 #x0D03)
+  "Pack alignment, row length, skipped pixels and skipped rows.")
+
 (defun %call-with-window-capture-state (world function)
-  (ataxia.world.rmlui:call-with-preserved-graphics-state
-   (lambda ()
-     ;; The shared UI guard covers drawing and upload state. Capture additionally
-     ;; changes readback strides and may sample an external client texture.
-     (cffi:with-foreign-objects ((stores :int 3) (external :int))
-       (let ((parameters '(#x0D02 #x0D04 #x0D03))
-             (external-p (%canvas-renderer-external-program (%world-renderer world)))
-             (discard (cffi:foreign-funcall "glIsEnabled" :uint #x8C89 :uchar)))
-         (loop for parameter in parameters for i from 0 do
-               (cffi:foreign-funcall "glGetIntegerv" :uint parameter :pointer (cffi:mem-aptr stores :int i) :void))
-         (cffi:foreign-funcall "glActiveTexture" :uint #x84C0 :void)
-         (when external-p (cffi:foreign-funcall "glGetIntegerv" :uint #x8D67 :pointer external :void))
-         (unwind-protect (funcall function)
-           (loop for parameter in parameters for i from 0 do
-                 (cffi:foreign-funcall "glPixelStorei" :uint parameter :int (cffi:mem-aref stores :int i) :void))
-           (when external-p
-             (cffi:foreign-funcall "glActiveTexture" :uint #x84C0 :void)
-             (cffi:foreign-funcall "glBindTexture" :uint #x8D65 :uint (cffi:mem-ref external :int) :void))
-           (unless (zerop discard) (cffi:foreign-funcall "glEnable" :uint #x8C89 :void))))))))
+  "Call FUNCTION, which renders a capture offscreen and reads it back, then put back
+the GL state it changes, so the compositor's next frame finds its context as it was."
+  (let ((external-p (%canvas-renderer-external-program (%world-renderer world)))
+        (active (%gl-integer #x84E0))
+        (draw-framebuffer (%gl-integer #x8CA6)) (read-framebuffer (%gl-integer #x8CAA))
+        (program (%gl-integer #x8B8D)) (vertex-array (%gl-integer #x85B5))
+        (array (%gl-integer #x8894)) (pack (%gl-integer #x88ED)) (unpack (%gl-integer #x88EF))
+        (viewport (%gl-integers #x0BA2 4))
+        ;; Equations for color and alpha, then source and destination factors for each.
+        (blend (mapcar #'%gl-integer '(#x8009 #x883D #x80C9 #x80C8 #x80CB #x80CA)))
+        (stores (mapcar #'%gl-integer +capture-pixel-stores+))
+        (enabled (mapcar (lambda (capability)
+                           (plusp (cffi:foreign-funcall "glIsEnabled" :uint capability :uchar)))
+                         +capture-capabilities+))
+        (clear (cffi:with-foreign-object (color :float 4)
+                 (cffi:foreign-funcall "glGetFloatv" :uint #x0C22 :pointer color :void)
+                 (loop for index below 4 collect (cffi:mem-aref color :float index))))
+        (mask (cffi:with-foreign-object (mask :uchar 4)
+                (cffi:foreign-funcall "glGetBooleanv" :uint #x0C23 :pointer mask :void)
+                (loop for index below 4 collect (cffi:mem-aref mask :uchar index))))
+        texture sampler external)
+    ;; Capture draws through texture unit 0, possibly from an external client texture.
+    (cffi:foreign-funcall "glActiveTexture" :uint #x84C0 :void)
+    (setf texture (%gl-integer #x8069)
+          sampler (%gl-integer #x8919)
+          external (and external-p (%gl-integer #x8D67)))
+    (unwind-protect (funcall function)
+      (cffi:foreign-funcall "glBindFramebuffer" :uint #x8CA9 :uint draw-framebuffer :void)
+      (cffi:foreign-funcall "glBindFramebuffer" :uint #x8CA8 :uint read-framebuffer :void)
+      (cffi:foreign-funcall "glUseProgram" :uint program :void)
+      (cffi:foreign-funcall "glBindVertexArray" :uint vertex-array :void)
+      (cffi:foreign-funcall "glBindBuffer" :uint #x8892 :uint array :void)
+      (cffi:foreign-funcall "glBindBuffer" :uint #x88EB :uint pack :void)
+      (cffi:foreign-funcall "glBindBuffer" :uint #x88EC :uint unpack :void)
+      (cffi:foreign-funcall "glActiveTexture" :uint #x84C0 :void)
+      (cffi:foreign-funcall "glBindTexture" :uint #x0DE1 :uint texture :void)
+      (when external (cffi:foreign-funcall "glBindTexture" :uint #x8D65 :uint external :void))
+      (cffi:foreign-funcall "glBindSampler" :uint 0 :uint sampler :void)
+      (cffi:foreign-funcall "glActiveTexture" :uint active :void)
+      (loop for parameter in +capture-pixel-stores+ for value in stores
+            do (cffi:foreign-funcall "glPixelStorei" :uint parameter :int value :void))
+      (destructuring-bind (x y width height) viewport
+        (cffi:foreign-funcall "glViewport" :int x :int y :int width :int height :void))
+      (destructuring-bind (red green blue alpha) clear
+        (cffi:foreign-funcall "glClearColor" :float red :float green :float blue :float alpha :void))
+      (destructuring-bind (red green blue alpha) mask
+        (cffi:foreign-funcall "glColorMask" :uchar red :uchar green :uchar blue :uchar alpha :void))
+      (destructuring-bind (color-equation alpha-equation color-source color-destination
+                           alpha-source alpha-destination)
+          blend
+        (cffi:foreign-funcall "glBlendEquationSeparate" :uint color-equation :uint alpha-equation :void)
+        (cffi:foreign-funcall "glBlendFuncSeparate" :uint color-source :uint color-destination
+                                                    :uint alpha-source :uint alpha-destination :void))
+      (loop for capability in +capture-capabilities+ for enabled-p in enabled
+            do (if enabled-p
+                   (cffi:foreign-funcall "glEnable" :uint capability :void)
+                   (cffi:foreign-funcall "glDisable" :uint capability :void))))))
 (defun %render-capture-pixels (width height pixels draw)
   "Draw into an isolated target. Caller preserves the compositor's GL state."
     (cffi:with-foreign-objects ((texture :uint) (framebuffer :uint) (vao :uint))

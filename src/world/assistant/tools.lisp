@@ -9,18 +9,12 @@
                      "inputSchema" (%assistant-object-schema properties (or required #()))))
 (defun %assistant-tool-specs (world)
   (declare (ignore world))
-  (let ((string (%assistant-schema "string")) (integer (%assistant-schema "integer")))
-    (vector
-     (%assistant-tool-spec "ataxia_lisp"
-       "Evaluate Common Lisp in running Ataxia. This is the desktop interface for World inspection/control and application input/capture. inspect/apply bind WORLD on its owner thread with a 250 ms budget; apply also refreshes it. worker runs off-thread with a 30 s budget and binds WORLD to NIL. All modes bind AGENT to this task. Use worker mode for ataxia.agent:capture-window, click, press-key, type-text, paste and scroll; these handle owner-thread entry and wait for client work. Capture emits an image automatically. Batch related Lisp operations and return compact results. Inspect mode may call World methods that already record damage. Read/compile happens off-thread; never ASDF-reload the live World or install classes on a worker. Errors do not replace the World, roll back partial mutations or replay actions. Never change kernel/runtime/native code."
-       (%assistant-object "code" (%assistant-schema "string" "maxLength" 32768)
-                          "mode" (%assistant-schema "string" "enum" #("inspect" "apply" "worker"))) #("code" "mode"))
-     (%assistant-tool-spec "ataxia_ui_preview"
-       "Launch a dedicated process and interactive Wayland window for an RML file. Returns its preview ID and window ID, plus an image. Test behavior with the Lisp application functions. JavaScript, arbitrary callbacks and file saving are unavailable."
-       (%assistant-object "path" string "width" integer "height" integer) #("path"))
-     (%assistant-tool-spec "ataxia_ui_update"
-       "Validate and replace an existing preview document after editing its RML file. Failed updates preserve the working preview; successful updates reset unsaved form values. Test the updated app with Lisp input/capture."
-       (%assistant-object "preview" string "path" string) #("preview" "path")))))
+  (vector
+   (%assistant-tool-spec "ataxia_lisp"
+     "Evaluate Common Lisp in running Ataxia. This is the desktop interface for World inspection/control and application input/capture. inspect/apply bind WORLD on its owner thread with a 250 ms budget; apply also refreshes it. worker runs off-thread with a 30 s budget and binds WORLD to NIL. All modes bind AGENT to this task. Use worker mode for ataxia.agent:capture-window, click, press-key, type-text, paste and scroll; these handle owner-thread entry and wait for client work. Capture emits an image automatically. Batch related Lisp operations and return compact results. Inspect mode may call World methods that already record damage. Read/compile happens off-thread; never ASDF-reload the live World or install classes on a worker. Errors do not replace the World, roll back partial mutations or replay actions. Never change kernel/runtime/native code."
+     (%assistant-object "code" (%assistant-schema "string" "maxLength" 32768)
+                        "mode" (%assistant-schema "string" "enum" #("inspect" "apply" "worker")))
+     #("code" "mode"))))
 
 (defparameter +assistant-base64-alphabet+ "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/")
 (defun %assistant-base64 (bytes)
@@ -78,8 +72,6 @@
   (%assistant-owner controller (lambda () (%assistant-require-task controller)))
   (cond
     ((equal name "ataxia_lisp") (%assistant-evaluate-lisp controller arguments))
-    ((equal name "ataxia_ui_preview") (%assistant-preview controller arguments))
-    ((equal name "ataxia_ui_update") (%assistant-preview-update controller arguments))
     (t (error "Unknown Ataxia tool ~A." name))))
 (defun %assistant-dispatch-tool (controller id params)
   (let* ((name (gethash "tool" params))
@@ -101,9 +93,7 @@
     (%assistant-journal controller "accepted" "call" call-id "tool" name)
     (setf (gethash key (assistant-controller-seen-calls controller)) :running)
     (%assistant-state controller :activity
-      (or (cdr (assoc name '(("ataxia_lisp" . "Using Lisp")
-                            ("ataxia_ui_preview" . "Opening the app preview")
-                            ("ataxia_ui_update" . "Updating the app preview")) :test #'equal)) name))
+      (if (equal name "ataxia_lisp") "Using Lisp" name))
     (let ((epoch (assistant-controller-epoch controller)))
       (setf (assistant-controller-tool-worker controller)
         (sb-thread:make-thread

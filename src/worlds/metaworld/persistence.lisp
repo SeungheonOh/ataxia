@@ -127,7 +127,7 @@
   (loop while (or *meta-save-mailbox* *meta-save-busy-p*) do (sleep 0.01)))
 
 ;; One process-lifetime writer serializes saves across World replacements.
-;; It retains copied data only, and never calls World, Wayland, Slint or GLES.
+;; It retains copied data only, and never calls World, Wayland or GLES.
 (unless (and *meta-save-worker* (sb-thread:thread-alive-p *meta-save-worker*))
   (setf *meta-save-worker*
         (sb-thread:make-thread #'%meta-save-worker-loop :name "Ataxia state writer")))

@@ -46,8 +46,13 @@
                               (progn
                                 (assert (search "firefox_fixture" (getf (evaluate "(ataxia.world:world-application-catalog world (first (ataxia.world:world-outputs world)))" "inspect") :output)))
                                 (evaluate "(ataxia.world:launch-world-application world (first (ataxia.world:world-outputs world)) \"firefox_fixture\")" "inspect")
-                                (loop repeat 100 until (owner #'fixture-window) do (sleep .05d0)
-                                      finally (assert (owner #'fixture-window)))))
+                                ;; A mapped window becomes available once the World shows it.
+                                (flet ((shown-p ()
+                                         (owner (lambda ()
+                                                  (let ((window (fixture-window)))
+                                                    (and window (ataxia.world:world-window-visible-p world window)))))))
+                                  (loop repeat 100 until (shown-p) do (sleep .05d0)
+                                        finally (assert (shown-p))))))
                           (owner (lambda ()
                                    (when real
                                      (assert (eq :done (ataxia.assistant::assistant-controller-task controller)) ()

@@ -4,7 +4,7 @@
   (:export #:document-component #:document-widget #:make-ui-component #:make-ui-widget
            #:set-ui-class #:set-ui-style #:set-ui-attribute #:set-ui-model #:ui-model-value
            #:document-overlay #:show-notification #:input-seat
-           #:widget-cache #:cache-widget-value #:set-widget-text #:set-widget-style #:short-ui-text))
+           #:widget-cache #:cache-widget-value #:set-widget-text #:set-widget-style))
 (in-package #:ataxia.world.web.ui)
 (defclass document-overlay (ataxia.world:ui-overlay) ())
 (defmethod ataxia.world:destroy-overlay ((overlay document-overlay))
@@ -24,8 +24,6 @@
 (defun set-widget-style (widget id property value)
   (cache-widget-value widget (list id property) value
     (lambda (component) (set-ui-style component id property value))))
-(defun short-ui-text (text limit)
-  (if (> (length text) limit) (concatenate 'string (subseq text 0 (1- limit)) "…") text))
 (defgeneric set-ui-class (component id name enabled))
 (defgeneric set-ui-style (component id property value))
 (defgeneric set-ui-model (component name value))
@@ -39,7 +37,7 @@
    (models :initform (make-hash-table :test #'equal) :reader %models)))
 (defun %scalar (value)
   (etypecase value
-    (string (ataxia.world.web::%json-string value))
+    (string (ataxia.world.wire:encode value))
     (boolean (if value "true" "false"))
     (real (format nil "~F" (coerce value 'double-float)))))
 (defun %flush (component)
@@ -92,29 +90,12 @@
     (%update component "model" name "" value)))
 (defmethod ui-model-value ((component document-component) name)
   (gethash name (%models component)))
-(defun %json-input-string (json)
-  ;; Shell models only send JSON strings. Never use the Lisp reader on page data.
-  (unless (and (>= (length json) 2) (char= (char json 0) #\")
-               (char= (char json (1- (length json))) #\"))
-    (error "Shell model value is not a JSON string."))
-  (with-output-to-string (out)
-    (loop with end = (1- (length json)) for i from 1 below end
-          for ch = (char json i) do
-      (if (char/= ch #\\) (write-char ch out)
-          (progn
-            (when (>= (incf i) end) (error "Incomplete JSON escape."))
-            (let ((escape (char json i)))
-              (write-char
-               (case escape
-                 (#\n #\Newline) (#\r #\Return) (#\t #\Tab) (#\b #\Backspace) (#\f #\Page)
-                 ((#\" #\\ #\/) escape)
-                 (#\u (when (>= (+ i 4) end) (error "Incomplete Unicode escape."))
-                      (prog1 (code-char (parse-integer json :start (1+ i) :end (+ i 5) :radix 16)) (incf i 4)))
-                 (otherwise (error "Invalid JSON escape."))) out)))))))
 (defmethod ataxia.world.web::%dispatch-event :around ((component document-component) name json)
   (%update component "input-ack" name "" "")
+  ;; Shell models send JSON strings; page data never reaches the Lisp reader.
   (let ((value (if (and (plusp (length json)) (char= (char json 0) #\"))
-                   (%json-input-string json) json)))
+                   (ataxia.world.wire:decode json :max-string (length json))
+                   json)))
     (cond
       ((uiop:string-prefix-p "__start:" name)
        (setf (gethash (subseq name 8) (%incoming component)) (list 0))

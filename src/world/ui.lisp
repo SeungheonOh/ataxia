@@ -17,3 +17,6 @@
 (defgeneric ui-next-update-delay (component)
   (:documentation "Milliseconds until work is due, or NIL. Zero is paced by output frames.")
   (:method (component) (declare (ignore component)) nil))
+(defun short-ui-text (text limit)
+  "TEXT, cut to LIMIT characters with an ellipsis when longer."
+  (if (> (length text) limit) (concatenate 'string (subseq text 0 (1- limit)) "…") text))

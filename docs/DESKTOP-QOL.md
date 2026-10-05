@@ -1,6 +1,6 @@
 # Desktop integration
 
-The screen-sharing chooser, region selector and sharing indicator use RmlUi.
+The screen-sharing chooser, region selector and sharing indicator are HTML pages.
 Capture policy and monitor cameras belong to World. Runtime's optional XWayland
 module owns native wrappers, listeners and copied protocol requests. Kernel's
 adapter translates these into stable application objects and World requests; the portal worker handles
@@ -37,7 +37,7 @@ applications. Install `Xwayland` alongside the compositor's wlroots build. Manag
 X11 windows use the same World layout, focus, close, maximize and fullscreen paths
 as Wayland windows; override-redirect menus are attached to their application.
 X11 applications implement the same `drawable` and `interactable` protocols as
-Wayland applications and Slint/RmlUi components. World consumes their drawable
+Wayland applications and HTML components. World consumes their drawable
 records, transforms local coordinates, and calls the common input, focus,
 configuration and state methods. Popup surface routing and XWM translation stay
 inside Kernel's adapter; there are no X11 rendering or input hooks in World.
@@ -53,7 +53,7 @@ pixel capture and application input work when no accessibility tree is available
 Install the PipeWire and GLib development packages to build the transport
 (`pkg-config libpipewire-0.3 gio-2.0 gio-unix-2.0`), plus PipeWire,
 xdg-desktop-portal and a desktop portal backend such as GTK at runtime.
-`make all` builds the transport and RmlUi bridge.
+`make all` builds the transport.
 
 Sharing is enabled by default outside headless mode. `--screen-sharing` enables it
 explicitly; `--no-screen-sharing` disables it. Direct DRM sessions run
@@ -101,7 +101,7 @@ shares and changing application content still require capture work at up to 30 f
 Run `make benchmark-idle`, `make benchmark-desktop-idle` and `make test-screencast`.
 The latter verifies cached-frame delivery, a real client repaint, simultaneous
 streams, and zero capture ticks/output frames after the last stream closes.
-The desktop benchmark includes two differently sized outputs, two RmlUi bars,
+The desktop benchmark includes two differently sized outputs, two HTML bars,
 real Wayland and X11 clients (including an X11 popup), and the enabled portal.
 
 Measurements on Intel Iris Xe / Mesa 26.0.8, headless GLES2, 2026-09-21:

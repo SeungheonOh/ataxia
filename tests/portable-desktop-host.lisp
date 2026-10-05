@@ -7,7 +7,7 @@
   (:local-nicknames (#:cu #:ataxia.computer-use) (#:assistant #:ataxia.assistant)))
 (in-package #:ataxia.test.portable-desktop)
 
-(dolist (package '(:ataxia.infinite-world :ataxia.metaworld :ataxia.atlas :ataxia.world.slint))
+(dolist (package '(:ataxia.infinite-world :ataxia.metaworld))
   (assert (not (find-package package))))
 
 (defclass fixture-world (ataxia.kernel:world)
@@ -94,8 +94,7 @@
          (let ((snapshot (world-desktop-state world))
                (tools (assistant::%assistant-tool-specs world)))
            (assert (= 42 (getf (aref (getf snapshot :windows) 0) :id)))
-           (assert (equal '("ataxia_lisp" "ataxia_ui_preview" "ataxia_ui_update")
-                          (map 'list (lambda (tool) (gethash "name" tool)) tools))))
+           (assert (equal '("ataxia_lisp") (map 'list (lambda (tool) (gethash "name" tool)) tools))))
          ;; Desktop observations use the host's output-space placement.
          (setf (cu::computer-view-mode (cu:computer-session-view session)) :desktop)
          (let ((entry (aref (cu::%computer-windows session) 0)))

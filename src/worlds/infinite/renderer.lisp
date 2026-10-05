@@ -22,39 +22,6 @@ void main() {
   gl_FragColor = vec4(u_color.rgb * u_color.a, u_color.a);
 }")
 
-(defparameter +shadow-fragment-shader+
-  "precision highp float;
-varying vec2 v_uv;
-uniform vec2 u_size;
-uniform float u_sigma;
-uniform float u_padding;
-uniform float u_opacity;
-// Gaussian integral over a rectangle: continuous edges and soft corners.
-vec2 gaussian_cdf(vec2 x) {
-  vec2 a = abs(x) * 0.70710678;
-  vec2 t = 1.0 / (1.0 + 0.3275911 * a);
-  vec2 erf_value = 1.0 - (((((1.061405429 * t - 1.453152027) * t
-                    + 1.421413741) * t - 0.284496736) * t
-                    + 0.254829592) * t) * exp(-a * a);
-  return 0.5 + 0.5 * sign(x) * erf_value;
-}
-void main() {
-  vec2 p = v_uv * (u_size + 2.0 * u_padding) - u_padding;
-  vec2 coverage = gaussian_cdf(p / u_sigma) - gaussian_cdf((p - u_size) / u_sigma);
-  float alpha = clamp(coverage.x * coverage.y, 0.0, 1.0) * u_opacity;
-  gl_FragColor = vec4(0.0, 0.0, 0.0, alpha);
-}")
-
-;; Separate ownership keeps renderer instances compatible across live updates.
-(defvar *canvas-shadow-programs* (make-hash-table :test #'eq))
-
-(defun %ensure-shadow-program (renderer)
-  (or (gethash renderer *canvas-shadow-programs*)
-      (setf (gethash renderer *canvas-shadow-programs*)
-            (ataxia.world.gles:make-gles-program
-             +canvas-vertex-shader+ +shadow-fragment-shader+
-             :attributes '(("a_position" . 0) ("a_uv" . 1))))))
-
 (defparameter +grid-fragment-shader+
   "precision highp float;
 uniform vec2 u_camera;
@@ -168,8 +135,6 @@ void main() {
 
 (defun %destroy-canvas-renderer (renderer)
   (when renderer
-    (ataxia.world.gles:destroy-gles-program (gethash renderer *canvas-shadow-programs*))
-    (remhash renderer *canvas-shadow-programs*)
     (dolist (program
               (list (%canvas-renderer-solid-program renderer)
                     (%canvas-renderer-grid-program renderer)
@@ -385,26 +350,6 @@ rotation, output transform, fractional scale and window resizing."
                    (> (* .5d0 bh (1+ (reduce #'max positions :key #'cdr))) (ataxia.world:rectangle-y clip))))
       (%draw-surface-quad renderer surface positions bw bh opacity effect seed)
       t)))
-
-(defun %draw-window-shadow (renderer state window)
-  (multiple-value-bind (x y width height)
-      (%window-canvas-geometry state window)
-    (let* ((lift (max 0d0 (min 1d0 (canvas-window-elevation window))))
-           (sigma (+ 5d0 (* lift 3d0)))
-           (padding (* 3d0 sigma))
-           (program (%ensure-shadow-program renderer)))
-      (%bind-vertices renderer
-                      (%quad-vertices
-                       (%canvas-quad state (- x padding) (+ y (* 5d0 lift) (- padding))
-                                     (+ width (* 2d0 padding)) (+ height (* 2d0 padding)))
-                       (list (cons 0d0 0d0) (cons 1d0 0d0) (cons 0d0 1d0) (cons 1d0 1d0))))
-      (ataxia.world.gles:gles-use-program program)
-      (ataxia.world.gles:gles-uniform-2f program "u_size" width height)
-      (ataxia.world.gles:gles-uniform-1f program "u_sigma" sigma)
-      (ataxia.world.gles:gles-uniform-1f program "u_padding" padding)
-      (ataxia.world.gles:gles-uniform-1f program "u_opacity"
-                                          (* (%window-opacity window) (+ 0.22d0 (* lift 0.08d0))))
-      (ataxia.world.gles:gles-draw-triangles 6))))
 
 (defun %draw-window (renderer state window tokens)
   (%map-window-surfaces

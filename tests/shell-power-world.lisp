@@ -1,6 +1,6 @@
 ;;;; Native controls and hardware keys against a fake backend in a real World.
 (load (merge-pathnames "support.lisp" *load-truename*))
-(asdf:load-system "ataxia-rmlui/status-bar")
+(asdf:load-system "ataxia-web/status-bar")
 (defpackage #:ataxia.test.shell-power
   (:use #:cl #:ataxia.world)
   (:local-nicknames (#:shell #:ataxia.world.shell)))
@@ -37,14 +37,14 @@
                (ataxia.kernel:interactable-pointer-button
                 (overlay-component (shell::%bar-popup bar)) world seat x y
                 (ataxia.kernel:make-cursor-button-input :code 272 :state state))))
-           (shown (id) (gethash id (ataxia.world.rmlui:widget-cache (shell::%bar-popup bar)))))
+           (shown (id) (gethash id (ataxia.world.shell:shell-cache (shell::%bar-popup bar)))))
     (unwind-protect
          (progn
            (setf (symbol-function 'shell::%bar-power)
                  (lambda (&optional root) (declare (ignore root))
                    '(:capacity 100 :status :full :online t :health 90 :cycles 100)))
            (ataxia.kernel:start-kernel kernel)
-           (shell:enable-rmlui-status-bar world :power-backend #'backend)
+           (ataxia.world.web.shell:enable-web-status-bar world :power-backend #'backend)
            (setf service (world-service world :shell) controller (shell::shell-service-power service)
                  bar (first (shell:status-bars world)) seat (world-seat-on-output world (overlay-output bar)))
            (shell::%bar-action world bar :power)
@@ -109,7 +109,7 @@
                          (assert (getf (view) :brightness-pending))
                          (tap "XF86Sleep")
                          (assert (getf (view) :suspend-pending))
-                         (shell:disable-rmlui-status-bar world)
+                         (ataxia.world.web.shell:disable-web-status-bar world)
                          (assert (null (shell::power-controller-source controller)))
                          (assert (null (shell::power-controller-fd controller)))
                          (assert (null (world-service world :shell)))
@@ -119,7 +119,7 @@
                         (8 (unless (sb-thread:thread-alive-p (shell::power-controller-thread controller))
                              (assert (= 2 sleep-count))
                              (assert (notany (lambda (widget)
-                                               (typep widget '(or shell:rmlui-status-bar shell::rmlui-shell-popup)))
+                                               (typep widget '(or ataxia.world.web.shell:web-status-bar ataxia.world.web.shell::web-shell-popup)))
                                              (world-overlays world)))
                              (setf phase 9))))
                       (when (< phase 9) (ataxia.runtime:update-event-loop-timer source 70))

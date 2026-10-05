@@ -1,4 +1,0 @@
-<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>Ataxia</title>
-<link rel="stylesheet" href="../../world/web/ui/document.css"><style>#panel{border:1px solid var(--ink);height:100%;display:flex;align-items:center;gap:16px;padding:0 8px}input{flex:1;min-width:0;border:1px solid var(--ink)}</style>
-<script src="../../world/web/ui/document.js" defer></script></head><body class="shell"><div id="panel"><strong>ATAXIA</strong><button id="pulse">Pulse 0</button><input aria-label="Command" data-value="command" placeholder="Type here"></div><script>let count=0;document.getElementById('pulse').addEventListener('click',e=>{e.target.textContent=`Pulse ${++count}`;e.target.animate([{backgroundColor:'#161616',color:'#fff'},{backgroundColor:'transparent',color:'#161616'}],{duration:250});});</script></body></html>

@@ -13,7 +13,7 @@
            (ataxia.kernel:start-kernel kernel)
            (setf human-keyboard (ataxia.world.synthetic-input:create-synthetic-input runtime :keyboard "Test human keyboard")
                  human-device (ataxia.kernel:register-input-device kernel human-keyboard :seat human))
-           (ataxia.computer-use:enable world :start-server nil)
+           (ataxia.computer-use:enable world)
            (setf client (uiop:launch-program (list "env" (format nil "WAYLAND_DISPLAY=~A" (ataxia.runtime:runtime-socket-name runtime))
                                                  (namestring (asdf:system-relative-pathname "ataxia-computer-use" "build/computer-use-client")) (namestring log))
                                             :output "/tmp/ataxia-agent-client-stdout.log" :error-output :output))

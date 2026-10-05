@@ -93,7 +93,6 @@
       (cond
         ((or (null seat) (%meta-hover-suppressed-p world state)
              (%canvas-seat-operation seat) (%meta-group-drag world)
-             (and (%meta-menu world) (overlay-input-enabled-p (%meta-menu world)))
              (< now (%meta-view-hover-after view)))
          (setf (%meta-chrome-edge-since chrome) nil (%meta-view-panel-until view) 0d0))
         ((%meta-pointer-in-ui-p seat (%meta-view-panel view))
@@ -165,7 +164,6 @@
       (let ((group (object-subworld world widget)))
         (remhash widget (%meta-spatial-widgets world))
         (remhash widget (%meta-owners world))
-        (when (eq widget (%meta-menu-target world)) (setf (%meta-menu-target world) nil))
         (when (eq widget (getf (%meta-group-drag world) :subject))
           (setf (%meta-group-drag world) nil))
         (dolist (seat-state (%seat-states world))
@@ -178,8 +176,6 @@
           (when (eq widget (gethash group (%meta-group-focus world)))
             (remhash group (%meta-group-focus world)))
           (%meta-layout world group))))
-    (when (and (%meta-menu world) (not (member (%meta-menu world) overlays)))
-      (setf (%meta-menu world) nil))
     (loop for view being the hash-values of (%meta-views world)
           do (when (and (%meta-view-panel view) (not (member (%meta-view-panel view) overlays)))
                (setf (%meta-view-panel view) nil))
@@ -254,12 +250,10 @@
   world)
 
 (defun %meta-transient-ui-active-p (world)
-  (or (and (%meta-menu world) (overlay-input-enabled-p (%meta-menu world)))
-      (loop for view being the hash-values of (%meta-views world)
-            thereis (and (%meta-view-panel view) (overlay-input-enabled-p (%meta-view-panel view))))))
+  (loop for view being the hash-values of (%meta-views world)
+        thereis (and (%meta-view-panel view) (overlay-input-enabled-p (%meta-view-panel view)))))
 
 (defun %meta-dismiss-transient-ui (world)
-  (%meta-dismiss-menu world)
   (maphash (lambda (state chrome)
              (declare (ignore chrome))
              (let ((view (%meta-view-for-state world state)))
@@ -267,16 +261,6 @@
                (setf (%meta-view-panel-until view) 0d0)
                (%meta-present-ui world (%meta-view-panel view) nil)))
            (%meta-chrome-states world))
-  world)
-
-(defun %meta-dismiss-menu (world)
-  (when (%meta-menu world)
-    (%meta-present-ui world (%meta-menu world) nil)
-    (dolist (seat-state (%seat-states world))
-      (when (eq (%canvas-seat-focused seat-state) (%meta-menu world))
-        (%focus-target world seat-state
-                       (let ((target (or (%meta-menu-target world) (%canvas-seat-previous-focus seat-state))))
-                         (when (%target-visible-p target) target))))))
   world)
 
 (defun %meta-new-note (world &optional group content geometry)

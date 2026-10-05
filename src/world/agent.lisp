@@ -32,7 +32,7 @@
           (maphash (lambda (key session)
                      (when (and (not (eq session :closed)) (eq :closed (cu:computer-session-state session)))
                        (setf (gethash key registry) :closed))) registry)
-          (cu:enable world :start-server nil)
+          (cu:enable world)
           (setf (gethash name registry)
                 (cu:connect-session world (concatenate 'string "Lisp: " name) "Direct Lisp application interaction"
                                     (or (first (world-outputs world)) (error "No output is available."))))))))

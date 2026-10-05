@@ -105,7 +105,7 @@
     (when (and window-id
                (not (and (world-window-visible-p world window)
                          (or (eq mode :window) (%computer-window-on-output-p session window)))))
-      (%computer-reject "target-blocked" "Window is unavailable in this view. Inspect getWorld() for its state."))
+      (%computer-reject "target-blocked" "Window is unavailable in this view. Inspect the World's desktop state."))
     (when (not (eq mode (computer-view-mode view)))
       (%computer-release session)
       (setf (computer-view-mode view) mode)

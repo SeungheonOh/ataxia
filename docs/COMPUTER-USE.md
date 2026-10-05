@@ -1,22 +1,18 @@
-> Agent interface: [direct Lisp/SLY](CODEX-COMPUTER-USE.md). This document describes the underlying native input/capture service and its legacy data transport.
+> Agent interface: [direct Lisp/SLY](CODEX-COMPUTER-USE.md). This document describes the underlying native input/capture service.
 
 # Agent computer use
 
-## Native backend and legacy transport
+## Native backend
 
 The agent's [Lisp interface](CODEX-COMPUTER-USE.md) calls this service directly.
-The older JavaScript compatibility library is documented in [CUA API](CUA-API.md).
-The data-only protocol provides capabilities, target PID metadata, seat-local
-paste, desktop snapshots, direct layout arrangement, window controls, and
-navigation; see the [desktop API](CUA-DESKTOP.md).
-These operations use the same native session and honor pause, disconnect, expiry,
-and sequence checks. Desktop mutations require the observed revision. A desktop snapshot covers the whole current World; camera navigation explicitly names the output to change.
-
-CUA navigation uses `setViewport`, `panViewport`, `frameWindow`, and `frameRegion`,
-with an explicit monitor ID. X/y and pan deltas are world units; rotation is radians.
-Framing respects the output work area and leaves window placement and focus alone.
-
-## Native protocol
+Its requests are data: capabilities, target PID metadata, seat-local paste,
+desktop snapshots, direct layout arrangement, window controls, and navigation.
+They use the same native session and honor pause, disconnect, expiry, and
+sequence checks. Desktop mutations require the observed revision. A desktop
+snapshot covers the whole current World; camera navigation explicitly names the
+output to change. Positions and pan deltas are world units and rotation is
+radians. Framing respects the output work area and leaves window placement and
+focus alone.
 
 An agent connects to the World and starts active immediately. A selected output
 anchors its activity UI and viewport captures. Camera commands explicitly select
@@ -43,18 +39,15 @@ select another window. Closing during movement, typing, or held input pauses the
 session. Mapped minimized/hidden-workspace windows remain discoverable with
 `available: false`; restoring or navigating to them is a separate World action.
 
-Use `getWorld()` for structured arrangement and `getWindow(id)` for app content.
-Explicit `desktop` view and `captureViewport()` show only the selected monitor's
-current camera; they are not an overview of the infinite World. SDK target methods
-always select window view, including after a low-level viewport operation.
-An agent cannot
+Explicit `desktop` view shows only the selected monitor's current camera; it is
+not an overview of the infinite World. An agent cannot
 click World chrome, the application menu, or its own session controls; synthetic
 keys bypass World shortcuts. Application launch is limited to desktop IDs from
 the existing launcher catalog. New windows do not steal an agent's focus.
 
 ## Enable
 
-Build the optional native input helper and RmlUi UI:
+Build the optional native input helper:
 
 ```sh
 make computer-use
@@ -73,23 +66,8 @@ World's startup code:
 (ataxia.computer-use:enable world)
 ```
 
-Enable creates a Lisp listener at `$XDG_RUNTIME_DIR/ataxia-computer-use.sock`
-with mode 0600. The listener runs in the compositor's Lisp image; the CLI is
-also Lisp. Requests enter the existing owner-thread queue directly. There is no
-Python bridge, separate broker process, or SLY TCP round trip.
-
-To choose another socket, use a directory owned by you and not writable by others:
-
-```lisp
-(ataxia.computer-use:enable world :socket "/run/user/1000/my-agent.sock")
-```
-
-`(ataxia.computer-use:disable world)` disconnects all sessions and removes the UI
-and listener. Stopping the listener shuts down accepted connections; partial or
-queued requests from that listener cannot enter a replacement listener.
-Repeated enable calls retain the current listener. To enable only
-the UI and Lisp API, pass `:start-server nil`.
-World replacement or output removal disconnects affected sessions. Enable is
+`(ataxia.computer-use:disable world)` disconnects all sessions and removes the UI.
+Repeated enable calls return the running service. World replacement or output removal disconnects affected sessions. Enable is
 opt-in per World; this module does not change startup configuration.
 
 ## Batch actions and observe once
@@ -97,31 +75,26 @@ opt-in per World; this module does not change startup configuration.
 Use `batch` for a sequence whose next steps are already known. One request can
 focus Firefox, open a tab, enter a URL, wait for its title, and return a screenshot:
 
-```json
-{
-  "op": "batch",
-  "token": "…",
-  "sequence": 1,
-  "actions": [
-    {"op": "focus", "window": 483},
-    {"op": "key", "key": "t", "modifiers": ["Control_L"]},
-    {"op": "type", "text": "https://finance.yahoo.com/quote/NVDA/"},
-    {"op": "key", "key": "Return"},
-    {"op": "wait-window", "window": 483, "title": "NVIDIA", "timeout": 10}
-  ]
-}
+```lisp
+(:op "batch" :token "…" :sequence 1
+ :actions #((:op "focus" :window 483)
+            (:op "key" :key "t" :modifiers ("Control_L"))
+            (:op "type" :text "https://finance.yahoo.com/quote/NVDA/")
+            (:op "key" :key "Return")
+            (:op "wait-window" :window 483 :title "NVIDIA" :timeout 10)))
 ```
 
-Replace the window ID with one from `observe`. Pass the JSON to
-`scripts/ataxia-computer-use request` as an argument or through stdin.
+Replace the window ID with one from `observe`. Submit a request with
+`ataxia.computer-use:request-on-owner` on the owner thread and wait for its result
+with `finish-request` on a worker; the `ataxia.agent` functions do both.
 The response includes the final session, visible windows, `completed` action
-count, and a screenshot. Set `"capture": false` to omit the screenshot.
+count, and a screenshot. Set `:capture :false` to omit the screenshot.
 Before the screenshot, a batch waits for the selected window's surface commits,
 title, dimensions, and available window list to stay unchanged for 150 ms, up to
 two seconds. `image.settled` reports whether that quiet interval was observed;
 `image.wait-seconds` reports time spent waiting. This helps capture completed UI
 updates but cannot prove that an application has finished asynchronous work.
-Set `"settle": 0` for immediate capture, or a value up to two seconds to choose
+Set `:settle 0` for immediate capture, or a value up to two seconds to choose
 the quiet interval.
 
 Movement and typing finish before the next action starts; there is no need for
@@ -158,16 +131,14 @@ Batch only steps that follow from the current observation. Use the returned
 image to choose the next sequence when page content or placement is uncertain.
 Prefer a window condition to repeated screenshots or a guessed long sleep.
 
-## Agent protocol
+## Request protocol
 
-Send one UTF-8 JSON object followed by a newline per Unix socket connection.
-The reply is one JSON object and newline. No Lisp form, callback, shell command,
-or arbitrary file path is accepted. The CLI accepts a JSON argument or stdin:
+A request is a property list of data; no Lisp form, callback, shell command, or
+arbitrary file path is accepted. The reply is a property list too:
 
-```sh
-scripts/ataxia-computer-use request '{"op":"outputs"}'
-scripts/ataxia-computer-use request \
-  '{"op":"connect","name":"Atlas","purpose":"Organize the open project","output":1}'
+```lisp
+(:op "outputs")
+(:op "connect" :name "Organizer" :purpose "Organize the open project" :output 1)
 ```
 
 Use an output ID from `outputs`; omit `output` to request the first output.
@@ -218,8 +189,8 @@ latest image. Resizing invalidates pointer coordinates until a fresh capture;
 the API returns `window-resized`. Changes to popup extents take effect with the
 next capture, preserving the current input origin between observations.
 Desktop view uses output-local coordinates and desktop bounds in `observe`.
-Switch modes with `{"op":"view","mode":"desktop",…}` or request
-`"mode":"desktop"` on connect. Release held input before changing modes or windows.
+Switch modes with `(:op "view" :mode "desktop" …)` or request
+`:mode "desktop"` on connect. Release held input before changing modes or windows.
 To drag, move to an application, send button down, move, then button up. A drag
 retains its pressed surface and coordinate basis until all buttons are released,
 including when crossing a popup or subsurface. Destroying that surface does not
@@ -229,8 +200,8 @@ popup menu or drag-and-drop operation, retain their normal client behavior.
 For a chord, use a base key such as `a`, `Return`, `BackSpace`, or `Left`, and a
 modifier list drawn from `Control_L`, `Shift_L`, `Alt_L`, `Super_L`:
 
-```json
-{"op":"key","token":"…","sequence":3,"key":"a","modifiers":["Control_L"]}
+```lisp
+(:op "key" :token "…" :sequence 3 :key "a" :modifiers ("Control_L"))
 ```
 
 Chords require no held keys and state `tap`. Use `type` for capitalization,
@@ -252,8 +223,8 @@ key reply confirms input delivery, not a completed copy or paste. Verify the
 application result and use explicit `type` actions for observed text when needed.
 Ataxia does not bridge an agent's clipboard into the human seat.
 
-Successful replies contain `ok:true`. Errors contain `ok:false`, `error`, and
-`message`, for example `not-active`, `sequence-mismatch`, `busy`, `target-blocked`,
+Successful replies contain `:ok t`. Errors contain `:ok :false`, `:error`, and
+`:message`, for example `not-active`, `sequence-mismatch`, `busy`, `target-blocked`,
 `no-focus`, or `rate-limited`. Window/output IDs are valid only in the current
 World. Tokens stop working across World replacement or after closed sessions are
 pruned by the next connection request.
@@ -274,8 +245,7 @@ directory under `XDG_RUNTIME_DIR` (the temporary directory is a fallback).
 At most four sessions may be active or paused. Active sessions close after
 120 seconds without API traffic, paused sessions after ten minutes. Active `status` calls renew the session. Any key or
 button held for five seconds triggers pause and release. Each session accepts at
-most 100 requests per second; the listener bounds request size to 64 KiB and admits
-eight concurrent requests. Captures are limited to 16 million source pixels.
+most 100 requests per second. Captures are limited to 16 million source pixels.
 
 The API is a guardrail for cooperative local agents, **not an OS sandbox**.
 A process running as the desktop user can still use privileged SLY or other
@@ -290,19 +260,16 @@ separate headless compositors and native Wayland clients. It checks actual PNG
 pixels and delivered input, including covered and offscreen windows, popups,
 drags, clipboard isolation, concurrent agents, and all eight output transforms
 at scales 1, 1.5, and 2 with a rotated canvas. Session activation and human takeover
-are exercised inside the test fixtures. The suite does not connect to the running
-desktop's computer-use socket.
+are exercised inside the test fixtures. The suite never touches the running
+desktop.
 
 ## Implementation and checks
 
 The World owns placement, focus policy, and rendering. The portable computer-use
 service owns session activation, scope, deadlines, input state, capture authorization,
 and UI. [World services](WORLD-SERVICES.md) documents the adapter contract.
-The optional module contains session/input/UI/capture policy, a batch
-runner, a bounded JSON data reader, and a local socket listener. It accepts
-connections through the existing Runtime FD event API and dispatches bounded
-Lisp workers. The JSON reader never invokes the Lisp reader or interns supplied
-field names. Workers use the existing owner-thread queue in process; input
+The optional module contains session/input/UI/capture policy and a batch
+runner. Requests run on the owner thread through the existing queue; input
 completion waits and PNG resizing/compression run off the owner thread.
 Pixel readback happens during an authorized frame lease. Window capture samples
 the application's drawable surfaces into a separate bounded framebuffer and
@@ -313,7 +280,7 @@ There is one deadline timer, armed only for sessions or actions. Idle UI does no
 request recurring frames.
 
 The optional `ataxia-world/synthetic-input` module owns synthetic wlroots devices
-and emits ordinary keyboard events through Runtime. The CUA native bridge, client
+and emits ordinary keyboard events through Runtime. The native bridge, client
 identity queries, and formatted clipboard sources live in
 `src/world/computer-use/`. They define no functions or state in Runtime or Kernel.
 Runtime's `adopt-input-device` installs normal listeners on a caller-owned device;
@@ -326,7 +293,7 @@ The [design and ownership decisions](COMPUTER-USE-DESIGN.md) describe the bounda
 per-World integration and transaction limits.
 
 ```sh
-make test-computer-use  # Real Wayland client, headless GLES, native Lisp socket API
+make test-computer-use  # Real Wayland clients, headless GLES
 make test              # Existing World, input, animation, rendering regressions
 ```
 
@@ -335,12 +302,10 @@ They exercise independent agent/human seats, capabilities, keymaps, pointer/butt
 events, chords, Unicode, ordering, human interruption, emergency pause, held-input
 timeout, PNG encoding and all output transforms, shell-control protection, UI
 pause/resume callbacks, disconnect, batch ordering and interruption, condition waits,
-malformed JSON, covered/offscreen windows, fresh frame callbacks, resize guards,
+covered/offscreen windows, fresh frame callbacks, resize guards,
 outside subsurfaces, popup rendering and drags, explicit desktop mode, clipboard
-seat isolation and serial rejection, listener replacement, four concurrent agents,
-and zero settled frames. The socket integration runs with the SLY TCP listener stopped. Visual
-artifacts are written to `build/agent-capture.png`
-and `build/agent-api-capture.png`.
+seat isolation and serial rejection, four concurrent agents, and zero settled
+frames. Visual artifacts are written to `build/agent-capture.png`.
 
 The Kernel regression suite also covers popup damage with floating-point positions
 and nested fractional offsets. Pixel damage rounds outward to integer bounds;

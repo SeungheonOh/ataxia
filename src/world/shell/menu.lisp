@@ -37,14 +37,7 @@
                            (- (+ (overlay-x bar) (overlay-width bar)) width))))
           (position-widget world popup (max 0d0 (min (- ow width) anchor))
                                (max 0d0 (- (overlay-y bar) height)) width height)
-          (%shell-class popup "small" (< width 480d0))
-          (when (eq kind :spaces)
-            ;; RmlUi's nested scroll/flex percentage widths need a definite
-            ;; containing width on the stacked narrow layout.
-            (dolist (id '("body" "groups" "workspaces" "workspace-grid"))
-              (set-shell-style popup id "width"
-                (if (< width 480d0) (format nil "~Ddp" (max 1 (floor (- width 18d0))))
-                    (if (equal id "groups") "160dp" "auto"))))))))))
+          (%shell-class popup "small" (< width 480d0)))))))
 (defun %bar-update-power-popup (popup power)
   (let ((capacity (getf power :capacity)) (health (getf power :health))
         (cycles (getf power :cycles)) (tone (%bar-power-tone power)))

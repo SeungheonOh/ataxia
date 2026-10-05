@@ -1,10 +1,9 @@
-;;;; No Slint, RmlUi, Infinite World, or Metaworld loaded in this process.
+;;;; No Infinite World or Metaworld loaded in this process.
 (load (merge-pathnames "system-support.lisp" *load-truename*))
 (asdf:load-system "ataxia-web")
-(asdf:load-system "ataxia-fullscreen-world")
-(dolist (package '(:ataxia.infinite-world :ataxia.metaworld :ataxia.world.slint :ataxia.world.rmlui))
+(dolist (package '(:ataxia.infinite-world :ataxia.metaworld))
   (assert (not (find-package package))))
-(defclass web-fixture-world (ataxia.fullscreen-world:fullscreen-world)
+(defclass web-fixture-world (ataxia.world:rescue-world)
   ((component :initform nil :accessor fixture-component)))
 (defmethod ataxia.kernel:world-render :before ((world web-fixture-world) lease)
   (declare (ignore lease))

@@ -83,8 +83,8 @@ compositor owner thread and receives the current Kernel and World:
          :seats (length (ataxia.kernel:kernel-seats kernel)))))
 ```
 
-Always inspect the World type before using a World-specific package. An
-infinite World, tiling World, and rescue World do not promise the same policy
+Always inspect the World type before using a World-specific package. Stage,
+Metaworld, Infinite World and the rescue World do not promise the same policy
 objects or operations.
 
 ## Mutate safely
@@ -95,7 +95,7 @@ Use `agent-apply` for World changes:
 (ataxia.sly-control:agent-apply
  (lambda (kernel world)
    (declare (ignore kernel))
-   (ataxia.world.slint:show-notification
+   (ataxia.world.web.ui:show-notification
     world "The agent is attached" :title "AGENT" :duration 4d0)))
 ```
 
@@ -110,36 +110,26 @@ event waiting inside `agent-inspect`, `agent-apply`, widget callbacks, or
 
 ## Create interactive UI
 
-Any World implementing the shared UI host protocol can attach a Slint overlay.
-Load `ataxia-slint` for Slint widgets or `ataxia-rmlui` for RML widgets. See
-[World services](WORLD-SERVICES.md) for the host contract.
-Declare every callback the agent needs in both the Slint component and the
-`:callbacks` argument:
+Any World implementing the shared UI host protocol can attach an HTML overlay
+from `ataxia-web`. See [World services](WORLD-SERVICES.md) for the host contract
+and [Web UI](WEB-UI.md) for the page bridge. The page reports interaction with
+`ataxia.postMessage`; declare every message name the agent needs in
+`:callbacks`:
 
 ```lisp
 (defparameter *prompt-source*
-  "export component AgentPrompt inherits Window {
-     background: #e4e4e0;
-     callback accept();
-     callback reject();
-     Text { x: 16px; y: 12px; text: \"Apply the proposed layout?\"; }
-     yes := TouchArea {
-       x: 16px; y: 50px; width: 100px; height: 40px;
-       clicked => { root.accept(); }
-     }
-     no := TouchArea {
-       x: 132px; y: 50px; width: 100px; height: 40px;
-       clicked => { root.reject(); }
-     }
-   }")
+  "<body style='margin:0;padding:12px 16px;background:#e4e4e0;font:14px sans-serif'>
+     <p>Apply the proposed layout?</p>
+     <button onclick=\"ataxia.postMessage('accept', true)\">Apply</button>
+     <button onclick=\"ataxia.postMessage('reject', true)\">Keep</button>
+   </body>")
 
 (ataxia.sly-control:agent-apply
  (lambda (kernel world)
    (declare (ignore kernel))
    (ataxia.world:agent-widget-id
-    (ataxia.world.slint:make-agent-widget
-     world *prompt-source*
-     :component-name "AgentPrompt"
+    (ataxia.world.web:make-web-widget
+     world :source *prompt-source*
      :x 400d0 :y 220d0 :width 248d0 :height 110d0
      :callbacks '("accept" "reject"))))
  :refresh :world-managed)
@@ -206,7 +196,7 @@ Apply the chosen result through a new guarded mutation:
    (let ((widget (ataxia.world:find-agent-widget world 7)))
      (when widget
        (ataxia.world:remove-agent-widget world widget))
-     (ataxia.world.slint:show-notification
+     (ataxia.world.web.ui:show-notification
       world "Layout accepted" :title "AGENT" :duration 4d0)))
  :expected-generation 4
  :refresh :world-managed)
@@ -252,4 +242,4 @@ and `wait-for-agent-events`.
 8. Treat `call-in-kernel-thread` as recovery machinery, not the normal API.
 
 See `SLY_CONTROL.md` for control-plane details and
-`WORLD_WATCHDOG_EXPERIMENT.md` for recovery behavior.
+`WORLD-WATCHDOG.md` for recovery behavior.

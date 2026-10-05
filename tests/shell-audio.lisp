@@ -1,6 +1,6 @@
 ;;;; Two clients of an isolated Pulse protocol server test real subscriptions.
 (load (merge-pathnames "system-support.lisp" *load-truename*))
-(asdf:load-system "ataxia-rmlui/status-bar")
+(asdf:load-system "ataxia-shell")
 (in-package #:ataxia.world.shell)
 (assert (search "ataxia-audio-test-" (or (uiop:getenv "PULSE_SERVER") "")))
 (let* ((observer (make-system-controller :wake-fd (%eventfd)))

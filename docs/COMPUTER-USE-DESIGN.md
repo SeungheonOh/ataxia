@@ -7,8 +7,8 @@ its own desktop and capture behavior, then explicitly enables the shared host.
 ## Dependency direction
 
 ```text
-JavaScript client / MCP (sdk/computer-use)
-                    │ local socket
+Agent Lisp (ataxia.agent, the assistant, SLY)
+                    │ owner-thread requests
                     ▼
 World-owned CUA service (ataxia-computer-use)
                     │ desktop / capture protocols
@@ -21,12 +21,11 @@ Kernel → Runtime → wlroots
 
 The service also uses ordinary Kernel/Runtime primitives for seats, input,
 timers, and owner-thread dispatch. Neither lower layer depends on the service,
-the JavaScript SDK, an assistant, or a concrete World.
+an assistant, or a concrete World.
 
 | Owner | Responsibilities |
 | --- | --- |
-| `sdk/computer-use/` | Client transport, observation caches, JavaScript API, AT-SPI and browser adapters, REPL/MCP process lifetime. |
-| `src/world/computer-use/` | Sessions, input routing, pause/expiry, request validation, captures, UI, native client/clipboard queries, desktop transactions, local listener. |
+| `src/world/computer-use/` | Sessions, input routing, pause/expiry, request validation, captures, UI, native client/clipboard queries, desktop transactions. |
 | `src/world/synthetic-input/` | Optional native device allocation, emission, and destruction, shared with World input fixtures. |
 | `src/worlds/infinite/` | Window eligibility, coordinates, focus policy, and capture through its renderer. |
 | `src/worlds/metaworld/` | Groups, columns, floating placement, workspace limits, layout validation, restoration, and navigation. |
@@ -52,22 +51,20 @@ World, optionally in an ASDF integration system. Its entry point loads that
 system and calls `ataxia.computer-use:enable` on the owner thread.
 
 Enable requires `:ui`, `:desktop`, and `:window-capture` before allocating any
-resources. Layout and navigation remain optional. A library load never opens a
-listener, creates an agent seat, or attaches a controller. The shared service
+resources. Layout and navigation remain optional. A library load never creates
+an agent seat or attaches a controller. The shared service
 uses opaque window handles and calls World methods; it never reads Metaworld
 scene structures. World quiescence closes sessions and detaches the service.
 
-Layout operations and their JSON schema come from the World. The portable
-service checks transport size and scalar data; the World validates the meaning
+Layout operations and their schema come from the World. The portable
+service checks request size and scalar data; the World validates the meaning
 of the entire plan before mutation. Metaworld adds workspace/column/floating
 metadata to its own snapshots. `navigate-world-viewport` owns camera validation, region fitting and output-specific view policy; it requires no human seat on the target monitor. The portable service has no nine-workspace
 limit or group-membership assumptions.
 
-The JavaScript `arrange` API carries any advertised layout operation. Its
-`moveWindow` and `setFloating` helpers construct `place-window` operations and
-require that schema. They are conveniences for compatible Worlds, not a
-universal window-manager implementation. Camera navigation is a separate `:viewport-navigation` capability, implemented by plain Infinite World as well as Metaworld.
-The client cannot enable missing host capabilities.
+Camera navigation is a separate `:viewport-navigation` capability, implemented
+by plain Infinite World as well as Metaworld. An agent cannot enable missing
+host capabilities.
 
 ## Generic lower-layer mechanisms retained
 
@@ -131,6 +128,5 @@ them into a desktop with old live objects or replace loaded native libraries.
 `make test-computer-use` includes fresh-process dependency checks and an
 unrelated World with its own layout operation and workspace 42. It also tests
 real Wayland input, capture, clipboard isolation, concurrent sessions, and
-teardown. `make test-cua` exercises the JavaScript/GTK/MCP/browser path and
-Metaworld preview, rollback, Undo, conflicts, and navigation. `make test-portability`
+teardown. `make test-portability`
 checks opaque World handles and the assistant on plain Infinite World.

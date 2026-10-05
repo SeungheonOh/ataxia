@@ -1,7 +1,6 @@
-;;;; Real browser/framework/input/animation integration, mixed with existing engines.
+;;;; Real browser, framework, input and animation integration.
 (load (merge-pathnames "system-support.lisp" *load-truename*))
 (asdf:load-system "ataxia-infinite-world")
-(asdf:load-system "ataxia-rmlui")
 (asdf:load-system "ataxia-web")
 (in-package #:cl-user)
 (let* ((world (ataxia.infinite-world:make-infinite-world))
@@ -31,7 +30,7 @@
                         (assert (search "\"grid\":true" (gethash "features" events)))
                         (assert (typep (component) 'ataxia.kernel:drawable))
                         (assert (typep (component) 'ataxia.kernel:interactable))
-                        (assert (= 4 (length (ataxia.world:list-agent-widgets world))))
+                        (assert (= 2 (length (ataxia.world:list-agent-widgets world))))
                         (ataxia.kernel:interactable-key-event (component) world nil
                           (ataxia.kernel:make-modifiers-input :names '(:control)))
                         (click 50d0 72d0)
@@ -94,13 +93,13 @@
                   (assert (= (round (* 520 (ataxia.world.web:web-component-scale (component))))
                              (ataxia.world.web.raw::%width (ataxia.world.web::%native (component)))))
                   (ataxia.world:remove-agent-widget world web) (setf web nil)
-                  (assert (= 3 (length (ataxia.world:list-agent-widgets world))))
+                  (assert (= 1 (length (ataxia.world:list-agent-widgets world))))
                   (assert (ataxia.world.web:web-engine-pid world)) (incf phase))
                  (12
                   (ataxia.world:remove-agent-widget world second)
                   (incf phase))
                  (13
-                  (assert (= 2 (length (ataxia.world:list-agent-widgets world))))
+                  (assert (null (ataxia.world:list-agent-widgets world)))
                   ;; The default launcher now owns a browser view too.
                   (let ((launcher (find-if (lambda (overlay) (typep overlay 'ataxia.infinite-world::launcher-overlay))
                                           (ataxia.world:world-overlays world))))
@@ -125,17 +124,11 @@
                (ataxia.world:bind-agent-widget-event web name
                  (lambda (widget event) (declare (ignore widget))
                    (setf (gethash key events) (ataxia.world:agent-widget-event-value event))))))
-           (ataxia.world.rmlui:make-rmlui-widget world
-             "<rml><body style='font-family:DejaVu Sans;color:white;background:#123'>RmlUi unchanged</body></rml>"
-             :x 10d0 :y 330d0 :width 220d0 :height 70d0)
-           (ataxia.world.slint:make-agent-widget world
-             "export component Demo inherits Window {background:#213; Text {text:\"Slint unchanged\";color:white;} }"
-             :x 280d0 :y 330d0 :width 220d0 :height 70d0)
            (let ((timer (ataxia.runtime:add-event-loop-timer (ataxia.kernel:kernel-runtime kernel) #'step-test)))
              (ataxia.runtime:update-event-loop-timer timer 100))
            (ataxia.kernel:run-kernel kernel :run-for 18d0)
            (assert done)
            (assert (eq :running (ataxia.kernel:kernel-world-status kernel)))
-           (format t "PASS: React and Svelte, real input, CSS animation, zero idle frames, hidden/offscreen suspension, resize, shared process, cleanup, mixed Slint/RmlUi.~%"))
+           (format t "PASS: React and Svelte, real input, CSS animation, zero idle frames, hidden/offscreen suspension, resize, shared process and cleanup.~%"))
       (setf (symbol-function 'ataxia.kernel::%render-output-frame) original)
       (ataxia.kernel:destroy-kernel kernel :web-test))))

@@ -23,11 +23,11 @@
 
 (asdf:load-system "ataxia-computer-use")
 (assert-no-computer-use-in-core)
-(dolist (package '(:ataxia.infinite-world :ataxia.metaworld :ataxia.atlas))
+(dolist (package '(:ataxia.infinite-world :ataxia.metaworld))
   (assert (not (find-package package))))
 (let ((world (make-instance 'ataxia.kernel:world)))
   (assert (handler-case
-              (progn (ataxia.computer-use:enable world :start-server nil) nil)
+              (progn (ataxia.computer-use:enable world) nil)
             (error () t)))
   (assert (null (ataxia.world:world-service world :computer-use))))
 
@@ -36,7 +36,7 @@
 (let ((world (ataxia.infinite-world:make-infinite-world)))
   (assert (not (ataxia.world:world-supports-p world :window-capture)))
   (assert (handler-case
-              (progn (ataxia.computer-use:enable world :start-server nil) nil)
+              (progn (ataxia.computer-use:enable world) nil)
             (error () t)))
   (assert (null (ataxia.world:world-service world :computer-use))))
 

@@ -39,7 +39,7 @@
                     (incf phase))
                  (5 (key "v" '(:control)) (incf phase))
                  (6 (when (equal (concatenate 'string "λ" large) (model "project"))
-                      (ataxia.world.web.ui:set-ui-model (component) "transcript" (format nil "<pre>~A</pre>" (ataxia.assistant::%assistant-escape-rml large)))
+                      (ataxia.world.web.ui:set-ui-model (component) "transcript" (format nil "<pre>~A</pre>" (ataxia.assistant::%assistant-escape-html large)))
                       (incf phase) (setf delay 300)))
                  (7 (probe "document.getElementById('transcript').textContent") (incf phase))
                  (8 (when reply

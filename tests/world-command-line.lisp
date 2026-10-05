@@ -1,11 +1,7 @@
 (load (merge-pathnames "support.lisp" *load-truename*))
-(asdf:load-system "ataxia-atlas-world")
-(asdf:load-system "ataxia-tiling-world")
 
 (dolist (parser '(ataxia.world:parse-compositor-options
-                  ataxia.infinite-world::%parse-main-options
-                  ataxia.atlas-world::%parse-main-options
-                  ataxia.tiling-world::%parse-main-options))
+                  ataxia.infinite-world::%parse-main-options))
   (assert (equal '(:backend :auto :width 1280 :height 720 :run-for nil
                   :debug-p nil :damage-debug-p nil :sly-port 4005)
                  (funcall parser nil)))

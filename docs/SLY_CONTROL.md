@@ -59,7 +59,7 @@ World helper already records exact damage.
 `call-in-kernel-thread` and `with-kernel-thread` remain available for raw live
 experimentation, but started operations through them are not watchdog guarded.
 
-The Infinite World accepts arbitrary Slint widgets and notifications through
+The Infinite World accepts arbitrary HTML widgets and notifications through
 the same guarded mutation path:
 
 ```lisp
@@ -70,8 +70,8 @@ the same guarded mutation path:
     world "Layout cleanup completed" :title "AGENT" :duration 5d0)))
 ```
 
-`make-agent-widget` accepts Slint source, geometry, callback names, and an
-optional output. `bind-agent-widget-event` records callback values in a bounded
+`ataxia.world.web:make-web-widget` accepts HTML source or a local path,
+geometry, callback names, and an optional output. `bind-agent-widget-event` records callback values in a bounded
 per-widget history readable through `agent-widget-events`. It also publishes to
 a bounded World event stream. An agent can wait without blocking the compositor:
 

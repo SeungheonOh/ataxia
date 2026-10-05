@@ -114,7 +114,7 @@
       (cache-widget-value panel :transcript (%assistant-visible-messages controller)
         (lambda (component)
           (ataxia.world.web.ui:set-ui-model component "transcript"
-            (%assistant-transcript-rml (%assistant-visible-messages controller)))))
+            (%assistant-transcript-html (%assistant-visible-messages controller)))))
       (set-widget-text panel "plan"
         (with-output-to-string (out)
           (loop for step across (or (assistant-controller-plan controller) #()) do
@@ -172,19 +172,19 @@
          (effort-options (with-output-to-string (out)
                            (write-string "<select id=\"effort-select\" data-value=\"selected_effort\">" out)
                            (format out "<option value=\"\">Auto~A</option>"
-                                   (%assistant-escape-rml (if default-effort (format nil " · ~A" (if (equal default-effort "xhigh") "X-high" (%assistant-effort-name default-effort))) "")))
+                                   (%assistant-escape-html (if default-effort (format nil " · ~A" (if (equal default-effort "xhigh") "X-high" (%assistant-effort-name default-effort))) "")))
                            (dolist (value (%assistant-supported-efforts controller))
-                             (format out "<option value=\"~A\">~A</option>" (%assistant-escape-rml value)
-                                     (%assistant-escape-rml (%assistant-effort-name value))))
+                             (format out "<option value=\"~A\">~A</option>" (%assistant-escape-html value)
+                                     (%assistant-escape-html (%assistant-effort-name value))))
                            (write-string "</select><div id=\"effort-chevron\">▾</div>" out)))
          (models (%assistant-picker-models controller))
          (options (with-output-to-string (out)
                     (write-string "<select id=\"model-select\" data-value=\"selected_model\">" out)
                     (format out "<option value=\"\">~A</option>"
-                            (%assistant-escape-rml (if default (%assistant-model-name controller default) "Codex default")))
+                            (%assistant-escape-html (if default (%assistant-model-name controller default) "Codex default")))
                     (loop for entry across models for model = (%assistant-field entry "model") do
-                      (format out "<option value=\"~A\">~A</option>" (%assistant-escape-rml model)
-                              (%assistant-escape-rml (%assistant-model-name controller model))))
+                      (format out "<option value=\"~A\">~A</option>" (%assistant-escape-html model)
+                              (%assistant-escape-html (%assistant-model-name controller model))))
                     (write-string "</select><div id=\"model-chevron\">▾</div>" out))))
     (cache-widget-value panel :model-options options
       (lambda (component)

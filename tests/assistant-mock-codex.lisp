@@ -25,8 +25,7 @@
        (assert (equal "danger-full-access" (gethash "sandbox" (gethash "params" message))))
        (assert (equal "never" (gethash "approvalPolicy" (gethash "params" message))))
        (assert (eq :false (gethash "ephemeral" (gethash "params" message))))
-       (assert (= 3
-                  (length (gethash "dynamicTools" (gethash "params" message)))))
+       (assert (= 1 (length (gethash "dynamicTools" (gethash "params" message)))))
        (result id (obj "thread" (obj "id" "fixture-thread") "model" "fixture-default" "reasoningEffort" "medium")))
       ((equal method "thread/resume")
        (assert (equal "fixture-thread" (gethash "threadId" (gethash "params" message))))

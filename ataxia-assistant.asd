@@ -7,7 +7,7 @@
                 :serial t
                 :components ((:file "packages") (:static-file "instructions.md")
                              (:file "model") (:file "models") (:file "voice-host") (:file "protocol") (:file "worker")
-                             (:file "tools") (:file "lisp") (:file "preview") (:file "voice")
+                             (:file "tools") (:file "lisp") (:file "voice")
                              (:file "format") (:file "ui") (:file "lifecycle")
                              (:file "service")))))
 

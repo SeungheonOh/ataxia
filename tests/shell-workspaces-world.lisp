@@ -1,6 +1,6 @@
 ;;;; Real windows and notes survive menu removal; workspaces fit above the bar.
 (load (merge-pathnames "support.lisp" *load-truename*))
-(asdf:load-system "ataxia-rmlui/status-bar")
+(asdf:load-system "ataxia-web/status-bar")
 (in-package #:ataxia.infinite-world)
 
 (let* ((world (make-metaworld :state-file nil))
@@ -26,7 +26,7 @@
            (remove-page (group number)
              (let ((popup (open-menu group)))
                (assert (equal "block" (gethash (list (format nil "workspace-remove~D" number) "display")
-                                               (ataxia.world.rmlui:widget-cache popup))))
+                                               (ataxia.world.shell:shell-cache popup))))
                (ataxia.world.shell::%remove-workspace-destination world popup number)))
            (check-fit (group)
              (let ((state (gethash output (%world-outputs world))))
@@ -122,10 +122,10 @@
                (assert (= 1 (%meta-workspace-count hypr)))
                (assert (null (%meta-remove-workspace world hypr 1 seat)))
                (let ((popup (open-menu hypr)))
-                 (assert (equal "none" (gethash '("workspace-remove1" "display") (ataxia.world.rmlui:widget-cache popup))))
+                 (assert (equal "none" (gethash '("workspace-remove1" "display") (ataxia.world.shell:shell-cache popup))))
                  (setf (%meta-standalone world) :hyprland)
                  (ataxia.world.shell::%sync-workspace-popup world popup)
-                 (assert (equal "none" (gethash '("group-remove" "display") (ataxia.world.rmlui:widget-cache popup))))
+                 (assert (equal "none" (gethash '("group-remove" "display") (ataxia.world.shell:shell-cache popup))))
                  (ataxia.world:world-shell-action world output seat :remove-subworld (subworld-id hypr))
                  (assert (member hypr (metaworld-subworlds world)))
                  (setf (%meta-standalone world) nil)
@@ -147,7 +147,7 @@
                          (ataxia.kernel:output-scale output) (third original)
                          (ataxia.kernel:output-transform output) (fourth original))))
                (setf (subworld-kind hypr) :niri)
-               (ataxia.world.shell:disable-rmlui-status-bar world)
+               (ataxia.world.web.shell:disable-web-status-bar world)
                (check-fit hypr)
                (assert (< (abs (- (* (subworld-height hypr) (%canvas-output-zoom (gethash output (%world-outputs world)))) 700d0)) .00001d0))
                (assert (equal apps (ataxia.kernel:kernel-applications kernel)))
@@ -160,7 +160,7 @@
            (ataxia.kernel:start-kernel kernel)
            (setf output (%canvas-output-output (%first-output-state world))
                  seat (ataxia.world:world-seat-on-output world output))
-           (ataxia.world.shell:enable-rmlui-status-bar world :system-controls-p nil
+           (ataxia.world.web.shell:enable-web-status-bar world :system-controls-p nil
              :power-backend (lambda (kind value) (declare (ignore kind value)) nil))
            (setf bar (first (ataxia.world.shell:status-bars world)))
            (dolist (name '("A" "B" "C")) (launch name))

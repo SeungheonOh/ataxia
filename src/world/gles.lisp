@@ -94,7 +94,6 @@
 (defconstant +stencil-test+ #x0b90)
 (defconstant +stream-draw+ #x88e0)
 (defconstant +texture0+ #x84c0)
-(defconstant +texture-2d+ #x0de1)
 (defconstant +texture-external-oes+ #x8d65)
 (defconstant +texture-mag-filter+ #x2800)
 (defconstant +texture-min-filter+ #x2801)

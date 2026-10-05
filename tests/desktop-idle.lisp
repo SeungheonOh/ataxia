@@ -2,7 +2,7 @@
 ;;;; Run on a disposable session bus via make benchmark-desktop-idle.
 (load (merge-pathnames "support.lisp" *load-truename*))
 (asdf:load-system "ataxia-screencast")
-(asdf:load-system "ataxia-rmlui/status-bar")
+(asdf:load-system "ataxia-web/status-bar")
 (in-package #:ataxia.infinite-world)
 
 (let* ((world (make-metaworld :state-file nil))
@@ -20,7 +20,7 @@
          (ataxia.runtime.raw:%wlr-headless-add-output
           (ataxia.runtime::%object-pointer (ataxia.runtime:runtime-backend runtime)) 800 1000)
          (ataxia.kernel:enable-xwayland kernel)
-         (ataxia.world.shell:enable-rmlui-status-bar world)
+         (ataxia.world.web.shell:enable-web-status-bar world)
          (enable-screen-sharing world)
          (push (uiop:launch-program
                 (list "env" (format nil "WAYLAND_DISPLAY=~A" (ataxia.runtime:runtime-socket-name runtime))
@@ -63,7 +63,7 @@
          (assert (zerop (aref counts 2)))
          (assert (zerop (aref counts 3)))
          (assert (eq :running (ataxia.kernel:kernel-world-status kernel)))
-         (format t "PASS: two outputs, RmlUi bars, real Wayland/X11 windows and the portal remain idle.~%"))
+         (format t "PASS: two outputs, HTML bars, real Wayland/X11 windows and the portal remain idle.~%"))
     (loop for name in names for original in originals do (setf (symbol-function name) original))
     (dolist (client clients) (when (uiop:process-alive-p client) (uiop:terminate-process client)))
     (ataxia.kernel:destroy-kernel kernel :idle-measurement)))

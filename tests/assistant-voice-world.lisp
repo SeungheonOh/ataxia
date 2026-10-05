@@ -1,6 +1,6 @@
 (load (merge-pathnames "support.lisp" *load-truename*))
 (asdf:load-system "ataxia-assistant/metaworld")
-(asdf:load-system "ataxia-rmlui/status-bar")
+(asdf:load-system "ataxia-web/status-bar")
 (in-package #:ataxia.infinite-world)
 (load (merge-pathnames "assistant-voice-fixture.lisp" *load-truename*))
 (setf ataxia.assistant::*assistant-command* (list "env" "ATAXIA_VOICE_FIXTURE=1" "sbcl" "--noinform" "--disable-debugger" "--script"
@@ -17,7 +17,7 @@
          (progn
            (ataxia.kernel:start-kernel kernel)
            (setf control (ataxia.sly-control:start-sly-control kernel :port nil))
-           (ataxia.world.shell:enable-rmlui-status-bar world)
+           (ataxia.world.web.shell:enable-web-status-bar world)
            (setf controller (ataxia.assistant::%assistant-enable world :project (namestring (asdf:system-source-directory "ataxia-assistant"))))
            (ataxia.assistant::%assistant-open controller (%canvas-seat-seat (first (%seat-states world))))
            (assert (null (ataxia.assistant::assistant-controller-worker controller)))

@@ -17,7 +17,6 @@ For thread ownership, idle scheduling and repeatable CPU measurements, see
 | `metaworld-idle.lisp` | Timer disarming, hover/save deadlines, and blocking Runtime dispatch. |
 | `metaworld-packing.lisp` | Dense arrangements, chained pushes, rapid retargeting, contact separation, page growth, and carried window geometry. |
 | `metaworld-minification.lisp`, `minification-gles.py` | Physical-pixel sample footprints and production GLSL compilation/rendering, including texture crops and transforms. |
-| `slint-builtins.lisp` | Built-in property/callback interfaces, construction/destruction, and interpreted custom widgets. |
 | `gesture-native.c` | Native event extraction and gesture signal addresses. |
 
 For startup/shutdown smoke checks, use an isolated headless backend and disable
@@ -35,8 +34,7 @@ for physical touchpad feel, client-specific minimum sizes, and display hotplug.
 
 ## Desktop integration
 
-`make test-qol` runs isolated native tests for the RmlUi chooser,
-sharing indicator, source-row clicks, two headless
+`make test-qol` runs isolated native tests for two headless
 outputs with different sizes, pointer crossings, output removal, and exact
 rotated canvas capture and front-window occlusion. It also launches a real XWayland client with a popup and
 resizes it. Screen sharing goes through an actual `xdg-desktop-portal` frontend
@@ -50,8 +48,6 @@ invalidates the cache, and closing all streams must disarm capture and output wo
 cross-window drop routing, canvas zoom/rotation and client-disconnect cleanup.
 `make benchmark-desktop-idle` measures CPU, allocations, frames and capture ticks
 with two outputs, both UI bars, the portal, and real Wayland/X11 windows.
-The RmlUi test renders the production documents through GLES and checks that
-Share cannot dispatch before selection. UI images are written to `build/qol-*.png`.
 
 `make test-computer-use` checks the shared offscreen capture path, coordinate
 transforms, application input and the desktop API. The main `make test` includes

@@ -13,7 +13,7 @@ CUA sessions, helpers, or optional-feature definitions belong in Kernel/Runtime.
 | `src/kernel/` | Stable application/seat/output identities, protocol delivery, frame transactions and World recovery. |
 | `src/world/` | Shared geometry, damage, animation, shortcuts, UI/desktop protocols, service dispatch and command-line parsing. |
 | `src/worlds/` | Placement, camera, focus and layout policy for each World. Metaworld extends Infinite World. [Stage](STAGE-WORLD.md) takes its scene from a TypeScript director in `sdk/stage/`. |
-| `src/world/{slint,rmlui}/` | UI engine adapters and graphics resources. Their native libraries own engine state. |
+| `src/world/web/` | HTML components through Chromium: shell, panels and pages. The helper process owns browser state. |
 | `src/world/synthetic-input/` | Optional World-owned native devices; Runtime only adopts them and dispatches their events. |
 | `src/world/computer-use/` | Optional native bridge, sessions, input, captures, batches and the local request server. `service.lisp` owns enable/disable and startup rollback. |
 | `src/world/assistant/` | Assistant protocol, scheduling, audio, tools and UI. `worker.lisp` owns the protocol mailbox loop; `protocol.lisp` owns message semantics; `lifecycle.lisp` owns tasks and approvals; `service.lisp` owns World attachment and teardown. |
@@ -28,7 +28,6 @@ wrappers, or manage native listener cells. Optional protocol families such as
 World and native graphics mutations stay on the compositor owner thread. Workers
 use the existing control queue for World operations. A callback may request a
 frame or publish work; it must not wait for network, audio, disk, or a subprocess.
-See [asynchronous service design](ASYNC_WORLD_SERVICES.md) for the ownership model.
 
 Use the World service registry as the single controller lookup. Assistant model
 selection, generation settings, modal dialogs, and refresh context belong to
@@ -64,15 +63,10 @@ Keep RPC deadlines, task limits, and visible clock/input cadence independent of
 idle optimization. Timed waits inside an active computer-use action are bounded
 work, not background idle polling.
 
-When another drawable requests a frame, unchanged Slint and RmlUi textures
-bypass GLES state capture and rendering. Slint exposes its per-component redraw
-flag; RmlUi also checks its next UI deadline. Service each shared engine once,
-then dispatch callbacks for every visible component before selecting outputs.
-A Slint timer that changes no pixels needs no frame, and a change on one output
-does not repaint another output's settled UI. Atlas advances animations on
-output frames without an additional 16 ms timer. Slint's active-animation query
-is still global, so simultaneous-output animation pacing can be broader than
-its per-component timer redraws.
+When another drawable requests a frame, unchanged HTML textures are reused
+without rendering. Service each shared engine once, then dispatch callbacks for
+every visible component before selecting outputs. A change on one output does
+not repaint another output's settled UI.
 
 ## Damage and visibility
 
@@ -99,7 +93,7 @@ their coverage so previously skipped pixels are reconstructed.
 ## Verification
 
 - `make test`: native glue, Kernel damage, geometry/layout, animation, shortcuts,
-  World scheduling, shared command-line options and Slint checks.
+  World scheduling and shared command-line options.
   Connection lifecycle coverage includes World replacement, disconnect/reconnect,
   listener allocation failure, and native/Kernel retirement.
 - `make test-xwayland`: standalone Runtime transport without Kernel/World, then
@@ -110,24 +104,21 @@ their coverage so previously skipped pixels are reconstructed.
 - `make test-portability`: fresh-process dependency boundaries, an unrelated desktop
   host, and the full assistant/shell lifecycle on plain Infinite World.
 - `make test-assistant`: mailbox/deadline scheduling, concurrent producers,
-  reconnect/shutdown, audio fixtures, UI, approvals and preview processes.
+  reconnect/shutdown, audio fixtures, UI and approvals.
   `tests/assistant-service-lifecycle.lisp` also injects startup failures and checks
   resource cleanup, existing callers, and controller replacement with native UI.
 - `make test-computer-use`: actual Wayland input and captures, transformed and
-  offscreen windows, popup grabs, clipboard, concurrent sessions and socket API.
-- `make test-rmlui-shell test-rmlui-shell-world`: shell pixels, layout and World
-  integration when changing shell chrome.
+  offscreen windows, popup grabs, clipboard and concurrent sessions.
+- `make test-shell`: shell controllers, clipboard history, workspaces and power
+  through the HTML status bar when changing shell chrome.
 - `make test-stage`: Stage SDK reconciler tests, scene/motion semantics and a
   headless director session with a real client, ending in an idle settled scene.
-- `make benchmark-idle`: a five-second assistant-worker sample, a five-second
-  headless Metaworld sample after warmup, and Slint timer/animation checks across
-  two headless outputs. It starts no model service and does not modify the live
-  desktop. Linux `/proc` and an EGL renderer are required.
+- `make benchmark-idle`: a five-second assistant-worker sample and a five-second
+  headless Metaworld sample after warmup. It starts no model service and does not
+  modify the live desktop. Linux `/proc` and an EGL renderer are required.
 
 The idle benchmark reports measurements rather than imposing machine-specific
-CPU thresholds. Slint checks assert zero frames on unchanged outputs, continued
-callback delivery without rendering, resize after clean texture reuse, and
-completed Atlas animations. The worker should have zero timed wakeups. A quiet World should
+CPU thresholds. The worker should have zero timed wakeups. A quiet World should
 render no frames between scheduled UI updates; `bar-updates` identifies a
 clock/battery deadline crossed during the sample. The stop timer accounts for
 the final dispatch. This measures compositor work, not a live Codex process,

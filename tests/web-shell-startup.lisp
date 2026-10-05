@@ -18,7 +18,6 @@
                      (assert (eq enabled (not (null (ataxia.world:world-service world :shell)))))
                      (assert (= (if enabled 1 0) (length bars)))
                      (assert (null (ataxia.world:world-service world :assistant)))
-                     (assert (null (find-class 'ataxia.world.shell:rmlui-status-bar nil)))
                      (if enabled
                          (let ((bar (first bars)))
                            (assert (eq (type-of bar) (find-symbol "WEB-STATUS-BAR" :ataxia.world.web.shell)))
@@ -51,4 +50,4 @@
            (assert (null (ataxia.world:world-service started-world :shell)))
            (assert (null (ataxia.world:world-service started-world :web-ui)))))
     (setf (symbol-function 'ataxia.kernel:run-kernel) original)))
-(format t "PASS: HTML shell startup in Metaworld/Niri/Hyprland, real DMA-BUF frames, no assistant or RmlUi shell, headless default/opt-out and teardown.~%")
+(format t "PASS: HTML shell startup in Metaworld/Niri/Hyprland, real DMA-BUF frames, no assistant, headless default/opt-out and teardown.~%")

@@ -194,7 +194,7 @@
         ((equal op "focus")
          (let ((window (find (getf request :window) (world-windows world) :key (lambda (w) (ataxia.kernel:object-id (window-application w))))))
            (unless (%computer-window-allowed-p session window)
-             (%computer-reject "target-blocked" "Window is unavailable in this view. Inspect getWorld() for its state."))
+             (%computer-reject "target-blocked" "Window is unavailable in this view. Inspect the World's desktop state."))
            (%computer-focus session window) (%computer-log session "Focused application")))
         ((equal op "key")
          (unless (%computer-window-allowed-p session (computer-input-state-focused state)) (%computer-reject "no-focus" "Focus or click an application first."))
@@ -262,32 +262,20 @@
       (%computer-schedule controller)
       (list :ok t :session (%computer-session-data session)))))
 
-(defun %computer-json (value)
-  (ataxia.world.wire:encode value))
-(defun %request (request &key expected-world expected-generation expected-server)
+(defun %request (request)
   "Run validated data on the owner thread; wait only on the calling worker."
   (handler-case
       (let ((result (ataxia.sly-control:agent-inspect
                      (lambda (kernel world)
                        (declare (ignore kernel))
-                       (when (and expected-world (not (eq world expected-world)))
-                         (%computer-reject "disabled" "This computer-use listener has stopped."))
-                       (when (and expected-server
-                                  (not (eq expected-server
-                                           (computer-controller-server
-                                            (%computer-controller world)))))
-                         (%computer-reject "disabled" "This computer-use listener has stopped."))
                        (request-on-owner world request))
-                     :expected-generation (or expected-generation
-                                              (ataxia.kernel:kernel-world-generation (ataxia.sly-control:current-kernel)))
+                     :expected-generation (ataxia.kernel:kernel-world-generation
+                                           (ataxia.sly-control:current-kernel))
                      :timeout 5d0)))
         (finish-request result))
     (computer-use-rejected (cause)
       (list :ok :false :error (%computer-error-code cause) :message (%computer-error-message cause)))
     (error (cause) (list :ok :false :error "request-failed" :message (princ-to-string cause)))))
-(defun request-json (request)
-  "Data-only entry point. Human pause and disconnect controls remain authoritative."
-  (%computer-json (%request request)))
 
 (defun connect-session (world name purpose output)
   "Create and activate a session on the owner thread."

@@ -50,7 +50,7 @@
 (defmethod ataxia.world:navigate-world-viewport
     ((world infinite-world) output action &key x y dx dy zoom rotation width height window (padding 32d0))
   (let ((state (gethash output (%world-outputs world))))
-    (unless state (error "Choose a connected output from getWorld()."))
+    (unless state (error "Choose a connected output from the desktop state."))
     (when (ataxia.world:world-active-operation-p world)
       (error "A human is manipulating the World. Observe again after it ends."))
     (destructuring-bind (old-x old-y old-zoom old-rotation) (%desktop-viewport-camera world state)

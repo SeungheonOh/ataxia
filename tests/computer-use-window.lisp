@@ -54,7 +54,7 @@
                                (cffi:foreign-funcall "glPixelStorei" :uint parameter :int n :void))
                          (when (zerop discard) (cffi:foreign-funcall "glDisable" :uint #x8C89 :void)))))))
            (ataxia.kernel:start-kernel kernel)
-           (ataxia.computer-use:enable world :start-server nil)
+           (ataxia.computer-use:enable world)
            (dotimes (i 2)
              (push (uiop:launch-program
                     (list "env" (format nil "WAYLAND_DISPLAY=~A" (ataxia.runtime:runtime-socket-name runtime))

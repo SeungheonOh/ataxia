@@ -56,7 +56,6 @@ API struct Engine *ataxia_web_engine_create_for_display(const char *helper,const
     if (result) { errno=result; fail("start web helper"); close(e->socket); close(e->wake); rmdir(e->cache); free(e); return NULL; }
     return e;
 }
-API struct Engine *ataxia_web_engine_create(const char *helper) { return ataxia_web_engine_create_for_display(helper,NULL); }
 API int ataxia_web_engine_fd(struct Engine *e) { return e->wake; }
 API int ataxia_web_engine_socket(struct Engine *e) { return e->socket; }
 API int ataxia_web_engine_pid(struct Engine *e) { return e->pid; }

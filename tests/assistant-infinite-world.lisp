@@ -1,7 +1,7 @@
 ;;;; Full assistant and shell lifecycle on plain Infinite World, without Metaworld.
 (load (merge-pathnames "system-support.lisp" *load-truename*))
 (asdf:load-system "ataxia-assistant/infinite-world")
-(asdf:load-system "ataxia-rmlui/status-bar")
+(asdf:load-system "ataxia-web/status-bar")
 
 (defpackage #:ataxia.test.assistant-infinite
   (:use #:cl #:ataxia.world)
@@ -24,7 +24,7 @@
                (lambda (output) (incf frames) (funcall original output)))
          (ataxia.kernel:start-kernel kernel)
          (setf control (ataxia.sly-control:start-sly-control kernel :port nil))
-         (ataxia.world.shell:enable-rmlui-status-bar world)
+         (ataxia.world.web.shell:enable-web-status-bar world)
          (setf controller (assistant:enable world))
          (assert (= 1 (length (ataxia.world.shell:status-bars world))))
          (assert (not (world-supports-p world :layout)))
@@ -61,7 +61,7 @@
                        (assert (= baseline frames))
                        (assistant:disable world)
                        (cu:disable world)
-                       (ataxia.world.shell:disable-rmlui-status-bar world)
+                       (ataxia.world.web.shell:disable-web-status-bar world)
                        (dolist (key '(:assistant :computer-use :shell))
                          (assert (null (world-service world key))))
                        (setf phase 3)))

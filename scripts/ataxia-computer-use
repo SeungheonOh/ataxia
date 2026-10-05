@@ -1,2 +1,0 @@
-#!/bin/sh
-exec sbcl --noinform --disable-debugger --script "$(dirname "$0")/computer-use-client.lisp" "$@"

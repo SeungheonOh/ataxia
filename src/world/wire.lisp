@@ -125,11 +125,14 @@
                      ((eq x :false) (write-string "false" stream))
                      ((null x) (write-string "null" stream))
                      ((stringp x)
+                      ;; Line and paragraph separators are escaped too, so the
+                      ;; output is also a valid JavaScript string literal.
                       (write-char #\" stream)
-                      (loop for c across x do
+                      (loop for c across x for code = (char-code c) do
                             (case c
                               (#\" (write-string "\\\"" stream)) (#\\ (write-string "\\\\" stream))
-                              (otherwise (if (< (char-code c) 32) (format stream "\\u~4,'0X" (char-code c))
+                              (otherwise (if (or (< code 32) (= code #x2028) (= code #x2029))
+                                             (format stream "\\u~4,'0X" code)
                                              (write-char c stream)))))
                       (write-char #\" stream))
                      ((numberp x)

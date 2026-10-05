@@ -48,7 +48,7 @@
            (ataxia.kernel:start-kernel kernel)
            (setf control (ataxia.sly-control:start-sly-control kernel :port 4007))
            (slynk:stop-server 4007)
-           (ataxia.computer-use:enable world :start-server nil)
+           (ataxia.computer-use:enable world)
            (ataxia.computer-use:request-on-owner world '(:op "connect" :name "Lifecycle agent" :purpose "Verify ordinary dialog closure"))
            (setf session (first (ataxia.computer-use::computer-controller-sessions (ataxia.computer-use::%computer-controller world))))
            (ataxia.computer-use:activate-session session)

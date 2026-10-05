@@ -15,5 +15,3 @@
 (defun set-shell-style (widget id property value)
   (cache-shell-value widget (list id property) value
     (lambda (component) (set-shell-element-style component id property value))))
-(defun short-ui-text (text limit)
-  (if (> (length text) limit) (concatenate 'string (subseq text 0 (1- limit)) "…") text))

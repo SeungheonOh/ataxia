@@ -1,7 +1,7 @@
 ;;;; Exercise partial service startup and controller replacement with real UI/timers.
 (load (merge-pathnames "system-support.lisp" *load-truename*))
 (asdf:load-system "ataxia-assistant/infinite-world")
-(asdf:load-system "ataxia-rmlui/status-bar")
+(asdf:load-system "ataxia-web/status-bar")
 
 (defpackage #:ataxia.test.service-lifecycle
   (:use #:cl #:ataxia.world)
@@ -32,7 +32,7 @@
   (unwind-protect
        (progn
          (ataxia.kernel:start-kernel kernel)
-         (shell:enable-rmlui-status-bar world)
+         (ataxia.world.web.shell:enable-web-status-bar world)
          (let ((baseline (copy-list (world-overlays world))))
            ;; Failure before a timer exists must not call removal with NIL.
            (call-with-function
@@ -40,7 +40,7 @@
             (lambda (&rest arguments)
               (declare (ignore arguments)) (error "Injected timer failure"))
             (lambda ()
-              (expect-failure (lambda () (cu:enable world :start-server nil))
+              (expect-failure (lambda () (cu:enable world))
                               "Injected timer failure")))
            (assert-removed world baseline)
 
@@ -56,7 +56,7 @@
                       retired-panels (copy-list (cu::computer-controller-panels controller)))
                 (error "Injected panel failure"))
               (lambda ()
-                (expect-failure (lambda () (cu:enable world :start-server nil))
+                (expect-failure (lambda () (cu:enable world))
                                 "Injected panel failure")))
              (assert timer)
              (assert (not (ataxia.runtime:native-object-live-p timer)))
@@ -64,42 +64,34 @@
              (assert (null (cu::computer-controller-panels controller))))
            (assert-removed world baseline)
 
-           ;; Listener failure rolls back a new controller, but preserves an
-           ;; already enabled service and its sessions for other callers.
-           (let ((invalid-path (make-string 120 :initial-element #\a)))
-             (expect-failure (lambda () (cu:enable world :socket invalid-path))
-                             "socket path is invalid")
-             (assert-removed world baseline)
-             (let* ((controller (cu:enable world :start-server nil))
-                    (session (cu:connect-session world "Existing caller" "Keep this session"
-                                                 (first (world-outputs world))))
-                    (timer (cu::computer-controller-timer controller)))
-               (expect-failure (lambda () (cu:enable world :socket invalid-path))
-                               "socket path is invalid")
-               (assert (eq controller (world-service world :computer-use)))
-               (assert (eq controller (cu:enable world :start-server nil)))
-               (assert (ataxia.runtime:native-object-live-p timer))
-               (assert (eq :active (cu:computer-session-state session)))
-               ;; Automatic activation must report seat failure and keep other sessions usable.
-               (call-with-function
-                'ataxia.kernel:create-logical-seat
-                (lambda (&rest arguments)
-                  (declare (ignore arguments)) (error "Injected seat failure"))
-                (lambda ()
-                  (expect-failure
-                   (lambda () (cu:connect-session world "Failed caller" "Test failed activation"
-                                                  (first (world-outputs world))))
-                   "Could not start this computer-use session.")))
-               (assert (eq :active (cu:computer-session-state session)))
-               (assert (eq :closed (cu:computer-session-state
-                                    (car (last (cu::computer-controller-sessions controller))))))
-               (cu:disable world)
-               (assert (eq :closed (cu:computer-session-state session)))))
+           ;; Enabling again returns the running service with its sessions intact.
+           (let* ((controller (cu:enable world))
+                  (session (cu:connect-session world "Existing caller" "Keep this session"
+                                               (first (world-outputs world))))
+                  (timer (cu::computer-controller-timer controller)))
+             (assert (eq controller (cu:enable world)))
+             (assert (ataxia.runtime:native-object-live-p timer))
+             (assert (eq :active (cu:computer-session-state session)))
+             ;; Automatic activation must report seat failure and keep other sessions usable.
+             (call-with-function
+              'ataxia.kernel:create-logical-seat
+              (lambda (&rest arguments)
+                (declare (ignore arguments)) (error "Injected seat failure"))
+              (lambda ()
+                (expect-failure
+                 (lambda () (cu:connect-session world "Failed caller" "Test failed activation"
+                                                (first (world-outputs world))))
+                 "Could not start this computer-use session.")))
+             (assert (eq :active (cu:computer-session-state session)))
+             (assert (eq :closed (cu:computer-session-state
+                                  (car (last (cu::computer-controller-sessions controller))))))
+             (cu:disable world)
+             (assert (eq :closed (cu:computer-session-state session))))
            (assert-removed world baseline))
 
          ;; Assistant rollback releases only dependencies it created itself.
          (dolist (keep-input '(nil t))
-           (let ((existing (when keep-input (cu:enable world :start-server nil)))
+           (let ((existing (when keep-input (cu:enable world)))
                  (install (symbol-function 'assistant::%assistant-install-shortcuts))
                  (controller nil) (timer nil))
              (call-with-function
@@ -124,7 +116,7 @@
          (let* ((first (assistant:enable world))
                 (bar (first (shell:status-bars world)))
                 (component (overlay-component bar))
-                (callback (gethash "assistant" (ataxia.world.rmlui::%component-callbacks component))))
+                (callback (gethash "assistant" (ataxia.world.web::%callbacks component))))
            (assert (eq first (assistant:enable world)))
            (assistant:disable world)
            (funcall callback component "")

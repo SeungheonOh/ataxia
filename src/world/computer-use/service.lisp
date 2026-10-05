@@ -11,8 +11,8 @@
                      (%computer-tick controller))))
     (%computer-create-panels world)))
 
-(defun enable (world &key (start-server t) socket)
-  "Enable computer use, optionally starting its local request listener."
+(defun enable (world)
+  "Enable computer use on WORLD, or return its running controller."
   (require-world-capabilities world :ui :desktop :window-capture)
   (let* ((existing (world-service world :computer-use))
          (controller (or existing (%make-computer-controller :world world)))
@@ -22,7 +22,6 @@
     (unwind-protect
          (progn
            (unless existing (%computer-start-controller controller))
-           (when start-server (%computer-start-server world socket))
            (setf started t)
            controller)
       ;; An existing service may have active sessions owned by other callers.
@@ -32,8 +31,6 @@
   "Close sessions and detach the service. Safe after partial initialization."
   (let ((controller (world-service world :computer-use)))
     (when controller
-      (when (computer-controller-server controller)
-        (%computer-stop-server controller))
       (dolist (session (computer-controller-sessions controller))
         (close-session session "Computer use disabled"))
       (when (computer-controller-timer controller)

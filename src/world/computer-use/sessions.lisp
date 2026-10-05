@@ -18,7 +18,7 @@
 (defstruct computer-batch session actions capture-p generation (completed 0) (settle .15d0))
 (defvar *computer-running-batch* nil)
 (defstruct (computer-controller (:constructor %make-computer-controller))
-  world (sessions nil) (next-id 0) timer (panels nil) directory server)
+  world (sessions nil) (next-id 0) timer (panels nil) directory)
 (defclass computer-seat (ataxia.kernel:logical-seat)
   ((session :initarg :session :reader %computer-seat-session)))
 (defvar *computer-internal-input* nil)

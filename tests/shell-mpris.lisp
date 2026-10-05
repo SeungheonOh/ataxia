@@ -1,6 +1,6 @@
 ;;;; Run with dbus-run-session so transport tests only reach our fixture.
 (load (merge-pathnames "system-support.lisp" *load-truename*))
-(asdf:load-system "ataxia-rmlui/status-bar")
+(asdf:load-system "ataxia-shell")
 (in-package #:ataxia.world.shell)
 (let* ((controller (make-system-controller :wake-fd (%eventfd)))
        (failure nil) (fixture nil)

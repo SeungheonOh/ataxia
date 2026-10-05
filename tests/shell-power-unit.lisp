@@ -1,6 +1,6 @@
 ;;;; Hardware-free backend and asynchronous lifecycle regression tests.
 (load (merge-pathnames "system-support.lisp" *load-truename*))
-(asdf:load-system "ataxia-rmlui/status-bar")
+(asdf:load-system "ataxia-shell")
 (in-package #:ataxia.world.shell)
 
 (let ((arguments '("busctl" "--system" "call" "fixture")))

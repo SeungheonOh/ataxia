@@ -3,7 +3,7 @@
 `ataxia-web` embeds real Chromium HTML, CSS and JavaScript through CEF's
 [offscreen rendering interface](https://chromiumembedded.github.io/cef/general_usage#off-screen-rendering).
 React, Svelte, ES modules, CSS Grid, Canvas, WebGL and browser animations run in
-the browser engine. There is no translation into RML or Slint.
+the browser engine.
 
 This is an optional World adapter. Neither Kernel nor Runtime knows about web
 pages, DOM nodes, JavaScript, Chromium processes or this adapter. No concrete
@@ -221,9 +221,8 @@ cost GPU bandwidth, and Chromium's renderer processes have their own CPU cost.
 
 Use `web-component-stats` for transport, paints, GPU copies/imports, skipped
 frames, CPU texture uploads, uploaded bytes, visibility and errors; use `web-engine-pid` to measure the complete browser process tree.
-The browser runtime is substantially larger in memory and on disk than RmlUi.
-Choose it where actual browser behavior is needed, and keep simple shell chrome
-on the lighter existing engines.
+The browser runtime is large in memory and on disk; one helper process tree is
+shared by every page a World shows.
 
 ## Browser status bar and menus
 
@@ -244,14 +243,12 @@ search/launch, battery/brightness/sleep, audio/media, clipboard history,
 navigation menus, and hardware-key feedback. The assistant entry opens the HTML chat panel. Text actions invert foreground/background; corners stay
 square, vertical padding stays compact, and horizontal spacing uses shared constants.
 The browser documents are ordinary editable HTML/CSS/JavaScript in
-`src/world/web/status-bar/`, with no RML translation or npm build step.
+`src/world/web/status-bar/`, with no npm build step.
 
 
-All built-in presentations now use real HTML: the assistant (including local model
+All built-in presentations use real HTML: the assistant (including local model
 and voice controls), agent sessions and cursor labels, sharing chooser and region
-indicator, launcher, notifications, Metaworld headers/toolbar/notes, and Atlas panel.
-The general Slint/RmlUi adapters and explicit RML app-preview tool remain available
-for documents that request those formats; default compositor UI does not use them.
+indicator, launcher, notifications, and Metaworld headers/toolbar/notes.
 
 `ataxia-web/ui` provides reusable document components and widgets independently of
 any concrete World or shell. `src/world/web/ui/document.css` holds the common
@@ -276,8 +273,8 @@ The updated live shell also measured 0 ms CPU across its 12 browser processes
 over a five-second settled sample (10 ms OS accounting resolution).
 
 `ataxia-shell` owns the shared controllers and shell policy in `src/world/shell/`.
-It has no RmlUi or Chromium dependency. RmlUi and web presentations implement the
-same small presentation methods and existing `agent-widget` lifecycle. The web
+It has no Chromium dependency: the web presentation implements its small
+presentation methods and the existing `agent-widget` lifecycle. The web
 module does not need a concrete World subclass or a Kernel change.
 
 Only changed values are sent, batched on a one-shot owner idle callback. There
@@ -285,13 +282,11 @@ is no JavaScript clock, animation loop, or device polling. The existing shell
 uses a minute-aligned clock/battery deadline and subscription-driven audio/media
 workers. Opening a menu creates a browser view; closing it retires that view.
 All views share the World browser helper. Use
-`ataxia.world.shell:disable-status-bar` to remove either presentation, or
-`ataxia.world.shell:enable-rmlui-status-bar` after loading its optional system to
-switch back explicitly. Startup uses the HTML presentation.
+`ataxia.world.shell:disable-status-bar` to remove it.
 
 `make test-web-shell` checks startup selection and opt-out, native clicks/typing
-and application launch, the menus, idle behavior and lifecycle cleanup. The original RmlUi shell tests also
-cover the extracted shared controllers.
+and application launch, the menus, idle behavior and lifecycle cleanup.
+`make test-shell` covers the shared controllers.
 
 Live deployment was also verified without a World restart. The bar reported
 DMA-BUF transport and zero uploaded pixel
@@ -314,7 +309,7 @@ service-worker deployment on the custom scheme are not promised.
 make test-web
 ```
 
-Tests exercise real React and Svelte bundles alongside Slint/RmlUi; pointer,
+Tests exercise real React and Svelte bundles; pointer,
 keyboard and popup interaction; local ES modules/fetch; Grid, WebGL2, alpha and
 orientation; DMA-BUF pixels, GPU buffer reuse, bitmap partial uploads and GL state isolation; CSS and Web
 Animations; hidden/offscreen rendering; device scale; resize; process sharing;

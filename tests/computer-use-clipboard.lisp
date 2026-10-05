@@ -74,7 +74,7 @@
            (ataxia.kernel:start-kernel kernel)
            (setf control (ataxia.sly-control:start-sly-control kernel :port 4007))
            (slynk:stop-server 4007)
-           (ataxia.computer-use:enable world :start-server nil)
+           (ataxia.computer-use:enable world)
            (dolist (name '("First clipboard agent" "Second clipboard agent"))
              (ataxia.computer-use:request-on-owner world (list :op "connect" :name name :purpose "Verify clipboard seat isolation")))
            (setf first (first (ataxia.computer-use::computer-controller-sessions (ataxia.computer-use::%computer-controller world)))

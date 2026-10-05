@@ -6,8 +6,6 @@
 (defpackage #:ataxia.world
   (:use #:cl)
   (:export
-   #:ui-application #:ui-application-component #:make-ui-application
-   #:show-ui-application #:hide-ui-application #:remove-ui-application
    #:attach-world-service #:detach-world-service #:world-service
    #:service-quiescing #:service-output-added #:service-output-changed
    #:service-output-removing #:service-object-removing #:service-object-changed
@@ -95,6 +93,7 @@
    #:agent-widget-events
    #:parse-compositor-options
    #:ui-raster-scale
+   #:short-ui-text
    #:ui-resize
    #:ui-destroy
    #:ui-set-invalidator
@@ -208,14 +207,10 @@
 (defpackage #:ataxia.world.gles
   (:use #:cl)
   (:export
-   #:+texture-2d+
    #:+texture-external-oes+
-   #:gles-program
    #:make-gles-program
    #:destroy-gles-program
-   #:gles-program-handle
    #:gles-use-program
-   #:gles-uniform-location
    #:gles-uniform-1f
    #:gles-uniform-1i
    #:gles-uniform-2f

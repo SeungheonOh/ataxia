@@ -18,8 +18,3 @@
   :description "HTML/CSS presentation for the shared World shell"
   :depends-on ("ataxia-web/ui" "ataxia-shell")
   :components ((:file "src/world/web/status-bar/presentation")))
-
-(asdf:defsystem "ataxia-web/notes"
-  :description "Commonplace: a portable HTML notebook with local asynchronous storage"
-  :depends-on ("ataxia-web/ui")
-  :components ((:file "src/world/web/notes/service")))

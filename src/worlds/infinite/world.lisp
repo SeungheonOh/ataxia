@@ -159,16 +159,6 @@
     (ataxia.kernel:request-output-frame (%canvas-output-output state)))
   world)
 
-(defun %component-animation-active-p (world)
-  (some (lambda (overlay)
-          (and (overlay-visible-p overlay)
-               (ataxia.kernel:drawable-active-p
-                (overlay-component overlay))))
-        (world-overlays world)))
-
-(defun %visible-component-p (world)
-  (some #'overlay-visible-p (world-overlays world)))
-
 (defun %updatable-overlay-p (world overlay)
   (let ((state (gethash (overlay-output overlay) (%world-outputs world))))
     (and state (%overlay-visible-on-state-p overlay state)

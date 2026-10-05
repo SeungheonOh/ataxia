@@ -113,10 +113,11 @@
                               (5
                                (assert (null (%world-stacking world)))
                                (assert (eq :running (ataxia.kernel:kernel-world-status kernel)))
-                               ;; Context menus and selection gestures are gone.
-                               (at 1180d0 750d0)
-                               (button 273 :pressed) (button 273 :released)
-                               (assert (null (%meta-menu world)))
+                               ;; A right click on the canvas opens nothing.
+                               (let ((overlays (length (world-overlays world))))
+                                 (at 1180d0 750d0)
+                                 (button 273 :pressed) (button 273 :released)
+                                 (assert (= overlays (length (world-overlays world)))))
                                (ataxia.runtime:update-event-loop-timer source 0)))
                             (incf phase)
                             (when (< phase 6) (ataxia.runtime:update-event-loop-timer source 350))

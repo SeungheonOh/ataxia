@@ -8,7 +8,7 @@
 (defun %computer-focus (session target)
   (when target
     (unless (%computer-window-allowed-p session target)
-      (%computer-reject "target-blocked" "Window is unavailable in this view. Inspect getWorld() for its state."))
+      (%computer-reject "target-blocked" "Window is unavailable in this view. Inspect the World's desktop state."))
     (let ((view (computer-session-view session)))
       (unless (eq target (computer-view-window view))
         (when (or (computer-session-keys session)

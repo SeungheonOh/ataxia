@@ -30,7 +30,6 @@
        (kernel (ataxia.kernel:create-kernel world :backend :headless :headless-width 1600 :headless-height 1200))
        (runtime (ataxia.kernel:kernel-runtime kernel))
        (directory (merge-pathnames (format nil "ataxia-transforms-~A/" (ataxia.computer-use:random-token)) (uiop:temporary-directory)))
-       (socket-path (namestring (merge-pathnames "api.sock" directory)))
        (log (merge-pathnames "client.log" directory))
        (control nil) (client nil) (driver nil) (session nil) (window nil) (sequence 0)
        (failure nil) (complete nil) (cases 0) (lw 0d0) (lh 0d0) (wx 0d0) (wy 0d0)
@@ -41,25 +40,15 @@
              (ataxia.sly-control:agent-inspect
               (lambda (k w) (declare (ignore k w)) (funcall function)) :timeout 3d0))
            (field (object &rest names)
-             (reduce (lambda (value name) (gethash name value)) names :initial-value object))
+             (reduce (lambda (value name) (getf value name)) names :initial-value object))
            (request (op &rest fields)
-             (let ((socket (make-instance 'sb-bsd-sockets:local-socket :type :stream :protocol 0)))
-               (unwind-protect
-                    (progn
-                      (sb-bsd-sockets:socket-connect socket socket-path)
-                      (with-open-stream (stream (sb-bsd-sockets:socket-make-stream
-                                                socket :input t :output t :element-type '(unsigned-byte 8)
-                                                :buffering :full :timeout 10))
-                        (ataxia.world.wire:write-line-bytes
-                         stream (ataxia.world.wire:encode
-                                 (append (list :op op :token (ataxia.computer-use::computer-session-token session)
-                                               :sequence (1+ sequence)) fields)))
-                        (let ((reply (ataxia.world.wire:decode
-                                      (ataxia.world.wire:read-line-bytes stream 262144))))
-                          (when (field reply "session") (setf sequence (field reply "session" "sequence")))
-                          (assert (eq t (field reply "ok")) () "~A" (ataxia.world.wire:encode reply))
-                          reply)))
-                 (ignore-errors (sb-bsd-sockets:socket-close socket)))))
+             (let ((reply (ataxia.computer-use::%request
+                           (append (list :op op :token (ataxia.computer-use::computer-session-token session)
+                                         :sequence (1+ sequence))
+                                   fields))))
+               (when (field reply :session) (setf sequence (field reply :session :sequence)))
+               (assert (eq t (field reply :ok)) () "~A" (ataxia.world.wire:encode reply))
+               reply))
            (screen-point (x y)
              ;; Independent reference: the client is shown at half its native
              ;; size, then the canvas rotates around the logical output center.
@@ -68,10 +57,10 @@
                (list (+ (/ lw 2d0) (* (cos angle) dx) (- (* (sin angle) dy)))
                      (+ (/ lh 2d0) (* (sin angle) dx) (* (cos angle) dy)))))
            (check-image (reply desktop-p)
-             (multiple-value-bind (width height rows) (transform-test-image (field reply "image" "path"))
+             (multiple-value-bind (width height rows) (transform-test-image (field reply :image :path))
                (let ((cw (if desktop-p lw 600d0)) (ch (if desktop-p lh 360d0)))
-                 (assert (< (abs (- cw (field reply "image" "coordinate-width"))) 1d-5))
-                 (assert (< (abs (- ch (field reply "image" "coordinate-height"))) 1d-5))
+                 (assert (< (abs (- cw (field reply :image :coordinate-width))) 1d-5))
+                 (assert (< (abs (- ch (field reply :image :coordinate-height))) 1d-5))
                  (dolist (point points)
                    (destructuring-bind (x y color) point
                      (when desktop-p
@@ -107,7 +96,7 @@
            (ataxia.kernel:start-kernel kernel)
            (setf control (ataxia.sly-control:start-sly-control kernel :port 4007))
            (slynk:stop-server 4007)
-           (ataxia.computer-use:enable world :socket socket-path)
+           (ataxia.computer-use:enable world)
            (ataxia.computer-use:request-on-owner world '(:op "connect" :name "Transform agent" :purpose "Verify display geometry"))
            (setf session (first (ataxia.computer-use::computer-controller-sessions (ataxia.computer-use::%computer-controller world))))
            (ataxia.computer-use:activate-session session)

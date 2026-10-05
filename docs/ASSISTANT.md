@@ -1,11 +1,11 @@
 # Desktop assistant
 
-The reusable `ataxia-assistant` system connects the native RmlUi panel to the
+The reusable `ataxia-assistant` system connects its HTML panel to the
 installed [Codex app-server](https://learn.chatgpt.com/docs/app-server).
 Opening the panel starts neither Codex nor audio.
 
 ```sh
-make assistant
+make computer-use
 ataxia
 # Optional initial project directory:
 ataxia --assistant-project /path/to/project
@@ -80,8 +80,7 @@ Other Worlds can choose a directory with
 `ataxia_lisp` is the desktop interface, using the same owner queue as SLY.
 It discovers, resolves, changes and reports World objects in one short call.
 Application input/capture uses the portable `ataxia.agent` Lisp functions in
-worker mode. The former CUA observation/action/window/layout tools are removed.
-The other two registered tools create and update RML preview windows.
+worker mode. It is the only registered tool.
 
 All modes bind `AGENT` to the current task. For example, worker code can click,
 type and verify in one form:
@@ -156,32 +155,6 @@ pipe tables. User messages have a separate background. Links show their labels
 and addresses; they do not open automatically. Raw HTML remains literal text.
 Formatting also works as a response streams in, with bounded message rendering.
 
-## RmlUi apps
-
-The assistant receives a built-in [UI authoring guide](../src/world/assistant/instructions.md)
-on every new thread, together with the working directory. It covers
-creating, opening, testing and updating custom UI, light styling, native form
-controls, supported callbacks and storage limitations. Enter a working directory
-and ask, for example, "Create a simple notepad and open it." Every new UI opens as a separate Wayland window in its own dedicated
-process; it is not embedded in the assistant or compositor. The
-[notepad starter](../examples/assistant/notepad.rml) is a working
-multiline editor with temporary text; closing or reloading clears its contents.
-
-Ask the assistant to create an RML app inside the selected project. The isolated
-Wayland preview host renders it and returns a screenshot and window ID. The
-assistant can click and type using its independent seat. Invalid XML preserves
-the last working preview; valid updates replace the document.
-
-[The counter example](../examples/assistant/counter.rml) uses the initial host's
-predefined events: `increment`, `decrement`, and `reset` update `counter`;
-`input:change` copies text into `result`; `submit` sets `status`. Native form
-controls also work. These events execute no Lisp or arbitrary application code.
-Preview paths may be absolute or relative to the working directory. Each preview
-host resolves assets within the project, or the document directory for a file
-outside the project, with a system-font fallback. Up to four preview clients may be open. Stop preserves previews;
-disabling the assistant or replacing its World closes them. Installing a preview
-as a persistent compositor widget is a separate development action.
-
 ## Voice
 
 Voice uses the signed-in **Codex CLI account**, through app-server's v3 WebRTC
@@ -228,7 +201,7 @@ part of that check.
 `ataxia-assistant` is independent of concrete Worlds. Load
 `ataxia-assistant/metaworld` for Metaworld, or
 `ataxia-assistant/infinite-world` for plain Infinite World. Both use the same
-controller, panels, Lisp agent/native input service, and preview implementation.
+controller, panels and Lisp agent/native input service.
 The separate `ataxia-agent` system works without the assistant. Optional World
 features are discovered through `world-supports-p` and `world-layout-schema`. See [World services](WORLD-SERVICES.md) to attach another implementation.
 
@@ -277,30 +250,18 @@ Run from an environment with render-device access:
 ```sh
 make test-assistant
 make test-computer-use
-make test-rmlui-shell test-rmlui-status-bar
-make test-rmlui-shell-world test-rmlui-status-bar-world
+make test-shell
 # Uses the installed account and makes a real model request:
 ATAXIA_TEST_CODEX=1 WLR_RENDERER=gles2 sbcl --noinform --disable-debugger \
   --eval '(sb-int:set-floating-point-modes :traps nil)' \
   --script tests/assistant-codex-world.lisp
-# Exercises normal application closing through a real model in an isolated World:
-ATAXIA_TEST_CODEX=1 WLR_RENDERER=gles2 sbcl --noinform --disable-debugger \
-  --eval '(sb-int:set-floating-point-modes :traps nil)' \
-  --script tests/assistant-close-codex-world.lisp
-# Creates and exercises a separate notepad process/window in an empty project:
-ATAXIA_TEST_CODEX=1 WLR_RENDERER=gles2 sbcl --noinform --disable-debugger \
-  --eval '(sb-int:set-floating-point-modes :traps nil)' \
-  --script tests/assistant-ui-codex-world.lisp
 ```
 
 The deterministic suite covers protocol streaming, full-access protocol settings and question answers,
-duplicate calls, stale epochs, native panel rendering at wide/narrow sizes, idle
-rendering, preview input and update recovery, direct animated arrangements and failure rollback, synthetic
+duplicate calls, stale epochs, panel layout at wide/narrow sizes, idle
+rendering, direct animated arrangements and failure rollback, synthetic
 voice handoff/playback and cleanup, bounded live Lisp evaluation, and idle child
 shutdown/resume. The real Codex test also verifies a shell write outside the working directory
-without approvals, and that context and dynamic tools survive subprocess replacement. Window tests cover actual client closure,
-minimize/restore across both tilers, canvas expansion, access to newly opened windows, stale IDs
-and focus preservation. The real-model checks exercise registered native tools
-in an isolated headless World, including UI creation from an empty project.
-Notepad tests check multiline editing, scrolling, separate process/window IDs
-and independent closure. They open no microphone.
+without approvals, and that context and dynamic tools survive subprocess replacement.
+The real-model checks exercise the registered tool
+in an isolated headless World. They open no microphone.

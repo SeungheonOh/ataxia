@@ -55,7 +55,6 @@
   (make-instance 'test-component))
 
 (assert (not (find-package :ataxia.infinite-world)))
-(assert (not (find-package :ataxia.world.slint)))
 (let* ((output (make-instance 'ataxia.kernel:kernel-output
                              :width 1600 :height 1000 :scale 2d0 :transform 1))
        (world (make-instance 'test-host :outputs (list output)))
@@ -93,4 +92,4 @@
     (assert (eq :closed (getf batch :status)))
     (assert (eq :world-replaced (getf batch :reason)))))
 
-(format t "PASS: UI hosting, geometry, event bounds and disposal without a concrete World or Slint.~%")
+(format t "PASS: UI hosting, geometry, event bounds and disposal without a concrete World.~%")

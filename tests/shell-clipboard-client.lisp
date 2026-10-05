@@ -1,10 +1,10 @@
 ;;;; Real client offers must be recorded, even after selecting a history item.
 (load (merge-pathnames "support.lisp" *load-truename*))
-(asdf:load-system "ataxia-rmlui/status-bar")
+(asdf:load-system "ataxia-web/status-bar")
 (asdf:load-system "ataxia-world/synthetic-input")
 (defpackage #:ataxia.test.shell-clipboard-client
   (:use #:cl #:ataxia.world)
-  (:local-nicknames (#:shell #:ataxia.world.shell) (#:rml #:ataxia.world.rmlui)))
+  (:local-nicknames (#:shell #:ataxia.world.shell)))
 (in-package #:ataxia.test.shell-clipboard-client)
 
 (let* ((world (ataxia.metaworld:make-metaworld :state-file nil))
@@ -27,7 +27,7 @@
              (shell::%bar-action world bar :clipboard)
              (let ((popup (shell::%bar-popup bar)))
                (assert (equal (list text) (shell::%shell-popup-matches popup)))
-               (assert (equal text (gethash "app0" (rml:widget-cache popup)))))
+               (assert (equal text (gethash "app0" (shell:shell-cache popup)))))
              (shell::%bar-close-popup world bar)))
     (unwind-protect
          (progn
@@ -35,7 +35,7 @@
            (setf seat (first (world-seats world))
                  keyboard (ataxia.world.synthetic-input:create-synthetic-input runtime :keyboard "Clipboard test keyboard"))
            (ataxia.kernel:register-input-device kernel keyboard :seat seat)
-           (shell:enable-rmlui-status-bar world :system-controls-p nil
+           (ataxia.world.web.shell:enable-web-status-bar world :system-controls-p nil
              :power-backend (lambda (kind value) (declare (ignore kind value)) (list :backlight (list :percent 50))))
            (setf service (world-service world :shell) bar (first (shell:status-bars world))
                  (shell::shell-service-clipboard service) (make-hash-table :test #'eq)
@@ -79,7 +79,7 @@
                                                         (ataxia.kernel:seat-runtime-object seat))))
                                          ;; The entry remains visible after the source app closes.
                                          (check-history)
-                                         (shell:disable-rmlui-status-bar world)
+                                         (ataxia.world.web.shell:disable-web-status-bar world)
                                          (ataxia.world.synthetic-input:destroy-synthetic-input keyboard)
                                          (setf keyboard nil phase 6)
                                          (ataxia.kernel:request-kernel-stop kernel :checks-complete))))

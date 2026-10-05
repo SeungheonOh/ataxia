@@ -11,16 +11,13 @@ workers. These boundaries are checked in fresh Lisp processes.
 | System | Provides | Concrete World dependency |
 | --- | --- | --- |
 | `ataxia-world` | UI hosting, desktop protocols, optional service dispatch, shared geometry and scheduling helpers | None |
-| `ataxia-slint` | Slint components, widgets and notifications | None |
-| `ataxia-rmlui` | RmlUi components, widgets and cached property updates | None |
 | `ataxia-shell` | Shared status bar, menus and system controllers | None |
 | `ataxia-web` | Chromium HTML/CSS/JS drawable and interactable components | None |
 | `ataxia-web/ui` | Shared HTML theme, document bindings, clipboard and notifications | None |
-| `ataxia-web/status-bar` | Default HTML shell presentation | None |
-| `ataxia-rmlui/status-bar` | Optional RmlUi shell presentation | None |
+| `ataxia-web/status-bar` | HTML shell presentation | None |
 | `ataxia-world/synthetic-input` | Optional World-owned native input devices | None |
-| `ataxia-computer-use` | Sessions, native input, capture coordination, batches and socket API | None |
-| `ataxia-assistant` | Assistant worker, tools, previews, voice and HTML panels | None |
+| `ataxia-computer-use` | Sessions, native input, capture coordination and batches | None |
+| `ataxia-assistant` | Assistant worker, tools, voice and HTML panels | None |
 | `ataxia-computer-use/infinite-world` | Window capture using Infinite World's renderer | Infinite World |
 | `ataxia-computer-use/metaworld` | Shared capture with Metaworld layout and navigation | Metaworld |
 | `ataxia-assistant/infinite-world` | Assistant plus that capture backend | Infinite World |
@@ -32,22 +29,10 @@ The service implementation packages are `ataxia.assistant`,
 dependency. Infinite World's adapter lives in `src/worlds/infinite/desktop.lisp`
 and its optional renderer adapter in `capture.lisp`.
 
-World-specific chrome, such as Metaworld group controls, remains beside its
-policy. Its widgets use the same shared UI component and overlay contracts.
+World-specific chrome, such as Metaworld's header and toolbar, remains beside
+its policy. Its widgets use the same shared UI component and overlay contracts.
 Avoid putting generic service state into a World's package or adding aliases
 for another module's private controller functions.
-
-The Slint native crate builds without World assets by default. The desktop
-Makefile enables its optional `metaworld-controls` feature, compiling the
-controls from `src/worlds/metaworld/native/`. That extension owns the compiled
-components and their property/callback mappings. Dynamic Slint widgets and
-notifications remain available in either build. To build just the engine:
-
-```sh
-cargo build --locked --release --manifest-path src/world/slint/native/Cargo.toml
-```
-
-Use `ATAXIA_SLINT_NATIVE` to select that library when attaching another World.
 
 ## UI hosting
 
@@ -71,8 +56,7 @@ Overlay geometry is output-local, in logical pixels. The component implements
 the engine-neutral `ui-*` protocol plus Kernel drawable/interactable contracts.
 The host owns compositing, hit testing, raster density, and graphics lifetime.
 Pass an explicit `:component-factory` to `create-agent-widget`, or use
-`ataxia.world.rmlui:make-rmlui-widget` or
-`ataxia.world.slint:make-agent-widget`.
+`ataxia.world.web:make-web-widget`.
 
 `tests/world-ui-host.lisp` is a small independent host exercising geometry,
 invalidation, bounded callback events, and disposal. It loads no concrete World
@@ -207,11 +191,8 @@ Wayland integration suites.
 
 Existing public assistant and computer-use entry points retain their names.
 Load the matching adapter system before enabling them on Infinite World or
-Metaworld. Shell entry points now live in `ataxia.world.shell`; the optional
-`ataxia-rmlui/status-bar/infinite-world` system retains the former exported
-Infinite World names. Existing `canvas-overlay` names remain compatibility
-aliases; new code uses `ui-overlay` and `overlay-*`.
+Metaworld. Shell entry points live in `ataxia.world.shell`; overlays use
+`ui-overlay` and the `overlay-*` accessors.
 
-This refactor changes implementation packages and controller/class layouts.
-Start a new compositor process to use it in an existing session. Do not redefine
-these structures underneath active workers or native UI objects.
+Start a new compositor process after changing controller or class layouts. Do
+not redefine these structures underneath active workers or native UI objects.

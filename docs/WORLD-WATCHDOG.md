@@ -1,11 +1,10 @@
-# Synchronous World Watchdog Experiment
+# World Watchdog
 
 ## Purpose
 
-This branch returns Kernel and World execution to one synchronous Runtime owner
-thread. It tests whether a small guardian thread can recover a stuck World
-without putting ordinary input or rendering behind a queue and without dropping
-existing Wayland connections.
+Kernel and World execution share one synchronous Runtime owner thread. A small
+guardian thread recovers a stuck World without putting ordinary input or
+rendering behind a queue and without dropping existing Wayland connections.
 
 ## Boundary
 
@@ -61,9 +60,9 @@ no client layout, input policy, animation, or persistent GLES resources. After
 repairing code, `ATAXIA.KERNEL:RESTART-WORLD` constructs and installs a fresh
 normal World from the entrypoint-provided factory.
 
-## Live Result
+## Validation
 
-The UTM validation injected a one-shot infinite loop into
+A live validation injected a one-shot infinite loop into
 `WORLD-OUTPUT-PRESENTED` with a one-second deadline.
 
 - Kernel logged the timeout and installed rescue World generation 1.

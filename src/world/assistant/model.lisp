@@ -25,7 +25,6 @@
   (activity "Ready when you are") (messages nil) (plan nil) (request nil)
   project (blocked t) (started 0d0)
   (models #()) login-url login-id journal-path
-  (previews (make-hash-table :test #'equal))
   ;; Protocol worker and its synchronized mailbox.
   worker reader process (queue nil) (queue-bytes 0)
   (lock (sb-thread:make-mutex :name "Ataxia assistant mailbox"))
@@ -112,4 +111,3 @@
           (cu:pause-session (assistant-controller-session controller) "Assistant disconnected"))
         (%assistant-refresh controller)))))
 
-(defstruct assistant-preview id process app-id path (revision 1))

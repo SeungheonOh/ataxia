@@ -5,12 +5,14 @@ Every drawing must explain a control, a boundary, a selection or a state.
 There are no ornamental title rules, patterns, badges, shadows or brand marks.
 Application content belongs to the application and keeps its own styling.
 
-`src/world/rmlui/theme.rcss` owns the palette, typography, spacing tokens and
-control states for all 13 shell documents. Inline styles own each layout;
-do not add theme overrides to correct document geometry. Each document links
-the theme relative to its real source path and opts in with a `shell` body
-class. Use `ataxia.world.rmlui:make-shell-rmlui-component` to load the four
-DejaVu Sans Mono faces once. The generic factory hosts independently styled apps.
+`src/world/web/ui/document.css` owns the palette, typography, spacing tokens
+and control states for the built-in HTML documents. Each document's own styles
+own its layout; do not add theme overrides to correct document geometry. Each
+document links the theme relative to its real source path and opts in with a
+`shell` body class. Web components created with their own source or asset root
+style themselves independently. Stage's pages use `examples/stage/pages/theme.css`.
+
+Sizes below are in logical pixels (dp).
 
 - Use an 8 dp horizontal gutter at panel and text-field edges, an 8 dp gap
   between related commands, and 16 dp between independent columns. Apply the
@@ -45,14 +47,5 @@ DejaVu Sans Mono faces once. The generic factory hosts independently styled apps
   to idle. The pan HUD draws only its anchor, velocity tether and dead zone;
   contrasting edges there and on share selections ensure visibility over apps.
 
-Legacy Slint World widgets share `src/worlds/metaworld/theme.slint`'s palette.
-The launcher and pan HUD embed Slint source in Lisp. Rebuild the Slint library
-when changing compiled widgets; never redirect existing native component
-pointers to a different library instance.
-
-Run `make test-shell-theme` for native GLES renders, disjoint action bounds,
-real hit tests and foreground/background inversion tests.
-`build/workstation-ui.png` shows actual RmlUi output; `build/theme-*.png` covers
-normal/narrow layouts and 1×, 1.5× and 2× scales. World and idle checks:
-`make test-rmlui-shell-world test-rmlui-status-bar-world`
-and `make benchmark-desktop-idle test-view-shift-idle`.
+Run `make test-shell test-web-shell` for shell behavior through the HTML bar,
+and `make benchmark-desktop-idle test-view-shift-idle` for idle checks.

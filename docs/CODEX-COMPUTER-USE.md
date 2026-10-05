@@ -1,8 +1,7 @@
 # Ataxia agent interface
 
 Agents use Lisp for both World control and application interaction. The embedded
-assistant exposes `ataxia_lisp`, plus two RML preview creation/update tools.
-It advertises no CUA observation, input, window, viewport or arrangement tools.
+assistant exposes only `ataxia_lisp`; it advertises no CUA observation, input, window, viewport or arrangement tools.
 The external agent uses SLY directly:
 
 ```sh
@@ -36,8 +35,7 @@ allocated lazily, have no per-frame polling, and are released with
 
 The agent interface has no browser DOM or accessibility-tree API; applications,
 including browsers, are operated through their own window images and native
-input. The older JavaScript SDK remains a compatibility library, documented in
-[CUA API](CUA-API.md); it is not registered as an agent tool or used by the skill.
+input.
 
 `make test-assistant` exercises direct SLY and embedded Lisp, plain Infinite World
 and Metaworld, real native input/capture, multiple emitted images, Pause, teardown

@@ -48,9 +48,7 @@
   (assert (equal "default" (ataxia.assistant::%assistant-effective-tier controller))))
 (let* ((tools (ataxia.assistant::%assistant-tool-specs (make-metaworld :state-file nil)))
        (decoded (ataxia.world.wire:decode (ataxia.world.wire:encode tools) :max-depth 32)))
-  (assert (= 3 (length decoded)))
-  (assert (equal '("ataxia_lisp" "ataxia_ui_preview" "ataxia_ui_update")
-                 (map 'list (lambda (tool) (gethash "name" tool)) decoded)))
+  (assert (equal '("ataxia_lisp") (map 'list (lambda (tool) (gethash "name" tool)) decoded)))
   (loop for tool across decoded do (assert (gethash "inputSchema" tool)) (assert (equal "function" (gethash "type" tool)))))
 
 (let ((controller (ataxia.assistant::%make-assistant-controller :epoch 2 :blocked t)))

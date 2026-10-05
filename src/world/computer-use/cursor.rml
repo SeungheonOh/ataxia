@@ -1,8 +1,0 @@
-<rml><head><title>Agent cursor</title><style>
-body { --accent:var(--ink); margin:0; width:100%; height:100%; font-size:11dp; }
-div { display:block; }
-#tag { position:absolute; left:0; top:0; right:0; bottom:0; padding:0 var(--inset); border:var(--frame) var(--ink); border-left:4dp var(--accent); }
-#name { font-weight:bold; }
-#state { font-size:10dp; margin-top:0; }
-#name, #state { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-</style><link type="text/rcss" href="../rmlui/theme.rcss"/></head><body class="shell computer-use-cursor"><div id="tag"><div id="name">Agent</div><div id="state">Connected</div></div></body></rml>

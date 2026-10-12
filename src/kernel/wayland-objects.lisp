@@ -317,6 +317,23 @@
         (%invalidate-application application))))
   surface)
 
+(defun %refresh-application-parent (application)
+  "Take APPLICATION's parent from its toplevel; true when it changed."
+  (let* ((kernel (object-kernel application))
+         (runtime-parent (ataxia.runtime:xdg-toplevel-parent (application-toplevel application)))
+         (parent (and runtime-parent (gethash runtime-parent (%kernel-toplevel-table kernel)))))
+    (unless (eq parent (application-parent application))
+      (setf (application-parent application) parent)
+      t)))
+
+(defun %refresh-application-size-limits (application)
+  "Take APPLICATION's size limits from its toplevel's committed state; true when they changed."
+  (let ((limits (multiple-value-list
+                 (ataxia.runtime:xdg-toplevel-size-limits (application-toplevel application)))))
+    (unless (equal limits (application-size-limits application))
+      (setf (application-size-limits application) limits)
+      t)))
+
 (defun %create-wayland-application (kernel toplevel)
   (let* ((runtime-surface (ataxia.runtime:xdg-toplevel-surface toplevel))
          (root (%ensure-surface-node kernel runtime-surface))
@@ -331,6 +348,8 @@
             :app-id (ataxia.runtime:xdg-toplevel-app-id toplevel)
             :mapped-p (ataxia.runtime:surface-mapped-p runtime-surface))))
     (setf (%surface-application root) application)
+    (%refresh-application-parent application)
+    (%refresh-application-size-limits application)
     (%register-object kernel application :runtime-object toplevel)
     (setf (gethash toplevel (%kernel-toplevel-table kernel)) application)
     (%call-world kernel world-register-object application)

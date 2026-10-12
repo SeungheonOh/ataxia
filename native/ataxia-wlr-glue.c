@@ -1051,6 +1051,33 @@ struct wlr_surface *ataxia_xdg_popup_parent_surface(
 	return popup == NULL ? NULL : popup->parent;
 }
 
+void ataxia_xdg_popup_unconstrain(struct wlr_xdg_popup *popup,
+		int32_t x, int32_t y, int32_t width, int32_t height) {
+	struct wlr_box box = {.x = x, .y = y, .width = width, .height = height};
+	wlr_xdg_popup_unconstrain_from_box(popup, &box);
+}
+
+struct wlr_xdg_toplevel *ataxia_xdg_toplevel_parent(
+		const struct wlr_xdg_toplevel *toplevel) {
+	return toplevel == NULL ? NULL : toplevel->parent;
+}
+
+/* Committed size limits: 0 minimum width, 1 minimum height, 2 maximum width,
+ * 3 maximum height; 0 is no limit. */
+int32_t ataxia_xdg_toplevel_size_limit(
+		const struct wlr_xdg_toplevel *toplevel, int field) {
+	if (toplevel == NULL) {
+		return 0;
+	}
+	switch (field) {
+	case 0: return toplevel->current.min_width;
+	case 1: return toplevel->current.min_height;
+	case 2: return toplevel->current.max_width;
+	case 3: return toplevel->current.max_height;
+	}
+	return 0;
+}
+
 struct wl_signal *ataxia_pointer_gesture_signal(
 		struct wlr_pointer *pointer, uint32_t kind, uint32_t phase) {
 	if (kind == 0 && phase == 0) {

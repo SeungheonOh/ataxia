@@ -163,6 +163,8 @@
    #:application-root-surface
    #:application-title
    #:application-app-id
+   #:application-parent
+   #:application-size-limits
    #:application-mapped-p
    #:client-request
    #:client-request-seat
@@ -218,6 +220,7 @@
    #:world-seat-cursor-request
    #:world-seat-selection-changed
    #:world-client-request
+   #:world-popup-constraint
    #:world-graphics-attached
    #:world-render
    #:world-frame-committed

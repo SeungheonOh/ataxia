@@ -304,6 +304,25 @@
         (to-logical (transform-invert (%buffer-transform stage-output))))
     (and transform to-logical (transform-multiply to-logical transform))))
 
+(defmethod ataxia.kernel:world-popup-constraint ((world stage-world) application)
+  "The part of an output showing APPLICATION, in its own coordinates, so its popups
+open where they can be seen. Under a turned window it is the bounding box of the
+output's corners mapped back onto the window's plane."
+  (let ((window (gethash application (%windows world))))
+    (when window
+      (dolist (stage-output (%outputs world))
+        (let* ((transform (%window-logical-transform window stage-output))
+               (inverse (and transform (transform-invert transform))))
+          (when inverse
+            (multiple-value-bind (width height)
+                (ataxia.world:output-logical-size (stage-output-output stage-output))
+              (let ((box (transform-rectangle-bounds inverse 0 0 width height)))
+                (unless (eq box +unbounded+)
+                  (return (list (floor (ataxia.world:rectangle-x box))
+                                (floor (ataxia.world:rectangle-y box))
+                                (ceiling (ataxia.world:rectangle-width box))
+                                (ceiling (ataxia.world:rectangle-height box)))))))))))))
+
 (defun %require-placement (world window output)
   (let ((stage-output (%find-stage-output world output)))
     (or (and stage-output (%own-window-p world window)

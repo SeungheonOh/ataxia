@@ -556,7 +556,8 @@ mipmapped copy of it or NIL for none yet, sampled once from that."
         (mipmapped-p nil))
     (multiple-value-bind (xu xv x-taps) (%uv-filter uv 0 1 width scale texel-width texel-height)
       (multiple-value-bind (yu yv y-taps) (%uv-filter uv 0 2 height scale texel-width texel-height)
-        (let ((copy (and mipmap (> (max x-taps y-taps) 1) (funcall mipmap))))
+        ;; The copy is half size, so it serves only a window drawn at half size or less.
+        (let ((copy (and mipmap (> (max x-taps y-taps) 2) (funcall mipmap))))
           (when copy
             (setf target +gl-texture-2d+ name copy x-taps 1 y-taps 1 mipmapped-p t)))
         (let ((program (if (= target ataxia.world.gles:+texture-external-oes+)
@@ -637,7 +638,9 @@ while the frame has spare time; NIL when there is none yet."
        (lambda ()
          (unless (and mipmap (= width (render-target-width (mipmap-target mipmap)))
                       (= height (render-target-height (mipmap-target mipmap))))
-           (when mipmap (destroy-render-target (mipmap-target mipmap)))
+           (when mipmap
+             (remhash slot (stage-renderer-mipmaps renderer))
+             (destroy-render-target (mipmap-target mipmap)))
            (setf mipmap (%make-mipmap (make-render-target width height t))
                  (gethash slot (stage-renderer-mipmaps renderer)) mipmap))
          (%copy-into-mipmap renderer source (mipmap-target mipmap))

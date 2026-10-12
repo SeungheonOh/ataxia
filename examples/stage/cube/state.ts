@@ -14,13 +14,15 @@ export interface CubeState {
   order: number[];
   /** Quarter turns made, to the right positive; the face in front is this modulo 4. */
   turn: number;
+  /** The compositor instance the window ids belong to. */
+  instance: string | null;
 }
 
-export const initialCubeState: CubeState = { faceOf: {}, order: [], turn: 0 };
+export const initialCubeState: CubeState = { faceOf: {}, order: [], turn: 0, instance: null };
 
 export type CubeAction =
   /** The mapped windows changed: new ones join the face in front. */
-  | { type: "sync"; windows: readonly number[] }
+  | { type: "sync"; windows: readonly number[]; instance: string }
   /** Turn by STEP faces, to the right for positive steps. */
   | { type: "turn"; step: number }
   /** Turn the shortest way to FACE. */
@@ -41,6 +43,9 @@ export function turnsTo(state: CubeState, face: number): number {
 export function cubeReducer(state: CubeState, action: CubeAction): CubeState {
   switch (action.type) {
     case "sync": {
+      // Window ids start over with the compositor: the old ones name nothing now.
+      if (state.instance !== action.instance)
+        state = { ...state, faceOf: {}, order: [], instance: action.instance };
       const live = new Set(action.windows);
       const front = frontFace(state);
       const faceOf: Record<number, number> = {};

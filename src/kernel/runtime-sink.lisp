@@ -111,7 +111,7 @@
                           (+ (* (ataxia.runtime:output-present-seconds event) 1000000000)
                              (ataxia.runtime:output-present-nanoseconds event))
                           (ataxia.runtime:output-present-refresh-nanoseconds event)
-                          (logtest 1 (ataxia.runtime:output-present-flags event))))
+                          (ataxia.runtime:output-present-vsync-p event)))
     (when output
       (%call-world
        kernel world-output-presented output
@@ -483,7 +483,12 @@
         (ataxia.runtime:xdg-toplevel-decoration-set-mode
          decoration :client-side)))
     (ataxia.runtime:xdg-surface-schedule-configure toplevel))
-  (gethash toplevel (%kernel-toplevel-table kernel)))
+  (let ((application (gethash toplevel (%kernel-toplevel-table kernel))))
+    ;; Size limits are double-buffered state with no event of their own.
+    (when (and application (%refresh-application-size-limits application))
+      (%call-world kernel world-object-changed application
+                   (make-object-change :size-limits (application-size-limits application))))
+    application))
 
 (defmethod ataxia.runtime:xdg-toplevel-destroying
     ((kernel kernel) toplevel)
@@ -577,9 +582,10 @@
 (defmethod ataxia.runtime:xdg-toplevel-parent-changed
     ((kernel kernel) toplevel)
   (let ((application (%request-application kernel toplevel)))
-    (%call-world
-     kernel world-object-changed application
-     (make-object-change :parent nil))))
+    (when (%refresh-application-parent application)
+      (%call-world
+       kernel world-object-changed application
+       (make-object-change :parent (application-parent application))))))
 
 (defun %apply-toplevel-decoration-policy (decoration)
   (when (ataxia.runtime:xdg-toplevel-initialized-p
@@ -670,14 +676,38 @@
         (when application
           (%invalidate-application application))))))
 
+(defun %valid-popup-constraint-p (box)
+  (and (typep box '(cons real (cons real (cons real (cons real null)))))
+       (every (lambda (value) (< (abs value) #x40000000)) box)
+       (plusp (third box))
+       (plusp (fourth box))))
+
+(defun %unconstrain-popup (kernel popup)
+  "Keep POPUP inside the box its World gives for the application it belongs to."
+  (let* ((surface (%popup-surface-node kernel popup))
+         (application (and surface (%surface-tree-application surface)))
+         (box (and application (%call-world kernel world-popup-constraint application))))
+    (cond ((null box))
+          ((%valid-popup-constraint-p box)
+           (apply #'ataxia.runtime:xdg-popup-unconstrain popup box))
+          (t
+           (%handle-world-call-failure
+            kernel 'world-popup-constraint
+            (make-condition 'simple-error
+                            :format-control "World returned ~S as a popup constraint."
+                            :format-arguments (list box)))))))
+
 (defmethod ataxia.runtime:xdg-popup-committed
     ((kernel kernel) popup commit initial-commit-p configured-p)
-  (declare (ignore kernel commit))
+  (declare (ignore commit))
   (when (and initial-commit-p (not configured-p))
+    (%unconstrain-popup kernel popup)
     (ataxia.runtime:xdg-surface-schedule-configure popup)))
 
 (defmethod ataxia.runtime:xdg-popup-repositioned
     ((kernel kernel) popup)
+  ;; The new positioner is unconstrained too, before wlroots sends its configure.
+  (%unconstrain-popup kernel popup)
   (let ((surface (%popup-surface-node kernel popup)))
     (when surface
       (multiple-value-bind (x y) (ataxia.runtime:xdg-popup-position popup)

@@ -863,13 +863,24 @@ Smaller items paint whole, which costs less than the extra draws.")
   (destructuring-bind (x0 y0 x1 y1) box
     (* (- x1 x0) (- y1 y0))))
 
-(defun %visible-boxes (box occluders position)
-  "Parts of BOX that occluders above POSITION leave visible: the largest are cut out
-first, as long as the parts take only a few draws."
+(defun %cutting-holes (occluders readers position)
+  "Holes of the occluders above POSITION that the item there may skip: not where a
+reader between them copies the framebuffer, since it reads what that item paints."
+  (loop for (above . hole) in occluders
+        when (and (> above position)
+                  (notany (lambda (reader)
+                            (destructuring-bind (at x0 y0 x1 y1) reader
+                              (destructuring-bind (hx0 hy0 hx1 hy1) hole
+                                (and (< position at above)
+                                     (< hx0 x1) (< x0 hx1) (< hy0 y1) (< y0 hy1)))))
+                          readers))
+          collect hole))
+
+(defun %visible-boxes (box holes)
+  "Parts of BOX that HOLES leave visible: the largest are cut out first, as long as
+the parts take only a few draws."
   (let ((parts (list box)))
-    (dolist (hole (sort (loop for (above . hole) in occluders when (> above position) collect hole)
-                        #'> :key #'%box-area)
-                  parts)
+    (dolist (hole (sort (copy-list holes) #'> :key #'%box-area) parts)
       (let ((cut (mapcan (lambda (part) (%box-difference part hole)) parts)))
         (if (> (length cut) 8)
             (return parts)
@@ -879,7 +890,7 @@ first, as long as the parts take only a few draws."
   "Paint the ITEMS OWNER draws (NIL: the frame) that overlap buffer RECTANGLE, whose
 scissor is set, bottom first; return the presentation tokens of surfaces drawn. A
 large item paints only where no opaque item above it covers, in an effect's
-content as in the frame."
+content as in the frame, except where a blur between them reads it."
   (let* ((tokens nil)
          (items (%unoccluded items rectangle owner))
          (occluders (loop for item in items
@@ -888,7 +899,12 @@ content as in the frame."
                           for hole = (and opaque (eq (item-owner item) owner)
                                           (%rectangles-overlap-p opaque rectangle)
                                           (%covered-box opaque))
-                          when hole collect (cons position hole))))
+                          when hole collect (cons position hole)))
+         ;; Blurs and backdrop effects read what is painted under them.
+         (readers (loop for item in items
+                        for position from 0
+                        when (and (item-blur-area item) (eq (item-owner item) owner))
+                          collect (cons position (%pixel-box (item-blur-area item) width height)))))
     (multiple-value-bind (x y pixel-width pixel-height)
         (ataxia.world:rectangle-pixel-bounds rectangle width height)
       (loop for item in items
@@ -901,8 +917,9 @@ content as in the frame."
                                      visible))
                         (box (%pixel-box visible width height))
                         (area (* (max 0 (- (third box) (first box))) (max 0 (- (fourth box) (second box)))))
-                        (parts (if (and occluders (not (item-effect item)) (> area +occlusion-cut-area+))
-                                   (%visible-boxes box occluders position)
+                        (parts (if (and occluders (not (item-effect item)) (not (item-blur-area item))
+                                        (> area +occlusion-cut-area+))
+                                   (%visible-boxes box (%cutting-holes occluders readers position))
                                    (list box))))
                    (if (item-effect item)
                        (progn
@@ -1023,5 +1040,8 @@ tokens of surfaces drawn."
     (let ((damage-frame (ataxia.kernel:frame-result-world-cookie frame-result)))
       (when damage-frame (ataxia.world:damage-fail-frame (%damage world) damage-frame))))
   (let ((stage-output (%find-stage-output world output)))
-    (when stage-output (%request-frames world (list stage-output))))
+    (when stage-output
+      (%request-frames world (list stage-output))
+      ;; The retry may never come, so input picks from the scene as it is.
+      (setf (stage-output-frame-pending-p stage-output) nil)))
   frame-result)

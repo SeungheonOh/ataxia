@@ -21,6 +21,8 @@ export interface HyprState {
   scratchpad: number[];
   /** The output last worked on, for keyboard actions while no window there has focus. */
   active: string | null;
+  /** The compositor instance the window ids belong to. */
+  instance: string | null;
 }
 
 export const initialHyprState: HyprState = {
@@ -32,11 +34,12 @@ export const initialHyprState: HyprState = {
   fullscreen: null,
   scratchpad: [],
   active: null,
+  instance: null,
 };
 
 export type HyprAction =
   /** The mapped windows changed; new ones join `workspace`. */
-  | { type: "sync"; windows: readonly number[]; workspace: number }
+  | { type: "sync"; windows: readonly number[]; workspace: number; instance: string }
   /** Show `workspace` on `output`, which becomes the active output. */
   | { type: "show"; output: string; workspace: number }
   | { type: "activate"; output: string }
@@ -55,9 +58,24 @@ function omit<T>(record: Record<number, T>, drop: (id: number) => boolean): Reco
 
 /**
  * New windows join the end of the order and closed ones are forgotten. Ids
- * restart with the compositor, so this also prunes what an earlier session saved.
+ * restart with the compositor, so a new instance forgets every window saved.
  */
-function sync(state: HyprState, windows: readonly number[], workspace: number): HyprState {
+function sync(
+  state: HyprState,
+  windows: readonly number[],
+  workspace: number,
+  instance: string,
+): HyprState {
+  if (state.instance !== instance)
+    state = {
+      ...state,
+      workspaces: {},
+      order: [],
+      floating: {},
+      fullscreen: null,
+      scratchpad: [],
+      instance,
+    };
   const live = new Set(windows);
   const isStale = (id: number) => !live.has(id);
   const fresh = windows.filter((id) => !state.order.includes(id));
@@ -83,7 +101,7 @@ function sync(state: HyprState, windows: readonly number[], workspace: number): 
 export function hyprReducer(state: HyprState, action: HyprAction): HyprState {
   switch (action.type) {
     case "sync":
-      return sync(state, action.windows, action.workspace);
+      return sync(state, action.windows, action.workspace, action.instance);
 
     case "show":
       return {

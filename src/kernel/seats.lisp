@@ -144,10 +144,14 @@
            :type (ataxia.runtime:input-device-type runtime-input))))
     (%register-object kernel input-device :runtime-object runtime-input)
     (setf (gethash runtime-input (%kernel-input-table kernel)) input-device)
+    ;; Devices start as GNOME sets them up: keys repeat 33 times a second after
+    ;; half a second, and touchpads tap to click, scroll naturally and pause
+    ;; while typing.
     (when (typep runtime-input 'ataxia.runtime:wlr-keyboard)
       (ataxia.runtime:set-keyboard-keymap-from-names runtime-input)
-      (ataxia.runtime:set-keyboard-repeat-info runtime-input))
+      (ataxia.runtime:set-keyboard-repeat-info runtime-input 33 500))
     (when (typep runtime-input 'ataxia.runtime:wlr-pointer)
-      (ataxia.runtime:configure-touchpad runtime-input))
+      (ataxia.runtime:configure-touchpad runtime-input :tap t :natural-scroll t
+                                                       :disable-while-typing t))
     (when seat (assign-input-device input-device seat))
     input-device))

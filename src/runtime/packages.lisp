@@ -59,6 +59,9 @@
    #:%gles2-texture-target
    #:%gles2-texture-name
    #:%gles2-texture-has-alpha
+   #:%gl-get-string
+   #:%egl-get-proc-address
+   #:%gl-get-integer
    #:%wlr-renderer-init-wl-display
    #:%wlr-renderer-destroy
    #:%wlr-allocator-autocreate
@@ -293,6 +296,9 @@
    #:%xdg-surface-geometry
    #:%xdg-surface-event-destroy
    #:%xdg-toplevel-title
+   #:%xdg-toplevel-parent
+   #:%xdg-toplevel-size-limit
+   #:%xdg-popup-unconstrain
    #:%xdg-toplevel-app-id
    #:%xdg-toplevel-requested-maximized
    #:%xdg-toplevel-requested-minimized
@@ -386,6 +392,7 @@
    #:output-present-sequence
    #:output-present-refresh-nanoseconds
    #:output-present-flags
+   #:output-present-vsync-p
    #:wlr-output-mode
    #:wlr-output-state
    #:initialize-output-render
@@ -587,6 +594,12 @@
    #:texture-gles-attributes
    #:call-with-egl-context
    #:with-egl-context
+   #:gpu-timer
+   #:make-gpu-timer
+   #:gpu-timer-start
+   #:gpu-timer-stop
+   #:gpu-timer-results
+   #:release-gpu-timer
    #:configure-output-swapchain
    #:acquire-output-buffer
    #:output-state-set-buffer
@@ -765,6 +778,9 @@
    #:xdg-toplevel-send-close
    #:xdg-popup-destroy
    #:xdg-popup-position
+   #:xdg-popup-unconstrain
+   #:xdg-toplevel-parent
+   #:xdg-toplevel-size-limits
    #:xdg-surface-schedule-configure
    #:+seat-capability-pointer+
    #:+seat-capability-keyboard+

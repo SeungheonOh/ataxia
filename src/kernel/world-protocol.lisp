@@ -102,6 +102,14 @@
 (defgeneric world-client-request (world object request)
   (:documentation "Let WORLD decide a typed client policy request."))
 
+(defgeneric world-popup-constraint (world application)
+  (:documentation "The box popups of APPLICATION must stay inside, in its local coordinates,
+as (X Y WIDTH HEIGHT): where it shows, so menus open on screen. NIL leaves popups
+where their client put them.")
+  (:method ((world world) application)
+    (declare (ignore world application))
+    nil))
+
 (defgeneric world-graphics-attached (world graphics-context)
   (:documentation "Create World-owned GLES resources while Kernel has made EGL current."))
 

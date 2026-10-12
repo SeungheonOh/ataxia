@@ -43,7 +43,7 @@ sbcl --eval '(sb-int:set-floating-point-modes :traps nil)' \
 
 The launcher starts the compositor, XWayland and the assistant (not on the
 headless backend), then the director on `--script`. Worlds draw their own bar
-in TSX; the shared web status bar is available with `--status-bar`. Four
+in TSX; the shared web status bar is available with `--status-bar`. Six
 examples ship with it, organized as ordinary React apps:
 
 - [`canvas.tsx`](../examples/stage/canvas.tsx): an infinite canvas with
@@ -125,18 +125,20 @@ flowchart LR
     end
     subgraph D[Director process: node]
       RT[Runtime: esbuild + hot reload] --> RC[React reconciler]
-      RC --> ST[Store: windows, outputs, cameras, focus]
+      RC --> ST[Store: windows, outputs, cameras, focus, modifiers]
       U[world.tsx] --> RC
       PB[Page bundles: React DOM] --> WB
     end
     L <-->|NDJSON over a 0600 Unix socket| RC
 ```
 
-**Kernel is unchanged.** Stage is an ordinary `ataxia.kernel:world` (and an
-`ataxia.world:ui-host`) and talks to applications only through the existing
+**Kernel holds no Stage policy.** Stage is an ordinary `ataxia.kernel:world` (and
+an `ataxia.world:ui-host`) and talks to applications only through the Kernel's
 contracts: `drawable-surfaces`, `drawable-local-bounds`, `retain-render-source`,
 `interactable-*`, `request-object-configuration`, `request-object-state`,
-output membership and frame results. The director never sees a Kernel object,
+output membership and frame results. Window metadata (a dialog's parent, size
+limits) arrives through `world-object-changed`, and `world-popup-constraint`
+answers where an application's menus must stay: on the output it shows on. The director never sees a Kernel object,
 only copied ids and values.
 
 | Module (`src/worlds/stage/`) | Responsibility |
@@ -262,9 +264,10 @@ Motion props:
   the other in the same commit, even under another parent: the new node carries
   on from where the old one was shown. Windows (`window:<id>`) have an identity
   implicitly, so a window moved into another group glides there.
-- `interactive={false}` on a `Group`, `Rect`, `Text` or `Image`: the pointer passes
-  through the node to what is below, e.g. a backdrop inside a draggable group that
-  should still let the canvas pan. Its children still take the pointer.
+- `interactive={false}` on a `Group`, `Rect`, `Text`, `Image`, `Window` or `Web`:
+  the pointer passes through the node to what is below, e.g. a backdrop inside a
+  draggable group that should still let the canvas pan. Its children still take
+  the pointer.
 - `effect`: a GLSL shader the node is drawn through; see [Effects](#effects).
 
 Colors are CSS hex, `rgb()`/`rgba()`, `transparent`, `white`, `black` or
@@ -284,12 +287,13 @@ Hooks and actions:
 
 | API | Description |
 | --- | --- |
-| `useWindows()` | Mapped windows `{ id, title, appId, mapped, width, height }`, creation order. |
+| `useWindows()` | Mapped windows `{ id, title, appId, mapped, width, height, parent, minWidth, minHeight, maxWidth, maxHeight }`, creation order. `parent` is the window a dialog belongs to; the limits are the sizes the client accepts, 0 for none. |
 | `useWindow(id)`, `useFocusedWindow(seat?)`, `useModifiers(seat?)` | Compositor state; components re-render only when it changes. `useModifiers` lists the modifiers held, e.g. to end a switcher when they are let go. |
 | `useOutputs()` | Outputs with their size, scale and `workArea` (what the status bar leaves). |
 | `useCamera(output?)`, `moveCamera(move, options?)` | Where a camera is headed; move it from code. |
 | `useClipboard()` | Text copied this session, newest first (memory only), and `copy(text)`. |
 | `usePersistentState(key, initial)`, `usePersistentReducer(key, reducer, initial)` | `useState` and `useReducer` that survive hot reloads, remounts and restarts (saved as JSON under `$XDG_STATE_HOME/ataxia/stage/`). |
+| `useCompositorInstance()` | Names the compositor process, or `null` before it says hello. Window ids start over when the compositor restarts, so persistent state keyed by window id should be forgotten when this changes; the examples' `sync` actions do so. |
 | `useShares()`, `acceptShare(id, source)`, `cancelShare(id)` | Screen-sharing requests and running shares; see [Screen sharing](#screen-sharing). |
 | `screenshot(source?)`, `encodePng(shot)` | Pixels of a window, an output or a region of one, at full resolution; PNG encoding runs on a worker thread. |
 | `focus(id \| null)`, `close(id)`, `launch(command)` | Keyboard focus, polite close, start a client on this display. |

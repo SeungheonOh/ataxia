@@ -439,6 +439,12 @@ ATAXIA_WLR_GLUE_API struct wlr_xdg_surface *ataxia_xdg_popup_base(
 	struct wlr_xdg_popup *popup);
 ATAXIA_WLR_GLUE_API struct wlr_surface *ataxia_xdg_popup_parent_surface(
 	struct wlr_xdg_popup *popup);
+ATAXIA_WLR_GLUE_API void ataxia_xdg_popup_unconstrain(struct wlr_xdg_popup *popup,
+	int32_t x, int32_t y, int32_t width, int32_t height);
+ATAXIA_WLR_GLUE_API struct wlr_xdg_toplevel *ataxia_xdg_toplevel_parent(
+	const struct wlr_xdg_toplevel *toplevel);
+ATAXIA_WLR_GLUE_API int32_t ataxia_xdg_toplevel_size_limit(
+	const struct wlr_xdg_toplevel *toplevel, int field);
 ATAXIA_WLR_GLUE_API struct wl_signal *ataxia_xdg_popup_event_destroy(
 	struct wlr_xdg_popup *popup);
 ATAXIA_WLR_GLUE_API struct wl_signal *ataxia_xdg_popup_event_reposition(

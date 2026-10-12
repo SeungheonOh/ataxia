@@ -58,13 +58,11 @@ export default function Canvas() {
   // A window being dragged shows on the minimap where it is, not where it was.
   const [moving, setMoving] = useState<{ window: number; x: number; y: number } | null>(null);
   const onMove = useCallback<MoveWindow>((window, at) => setMoving(at && { window, ...at }), []);
-  const shown = moving
-    ? new Map(places).set(moving.window, {
-        ...places.get(moving.window)!,
-        x: moving.x,
-        y: moving.y,
-      })
-    : places;
+  const from = moving && places.get(moving.window);
+  const shown =
+    moving && from
+      ? new Map(places).set(moving.window, { ...from, x: moving.x, y: moving.y })
+      : places;
 
   function focusToward(key: (typeof arrowKeys)[number]) {
     const next = focused === null ? windows[0] : neighbour(places, focused, directions[key]!);

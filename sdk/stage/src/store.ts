@@ -15,6 +15,13 @@ export interface WindowInfo {
   /** Size the client last committed, in logical pixels. */
   readonly width: number;
   readonly height: number;
+  /** The window this one belongs to, as a dialog does, or null. */
+  readonly parent: number | null;
+  /** Sizes the client accepts, in logical pixels; 0 leaves a bound free. */
+  readonly minWidth: number;
+  readonly minHeight: number;
+  readonly maxWidth: number;
+  readonly maxHeight: number;
 }
 
 export interface Rectangle {
@@ -57,7 +64,10 @@ function toCamera(camera: WireCamera): CameraInfo {
 
 function toWindow(window: WireWindow): WindowInfo {
   return Object.freeze({ id: window.id, title: window.title, appId: window.app,
-                         mapped: window.mapped, width: window.width, height: window.height });
+                         mapped: window.mapped, width: window.width, height: window.height,
+                         parent: window.parent ?? null,
+                         minWidth: window["min-width"] ?? 0, minHeight: window["min-height"] ?? 0,
+                         maxWidth: window["max-width"] ?? 0, maxHeight: window["max-height"] ?? 0 });
 }
 
 function toOutput(output: WireOutput): OutputInfo {
@@ -69,6 +79,8 @@ const noModifiers: readonly Modifier[] = Object.freeze([]);
 
 export class Store {
   display = "";
+  /** The compositor process connected, from its welcome; window ids belong to it. */
+  instance: string | null = null;
   private windowMap = new Map<number, WindowInfo>();
   private outputMap = new Map<string, OutputInfo>();
   private focusMap = new Map<string, number | null>();
@@ -121,10 +133,14 @@ export class Store {
     switch (message.type) {
       case "welcome":
         this.display = message.display;
+        this.instance = message.instance;
         this.windowMap = new Map(message.windows.map((window) => [window.id, toWindow(window)]));
         this.outputMap = new Map(message.outputs.map((output) => [output.name, toOutput(output)]));
         this.focusMap = new Map(message.focus.map((focus) => [focus.seat, focus.window]));
         this.cameraMap = new Map(message.cameras.map((camera) => [camera.output, toCamera(camera)]));
+        this.modifierMap = new Map(
+          message.modifiers.map((held) => [held.seat, Object.freeze(held.modifiers)]),
+        );
         this.shareList = Object.freeze(message.shares ?? []);
         windows = outputs = true;
         break;

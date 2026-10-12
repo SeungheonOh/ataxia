@@ -276,18 +276,24 @@ Anything releasing a resource that a display item draws must call this too."
     (:image (image-node-size world node))
     (otherwise (values 0d0 0d0))))
 
-(defun %window-metadata (window)
-  (let ((application (stage-window-application window)))
+(defun %window-metadata (world window)
+  (let* ((application (stage-window-application window))
+         (parent (gethash (ataxia.kernel:application-parent application) (%windows world))))
     (multiple-value-bind (width height) (%window-natural-size window)
-      (list :id (stage-window-id window)
-            :title (or (ataxia.kernel:application-title application) "")
-            :app (or (ataxia.kernel:application-app-id application) "")
-            :mapped (if (ataxia.kernel:application-mapped-p application) t :false)
-            :width (round width)
-            :height (round height)))))
+      (destructuring-bind (min-width min-height max-width max-height)
+          (ataxia.kernel:application-size-limits application)
+        (list :id (stage-window-id window)
+              :title (or (ataxia.kernel:application-title application) "")
+              :app (or (ataxia.kernel:application-app-id application) "")
+              :mapped (if (ataxia.kernel:application-mapped-p application) t :false)
+              :width (round width)
+              :height (round height)
+              :parent (and parent (stage-window-id parent))
+              :min-width min-width :min-height min-height
+              :max-width max-width :max-height max-height)))))
 
 (defun %report-window (world window)
-  (let ((metadata (%window-metadata window)))
+  (let ((metadata (%window-metadata world window)))
     (unless (equal metadata (stage-window-report window))
       (setf (stage-window-report window) metadata)
       (%send world (list :type "window" :window metadata)))))
@@ -777,6 +783,9 @@ Anything releasing a resource that a display item draws must call this too."
            (ataxia.world:frame-damage-to-region (ataxia.kernel:object-change-value change)))
           (progn
             (ataxia.world:damage-reset-output (%damage world) output)
+            ;; A disabled output draws no frame, so none is on its way.
+            (unless (ataxia.kernel:output-enabled-p output)
+              (setf (stage-output-frame-pending-p stage-output) nil))
             (%layout-outputs world)
             (center-unplaced-camera stage-output)
             ;; A smaller mode or larger scale can leave the pointer outside.

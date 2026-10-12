@@ -1,7 +1,8 @@
 ;;;; Direct EGL context handoff.
 ;;;;
 ;;;; This module makes the GLES renderer's wlroots-owned EGL context current
-;;;; for a dynamic Lisp extent and restores the prior EGL state afterward.
+;;;; for a dynamic Lisp extent and restores the prior EGL state afterward, and
+;;;; times GL work in it with timestamp queries.
 ;;;; Shader compilation, draw submission, and render policy remain in the
 ;;;; compositor system.
 
@@ -59,12 +60,24 @@
 (defcfun ("ataxia_gles2_texture_has_alpha" %gles2-texture-has-alpha)
     :boolean
   (texture :pointer))
+(defcfun ("glGetString" %gl-get-string) :pointer
+  (name :uint32))
+(defcfun ("eglGetProcAddress" %egl-get-proc-address) :pointer
+  (name :string))
+(defcfun ("glGetIntegerv" %gl-get-integer) :void
+  (name :uint32)
+  (value :pointer))
 
 (in-package #:ataxia.runtime)
 
 (defconstant +egl-draw-surface+ #x3059)
 (defconstant +egl-read-surface+ #x305a)
 (defconstant +clock-monotonic+ 1)
+(defconstant +gl-extensions+ #x1f03)
+(defconstant +gl-timestamp+ #x8e28)
+(defconstant +gl-query-result+ #x8866)
+(defconstant +gl-query-result-available+ #x8867)
+(defconstant +gl-gpu-disjoint+ #x8fbb)
 
 (defclass wlr-buffer (native-object)
   ((width :initarg :width :reader buffer-width)
@@ -240,3 +253,109 @@
 
 (defmacro with-egl-context ((egl) &body body)
   `(call-with-egl-context ,egl (lambda () ,@body)))
+
+;;; GPU timing. Timestamp queries around a stretch of GL work measure what the
+;;; GPU spent on it without waiting for it; results arrive a frame or two later.
+
+(defvar *gpu-timer-functions* :unknown
+  "Entry points of EXT_disjoint_timer_query: gen, delete, counter, available and
+result; NIL when the driver lacks it.")
+
+(defun %gpu-timer-functions ()
+  (when (eq *gpu-timer-functions* :unknown)
+    (let ((extensions (ataxia.runtime.raw:%gl-get-string +gl-extensions+)))
+      (setf *gpu-timer-functions*
+            (and (not (ataxia.runtime.raw:null-pointer-p extensions))
+                 (search "GL_EXT_disjoint_timer_query"
+                         (ataxia.runtime.raw:foreign-string-to-lisp extensions))
+                 (mapcar #'ataxia.runtime.raw:%egl-get-proc-address
+                         '("glGenQueriesEXT" "glDeleteQueriesEXT" "glQueryCounterEXT"
+                           "glGetQueryObjectivEXT" "glGetQueryObjectui64vEXT"))))))
+  *gpu-timer-functions*)
+
+(defstruct (gpu-timer (:constructor %make-gpu-timer (egl)))
+  (egl nil :type wlr-egl :read-only t)
+  ;; Query pairs: the span being timed, spans awaiting results newest first, and
+  ;; pairs to reuse.
+  (open nil)
+  (pending nil :type list)
+  (free nil :type list))
+
+(defun make-gpu-timer (egl)
+  "A timer for GL work in EGL's context, or NIL when its driver cannot time it.
+Call with that context current."
+  (check-type egl wlr-egl)
+  (%assert-runtime-live (%native-runtime egl) :make-gpu-timer)
+  (and (%gpu-timer-functions) (%make-gpu-timer egl)))
+
+(defun %gpu-timestamp (query)
+  (cffi:foreign-funcall-pointer (third (%gpu-timer-functions)) ()
+                                :uint32 query :uint32 +gl-timestamp+ :void))
+
+(defun gpu-timer-start (timer)
+  "Mark the start of GL work to time. A span still open, its end never marked,
+starts again. With too many spans awaiting results, they stopped coming and
+nothing is timed."
+  (check-type timer gpu-timer)
+  (when (and (null (gpu-timer-open timer)) (< (length (gpu-timer-pending timer)) 4))
+    (setf (gpu-timer-open timer)
+          (or (pop (gpu-timer-free timer))
+              (cffi:with-foreign-object (ids :uint32 2)
+                (cffi:foreign-funcall-pointer (first (%gpu-timer-functions)) ()
+                                              :int32 2 :pointer ids :void)
+                (cons (cffi:mem-aref ids :uint32 0) (cffi:mem-aref ids :uint32 1))))))
+  (when (gpu-timer-open timer)
+    (%gpu-timestamp (car (gpu-timer-open timer))))
+  timer)
+
+(defun gpu-timer-stop (timer)
+  "Mark the end of the GL work started with GPU-TIMER-START."
+  (check-type timer gpu-timer)
+  (let ((pair (shiftf (gpu-timer-open timer) nil)))
+    (when pair
+      (%gpu-timestamp (cdr pair))
+      (push pair (gpu-timer-pending timer))))
+  timer)
+
+(defun gpu-timer-results (timer)
+  "Nanoseconds the GPU spent on each timed span finished since the last call,
+oldest first, without waiting for any. None when the GPU's clock jumped since,
+which makes the spans meaningless."
+  (check-type timer gpu-timer)
+  (destructuring-bind (gen delete counter available result) (%gpu-timer-functions)
+    (declare (ignore gen delete counter))
+    (cffi:with-foreign-objects ((ready :int32) (start :uint64) (end :uint64))
+      (ataxia.runtime.raw:%gl-get-integer +gl-gpu-disjoint+ ready)
+      (unless (zerop (cffi:mem-ref ready :int32))
+        (setf (gpu-timer-free timer) (append (gpu-timer-pending timer) (gpu-timer-free timer))
+              (gpu-timer-pending timer) nil)
+        (return-from gpu-timer-results nil))
+      (loop for pair in (reverse (gpu-timer-pending timer))
+            do (cffi:foreign-funcall-pointer available () :uint32 (cdr pair)
+                                             :uint32 +gl-query-result-available+ :pointer ready :void)
+            until (zerop (cffi:mem-ref ready :int32))
+            do (cffi:foreign-funcall-pointer result () :uint32 (car pair)
+                                             :uint32 +gl-query-result+ :pointer start :void)
+               (cffi:foreign-funcall-pointer result () :uint32 (cdr pair)
+                                             :uint32 +gl-query-result+ :pointer end :void)
+               (setf (gpu-timer-pending timer) (remove pair (gpu-timer-pending timer)))
+               (push pair (gpu-timer-free timer))
+            collect (- (cffi:mem-ref end :uint64) (cffi:mem-ref start :uint64))))))
+
+(defun release-gpu-timer (timer)
+  "Delete TIMER's queries while its EGL lives."
+  (check-type timer gpu-timer)
+  (let ((pairs (append (and (gpu-timer-open timer) (list (gpu-timer-open timer)))
+                       (gpu-timer-pending timer) (gpu-timer-free timer)))
+        (egl (gpu-timer-egl timer)))
+    (setf (gpu-timer-open timer) nil (gpu-timer-pending timer) nil (gpu-timer-free timer) nil)
+    (when (and pairs (native-object-live-p egl))
+      (with-egl-context (egl)
+        (cffi:with-foreign-object (ids :uint32 (* 2 (length pairs)))
+          (loop for (start . end) in pairs
+                for index from 0 by 2
+                do (setf (cffi:mem-aref ids :uint32 index) start
+                         (cffi:mem-aref ids :uint32 (1+ index)) end))
+          (cffi:foreign-funcall-pointer (second (%gpu-timer-functions)) ()
+                                        :int32 (* 2 (length pairs)) :pointer ids :void)))))
+  nil)

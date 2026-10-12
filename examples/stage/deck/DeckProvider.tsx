@@ -1,27 +1,43 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   focus,
+  useCompositorInstance,
   useFocusedWindow,
-  useModifiers,
   useOutputs,
   usePersistentReducer,
-  useWindowIds,
+  useWindows,
   type OutputInfo,
   type Rectangle,
+  type WindowInfo,
 } from "@ataxia/stage";
 import { tableBox, type Hover } from "./layout.js";
-import { deckReducer, initialDeckState, type DeckAction, type DeckState } from "./state.js";
+import {
+  handOf,
+  handReducer,
+  initialHandState,
+  type HandAction,
+  type HandState,
+} from "../lib/hand.js";
 
 /** How long a deal staggers the cards, in seconds. */
 const dealTime = 0.6;
 
 export interface DeckContextValue {
-  state: DeckState;
-  dispatch: (action: DeckAction) => void;
+  state: HandState;
+  dispatch: (action: HandAction) => void;
   /** The output the deck is dealt on, its work area and the table on it. */
   output: OutputInfo | undefined;
   area: Rectangle;
   table: Rectangle;
+  /** Every mapped window, by id. */
+  windows: ReadonlyMap<number, WindowInfo>;
+  /** The dialogs that ride on each card, oldest first: windows that belong to it. */
+  dialogs: ReadonlyMap<number, readonly number[]>;
+  /** The window in play while it fills the whole output, or null. */
+  fullscreen: number | null;
+  setFullscreen: (window: number, value: boolean) => void;
+  /** Bring the card a window or one of its dialogs is on into play. */
+  show: (window: number) => void;
   /** Whether the switcher is open. */
   spread: boolean;
   /** The card under the pointer, and where on it. */
@@ -43,39 +59,78 @@ export function useDeck(): DeckContextValue {
 
 const fallbackArea = { x: 0, y: 0, width: 1280, height: 800 };
 
+/** The window WINDOW belongs to through its chain of parents: its card. */
+function cardOf(windows: ReadonlyMap<number, WindowInfo>, window: number): number {
+  let id = window;
+  for (let step = 0; step < 16; step++) {
+    const parent = windows.get(id)?.parent;
+    if (parent === null || parent === undefined || !windows.has(parent)) return id;
+    id = parent;
+  }
+  return id;
+}
+
 /** Owns the deck's state and shares it, with the switcher's behaviour, through `useDeck`. */
 export function DeckProvider({ children }: { children: ReactNode }) {
-  const windows = useWindowIds();
+  const list = useWindows();
   const outputs = useOutputs();
   const focused = useFocusedWindow();
-  const modifiers = useModifiers();
-  const [state, dispatch] = usePersistentReducer("deck", deckReducer, initialDeckState);
+  const instance = useCompositorInstance();
+  const [saved, dispatch] = usePersistentReducer("deck", handReducer, initialHandState);
+  // Until synced, a hand saved by an earlier compositor names windows long gone.
+  const state = handOf(saved, instance);
   const [hover, setHover] = useState<Hover | null>(null);
   const [pops, setPops] = useState(0);
   const [dealing, setDealing] = useState(false);
+  const [fullscreen, setFullscreenWindow] = useState<number | null>(null);
 
   const output = outputs[0];
   const area = output?.workArea ?? fallbackArea;
   const table = useMemo(() => tableBox(area, Math.min(170, area.height * 0.2)), [area]);
   const spread = state.selected !== null;
 
-  useEffect(() => {
-    dispatch({ type: "sync", windows });
-  }, [windows]);
+  // Windows with a parent are dialogs: they ride on their window's card instead
+  // of being dealt one of their own.
+  const windows = useMemo(() => new Map(list.map((window) => [window.id, window])), [list]);
+  const { cards, dialogs } = useMemo(() => {
+    const cards: number[] = [];
+    const dialogs = new Map<number, number[]>();
+    for (const window of list) {
+      const card = cardOf(windows, window.id);
+      if (card === window.id) cards.push(window.id);
+      else dialogs.set(card, [...(dialogs.get(card) ?? []), window.id]);
+    }
+    return { cards, dialogs };
+  }, [list, windows]);
 
-  // The window in play has the keyboard; one that takes focus itself comes into play.
+  const cardKey = cards.join(" ");
   useEffect(() => {
-    if (state.played !== null) focus(state.played);
-  }, [state.played]);
+    if (instance !== null) dispatch({ type: "sync", windows: cards, instance });
+  }, [cardKey, instance]);
+
+  const show = (window: number) => dispatch({ type: "play", window: cardOf(windows, window) });
+
+  // The window in play has the keyboard, or its newest dialog while one is open.
+  const playedDialogs = state.played !== null ? (dialogs.get(state.played) ?? []) : [];
+  const keyboard = playedDialogs[playedDialogs.length - 1] ?? state.played;
   useEffect(() => {
-    if (focused !== null && focused !== state.played) dispatch({ type: "play", window: focused });
+    if (keyboard !== null && keyboard !== focused) focus(keyboard);
+  }, [keyboard]);
+  // A window or dialog that takes focus itself brings its card into play.
+  useEffect(() => {
+    if (focused !== null && cardOf(windows, focused) !== state.played) show(focused);
   }, [focused]);
 
-  // Letting go of Super plays the switcher's choice, as letting go of Alt does.
-  const holding = modifiers.includes("logo");
+  // Only the window in play goes fullscreen, and leaves it when it leaves play.
   useEffect(() => {
-    if (spread && !holding) dispatch({ type: "fold", play: true });
-  }, [holding]);
+    if (fullscreen !== null && fullscreen !== state.played) setFullscreenWindow(null);
+  }, [state.played, fullscreen]);
+  // A card coming into play leaves the hand, and the pointer with it.
+  useEffect(() => setHover(null), [state.played]);
+  const setFullscreen = (window: number, value: boolean) => {
+    if (value && window === state.played) setFullscreenWindow(window);
+    else if (!value && window === fullscreen) setFullscreenWindow(null);
+  };
 
   // Cards deal one after another as the switcher opens or closes, then follow at once.
   useEffect(() => {
@@ -88,8 +143,38 @@ export function DeckProvider({ children }: { children: ReactNode }) {
   useEffect(() => setPops((count) => count + 1), [hovered, state.selected]);
 
   const value = useMemo(
-    () => ({ state, dispatch, output, area, table, spread, hover, setHover, pops, dealing }),
-    [state, output, area, table, spread, hover, setHover, pops, dealing],
+    () => ({
+      state,
+      dispatch,
+      output,
+      area,
+      table,
+      windows,
+      dialogs,
+      // The switcher deals every card, the one filling the screen too.
+      fullscreen: spread ? null : fullscreen,
+      setFullscreen,
+      show,
+      spread,
+      hover,
+      setHover,
+      pops,
+      dealing,
+    }),
+    [
+      state,
+      output,
+      area,
+      table,
+      windows,
+      dialogs,
+      fullscreen,
+      spread,
+      hover,
+      setHover,
+      pops,
+      dealing,
+    ],
   );
   return <DeckContext.Provider value={value}>{children}</DeckContext.Provider>;
 }

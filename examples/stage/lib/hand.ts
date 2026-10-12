@@ -1,11 +1,12 @@
 /**
- * What the deck remembers, as a pure reducer: the window in play, the hand of
- * the others in the order they lie, and the order windows were last played,
- * which the spread follows as an Alt+Tab switcher does.
+ * One window in play and the rest in a hand, as the deck and the shelf keep
+ * them, as a pure reducer: the window in play, the others in the order they lie,
+ * and the order windows were last played, which the switcher follows as Alt+Tab
+ * does.
  */
 
-export interface DeckState {
-  /** The window in play, which fills the table and takes input. */
+export interface HandState {
+  /** The window in play, which is shown whole and takes input. */
   played: number | null;
   /** Every other window, left to right. */
   hand: number[];
@@ -13,13 +14,26 @@ export interface DeckState {
   recent: number[];
   /** While the switcher is open, the card it would play. */
   selected: number | null;
+  /** The compositor instance the window ids belong to. */
+  instance: string | null;
 }
 
-export const initialDeckState: DeckState = { played: null, hand: [], recent: [], selected: null };
+export const initialHandState: HandState = {
+  played: null,
+  hand: [],
+  recent: [],
+  selected: null,
+  instance: null,
+};
 
-export type DeckAction =
+/** STATE while its window ids belong to compositor INSTANCE; an empty hand otherwise. */
+export function handOf(state: HandState, instance: string | null): HandState {
+  return state.instance === instance ? state : initialHandState;
+}
+
+export type HandAction =
   /** The mapped windows changed: a new one comes into play, closed ones leave. */
-  | { type: "sync"; windows: readonly number[] }
+  | { type: "sync"; windows: readonly number[]; instance: string }
   /** Put a window into play; the one in play takes its place in the hand. */
   | { type: "play"; window: number }
   /** Open the switcher on the window played before the current one. */
@@ -30,21 +44,24 @@ export type DeckAction =
   /** Close the switcher, playing its choice unless cancelled. */
   | { type: "fold"; play: boolean };
 
-function play(state: DeckState, window: number): DeckState {
+function play(state: HandState, window: number): HandState {
   const recent = [window, ...state.recent.filter((id) => id !== window)];
   if (window === state.played) return { ...state, recent, selected: null };
   const hand =
     state.played === null
       ? state.hand.filter((id) => id !== window)
       : state.hand.map((id) => (id === window ? state.played! : id));
-  return { played: window, hand, recent, selected: null };
+  return { ...state, played: window, hand, recent, selected: null };
 }
 
-function sync(state: DeckState, windows: readonly number[]): DeckState {
+function sync(state: HandState, windows: readonly number[], instance: string): HandState {
+  // Window ids start over with the compositor: the old ones name nothing now.
+  if (state.instance !== instance) state = { ...initialHandState, instance };
   const live = new Set(windows);
   const known = new Set(state.recent);
   const fresh = windows.filter((id) => !known.has(id));
-  let next: DeckState = {
+  let next: HandState = {
+    ...state,
     played: state.played !== null && live.has(state.played) ? state.played : null,
     hand: state.hand.filter((id) => live.has(id)),
     recent: state.recent.filter((id) => live.has(id)),
@@ -65,10 +82,10 @@ function sync(state: DeckState, windows: readonly number[]): DeckState {
   return next;
 }
 
-export function deckReducer(state: DeckState, action: DeckAction): DeckState {
+export function handReducer(state: HandState, action: HandAction): HandState {
   switch (action.type) {
     case "sync":
-      return sync(state, action.windows);
+      return sync(state, action.windows, action.instance);
 
     case "play":
       return state.recent.includes(action.window) ? play(state, action.window) : state;
@@ -84,7 +101,9 @@ export function deckReducer(state: DeckState, action: DeckAction): DeckState {
     }
 
     case "choose":
-      return state.selected === null ? state : { ...state, selected: action.window };
+      return state.selected === null || !state.recent.includes(action.window)
+        ? state
+        : { ...state, selected: action.window };
 
     case "fold":
       if (state.selected === null) return state;

@@ -44,8 +44,7 @@
    (refresh :initform 0 :accessor %output-refresh)
    (frame-cost :initform 4000000 :accessor %output-frame-cost)
    (gpu-cost :initform 0 :accessor %output-gpu-cost)
-   (gpu-queries :initform nil :accessor %output-gpu-queries)
-   (free-gpu-queries :initform nil :accessor %output-free-gpu-queries)
+   (gpu-timer :initform :unknown :accessor %output-gpu-timer)
    (target-vblank :initform nil :accessor %output-target-vblank)
    (render-timer :initform nil :accessor %output-render-timer)
    (streak :initform 0 :accessor %output-streak))
@@ -105,6 +104,10 @@
    (title :initarg :title :initform nil :accessor application-title)
    (app-id :initarg :app-id :initform nil :accessor application-app-id)
    (mapped-p :initarg :mapped-p :initform nil :accessor application-mapped-p)
+   ;; The application this one belongs to, as a dialog does its window, or NIL.
+   (parent :initform nil :accessor application-parent)
+   ;; Committed (MIN-WIDTH MIN-HEIGHT MAX-WIDTH MAX-HEIGHT); 0 leaves one free.
+   (size-limits :initform (list 0 0 0 0) :accessor application-size-limits)
    (drawable-surfaces :initform #() :accessor %application-drawable-surfaces)
    (drawable-revision :initform 0 :accessor %application-drawable-revision))
   (:documentation

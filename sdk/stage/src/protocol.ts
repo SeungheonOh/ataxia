@@ -22,6 +22,11 @@ export interface WireWindow {
   mapped: boolean;
   width: number;
   height: number;
+  parent: number | null;
+  "min-width": number;
+  "min-height": number;
+  "max-width": number;
+  "max-height": number;
 }
 
 export interface WireRect {
@@ -43,6 +48,12 @@ export interface WireOutput {
 export interface WireFocus {
   seat: string;
   window: number | null;
+}
+
+/** The modifiers a seat holds. */
+export interface WireModifiers {
+  seat: string;
+  modifiers: Modifier[];
 }
 
 /** Where an output's camera is headed: world point at its center, zoom and rotation. */
@@ -78,12 +89,14 @@ export type ServerMessage =
   | {
       type: "welcome";
       protocol: number;
+      instance: string;
       display: string;
       outputs: WireOutput[];
       windows: WireWindow[];
       cameras: WireCamera[];
       focus: WireFocus[];
       shares: WireShare[];
+      modifiers: WireModifiers[];
     }
   | { type: "window"; window: WireWindow }
   | { type: "window-removed"; id: number }
@@ -91,7 +104,7 @@ export type ServerMessage =
   | { type: "output-removed"; name: string }
   | ({ type: "focus" } & WireFocus)
   /** The modifiers a seat holds, whenever they change. */
-  | { type: "modifiers"; seat: string; modifiers: Modifier[] }
+  | ({ type: "modifiers" } & WireModifiers)
   | ({ type: "camera" } & WireCamera)
   | { type: "clipboard"; text: string }
   | { type: "shares"; shares: WireShare[] }

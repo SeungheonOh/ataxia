@@ -53,6 +53,11 @@ XWM coordinates and native surface selection remain private to this adapter."))
       (when (and parent (eq (object-state parent) :live)) (%invalidate-application parent)))
     (setf (%xsurface-node surface) nil)))
 
+(defun %x-parent-application (surface)
+  "The application WM_TRANSIENT_FOR names: the window a dialog belongs to."
+  (%x-application (gethash (ataxia.runtime:xwayland-surface-parent (%xsurface-runtime surface))
+                           (%xserver-surfaces (%xsurface-server surface)))))
+
 (defun %x-expose-application (kernel surface root)
   (let* ((runtime-surface (%xsurface-runtime surface))
          (application (make-instance 'xwayland-application
@@ -60,7 +65,10 @@ XWM coordinates and native surface selection remain private to this adapter."))
                         :root-surface root :title (ataxia.runtime:xwayland-surface-title runtime-surface)
                         :app-id (ataxia.runtime:xwayland-surface-class runtime-surface) :mapped-p (surface-mapped-p root))))
     (setf (%xsurface-application surface) application (%surface-application root) application
-          (gethash runtime-surface (%kernel-toplevel-table kernel)) application)
+          (gethash runtime-surface (%kernel-toplevel-table kernel)) application
+          (application-parent application) (%x-parent-application surface)
+          (application-size-limits application)
+          (multiple-value-list (ataxia.runtime:xwayland-surface-size-limits runtime-surface)))
     (%register-object kernel application :runtime-object runtime-surface)
     (%call-world kernel world-register-object application)
     application))
@@ -105,7 +113,9 @@ XWM coordinates and native surface selection remain private to this adapter."))
     (when application
       (ecase kind
         (:title (setf (application-title application) value))
-        (:app-id (setf (application-app-id application) value)))
+        (:app-id (setf (application-app-id application) value))
+        (:parent (setf (application-parent application) value))
+        (:size-limits (setf (application-size-limits application) value)))
       (%call-world kernel world-object-changed application (make-object-change kind value)))))
 
 (defun %x-gesture (kernel runtime-surface kind &optional edges)
@@ -137,6 +147,13 @@ XWM coordinates and native surface selection remain private to this adapter."))
   (%x-metadata kernel surface :title (ataxia.runtime:xwayland-surface-title surface)))
 (defmethod ataxia.runtime:xwayland-surface-class-changed ((kernel kernel) surface)
   (%x-metadata kernel surface :app-id (ataxia.runtime:xwayland-surface-class surface)))
+(defmethod ataxia.runtime:xwayland-surface-parent-changed ((kernel kernel) surface)
+  (let ((binding (%x-binding kernel surface)))
+    (when binding
+      (%x-metadata kernel surface :parent (%x-parent-application binding)))))
+(defmethod ataxia.runtime:xwayland-surface-size-hints-changed ((kernel kernel) surface)
+  (%x-metadata kernel surface :size-limits
+               (multiple-value-list (ataxia.runtime:xwayland-surface-size-limits surface))))
 (defmethod ataxia.runtime:xwayland-surface-geometry-changed ((kernel kernel) surface)
   (%x-position-popup (%x-binding kernel surface)))
 (defmethod ataxia.runtime:xwayland-surface-request-configure ((kernel kernel) surface request)

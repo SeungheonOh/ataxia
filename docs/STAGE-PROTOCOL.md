@@ -73,7 +73,8 @@ leaves buffering to Node.
 **Coalescing.** Most messages are sent immediately and in order. These are
 coalesced instead:
 
-- drag and resize progress (`drag`, `resize`), keyed by node and event;
+- pointer motion and drag and resize progress (`pointermove`, a binding's `move`,
+  `drag`, `resize`), keyed by node and event;
 - camera reports, keyed by output.
 
 A newer coalesced message replaces the pending one with the same key. Pending
@@ -89,7 +90,7 @@ sequenceDiagram
     participant C as Compositor (owner thread)
     D->>C: connect
     D->>C: hello {protocol: 1, client}
-    C-->>D: welcome {display, outputs, windows, cameras, focus, shares}
+    C-->>D: welcome {instance, display, outputs, windows, cameras, focus, modifiers, shares}
     Note over D: ready: commits may flow
     D->>C: commit {ops: [reset, create…, insert…]}
     Note over C: the director's scene replaces the fallback layout
@@ -247,7 +248,8 @@ declarations for those keys wait until the manipulation ends.
   which estimates are used.
 - **Restoring dragged nodes.** After `dragend` or `resizeend`, any declared
   position or size the handler did not change is sent again, so the node
-  returns to it.
+  returns to it. Movable, draggable and resizable nodes always subscribe to
+  their end event for this, with or without a handler.
 - **Replay.** After a reconnect, the next send is `reset` followed by the whole
   attached tree.
 
@@ -266,7 +268,7 @@ other. The SDK's `<Box>` is sent as `rect`.
 | `window` | transform, box, effect, `window`, `fullscreen`, `maximized`, `tiled`, `focusable`, `interactive`, `movable`, `resizable`, `dim` |
 | `background` | `x`, `y`, `transform`, `opacity`, `visible`, `backface`, `color`, `grid`, `gridColor`, `gridSpacing`, `gridSize`, `pan`, `cursor` |
 | `camera` | `output`, `x`, `y`, `zoom`, `rotation`, `minZoom`, `maxZoom` |
-| `screen` | `output`, `x`, `y`, `scale`, `rotation`, `opacity`, `visible` |
+| `screen` | `output`, `x`, `y`, `transform`, `opacity`, `visible`, `backface` |
 | `reserve` | `output`, `top`, `right`, `bottom`, `left` |
 | `shortcut` | `key`, `modifiers`, `repeat` |
 | `pointer-binding` | `button`, `modifiers`, `action` |
@@ -501,8 +503,8 @@ A removed prop is sent as `null`, which restores its default.
 
 | Message | Fields |
 | --- | --- |
-| `welcome` | `protocol`, `display` (the Wayland socket name), `outputs`, `windows` (by id), `cameras` (one per output), `focus` (one per seat), `shares` |
-| `window` | `window: {id, title, app, mapped, width, height}`. Sent when anything in it changes. `width`/`height` are the client's own size, rounded. |
+| `welcome` | `protocol`, `instance` (names this compositor process: window ids start over in the next), `display` (the Wayland socket name), `outputs`, `windows` (by id), `cameras` (one per output), `focus` and `modifiers` (one per seat), `shares` |
+| `window` | `window: {id, title, app, mapped, width, height, parent, "min-width", "min-height", "max-width", "max-height"}`. Sent when anything in it changes. `width`/`height` are the client's own size, rounded. `parent` is the window this one belongs to, as a dialog does (xdg_toplevel `set_parent`, X11 `WM_TRANSIENT_FOR`), or `null`. The limits are the sizes the client accepts; 0 leaves a bound free. |
 | `window-removed` | `id` |
 | `output` | `output: {name, x, width, height, scale, "work-area": {x, y, width, height}}`. Outputs form one row, and `x` is the offset in it. `work-area` is the output-local area left after reservations such as a bar. |
 | `output-removed` | `name` |
@@ -517,12 +519,13 @@ A removed prop is sent as `null`, which restores its default.
 | `error` | `message`, `fatal` |
 
 ```json
-{"type":"welcome","protocol":1,"display":"wayland-1",
+{"type":"welcome","protocol":1,"instance":"T3KXQ1-8Z2M0C1","display":"wayland-1",
  "outputs":[{"name":"eDP-1","x":0,"width":1280,"height":800,"scale":2.000000,
    "work-area":{"x":0,"y":48,"width":1280,"height":752}}],
- "shares":[],"windows":[{"id":3,"title":"Terminal","app":"foot","mapped":true,"width":800,"height":600}],
+ "shares":[],"windows":[{"id":3,"title":"Terminal","app":"foot","mapped":true,"width":800,"height":600,
+   "parent":null,"min-width":0,"min-height":0,"max-width":0,"max-height":0}],
  "cameras":[{"output":"eDP-1","x":640.000000,"y":400.000000,"zoom":1.000000,"rotation":0.000000}],
- "focus":[{"seat":"seat0","window":3}]}
+ "focus":[{"seat":"seat0","window":3}],"modifiers":[{"seat":"seat0","modifiers":[]}]}
 ```
 
 The director mirrors these messages in its `Store`, which the hooks read
@@ -572,7 +575,7 @@ do, it also carries:
 | Event | Sent to | Extra fields |
 | --- | --- | --- |
 | `pointerdown`, `pointerup` | The node under the pointer; `pointerup` goes to the capturing node | `button` (Linux code), pointer fields |
-| `pointermove` | The node under the pointer, or the capturing node | Pointer fields |
+| `pointermove` | The node under the pointer, or the capturing node | Pointer fields (coalesced) |
 | `pointerenter`, `pointerleave` | The topmost hit node, as it changes | `from` / `to` (node id or `null`), pointer fields without the hit fields |
 | `wheel` | The node under the pointer, or a `wheel-binding` | `orientation` (`vertical`/`horizontal`), `delta`, `discrete`, `source` (`wheel`, `finger`, `continuous`, `wheel-tilt`), pointer fields; a binding also gets `window` |
 | `down`, `move`, `up` | `pointer-binding` | Pointer fields; `down` and `up` add `button`, and the first `down` adds `window` (the window under the pointer, or `null`) |

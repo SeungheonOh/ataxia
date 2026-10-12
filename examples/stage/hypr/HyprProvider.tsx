@@ -9,6 +9,7 @@ import {
 } from "react";
 import {
   focus,
+  useCompositorInstance,
   useFocusedWindow,
   useOutputs,
   usePersistentReducer,
@@ -56,6 +57,7 @@ export function HyprProvider({ children }: { children: ReactNode }) {
   const windows = useWindowIds();
   const outputs = useOutputs();
   const focused = useFocusedWindow();
+  const instance = useCompositorInstance();
   const [state, dispatch] = usePersistentReducer("hypr", hyprReducer, initialHyprState);
 
   const present = useMemo(() => new Set(windows), [windows]);
@@ -80,10 +82,11 @@ export function HyprProvider({ children }: { children: ReactNode }) {
     }
   }, [windowOutput]);
 
-  // Until the first windows arrive there is nothing to prune against.
+  // Until the compositor says hello there is nothing to prune against.
   useEffect(() => {
-    if (windows.length > 0) dispatch({ type: "sync", windows, workspace: currentWorkspace });
-  }, [windows]);
+    if (instance !== null)
+      dispatch({ type: "sync", windows, workspace: currentWorkspace, instance });
+  }, [windows, instance]);
 
   const switchTo = useCallback(
     (workspace: number) => {

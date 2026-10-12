@@ -152,10 +152,10 @@
     ("window" :window (,@+transform-props+ ,@+box-props+ ,@+effect-props+ :window :fullscreen
                        :maximized :tiled :focusable :interactive :movable :resizable :dim))
     ("background" :background
-     (:x :y :transform :opacity :visible :color :grid :grid-color :grid-spacing :grid-size
-      :pan :cursor))
+     (:x :y :transform :opacity :visible :backface :color :grid :grid-color :grid-spacing
+      :grid-size :pan :cursor))
     ("camera" :camera (:output :x :y :zoom :rotation :min-zoom :max-zoom))
-    ("screen" :screen (:output :x :y :transform :opacity :visible))
+    ("screen" :screen (:output :x :y :transform :opacity :visible :backface))
     ("reserve" :reserve (:output :top :right :bottom :left))
     ("shortcut" :shortcut (:key :modifiers :repeat))
     ("pointer-binding" :pointer-binding (:button :modifiers :action))

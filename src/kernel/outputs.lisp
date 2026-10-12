@@ -16,12 +16,6 @@
   (width :int32)
   (height :int32))
 
-(cffi:defcfun ("glGetString" %gl-get-string) :pointer
-  (name :uint32))
-
-(cffi:defcfun ("eglGetProcAddress" %egl-get-proc-address) :pointer
-  (name :string))
-
 (defconstant +gl-framebuffer+ #x8d40)
 (defconstant +output-state-buffer-configuration-fields+ #xbc)
 
@@ -129,6 +123,9 @@
       (%cancel-output-retry output)
       (when (%output-render-timer output)
         (ataxia.runtime:remove-event-loop-source (shiftf (%output-render-timer output) nil)))
+      (let ((timer (shiftf (%output-gpu-timer output) :unknown)))
+        (when (typep timer 'ataxia.runtime:gpu-timer)
+          (ataxia.runtime:release-gpu-timer timer)))
       (%reset-output-swapchain output)
       (dolist (surface (%hash-values (%kernel-surface-table kernel)))
         (when (gethash output (%surface-output-membership surface))
@@ -203,69 +200,26 @@ vblank it aimed for makes later frames start earlier."
         (max nanoseconds (floor (* 15 (%output-frame-cost output)) 16) 1000000)))
 
 ;;; GPU timing. A frame's cost is mostly the GPU's work, which runs after the
-;;; CPU has submitted it. Timestamp queries around the World's drawing measure
-;;; it without waiting; results are read a frame or two later.
-
-(defconstant +gl-extensions+ #x1f03)
-(defconstant +gl-timestamp+ #x8e28)
-(defconstant +gl-query-result+ #x8866)
-(defconstant +gl-query-result-available+ #x8867)
-
-(defvar *gpu-timer* :unknown
-  "Entry points of EXT_disjoint_timer_query: gen, counter, available and result; or
-NIL when the driver lacks it.")
-
-(defun %gpu-timer ()
-  "Call with a GL context current."
-  (when (eq *gpu-timer* :unknown)
-    (let ((extensions (%gl-get-string +gl-extensions+)))
-      (setf *gpu-timer*
-            (and (not (cffi:null-pointer-p extensions))
-                 (search "GL_EXT_disjoint_timer_query" (cffi:foreign-string-to-lisp extensions))
-                 (mapcar #'%egl-get-proc-address
-                         '("glGenQueriesEXT" "glQueryCounterEXT" "glGetQueryObjectivEXT"
-                           "glGetQueryObjectui64vEXT"))))))
-  *gpu-timer*)
-
-(defun %gpu-timestamp (query)
-  (cffi:foreign-funcall-pointer (second (%gpu-timer)) () :uint32 query :uint32 +gl-timestamp+ :void))
-
-(defun %collect-gpu-cost (output)
-  "Fold the GPU times of OUTPUT's finished frames into its estimate, as frame costs fold."
-  (destructuring-bind (gen counter available result) (%gpu-timer)
-    (declare (ignore gen counter))
-    (cffi:with-foreign-objects ((ready :int32) (start :uint64) (end :uint64))
-      (loop for pair in (reverse (%output-gpu-queries output))
-            do (cffi:foreign-funcall-pointer available () :uint32 (cdr pair)
-                                             :uint32 +gl-query-result-available+ :pointer ready :void)
-               (when (zerop (cffi:mem-ref ready :int32)) (return))
-               (cffi:foreign-funcall-pointer result () :uint32 (car pair) :uint32 +gl-query-result+
-                                             :pointer start :void)
-               (cffi:foreign-funcall-pointer result () :uint32 (cdr pair) :uint32 +gl-query-result+
-                                             :pointer end :void)
-               (setf (%output-gpu-cost output)
-                     (max (- (cffi:mem-ref end :uint64) (cffi:mem-ref start :uint64))
-                          (floor (* 15 (%output-gpu-cost output)) 16))
-                     (%output-gpu-queries output) (remove pair (%output-gpu-queries output)))
-               (push pair (%output-free-gpu-queries output))))))
+;;; CPU has submitted it; a Runtime timer measures it without waiting.
 
 (defun %begin-gpu-timing (output)
-  "Start timing the GPU work of OUTPUT's frame; return the query pair, if any."
-  (when (%gpu-timer)
-    (%collect-gpu-cost output)
-    ;; Results arrive within a frame or two; a backlog means they stopped coming.
-    (when (< (length (%output-gpu-queries output)) 4)
-      (let ((pair (or (pop (%output-free-gpu-queries output))
-                      (cffi:with-foreign-object (ids :uint32 2)
-                        (cffi:foreign-funcall-pointer (first (%gpu-timer)) () :int32 2 :pointer ids :void)
-                        (cons (cffi:mem-aref ids :uint32 0) (cffi:mem-aref ids :uint32 1))))))
-        (%gpu-timestamp (car pair))
-        pair))))
+  "Fold OUTPUT's finished GPU times into its estimate, as frame costs fold, and start
+timing this frame. Call with the EGL context current."
+  (when (eq (%output-gpu-timer output) :unknown)
+    (setf (%output-gpu-timer output)
+          (ataxia.runtime:make-gpu-timer
+           (ataxia.runtime:runtime-egl (kernel-runtime (object-kernel output))))))
+  (let ((timer (%output-gpu-timer output)))
+    (when timer
+      (dolist (nanoseconds (ataxia.runtime:gpu-timer-results timer))
+        (setf (%output-gpu-cost output)
+              (max nanoseconds (floor (* 15 (%output-gpu-cost output)) 16))))
+      (ataxia.runtime:gpu-timer-start timer))))
 
-(defun %end-gpu-timing (output pair)
-  (when pair
-    (%gpu-timestamp (cdr pair))
-    (push pair (%output-gpu-queries output))))
+(defun %end-gpu-timing (output)
+  (let ((timer (%output-gpu-timer output)))
+    (when (typep timer 'ataxia.runtime:gpu-timer)
+      (ataxia.runtime:gpu-timer-stop timer))))
 
 ;;; Garbage collection. A collection stops everything for 3-6 ms, however little
 ;;; is allocated; landing in a frame it makes that frame miss its vblank. When the
@@ -460,11 +414,10 @@ which wlroots requires to happen before that commit."
           (lambda ()
             (%gl-bind-framebuffer +gl-framebuffer+ framebuffer)
             (%gl-viewport 0 0 buffer-width buffer-height)
-            (let ((timing (%begin-gpu-timing output)))
-              (prog1 (%validate-frame-result
-                      kernel lease
-                      (%call-world-on kernel world world-render lease))
-                (%end-gpu-timing output timing)))))
+            (%begin-gpu-timing output)
+            (let ((result (%call-world-on kernel world world-render lease)))
+              (%end-gpu-timing output)
+              (%validate-frame-result kernel lease result))))
       (setf (frame-lease-valid-p lease) nil))))
 
 (defun %commit-world-frame (output buffer result)

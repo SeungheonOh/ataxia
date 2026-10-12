@@ -123,9 +123,11 @@
 
 (defun %emit-event (world node name &rest fields)
   "Send event NAME to NODE when it or, for pointer events, an ancestor handles it;
-the director passes pointer events up through the ancestors."
+the director passes pointer events up through the ancestors. Motion is coalesced
+to display rate: only a node's latest move survives each flush."
   (when (node-receives-p node name)
-    (%send world (%event-message node name fields))))
+    (%send world (%event-message node name fields)
+           :coalesce (and (member name '(:pointermove :move)) (cons (stage-node-id node) name)))))
 
 (defun %pointer-event-name (node name)
   "NAME, a :POINTER... event, as NODE receives it: bindings get :DOWN, :MOVE and :UP."

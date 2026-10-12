@@ -383,9 +383,10 @@ any thread once the owner thread found gdk-pixbuf available."
 
 (defstruct (text-job (:constructor %make-text-job (slot key style metrics color scale)))
   "Text the worker rasterizes for raster SLOT, where it will hold KEY. Once done, the
-owner thread sets SURFACE, a Cairo image surface, and its size, or FAILED-P."
+owner thread sets SURFACE, a Cairo image surface, and its size, or FAILED-P, and
+DONE-AT."
   slot key style metrics color scale
-  (surface nil) (width 0) (height 0) (failed-p nil))
+  (surface nil) (width 0) (height 0) (failed-p nil) (done-at nil))
 
 (defstruct (media-worker (:constructor %make-media-worker))
   (lock (sb-thread:make-mutex :name "Stage media worker") :read-only t)

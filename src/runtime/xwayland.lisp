@@ -6,11 +6,13 @@
             xwayland-surface-parent xwayland-surface-surface xwayland-surface-consider-map
             xwayland-surface-title xwayland-surface-class xwayland-surface-x xwayland-surface-y
             xwayland-surface-width xwayland-surface-height xwayland-surface-override-redirect-p
+            xwayland-surface-size-limits
             xwayland-surface-configure xwayland-surface-activate xwayland-surface-close
             xwayland-surface-set-fullscreen xwayland-surface-set-maximized xwayland-surface-set-minimized
             xwayland-ready xwayland-destroying xwayland-new-surface
             xwayland-surface-associated xwayland-surface-dissociated xwayland-surface-destroying
             xwayland-surface-title-changed xwayland-surface-class-changed xwayland-surface-geometry-changed
+            xwayland-surface-parent-changed xwayland-surface-size-hints-changed
             xwayland-surface-request-configure xwayland-surface-request-fullscreen
             xwayland-surface-request-maximize xwayland-surface-request-minimize
             xwayland-surface-request-move xwayland-surface-request-resize xwayland-surface-request-activate
@@ -58,6 +60,8 @@
 (%define-xwayland-sink xwayland-surface-title-changed surface)
 (%define-xwayland-sink xwayland-surface-class-changed surface)
 (%define-xwayland-sink xwayland-surface-geometry-changed surface)
+(%define-xwayland-sink xwayland-surface-parent-changed surface)
+(%define-xwayland-sink xwayland-surface-size-hints-changed surface)
 (%define-xwayland-sink xwayland-surface-request-configure surface request)
 (%define-xwayland-sink xwayland-surface-request-fullscreen surface value)
 (%define-xwayland-sink xwayland-surface-request-maximize surface value)
@@ -79,6 +83,12 @@
 (%define-xwayland-value xwayland-surface-width 2)
 (%define-xwayland-value xwayland-surface-height 3)
 (%define-xwayland-value xwayland-surface-override-redirect-p 4 t)
+(defun xwayland-surface-size-limits (surface)
+  "SURFACE's minimum width and height and maximum width and height from its
+WM_NORMAL_HINTS; 0 leaves one free."
+  (let ((pointer (%xwayland-pointer surface :xwayland-surface-size-limits)))
+    (values (%xsurface-value pointer 7) (%xsurface-value pointer 8)
+            (%xsurface-value pointer 9) (%xsurface-value pointer 10))))
 (defun xwayland-surface-title (surface)
   (%xsurface-text (%xwayland-pointer surface :xwayland-surface-title) 0))
 (defun xwayland-surface-class (surface)
@@ -140,6 +150,8 @@
              (notify 4 'xwayland-surface-title-changed)
              (notify 5 'xwayland-surface-class-changed)
              (notify 6 'xwayland-surface-geometry-changed)
+             (notify 13 'xwayland-surface-parent-changed)
+             (notify 14 'xwayland-surface-size-hints-changed)
              (subscribe 7 :xwayland-request-fullscreen
                         (lambda (data) (declare (ignore data))
                           (xwayland-surface-request-fullscreen sink surface (not (zerop (%xsurface-value pointer 5))))))

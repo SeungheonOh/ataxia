@@ -201,8 +201,8 @@ export interface PointerHandlers {
 
 /**
  * A draggable node follows the pointer inside the compositor, with no round
- * trip. Store the position from onDragEnd: until the next render declares a
- * different x/y, the node stays where the drag left it.
+ * trip. Store the position from onDragEnd: once the drag ends, the node returns
+ * to the x/y it is declared at.
  */
 export interface PassThroughProps {
   /** False lets the pointer pass through this node to what is below; its children still take it. */
@@ -775,6 +775,8 @@ function withStyle(props: Props): Props {
   return merged;
 }
 
+const settle: EventHandler = () => {};
+
 /** Translate host element props into wire props, handlers and layout style. */
 export function normalizeProps(type: HostType, given: Props): Normalized {
   const props = given.style ? withStyle(given) : given;
@@ -792,6 +794,10 @@ export function normalizeProps(type: HostType, given: Props): Normalized {
     if (event && typeof value === "function") handlers.set(event, value as EventHandler);
   }
   if (style.display === "none") wire.visible = false;
+  // After a native move or resize the host returns the node to its declared
+  // place, unless a handler declares another; for that it hears every one end.
+  if ((wire.movable || wire.draggable) && !handlers.has("dragend")) handlers.set("dragend", settle);
+  if (wire.resizable && !handlers.has("resizeend")) handlers.set("resizeend", settle);
   if (handlers.size > 0) wire.handlers = [...handlers.keys()].sort();
   if (props.transition) wire.transition = wireTransition(props.transition as Transition);
   for (const key of ["initial", "exit"] as const) {

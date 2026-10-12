@@ -108,7 +108,9 @@ export function Cube() {
                       box={boxes.get(id)!}
                       floating={false}
                       focused={id === focused}
-                      onPointerEnter={() => focus(id)}
+                      // Only the face in front: one turning away passes under a
+                      // still pointer, and focusing it would turn the cube back.
+                      onPointerEnter={face === front ? () => focus(id) : undefined}
                     />
                   ))}
                 {/* Faces darken as they turn away from the light. */}

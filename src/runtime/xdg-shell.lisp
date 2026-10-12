@@ -173,6 +173,12 @@
   "ataxia_xdg_popup_event_destroy" popup)
 (define-signal-binding %xdg-popup-event-reposition
   "ataxia_xdg_popup_event_reposition" popup)
+(defcfun ("ataxia_xdg_popup_unconstrain" %xdg-popup-unconstrain) :void
+  (popup :pointer) (x :int32) (y :int32) (width :int32) (height :int32))
+(defcfun ("ataxia_xdg_toplevel_parent" %xdg-toplevel-parent) :pointer
+  (toplevel :pointer))
+(defcfun ("ataxia_xdg_toplevel_size_limit" %xdg-toplevel-size-limit) :int32
+  (toplevel :pointer) (field :int))
 
 (in-package #:ataxia.runtime)
 
@@ -779,6 +785,35 @@
      (%object-pointer popup) surface-x surface-y)
     (values (cffi:mem-ref surface-x :double)
             (cffi:mem-ref surface-y :double))))
+
+(defun xdg-popup-unconstrain (popup x y width height)
+  "Keep POPUP inside the box X Y WIDTH HEIGHT, in its toplevel's surface
+coordinates, flipping, sliding or resizing it as its positioner allows. A
+configure follows."
+  (check-type popup wlr-xdg-popup)
+  (%assert-runtime-live (%native-runtime popup) :xdg-popup-unconstrain)
+  (ataxia.runtime.raw:%xdg-popup-unconstrain
+   (%object-pointer popup) (round x) (round y) (max 1 (round width)) (max 1 (round height))))
+
+(defun xdg-toplevel-parent (toplevel)
+  "The toplevel TOPLEVEL names as its parent, as a dialog does, or NIL."
+  (check-type toplevel wlr-xdg-toplevel)
+  (let ((runtime (%native-runtime toplevel)))
+    (%assert-runtime-live runtime :xdg-toplevel-parent)
+    (let ((pointer (ataxia.runtime.raw:%xdg-toplevel-parent (%object-pointer toplevel))))
+      (and (not (cffi:null-pointer-p pointer))
+           (gethash (%pointer-key pointer) (%runtime-xdg-toplevel-table runtime))))))
+
+(defun xdg-toplevel-size-limits (toplevel)
+  "TOPLEVEL's committed minimum width and height and maximum width and height; 0
+leaves one free."
+  (check-type toplevel wlr-xdg-toplevel)
+  (%assert-runtime-live (%native-runtime toplevel) :xdg-toplevel-size-limits)
+  (let ((pointer (%object-pointer toplevel)))
+    (values (ataxia.runtime.raw:%xdg-toplevel-size-limit pointer 0)
+            (ataxia.runtime.raw:%xdg-toplevel-size-limit pointer 1)
+            (ataxia.runtime.raw:%xdg-toplevel-size-limit pointer 2)
+            (ataxia.runtime.raw:%xdg-toplevel-size-limit pointer 3))))
 
 (defun xdg-surface-schedule-configure (object)
   (unless (typep object '(or wlr-xdg-toplevel wlr-xdg-popup))

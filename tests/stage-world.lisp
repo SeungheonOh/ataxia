@@ -181,12 +181,15 @@ invalid ops change nothing.~%")
     (assert (equalp (list (rectangle 0 0 200 200))
                     (%blur-passes (list (rectangle 0 0 200 200)) items 200 200)))
     (assert (equalp (list cursor) (%blur-passes (list cursor) nil 200 200))))
-  ;; Opaque items above cut bands out of a large one; one covering no whole pixel cuts nothing.
+  ;; Opaque items above cut bands out of a large one, but not where a blur between
+  ;; them reads it; one covering no whole pixel cuts nothing.
   (assert (null (%covered-box (rectangle 10.2d0 10.2d0 0.5d0 0.5d0))))
-  (let ((parts (%visible-boxes '(0 0 100 100) (list (cons 1 (%covered-box (rectangle 20 30 50 40)))) 0)))
+  (let* ((occluders (list (cons 2 (%covered-box (rectangle 20 30 50 40)))))
+         (parts (%visible-boxes '(0 0 100 100) (%cutting-holes occluders nil 0))))
     (assert (= (- (* 100 100) (* 50 40))
                (reduce #'+ parts :key (lambda (part) (* (- (third part) (first part)) (- (fourth part) (second part)))))))
-    (assert (every (lambda (part) (and (< (first part) (third part)) (< (second part) (fourth part)))) parts))))
+    (assert (every (lambda (part) (and (< (first part) (third part)) (< (second part) (fourth part)))) parts))
+    (assert (null (%cutting-holes occluders (list (list 1 0 0 60 60)) 0)))))
 (format t "PASS: damage reorders, blur passes and occlusion cuts.~%")
 
 ;;; A director session against real Wayland clients on the headless backend.

@@ -10,6 +10,7 @@ import {
 import {
   focus,
   getCamera,
+  useCompositorInstance,
   useFocusedWindow,
   useOutputs,
   usePersistentReducer,
@@ -82,6 +83,7 @@ export function MetaProvider({ children }: { children: ReactNode }) {
   const windows = useWindowIds();
   const outputs = useOutputs();
   const focused = useFocusedWindow();
+  const instance = useCompositorInstance();
   const [state, dispatch] = usePersistentReducer("metaworld", metaReducer, initialMetaState);
 
   const main = outputs[0];
@@ -118,10 +120,11 @@ export function MetaProvider({ children }: { children: ReactNode }) {
     }
   }, [windowOutput]);
 
-  // Until the first windows arrive there is nothing to prune against.
+  // Until the compositor says hello there is nothing to prune against.
   useEffect(() => {
-    if (windows.length > 0) dispatch({ type: "sync", windows, room: activeRoom ?? state.current });
-  }, [windows]);
+    if (instance !== null)
+      dispatch({ type: "sync", windows, room: activeRoom ?? state.current, instance });
+  }, [windows, instance]);
 
   const enter = useCallback(
     (room: number | null, output = focusOutput) => {

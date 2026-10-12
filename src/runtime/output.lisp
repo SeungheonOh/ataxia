@@ -143,6 +143,10 @@
   (refresh-nanoseconds 0 :type (signed-byte 32) :read-only t)
   (flags 0 :type (unsigned-byte 32) :read-only t))
 
+(defun output-present-vsync-p (event)
+  "Whether EVENT's frame was presented at a vblank (WLR_OUTPUT_PRESENT_VSYNC)."
+  (logtest 1 (output-present-flags event)))
+
 (defgeneric output-damaged (sink event))
 (defgeneric output-needs-frame (sink output))
 (defgeneric output-present (sink event))

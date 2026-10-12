@@ -17,6 +17,7 @@ API struct wl_signal *ataxia_xsurface_signal(struct wlr_xwayland_surface *s, int
  case 8: return &s->events.request_maximize; case 9: return &s->events.request_minimize;
  case 10: return &s->events.request_move; case 11: return &s->events.request_resize;
  case 12: return &s->events.request_activate;
+ case 13: return &s->events.set_parent; case 14: return &s->events.set_size_hints;
  }
  return NULL;
 }
@@ -31,6 +32,14 @@ API int ataxia_xsurface_value(struct wlr_xwayland_surface *s, int field) {
  switch (field) { case 0: return s->x; case 1: return s->y; case 2: return s->width;
  case 3: return s->height; case 4: return s->override_redirect; case 5: return s->fullscreen;
  case 6: return s->maximized_horz && s->maximized_vert; }
+ /* 7..10: minimum width and height, maximum width and height from WM_NORMAL_HINTS; 0 is none. */
+ xcb_size_hints_t *hints = s->size_hints;
+ if (hints == NULL) return 0;
+ switch (field) {
+ case 7: return hints->flags & XCB_ICCCM_SIZE_HINT_P_MIN_SIZE ? hints->min_width : 0;
+ case 8: return hints->flags & XCB_ICCCM_SIZE_HINT_P_MIN_SIZE ? hints->min_height : 0;
+ case 9: return hints->flags & XCB_ICCCM_SIZE_HINT_P_MAX_SIZE ? hints->max_width : 0;
+ case 10: return hints->flags & XCB_ICCCM_SIZE_HINT_P_MAX_SIZE ? hints->max_height : 0; }
  return 0;
 }
 API int ataxia_xconfigure_value(struct wlr_xwayland_surface_configure_event *e, int field) {

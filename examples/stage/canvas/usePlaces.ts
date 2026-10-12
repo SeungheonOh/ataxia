@@ -1,10 +1,22 @@
 import { useCallback, useEffect, useMemo } from "react";
-import { getCamera, usePersistentState, useWindows, type Rectangle } from "@ataxia/stage";
+import {
+  getCamera,
+  useCompositorInstance,
+  usePersistentState,
+  useWindows,
+  type Rectangle,
+} from "@ataxia/stage";
 
 const minimumSize = { width: 960, height: 620 };
 const cascadeStep = 36;
 
 export type PlaceWindow = (window: number, next: Partial<Rectangle>) => void;
+
+interface Saved {
+  /** The compositor instance the window ids belong to. */
+  instance: string | null;
+  places: Record<number, Rectangle>;
+}
 
 /**
  * Where each window sits on the canvas, and a function that moves one. New
@@ -12,7 +24,13 @@ export type PlaceWindow = (window: number, next: Partial<Rectangle>) => void;
  */
 export function usePlaces(): [ReadonlyMap<number, Rectangle>, PlaceWindow] {
   const windows = useWindows();
-  const [stored, setStored] = usePersistentState<Record<number, Rectangle>>("canvas.places", {});
+  const instance = useCompositorInstance();
+  const [saved, setSaved] = usePersistentState<Saved>("canvas.places", {
+    instance: null,
+    places: {},
+  });
+  // Window ids start over with the compositor: places kept for the old ones name nothing now.
+  const stored = saved.instance === instance ? saved.places : {};
 
   const places = useMemo(() => {
     const center = getCamera() ?? { x: 0, y: 0 };
@@ -32,15 +50,19 @@ export function usePlaces(): [ReadonlyMap<number, Rectangle>, PlaceWindow] {
     );
   }, [windows, stored]);
 
-  // New windows keep the place they opened at.
+  // New windows keep the place they opened at; closed ones are forgotten.
   useEffect(() => {
-    if (windows.some((window) => !stored[window.id])) setStored(Object.fromEntries(places));
+    if (instance !== null && windows.some((window) => !stored[window.id]))
+      setSaved({ instance, places: Object.fromEntries(places) });
   }, [places]);
 
   const place = useCallback<PlaceWindow>(
     (window, next) =>
-      setStored((all) => ({ ...all, [window]: { ...places.get(window)!, ...next } })),
-    [places, setStored],
+      setSaved({
+        instance,
+        places: { ...Object.fromEntries(places), [window]: { ...places.get(window)!, ...next } },
+      }),
+    [places, instance, setSaved],
   );
 
   return [places, place];

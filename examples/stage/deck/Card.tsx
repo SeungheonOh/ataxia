@@ -1,4 +1,4 @@
-import { memo } from "react";
+import type { ReactNode } from "react";
 import {
   Rect,
   rotate,
@@ -12,7 +12,7 @@ import {
   type StagePointerEvent,
 } from "@ataxia/stage";
 import { font } from "../lib/theme.js";
-import { placement, type Hover, type Pose } from "./layout.js";
+import { placement, type Hover, type Pose, type Size } from "./layout.js";
 import { cardFoil } from "./shaders.js";
 
 const glow = spring({ duration: 0.3 });
@@ -55,9 +55,13 @@ interface CardProps {
   id: number;
   index: number;
   table: Rectangle;
+  /** The window's size: the table's, or the nearest its client accepts. */
+  size: Size;
   pose: Pose;
   /** In play the window is itself: it fills the table and takes input. */
   played: boolean;
+  /** Darkened under a dialog of its own. */
+  shaded: boolean;
   /** The pointer on this card, if it is there. */
   hover: Hover | null;
   /** What the card holds, shown above it while TITLED. */
@@ -70,19 +74,26 @@ interface CardProps {
   popKey: string | null;
   onHover: (hover: Hover | null) => void;
   onPick: () => void;
+  /** The client asked to be shown, or to fill the screen. */
+  onActivate: () => void;
+  onFullscreen: (value: boolean) => void;
+  /** Dialogs riding on the card, drawn over its window. */
+  children?: ReactNode;
 }
 
 /**
  * A window as a playing card: scaled down, turned and leaning toward the pointer,
- * framed in card stock. Its client keeps the table's size, so nothing reflows as
- * it comes in and out of play.
+ * framed in card stock. Its client keeps one size, so nothing reflows as it comes
+ * in and out of play.
  */
-export const Card = memo(function Card({
+export function Card({
   id,
   index,
   table,
+  size,
   pose,
   played,
+  shaded,
   hover,
   title,
   titled,
@@ -91,6 +102,9 @@ export const Card = memo(function Card({
   popKey,
   onHover,
   onPick,
+  onActivate,
+  onFullscreen,
+  children,
 }: CardProps) {
   // Sizes in the window's own units, which the card's scale shrinks.
   const unit = 1 / pose.scale;
@@ -101,17 +115,19 @@ export const Card = memo(function Card({
   ];
 
   function lean({ localX, localY }: StagePointerEvent) {
-    onHover({ window: id, x: localX / table.width - 0.5, y: localY / table.height - 0.5 });
+    onHover({ window: id, x: localX / size.width - 0.5, y: localY / size.height - 0.5 });
   }
 
   return (
     <Window
       window={id}
-      {...placement(pose, table)}
-      width={table.width}
-      height={table.height}
+      layoutId={`window-${id}`}
+      {...placement(pose, size)}
+      width={size.width}
+      height={size.height}
       tiled
       focusable={played}
+      dim={shaded ? 0.4 : 0}
       radius={played ? 14 : 9 * unit}
       border={{ width: played ? 2 : 5 * unit, color: stock }}
       shadow={{ color: "#0000006b", blur: (played ? 30 : 6) * unit, y: (played ? 10 : 7) * unit }}
@@ -124,16 +140,18 @@ export const Card = memo(function Card({
       }}
       initial={{
         y: table.y + table.height * 1.6,
-        transform: placement({ ...pose, scale: 0.12, rotation: -14 }, table).transform,
+        transform: placement({ ...pose, scale: 0.12, rotation: -14 }, size).transform,
       }}
       exit={{ effect: { amount: 1, uniforms: { burn: 1 } } }}
       transition={{ default: motion, effect: glow }}
       animate={animations}
+      onActivateRequest={onActivate}
+      onFullscreenRequest={({ value }) => onFullscreen(Boolean(value))}
     >
       {!played && (
         <Rect
-          width={table.width}
-          height={table.height}
+          width={size.width}
+          height={size.height}
           cursor="pointer"
           onPointerMove={lean}
           onPointerLeave={() => onHover(null)}
@@ -144,7 +162,7 @@ export const Card = memo(function Card({
         <Text
           x={0}
           y={-30 * unit}
-          width={table.width}
+          width={size.width}
           align="center"
           font={font}
           size={15 * unit}
@@ -155,6 +173,7 @@ export const Card = memo(function Card({
           {title}
         </Text>
       )}
+      {children}
     </Window>
   );
-});
+}

@@ -8,7 +8,9 @@ export function useStackingOrder(windows: readonly number[], focused: number | n
   useEffect(() => {
     if (focused === null) return;
     setStack((order) =>
-      order.at(-1) === focused ? order : [...order.filter((id) => id !== focused), focused],
+      order.at(-1) === focused
+        ? order
+        : [...order.filter((id) => id !== focused && windows.includes(id)), focused],
     );
   }, [focused]);
 

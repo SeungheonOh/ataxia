@@ -30,6 +30,8 @@ export interface MetaState {
   current: number;
   /** The output last worked on, for keyboard actions while no window there has focus. */
   active: string | null;
+  /** The compositor instance the window ids belong to. */
+  instance: string | null;
 }
 
 export const initialMetaState: MetaState = {
@@ -44,11 +46,12 @@ export const initialMetaState: MetaState = {
   canvasView: {},
   current: 1,
   active: null,
+  instance: null,
 };
 
 export type MetaAction =
   /** The mapped windows changed; new ones join `room`. */
-  | { type: "sync"; windows: readonly number[]; room: number }
+  | { type: "sync"; windows: readonly number[]; room: number; instance: string }
   /** Show `room` on `output`, or the canvas with null; `from` is the canvas view left. */
   | { type: "enter"; output: string; room: number | null; from?: CameraMove }
   | { type: "activate"; output: string }
@@ -73,9 +76,17 @@ function omit<T>(record: Record<number, T>, drop: (id: number) => boolean): Reco
 
 /**
  * New windows join the end of the order and closed ones are forgotten. Ids
- * restart with the compositor, so this also prunes what an earlier session saved.
+ * restart with the compositor, so a new instance forgets every window saved;
+ * rooms stay.
  */
-function sync(state: MetaState, windows: readonly number[], room: number): MetaState {
+function sync(
+  state: MetaState,
+  windows: readonly number[],
+  room: number,
+  instance: string,
+): MetaState {
+  if (state.instance !== instance)
+    state = { ...state, roomOf: {}, order: [], floating: {}, fullscreen: null, instance };
   const live = new Set(windows);
   const isStale = (id: number) => !live.has(id);
   const fresh = windows.filter((id) => !state.order.includes(id));
@@ -100,7 +111,7 @@ function sync(state: MetaState, windows: readonly number[], room: number): MetaS
 export function metaReducer(state: MetaState, action: MetaAction): MetaState {
   switch (action.type) {
     case "sync":
-      return sync(state, action.windows, action.room);
+      return sync(state, action.windows, action.room, action.instance);
 
     case "enter": {
       const canvasView = action.from

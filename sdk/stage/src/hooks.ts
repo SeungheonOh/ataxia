@@ -59,6 +59,16 @@ export function useFocusedWindow(seat?: string): number | null {
   return useSyncExternalStore(store.subscribe, () => store.focus(seat));
 }
 
+/**
+ * The compositor process the director is connected to, or null before it says
+ * hello. Window ids start over when it restarts, so state kept by window id
+ * belongs to one instance: forget it when this changes.
+ */
+export function useCompositorInstance(): string | null {
+  const store = currentSession().store;
+  return useSyncExternalStore(store.subscribe, () => store.instance);
+}
+
 /** Modifiers held on SEAT, or on the first seat: e.g. to end a switcher when they are let go. */
 export function useModifiers(seat?: string): readonly Modifier[] {
   const store = currentSession().store;

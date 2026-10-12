@@ -367,16 +367,25 @@ A rejected op changes nothing; the rest still applies, keeping a live session us
     (%reindex world)
     (nreverse errors)))
 
+(defvar *instance* nil
+  "Names this compositor process for directors: window ids start over in the next.")
+
+(defun %instance ()
+  (or *instance*
+      (setf *instance* (format nil "~36R-~36R" (get-universal-time)
+                               (random (expt 2 40) (make-random-state t))))))
+
 (defun %welcome (world)
   (list :type "welcome"
         :protocol +protocol-version+
+        :instance (%instance)
         :display (ataxia.runtime:runtime-socket-name
                   (ataxia.kernel:kernel-runtime (ataxia.kernel:world-kernel world)))
         :outputs (map 'vector (lambda (stage-output) (%output-description world stage-output))
                       (%outputs world))
         :shares (share-descriptions world)
         :windows (map 'vector (lambda (window)
-                                (setf (stage-window-report window) (%window-metadata window)))
+                                (setf (stage-window-report window) (%window-metadata world window)))
                       (sort (loop for window being the hash-values of (%windows world)
                                   collect window)
                             #'< :key #'stage-window-id))
@@ -389,7 +398,11 @@ A rejected op changes nothing; the rest still applies, keeping a live session us
                               (list :seat (ataxia.kernel:seat-name (stage-seat-seat seat-state))
                                     :window (let ((window (stage-seat-focused seat-state)))
                                               (and window (stage-window-id window)))))
-                    (%seat-states world))))
+                    (%seat-states world))
+        :modifiers (map 'vector (lambda (seat-state)
+                                  (list :seat (ataxia.kernel:seat-name (stage-seat-seat seat-state))
+                                        :modifiers (%modifier-names (stage-seat-modifiers seat-state))))
+                        (%seat-states world))))
 
 (defun %director-detached (world was-active-p)
   (%release-director-input world)

@@ -1,23 +1,27 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   focus,
+  useCompositorInstance,
   useFocusedWindow,
-  useModifiers,
   useOutputs,
   usePersistentReducer,
   useWindowIds,
   type OutputInfo,
   type Rectangle,
 } from "@ataxia/stage";
-// One window in play, the rest in a row, and the order they were played for the
-// switcher: the deck's bookkeeping is the shelf's too.
-import { deckReducer, initialDeckState, type DeckAction, type DeckState } from "../deck/state.js";
+import {
+  handOf,
+  handReducer,
+  initialHandState,
+  type HandAction,
+  type HandState,
+} from "../lib/hand.js";
 import { shelfLayout, type Shelf } from "./layout.js";
 
 export interface ShelfContextValue {
   /** `played` is the open book, `hand` the shelf left to right. */
-  state: DeckState;
-  dispatch: (action: DeckAction) => void;
+  state: HandState;
+  dispatch: (action: HandAction) => void;
   output: OutputInfo | undefined;
   area: Rectangle;
   shelf: Shelf;
@@ -43,8 +47,10 @@ export function ShelfProvider({ children }: { children: ReactNode }) {
   const windows = useWindowIds();
   const outputs = useOutputs();
   const focused = useFocusedWindow();
-  const modifiers = useModifiers();
-  const [state, dispatch] = usePersistentReducer("shelf", deckReducer, initialDeckState);
+  const instance = useCompositorInstance();
+  const [saved, dispatch] = usePersistentReducer("shelf", handReducer, initialHandState);
+  // Until synced, a hand saved by an earlier compositor names windows long gone.
+  const state = handOf(saved, instance);
   const [hovered, setHovered] = useState<number | null>(null);
 
   const output = outputs[0];
@@ -53,8 +59,8 @@ export function ShelfProvider({ children }: { children: ReactNode }) {
   const browsing = state.selected !== null;
 
   useEffect(() => {
-    dispatch({ type: "sync", windows });
-  }, [windows]);
+    if (instance !== null) dispatch({ type: "sync", windows, instance });
+  }, [windows, instance]);
 
   // The open book has the keyboard; one that takes focus itself comes off the shelf.
   useEffect(() => {
@@ -63,12 +69,6 @@ export function ShelfProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (focused !== null && focused !== state.played) dispatch({ type: "play", window: focused });
   }, [focused]);
-
-  // Letting go of Super opens the switcher's choice, as letting go of Alt does.
-  const holding = modifiers.includes("logo");
-  useEffect(() => {
-    if (browsing && !holding) dispatch({ type: "fold", play: true });
-  }, [holding]);
 
   const value = useMemo(
     () => ({ state, dispatch, output, area, shelf, browsing, hovered, setHovered }),

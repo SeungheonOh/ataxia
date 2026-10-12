@@ -1,6 +1,6 @@
 export { Background, Box, Camera, GestureBinding, Group, Image, PointerBinding, Rect, Reserve,
   Screen, Shortcut, Spacer, Text, WheelBinding, Window } from "./components.js";
-export { useCamera, useClipboard, useFocusedWindow, useModifiers, useOutputs,
+export { useCamera, useClipboard, useCompositorInstance, useFocusedWindow, useModifiers, useOutputs,
   usePersistentReducer, usePersistentState, useShares, useWindow, useWindowIds, useWindows } from "./hooks.js";
 export { ease, instant, spring, tween } from "./motion.js";
 export { matrix3d, perspective, rotate, rotate3d, rotateX, rotateY, rotateZ, scale, skew, translate,

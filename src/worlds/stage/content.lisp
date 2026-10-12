@@ -197,6 +197,7 @@ frame. A change asks for a refining frame, which sees the scale settled."
                            (text-job-width job) width
                            (text-job-height job) height)
                      (setf (text-job-failed-p job) t))
+                 (setf (text-job-done-at job) (%now))
                  ;; Inside an effect, the effect paints it.
                  (loop while (item-owner item) do (setf item (item-owner item)))
                  (ataxia.world:damage-add-region (%damage world) (stage-output-output stage-output)
@@ -381,12 +382,18 @@ and the image appears again when it finishes."
                (remhash path images))))
 
 (defun release-stale-pixels (world)
-  "Release pixels decoded for images no frame has drawn for a while."
-  (let ((now (%now)))
+  "Release pixels decoded for images no frame has drawn for a while, and text the
+worker finished for nodes gone before they drew it."
+  (let ((now (%now))
+        (jobs (%text-jobs world)))
     (loop for image being the hash-values of (%images world)
           when (and (eq (stage-image-state image) :decoded)
                     (> (- now (stage-image-touched image)) +image-lifetime+))
-            do (%drop-pixels image))))
+            do (%drop-pixels image))
+    (loop for slot being the hash-keys of jobs using (hash-value job)
+          when (and (text-job-done-at job) (> (- now (text-job-done-at job)) 2d0))
+            do (when (text-job-surface job) (%cairo-surface-destroy (text-job-surface job)))
+               (remhash slot jobs))))
 
 (defmethod emit-content ((kind (eql :image)) context node transform opacity screen-inverse
                          parent-inverse)

@@ -1,7 +1,8 @@
 /**
- * Where each card lies. Every window keeps the size of the table, so its client
- * never resizes; a card is the window scaled down and turned. All poses use the
- * same transform functions, so any change between them animates.
+ * Where each card lies. Every window keeps the size of the table, or the nearest
+ * its client accepts, so it never resizes; a card is the window scaled down and
+ * turned. All poses use the same transform functions, so any change between them
+ * animates.
  */
 
 import {
@@ -12,7 +13,34 @@ import {
   scale,
   type Rectangle,
   type Transform,
+  type WindowInfo,
 } from "@ataxia/stage";
+
+export interface Size {
+  width: number;
+  height: number;
+}
+
+/** The table's size, or the nearest WINDOW's client accepts, as a fixed-size dialog. */
+export function sheetSize(window: WindowInfo | undefined, table: Rectangle): Size {
+  const fit = (size: number, min: number, max: number) =>
+    Math.max(min, max > 0 ? Math.min(size, max) : size);
+  if (!window) return { width: table.width, height: table.height };
+  return {
+    width: fit(table.width, window.minWidth, window.maxWidth),
+    height: fit(table.height, window.minHeight, window.maxHeight),
+  };
+}
+
+/**
+ * POSE, given for a table-sized card, for a window of SIZE: cards keep one width
+ * however large the window, and the window in play keeps its own size.
+ */
+export function poseFor(pose: Pose, size: Size, table: Rectangle): Pose {
+  return pose.scale >= 1
+    ? pose
+    : { ...pose, scale: Math.min(1, (pose.scale * table.width) / size.width) };
+}
 
 /** A card's center, size relative to the table, turn and tilt, in degrees. */
 export interface Pose {
@@ -135,14 +163,11 @@ export function spreadPose(
   );
 }
 
-/** POSE as a window's position and transform, its table-sized box centered there. */
-export function placement(
-  pose: Pose,
-  table: Rectangle,
-): { x: number; y: number; transform: Transform } {
+/** POSE as the position and transform of a window of size BOX, centered there. */
+export function placement(pose: Pose, box: Size): { x: number; y: number; transform: Transform } {
   return {
-    x: pose.x - table.width / 2,
-    y: pose.y - table.height / 2,
+    x: pose.x - box.width / 2,
+    y: pose.y - box.height / 2,
     transform: [
       perspective(1100),
       rotateX(pose.tiltX),

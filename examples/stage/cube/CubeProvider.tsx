@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, type ReactNode }
 import {
   dwindle,
   focus,
+  useCompositorInstance,
   useFocusedWindow,
   useOutputs,
   usePersistentReducer,
@@ -46,6 +47,7 @@ export function CubeProvider({ children }: { children: ReactNode }) {
   const windows = useWindowIds();
   const outputs = useOutputs();
   const focused = useFocusedWindow();
+  const instance = useCompositorInstance();
   const [state, dispatch] = usePersistentReducer("cube", cubeReducer, initialCubeState);
   const output = outputs[0];
   const area = output?.workArea ?? fallbackArea;
@@ -54,8 +56,8 @@ export function CubeProvider({ children }: { children: ReactNode }) {
   const lastFocused = useRef(new Map<number, number>());
 
   useEffect(() => {
-    dispatch({ type: "sync", windows });
-  }, [windows]);
+    if (instance !== null) dispatch({ type: "sync", windows, instance });
+  }, [windows, instance]);
 
   const boxes = useMemo(() => {
     const placed = new Map<number, Rectangle>();

@@ -294,7 +294,7 @@
     (when seat
       (when (typep input-device 'wlr-keyboard)
         (set-keyboard-keymap-from-names input-device)
-        (set-keyboard-repeat-info input-device)
+        (set-keyboard-repeat-info input-device 33 500)
         (set-seat-keyboard seat input-device))
       (set-seat-capabilities
        seat

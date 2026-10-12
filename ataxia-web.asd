@@ -2,7 +2,7 @@
 (asdf:defsystem "ataxia-web"
   :description "Chromium HTML/CSS/JavaScript drawable and interactable components"
   :version "0.1.0"
-  :depends-on ("ataxia-world" "cffi")
+  :depends-on ("ataxia-world" "cffi" "sb-posix")
   :serial t
   :components ((:module "src/world/web"
                 :components ((:file "packages") (:file "native") (:file "component")

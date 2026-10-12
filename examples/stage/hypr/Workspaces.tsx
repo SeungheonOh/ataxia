@@ -11,10 +11,11 @@ import {
   type Rectangle,
   type StageDragEvent,
 } from "@ataxia/stage";
+import { windowMotion } from "../components/TilingWindow.js";
 import { boxAt, centered } from "../lib/geometry.js";
 import { wallpaper } from "../lib/settings.js";
 import { motion } from "../lib/theme.js";
-import { HyprWindow, windowMotion } from "./HyprWindow.js";
+import { HyprWindow } from "./HyprWindow.js";
 import { useHypr } from "./HyprProvider.js";
 import { workspaceNumbers, workspaceWindows } from "./tiling.js";
 

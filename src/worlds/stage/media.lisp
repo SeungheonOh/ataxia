@@ -1,10 +1,11 @@
 ;;;; Text layout and image decoding for scene nodes.
 ;;;;
 ;;;; Pango lays text out in logical pixels with metric hinting off, so a layout
-;;;; measures the same at every zoom and only its raster scale changes. Images
-;;;; decode on one worker thread into premultiplied RGBA; the owner thread
-;;;; uploads them on its next frame. The libraries load on first use, and a
-;;;; system without them still presents every other node.
+;;;; measures the same at every zoom and only its raster scale changes. One worker
+;;;; thread decodes images into premultiplied RGBA and rasterizes text whose scale
+;;;; changed; the owner thread uploads the results on its next frame. The
+;;;; libraries load on first use, and a system without them still presents every
+;;;; other node.
 
 (in-package #:ataxia.stage-world)
 
@@ -62,8 +63,6 @@
   (context :pointer) (options :pointer))
 (cffi:defcfun ("pango_context_set_round_glyph_positions" %pango-context-set-round-glyph-positions)
     :void (context :pointer) (round :boolean))
-(cffi:defcfun ("pango_cairo_update_context" %pango-cairo-update-context) :void
-  (cairo :pointer) (context :pointer))
 (cffi:defcfun ("pango_cairo_show_layout" %pango-cairo-show-layout) :void
   (cairo :pointer) (layout :pointer))
 (cffi:defcfun ("pango_layout_new" %pango-layout-new) :pointer (context :pointer))
@@ -171,12 +170,12 @@ value, describes; ranges keep every value inside Pango's integer units."
   (right 0d0 :type double-float)
   (bottom 0d0 :type double-float))
 
-(defvar *text-contexts* nil
-  "(MEASURE . RASTER) Pango contexts on one private font map. MEASURE keeps an
-identity matrix; RASTER follows each target's scale. Owner thread only.")
+(defvar *text-context* nil
+  "Pango context on a private font map, laying text out at its logical size for
+measuring and rasterizing alike. The worker binds its own.")
 
-(defun %text-contexts ()
-  (or *text-contexts*
+(defun %text-context ()
+  (or *text-context*
       (when (%media-available-p 'stage-gobject 'stage-cairo 'stage-pango 'stage-pangocairo)
         (let ((font-map (%pango-cairo-font-map-new))
               (options (%cairo-font-options-create)))
@@ -185,14 +184,12 @@ identity matrix; RASTER follows each target's scale. Owner thread only.")
           (%cairo-font-options-set-hint-metrics options 1)
           (%cairo-font-options-set-hint-style options 2)
           (%cairo-font-options-set-antialias options 2)
-          (flet ((context ()
-                   (let ((context (%pango-font-map-create-context font-map)))
-                     (%pango-cairo-context-set-font-options context options)
-                     (%pango-context-set-round-glyph-positions context nil)
-                     context)))
-            (prog1 (setf *text-contexts* (cons (context) (context)))
-              (%cairo-font-options-destroy options)
-              (%g-object-unref font-map)))))))
+          (let ((context (%pango-font-map-create-context font-map)))
+            (%pango-cairo-context-set-font-options context options)
+            (%pango-context-set-round-glyph-positions context nil)
+            (%cairo-font-options-destroy options)
+            (%g-object-unref font-map)
+            (setf *text-context* context))))))
 
 (defun %configure-layout (layout style spacing)
   (unless (and (text-style-markup-p style) (%set-markup layout (text-style-text style)))
@@ -251,9 +248,9 @@ identity matrix; RASTER follows each target's scale. Owner thread only.")
 
 (defun measure-text (style)
   "Logical metrics of STYLE, or NIL when Pango is unavailable."
-  (let ((contexts (%text-contexts)))
-    (when contexts
-      (let ((layout (%configure-layout (%pango-layout-new (car contexts)) style 0d0)))
+  (let ((context (%text-context)))
+    (when context
+      (let ((layout (%configure-layout (%pango-layout-new context) style 0d0)))
         (unwind-protect
              (let ((metrics (%layout-metrics layout 0d0))
                    (line-height (text-style-line-height style)))
@@ -276,36 +273,48 @@ identity matrix; RASTER follows each target's scale. Owner thread only.")
     (values left top width height
             (max 1 (ceiling (* width scale))) (max 1 (ceiling (* height scale))))))
 
+(defun %text-surface (context style metrics color scale)
+  "STYLE rasterized through Pango CONTEXT in straight-alpha COLOR at SCALE device
+pixels per logical pixel: a premultiplied BGRA Cairo image surface the caller
+destroys, and its width and height."
+  (multiple-value-bind (left top width height pixel-width pixel-height)
+      (text-raster-box metrics scale)
+    (declare (ignore width height))
+    (let ((surface (%cairo-image-surface-create 0 pixel-width pixel-height))
+          (done-p nil))
+      (unwind-protect
+           (progn
+             (unless (zerop (%cairo-surface-status surface))
+               (error "Cairo could not allocate a ~Dx~D text raster." pixel-width pixel-height))
+             (let ((cairo (%cairo-create surface))
+                   (layout nil))
+               (unwind-protect
+                    (progn
+                      (%cairo-scale cairo scale scale)
+                      (%cairo-translate cairo (- left) (- top))
+                      (%cairo-set-source-rgba cairo (aref color 0) (aref color 1) (aref color 2)
+                                              (aref color 3))
+                      ;; Pango lays out at the logical size and Cairo scales the
+                      ;; outlines. Told the scale, Pango would look the font up
+                      ;; again for each one, which takes milliseconds.
+                      (setf layout (%configure-layout (%pango-layout-new context) style
+                                                      (text-metrics-spacing metrics)))
+                      (%pango-cairo-show-layout cairo layout))
+                 (when layout (%g-object-unref layout))
+                 (%cairo-destroy cairo)))
+             (%cairo-surface-flush surface)
+             (setf done-p t)
+             (values surface pixel-width pixel-height))
+        (unless done-p (%cairo-surface-destroy surface))))))
+
 (defun call-with-text-raster (style metrics color scale function)
   "Rasterize STYLE in straight-alpha COLOR at SCALE device pixels per logical pixel,
 then call FUNCTION with the premultiplied BGRA pixels, their width and height."
-  (let ((contexts (%text-contexts)))
-    (when contexts
-      (multiple-value-bind (left top width height pixel-width pixel-height)
-          (text-raster-box metrics scale)
-        (declare (ignore width height))
-        (let ((surface (%cairo-image-surface-create 0 pixel-width pixel-height)))
-          (unwind-protect
-               (progn
-                 (unless (zerop (%cairo-surface-status surface))
-                   (error "Cairo could not allocate a ~Dx~D text raster." pixel-width pixel-height))
-                 (let ((cairo (%cairo-create surface))
-                       (layout nil))
-                   (unwind-protect
-                        (progn
-                          (%cairo-scale cairo scale scale)
-                          (%cairo-translate cairo (- left) (- top))
-                          (%cairo-set-source-rgba cairo (aref color 0) (aref color 1) (aref color 2)
-                                                  (aref color 3))
-                          (%pango-cairo-update-context cairo (cdr contexts))
-                          (setf layout (%configure-layout (%pango-layout-new (cdr contexts)) style
-                                                          (text-metrics-spacing metrics)))
-                          (%pango-cairo-show-layout cairo layout))
-                     (when layout (%g-object-unref layout))
-                     (%cairo-destroy cairo)))
-                 (%cairo-surface-flush surface)
-                 (funcall function (%cairo-image-surface-data surface) pixel-width pixel-height))
-            (%cairo-surface-destroy surface)))))))
+  (let ((context (%text-context)))
+    (when context
+      (multiple-value-bind (surface width height) (%text-surface context style metrics color scale)
+        (unwind-protect (funcall function (%cairo-image-surface-data surface) width height)
+          (%cairo-surface-destroy surface))))))
 
 ;;; Images.
 
@@ -372,24 +381,32 @@ any thread once the owner thread found gdk-pixbuf available."
           (%premultiply (%pixbuf-pixels rgba) (* (%pixbuf-width rgba) (%pixbuf-height rgba)))
           (values rgba nil (cffi:mem-ref width :int) (cffi:mem-ref height :int)))))))
 
-(defstruct (image-loader (:constructor %make-image-loader))
-  (lock (sb-thread:make-mutex :name "Stage image loader") :read-only t)
+(defstruct (text-job (:constructor %make-text-job (slot key style metrics color scale)))
+  "Text the worker rasterizes for raster SLOT, where it will hold KEY. Once done, the
+owner thread sets SURFACE, a Cairo image surface, and its size, or FAILED-P."
+  slot key style metrics color scale
+  (surface nil) (width 0) (height 0) (failed-p nil))
+
+(defstruct (media-worker (:constructor %make-media-worker))
+  (lock (sb-thread:make-mutex :name "Stage media worker") :read-only t)
   (wake (sb-thread:make-waitqueue) :read-only t)
+  ;; STAGE-IMAGEs to decode and TEXT-JOBs to rasterize, in order.
   (queue nil :type list)
-  ;; (IMAGE PIXBUF ERROR WIDTH HEIGHT) results awaiting the owner thread.
+  ;; (JOB . RESULT) awaiting the owner thread.
   (finished nil :type list)
   (stopped-p nil)
   ;; Pipe the worker writes to; the owner thread watches the read end.
   read-fd write-fd source)
 
-(defun start-image-loader (runtime on-finished)
-  "Start a decoding worker. ON-FINISHED runs on the owner thread for each result with
-the image, its pixbuf or NIL, an error message, and the intrinsic width and height."
+(defun start-media-worker (runtime on-finished)
+  "Start the worker. ON-FINISHED runs on the owner thread for each job and its result:
+for an image, its pixbuf or NIL, an error message, and its intrinsic width and
+height; for text, its Cairo surface and size, or NIL and an error message."
   (multiple-value-bind (read-fd write-fd) (sb-posix:pipe)
-    (let ((loader (%make-image-loader :read-fd read-fd :write-fd write-fd)))
+    (let ((worker (%make-media-worker :read-fd read-fd :write-fd write-fd)))
       (sb-posix:fcntl read-fd sb-posix:f-setfl
                       (logior (sb-posix:fcntl read-fd sb-posix:f-getfl) sb-posix:o-nonblock))
-      (setf (image-loader-source loader)
+      (setf (media-worker-source worker)
             (ataxia.runtime:add-event-loop-fd
              runtime read-fd ataxia.runtime:+event-readable+
              (lambda (source fd mask)
@@ -397,57 +414,85 @@ the image, its pixbuf or NIL, an error message, and the intrinsic width and heig
                (cffi:with-foreign-object (bytes :uint8 64)
                  (loop while (plusp (cffi:foreign-funcall "read" :int fd :pointer bytes :size 64
                                                                  :long))))
-               (dolist (result (sb-thread:with-mutex ((image-loader-lock loader))
-                                 (prog1 (nreverse (image-loader-finished loader))
-                                   (setf (image-loader-finished loader) nil))))
-                 (apply on-finished result))
+               (dolist (result (sb-thread:with-mutex ((media-worker-lock worker))
+                                 (prog1 (nreverse (media-worker-finished worker))
+                                   (setf (media-worker-finished worker) nil))))
+                 (apply on-finished (car result) (cdr result)))
                0)))
-      (sb-thread:make-thread (lambda () (%image-worker loader)) :name "Stage image decoder")
-      loader)))
+      (sb-thread:make-thread (lambda () (%media-worker-loop worker)) :name "Stage media worker")
+      worker)))
 
-(defun %image-worker (loader)
-  ;; The worker owns the pipe once stopped: closing it here means a decode still
-  ;; running at stop never writes into a descriptor number the owner reused.
-  (unwind-protect (%decode-images loader)
-    (sb-posix:close (image-loader-read-fd loader))
-    (sb-posix:close (image-loader-write-fd loader))))
+(defun %release-result (job result)
+  "Free what RESULT, the worker's result for JOB, holds."
+  (when (first result)
+    (etypecase job
+      (stage-image (%g-object-unref (first result)))
+      (text-job (%cairo-surface-destroy (first result))))))
 
-(defun %decode-images (loader)
+(defun %media-worker-loop (worker)
+  ;; The worker owns the pipe once stopped: closing it here means a job still
+  ;; running at stop never writes into a descriptor number the owner reused. Its
+  ;; text contexts are its own, on its own font map.
+  (let ((*text-context* nil))
+    (unwind-protect (%run-media-jobs worker)
+      (when *text-context* (%g-object-unref *text-context*))
+      (sb-posix:close (media-worker-read-fd worker))
+      (sb-posix:close (media-worker-write-fd worker)))))
+
+(defun %run-job (job)
+  "Do JOB on the worker; return its result as a list."
+  (handler-case
+      (etypecase job
+        (stage-image (multiple-value-list (decode-image (stage-image-path job))))
+        (text-job
+         (let ((context (%text-context)))
+           (if context
+               (multiple-value-list
+                (%text-surface context (text-job-style job) (text-job-metrics job)
+                               (text-job-color job) (text-job-scale job)))
+               (list nil "Pango is unavailable")))))
+    (error (cause) (list nil (princ-to-string cause)))))
+
+(defun %run-media-jobs (worker)
   (loop
-    (let ((image (sb-thread:with-mutex ((image-loader-lock loader))
-                   (loop until (or (image-loader-stopped-p loader) (image-loader-queue loader))
-                         do (sb-thread:condition-wait (image-loader-wake loader)
-                                                      (image-loader-lock loader)))
-                   (if (image-loader-stopped-p loader)
-                       (return-from %decode-images)
-                       (pop (image-loader-queue loader))))))
-      (multiple-value-bind (pixbuf message width height)
-          (handler-case (decode-image (stage-image-path image))
-            (error (cause) (values nil (princ-to-string cause))))
-        (sb-thread:with-mutex ((image-loader-lock loader))
-          (if (image-loader-stopped-p loader)
-              (when pixbuf (%g-object-unref pixbuf))
+    (let ((job (sb-thread:with-mutex ((media-worker-lock worker))
+                 (loop until (or (media-worker-stopped-p worker) (media-worker-queue worker))
+                       do (sb-thread:condition-wait (media-worker-wake worker)
+                                                    (media-worker-lock worker)))
+                 (if (media-worker-stopped-p worker)
+                     (return-from %run-media-jobs)
+                     (pop (media-worker-queue worker))))))
+      (let ((result (%run-job job)))
+        (sb-thread:with-mutex ((media-worker-lock worker))
+          (if (media-worker-stopped-p worker)
+              (%release-result job result)
               (progn
-                (push (list image pixbuf message width height) (image-loader-finished loader))
+                (push (cons job result) (media-worker-finished worker))
                 (cffi:with-foreign-object (byte :uint8)
                   (setf (cffi:mem-ref byte :uint8) 1)
-                  (cffi:foreign-funcall "write" :int (image-loader-write-fd loader) :pointer byte
+                  (cffi:foreign-funcall "write" :int (media-worker-write-fd worker) :pointer byte
                                                 :size 1 :long)))))))))
 
-(defun queue-image-decode (loader image)
-  (setf (stage-image-state image) :decoding)
-  (sb-thread:with-mutex ((image-loader-lock loader))
-    (setf (image-loader-queue loader) (append (image-loader-queue loader) (list image)))
-    (sb-thread:condition-notify (image-loader-wake loader))))
+(defun %queue-job (worker job)
+  (sb-thread:with-mutex ((media-worker-lock worker))
+    (setf (media-worker-queue worker) (append (media-worker-queue worker) (list job)))
+    (sb-thread:condition-notify (media-worker-wake worker))))
 
-(defun stop-image-loader (loader)
-  "Stop LOADER without waiting for a decode in progress; the worker drops its result."
-  (when loader
-    (ataxia.runtime:remove-event-loop-source (image-loader-source loader))
-    (sb-thread:with-mutex ((image-loader-lock loader))
-      (setf (image-loader-stopped-p loader) t
-            (image-loader-queue loader) nil)
-      (dolist (result (shiftf (image-loader-finished loader) nil))
-        (when (second result) (%g-object-unref (second result))))
-      (sb-thread:condition-broadcast (image-loader-wake loader))))
+(defun queue-image-decode (worker image)
+  (setf (stage-image-state image) :decoding)
+  (%queue-job worker image))
+
+(defun queue-text-raster (worker job)
+  (%queue-job worker job))
+
+(defun stop-media-worker (worker)
+  "Stop WORKER without waiting for a job in progress; the worker drops its result."
+  (when worker
+    (ataxia.runtime:remove-event-loop-source (media-worker-source worker))
+    (sb-thread:with-mutex ((media-worker-lock worker))
+      (setf (media-worker-stopped-p worker) t
+            (media-worker-queue worker) nil)
+      (loop for (job . result) in (shiftf (media-worker-finished worker) nil)
+            do (%release-result job result))
+      (sb-thread:condition-broadcast (media-worker-wake worker))))
   nil)

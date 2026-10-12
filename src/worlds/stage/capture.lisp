@@ -59,7 +59,7 @@ OUTPUT's REGION, by default all of it."
       (begin-stage-frame renderer width height)
       (set-stage-scissor renderer 0 0 width height)
       (ataxia.world.gles:gles-clear 0.035d0 0.04d0 0.05d0 1d0)
-      (loop with transform = (make-affine sx 0 0 sy (- (* left sx)) (- (* top sy)))
+      (loop with transform = (make-transform sx 0 0 sy (- (* left sx)) (- (* top sy)))
             for surface across (ataxia.kernel:drawable-surfaces (stage-window-application window))
             do (draw-stage-surface renderer transform surface
                                    (ataxia.kernel:drawable-surface-local-x surface)
@@ -92,8 +92,8 @@ WIDTH x HEIGHT into PIXELS through TARGET."
                 (begin-stage-frame renderer buffer-width buffer-height)
                 ;; Only the region and what its blurs sample are drawn.
                 (%draw-items renderer (list items (build-seat-items world stage-output))
-                             (%blur-passes (list (affine-rectangle-bounds buffer x y region-width
-                                                                          region-height))
+                             (%blur-passes (list (transform-rectangle-bounds buffer x y region-width
+                                                                             region-height))
                                            items buffer-width buffer-height)
                              buffer-width buffer-height nil)
                 (finish-stage-frame))))
@@ -104,12 +104,12 @@ WIDTH x HEIGHT into PIXELS through TARGET."
                 (set-stage-scissor renderer 0 0 width height)
                 (ataxia.world.gles:gles-clear 0d0 0d0 0d0 1d0)
                 (draw-stage-texture
-                 renderer +identity-affine+ +gl-texture-2d+ (render-target-texture full) t
+                 renderer +identity-transform+ +gl-texture-2d+ (render-target-texture full) t
                  buffer-width buffer-height
                  (coerce (loop for (cx cy) in (list (list x y) (list (+ x region-width) y)
                                                     (list x (+ y region-height))
                                                     (list (+ x region-width) (+ y region-height)))
-                               nconc (multiple-value-bind (bx by) (affine-apply buffer cx cy)
+                               nconc (multiple-value-bind (bx by) (transform-apply buffer cx cy)
                                        (list (/ bx buffer-width) (/ by buffer-height))))
                          'vector)
                  0d0 0d0 width height 0d0 0d0 0d0 1d0)

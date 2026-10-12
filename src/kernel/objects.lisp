@@ -34,7 +34,21 @@
                            :accessor %output-next-frame-requested-p)
    (retry-timer :initform nil :accessor %output-retry-timer)
    (consecutive-frame-failures :initform 0
-                               :accessor %output-consecutive-frame-failures))
+                               :accessor %output-consecutive-frame-failures)
+   ;; Frame pacing, in CLOCK_MONOTONIC nanoseconds: the last vblank presented and
+   ;; the refresh period (on outputs presenting on vblank), what a frame costs on
+   ;; the CPU and the GPU, the vblank the frame in flight aims for, the timer that
+   ;; starts frames, GPU timestamp queries in flight and free, and how many frames
+   ;; in a row followed a flip.
+   (vblank :initform nil :accessor %output-vblank)
+   (refresh :initform 0 :accessor %output-refresh)
+   (frame-cost :initform 4000000 :accessor %output-frame-cost)
+   (gpu-cost :initform 0 :accessor %output-gpu-cost)
+   (gpu-queries :initform nil :accessor %output-gpu-queries)
+   (free-gpu-queries :initform nil :accessor %output-free-gpu-queries)
+   (target-vblank :initform nil :accessor %output-target-vblank)
+   (render-timer :initform nil :accessor %output-render-timer)
+   (streak :initform 0 :accessor %output-streak))
   (:documentation "Configured output identity backed by one Runtime wlr-output."))
 
 (defclass kernel-input-device (kernel-object)

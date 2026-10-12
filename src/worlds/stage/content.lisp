@@ -18,7 +18,10 @@
   (style nil :read-only t)
   (metrics nil :read-only t)
   ;; Distinguishes layouts in EQUALP signatures, which ignore letter case.
-  (revision 0 :type fixnum :read-only t))
+  (revision 0 :type fixnum :read-only t)
+  ;; The node's prop revision and declared width it was last found current for.
+  (prop-revision -1 :type fixnum)
+  (width nil))
 
 (defvar *text-revision* 0)
 
@@ -27,14 +30,24 @@
   (and (string= (text-style-text left) (text-style-text right)) (equalp left right)))
 
 (defun node-text-layout (node)
-  "NODE's text layout, measured again only after its style changed; NIL without Pango."
-  (let ((style (node-text-style node))
-        (cached (stage-node-cache node)))
-    (if (and cached (%text-style-equal style (text-layout-style cached)))
+  "NODE's text layout, measured again only after its style changed; NIL without Pango.
+Asked several times a frame, it rebuilds the style only after a declaration or a
+change of width, which alone animates."
+  (let ((cached (stage-node-cache node))
+        (width (and (node-declared-p node :width) (node-number node :width))))
+    (if (and cached (= (text-layout-prop-revision cached) (stage-node-prop-revision node))
+             (eql (text-layout-width cached) width))
         cached
-        (let ((metrics (measure-text style)))
-          (setf (stage-node-cache node)
-                (and metrics (%make-text-layout style metrics (incf *text-revision*))))))))
+        (let* ((style (node-text-style node))
+               (layout (if (and cached (%text-style-equal style (text-layout-style cached)))
+                           cached
+                           (let ((metrics (measure-text style)))
+                             (setf (stage-node-cache node)
+                                   (and metrics (%make-text-layout style metrics (incf *text-revision*))))))))
+          (when layout
+            (setf (text-layout-prop-revision layout) (stage-node-prop-revision node)
+                  (text-layout-width layout) width))
+          layout))))
 
 (defun text-node-size (node)
   (let ((layout (node-text-layout node)))
@@ -87,7 +100,10 @@ frame. A change asks for a refining frame, which sees the scale settled."
       (multiple-value-bind (color alpha) (%text-color node opacity)
         (let* ((style (text-layout-style layout))
                (metrics (text-layout-metrics layout))
-               (scale (affine-scale-factor transform))
+               (scale (transform-scale-factor
+                       transform
+                       (* 0.5d0 (+ (text-metrics-left metrics) (text-metrics-right metrics)))
+                       (* 0.5d0 (+ (text-metrics-top metrics) (text-metrics-bottom metrics)))))
                (slot (list :text (stage-node-id node) (display-context-output-name context))))
           ;; Text scaled to nothing has no pixels, and no raster scale.
           (when (and (plusp alpha) (> scale 1d-6) (plusp (length (text-style-text style))))
@@ -96,25 +112,96 @@ frame. A change asks for a refining frame, which sees the scale settled."
                      (key (list (text-layout-revision layout) color raster-scale)))
                 (%touch-raster (display-context-world context) slot)
                 (%emit context (list (stage-node-id node) :text)
-                       (affine-rectangle-bounds transform left top width height 1)
+                       (transform-rectangle-bounds transform left top width height 1)
                        (list transform key opacity)
                        (lambda (renderer)
-                         (let ((raster (renderer-raster
-                                        renderer slot key 2d0
-                                        (lambda (upload)
-                                          (call-with-text-raster
-                                           style metrics color raster-scale
-                                           (lambda (pixels pixel-width pixel-height)
-                                             (funcall upload pixels pixel-width pixel-height
-                                                      +gl-bgra+)))))))
+                         (let ((raster (%text-raster (display-context-world context) renderer slot key
+                                                     style metrics color raster-scale)))
                            (when raster
+                             ;; It may be one at another scale, until the worker's arrives.
                              (multiple-value-bind (left top width height)
-                                 (text-raster-box metrics raster-scale)
+                                 (text-raster-box metrics (third (raster-key raster)))
                                (draw-stage-raster renderer transform raster left top width height
                                                   +full-texture-uv+ 0d0 opacity))))))))))
         (when (%hit-target-p context node)
           (multiple-value-call #'%add-hit context node screen-inverse parent-inverse
             (text-node-size node)))))))
+
+;;; Text rasters at a changing scale come from the worker: rasterizing every
+;;; label again at each step of a zoom would cost frames, so until the new raster
+;;; arrives the one at hand is drawn scaled. New or edited text, with nothing at
+;;; hand to show, is rasterized at once.
+
+(defun %same-text-p (key other)
+  "Whether raster keys (REVISION COLOR SCALE) hold the same text at any scale."
+  (and (eql (first key) (first other)) (equalp (second key) (second other))))
+
+(defun %text-raster (world renderer slot key style metrics color scale)
+  "SLOT's raster for KEY, or the one at hand while the worker renders it."
+  (let ((job (gethash slot (%text-jobs world)))
+        (failed-p nil))
+    ;; A raster the worker finished replaces the one at hand, at whatever scale.
+    (when (and job (or (text-job-surface job) (text-job-failed-p job)))
+      (remhash slot (%text-jobs world))
+      (setf failed-p (text-job-failed-p job))
+      (when (text-job-surface job)
+        (when (%same-text-p (text-job-key job) key)
+          (install-raster renderer slot (text-job-key job)
+                          (%cairo-image-surface-data (text-job-surface job))
+                          (text-job-width job) (text-job-height job) +gl-bgra+))
+        (%cairo-surface-destroy (text-job-surface job)))
+      (setf job nil))
+    (let ((current (slot-raster renderer slot)))
+      (or (renderer-raster
+           renderer slot key 2d0
+           (lambda (upload)
+             ;; Text only rescaled waits for the worker, as does new text once
+             ;; the frame's spare time is spent. After the worker failed, the
+             ;; owner tries itself and reports why.
+             (if (and (not failed-p)
+                      (if current
+                          (%same-text-p (raster-key current) key)
+                          (not (spare-time-p renderer))))
+                 ;; One job a slot at a time: what it brings is closer, and the
+                 ;; next draw asks for the rest.
+                 (unless job
+                   (let ((job (%make-text-job slot key style metrics color scale)))
+                     (setf (gethash slot (%text-jobs world)) job)
+                     (queue-text-raster (%worker world) job)))
+                 (call-with-spare-time
+                  renderer
+                  (lambda ()
+                    (call-with-text-raster style metrics color scale
+                                           (lambda (pixels width height)
+                                             (funcall upload pixels width height +gl-bgra+))))))))
+          (and current (%same-text-p (raster-key current) key) current)))))
+
+(defun %finish-text (world job surface &optional width height)
+  "Take JOB's raster from the worker and repaint where its text is shown."
+  (destructuring-bind (tag id output-name) (text-job-slot job)
+    (declare (ignore tag))
+    (if (not (eq job (gethash (text-job-slot job) (%text-jobs world))))
+        (when surface (%cairo-surface-destroy surface))
+        (let* ((stage-output (find output-name (%outputs world) :key #'%output-name :test #'equal))
+               (item (and stage-output
+                          (find-if (lambda (item) (let ((key (item-key item)))
+                                                    (and (eql (second key) id) (eq (third key) :text))))
+                                   (first (stage-output-display stage-output))))))
+          (cond ((null item)
+                 ;; The text left the screen; it rasterizes again when shown.
+                 (remhash (text-job-slot job) (%text-jobs world))
+                 (when surface (%cairo-surface-destroy surface)))
+                (t
+                 (if surface
+                     (setf (text-job-surface job) surface
+                           (text-job-width job) width
+                           (text-job-height job) height)
+                     (setf (text-job-failed-p job) t))
+                 ;; Inside an effect, the effect paints it.
+                 (loop while (item-owner item) do (setf item (item-owner item)))
+                 (ataxia.world:damage-add-region (%damage world) (stage-output-output stage-output)
+                                                 (list (item-bounds item)))
+                 (%request-frames world (list stage-output))))))))
 
 ;;; Images.
 
@@ -161,17 +248,23 @@ frame. A change asks for a refining frame, which sees the scale settled."
        (%emit-event world node :load :width (stage-image-width image)
                                      :height (stage-image-height image))))))
 
+(defun %worker (world)
+  "WORLD's media worker, started on first use."
+  (or (%media-worker world)
+      (setf (%media-worker world)
+            (start-media-worker
+             (ataxia.kernel:kernel-runtime (ataxia.kernel:world-kernel world))
+             (%guarded world :stage-media
+                       (lambda (job &rest result)
+                         (etypecase job
+                           (stage-image (apply #'%finish-image world job result))
+                           (text-job (apply #'%finish-text world job result)))))))))
+
 (defun %queue-image (world image)
-  ;; Libraries load on the owner thread, so the decoder only ever reads their state.
+  ;; Libraries load on the owner thread, so the worker only ever reads their state.
   (unless (%media-available-p 'stage-gobject 'stage-pixbuf)
     (return-from %queue-image (%finish-image world image nil "gdk-pixbuf is unavailable" 0 0)))
-  (let ((loader (or (%image-loader world)
-                    (setf (%image-loader world)
-                          (start-image-loader
-                           (ataxia.kernel:kernel-runtime (ataxia.kernel:world-kernel world))
-                           (%guarded world :stage-image
-                                     (lambda (&rest result) (apply #'%finish-image world result))))))))
-    (queue-image-decode loader image)))
+  (queue-image-decode (%worker world) image))
 
 (defun %find-image (world path)
   "The shared image for PATH, decoding it again when the file changed."
@@ -310,10 +403,10 @@ and the image appears again when it finishes."
             (%touch-raster world (list :image (stage-image-serial image)))
             (multiple-value-bind (x y quad-width quad-height uv)
                 (%image-fit (node-prop node :fit) image width height)
-              (let ((local (affine-multiply transform (affine-translation x y)))
+              (let ((local (transform-multiply transform (transform-translation x y)))
                     (rounding (if (eq (node-prop node :fit) :contain) 0d0 radius)))
                 (%emit context (list (stage-node-id node) :image)
-                       (affine-rectangle-bounds local 0 0 quad-width quad-height 1)
+                       (transform-rectangle-bounds local 0 0 quad-width quad-height 1)
                        (list local quad-width quad-height uv rounding opacity
                              (stage-image-serial image))
                        (lambda (renderer)
@@ -327,9 +420,12 @@ and the image appears again when it finishes."
             (%add-hit context node screen-inverse parent-inverse width height)))))))
 
 (defun stop-images (world)
-  "Stop decoding and drop pixels not yet uploaded; textures go with the renderer."
-  (stop-image-loader (%image-loader world))
-  (setf (%image-loader world) nil)
+  "Stop the worker and drop pixels not yet uploaded; textures go with the renderer."
+  (stop-media-worker (%media-worker world))
+  (setf (%media-worker world) nil)
+  (loop for job being the hash-values of (%text-jobs world)
+        when (text-job-surface job) do (%cairo-surface-destroy (text-job-surface job)))
+  (clrhash (%text-jobs world))
   (loop for image being the hash-values of (%images world)
         when (stage-image-pixbuf image)
           do (%g-object-unref (stage-image-pixbuf image))

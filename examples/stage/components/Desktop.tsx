@@ -10,7 +10,7 @@ interface DesktopProps {
   barStart?: ComponentType<{ output: OutputInfo }>;
 }
 
-/** What both example worlds share: the bar, media keys, screen sharing and screenshots. */
+/** What every example world shares: the bar, media keys, screen sharing and screenshots. */
 export function Desktop({ barStart }: DesktopProps) {
   return (
     <>

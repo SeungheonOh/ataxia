@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Screen, Shortcut, spring, Web, type OutputInfo } from "@ataxia/stage";
+import { scale, Screen, Shortcut, spring, Web, type OutputInfo } from "@ataxia/stage";
 import { launchApplication, useApplications } from "../lib/system/applications.js";
 import launcherPage from "../pages/launcher/index.tsx?url";
 import type {
@@ -47,7 +47,7 @@ export function Launcher({ output }: LauncherProps) {
             border={{ width: 1, color: "#ffffff22" }}
             shadow={{ color: "#00000080", blur: 48, y: 16 }}
             opacity={open ? 1 : 0}
-            scale={open ? 1 : 0.96}
+            transform={scale(open ? 1 : 0.96)}
             transition={appear}
             onMessage={(name, value) => handleMessage({ name, value } as LauncherMessage)}
           />

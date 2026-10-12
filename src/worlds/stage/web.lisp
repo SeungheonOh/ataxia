@@ -214,10 +214,10 @@ move settled pages to the raster scale they are seen at."
       (when (and web (plusp width) (plusp height))
         (let* ((component (stage-web-component web))
                (radius (%emit-decorations context node transform width height opacity))
-               (content (make-affine (/ width (ataxia.world.web:web-component-width component)) 0 0
-                                     (/ height (ataxia.world.web:web-component-height component))
-                                     0 0))
-               (box (affine-rectangle-bounds transform 0 0 width height))
+               (content (make-transform (/ width (ataxia.world.web:web-component-width component)) 0 0
+                                        (/ height (ataxia.world.web:web-component-height component))
+                                        0 0))
+               (box (transform-rectangle-bounds transform 0 0 width height))
                (screen (if (display-context-clip context)
                            (ataxia.world:rectangle-intersection (display-context-clip context)
                                                                 (display-context-bounds context))
@@ -226,12 +226,12 @@ move settled pages to the raster scale they are seen at."
           ;; as its first frame arrives.
           (when (and screen (ataxia.world:rectangle-intersection box screen))
             (setf (gethash web (display-context-presented context)) t)
-            (push (affine-multiply transform content)
+            (push (transform-multiply transform content)
                   (gethash web (stage-output-window-transforms
                                 (display-context-stage-output context))))
             (when (display-context-raster-scales context)
               (multiple-value-bind (scale changing-p)
-                  (%scale-change context node (affine-scale-factor transform))
+                  (%scale-change context node (transform-scale-factor transform (/ width 2) (/ height 2)))
                 (unless changing-p
                   (setf (getf (stage-web-wanted-scales web) (display-context-stage-output context))
                         (max (car +web-scale-range+)
@@ -244,7 +244,7 @@ move settled pages to the raster scale they are seen at."
                                          width height radius opacity 0d0))
           (when (node-prop node :interactive)
             (%add-hit context node screen-inverse parent-inverse width height
-                      :client component :content (affine-invert content)
+                      :client component :content (transform-invert content)
                       :content-bounds (ataxia.world:make-rectangle
                                        0 0 (ataxia.world.web:web-component-width component)
                                        (ataxia.world.web:web-component-height component)))))))))

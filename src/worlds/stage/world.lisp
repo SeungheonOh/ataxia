@@ -21,7 +21,10 @@
   ;; an exit animation may show the window after its client unmapped it.
   (snapshot #() :type vector)
   (snapshot-bounds nil :type list)
-  (snapshot-revision nil))
+  (snapshot-revision nil)
+  ;; What display items take from the surfaces besides their pixels: a commit
+  ;; keeping it needs no new display, only its damage repainted.
+  (geometry nil :type list))
 
 (defstruct (stage-output (:constructor %make-stage-output (output)))
   (output nil :read-only t)
@@ -37,6 +40,8 @@
   (hits nil :type list)
   (built-at 0d0 :type double-float)
   (display-valid-p nil)
+  ;; Whether a frame has been requested since the last one rendered.
+  (frame-pending-p nil)
   ;; Whether the cached display has been diffed into damage.
   (diffed-p nil)
   ;; Last diffed scene and cursor items: item key -> (damage rectangles . signature),
@@ -124,9 +129,11 @@
    (damage :initform (ataxia.world:make-damage-tracker) :reader %damage)
    (damage-debug-p :initarg :damage-debug-p :initform nil :accessor %damage-debug-p)
    (renderer :initform nil :accessor %renderer)
-   ;; Absolute path -> STAGE-IMAGE, and the worker decoding them.
+   ;; Absolute path -> STAGE-IMAGE, and the worker decoding them and rasterizing text.
    (images :initform (make-hash-table :test #'equal) :reader %images)
-   (image-loader :initform nil :accessor %image-loader)
+   (media-worker :initform nil :accessor %media-worker)
+   ;; Text raster slot -> its TEXT-JOB on the worker, in flight or done.
+   (text-jobs :initform (make-hash-table :test #'equal) :reader %text-jobs)
    ;; (Shape . pixel size) -> THEME-CURSOR, or NIL where the theme lacks it.
    (cursor-images :initform (make-hash-table :test #'equal) :reader %cursor-images)
    (webs :initform nil :accessor %webs)
@@ -201,6 +208,7 @@ of the compositor."
       (let ((output (stage-output-output stage-output)))
         (when (and (eq (ataxia.kernel:object-state output) :live)
                    (ataxia.kernel:output-enabled-p output))
+          (setf (stage-output-frame-pending-p stage-output) t)
           (ataxia.kernel:request-output-frame output)))))
   world)
 
@@ -428,6 +436,17 @@ Anything releasing a resource that a display item draws must call this too."
     (%send world (list :type "focus"
                        :seat (ataxia.kernel:seat-name (stage-seat-seat seat-state))
                        :window (and window (stage-window-id window))))))
+
+(defun %modifier-names (modifiers)
+  "Protocol names of the modifiers held among MODIFIERS; locks are not held."
+  (coerce (loop for (name . key) in +modifier-names+
+                when (member key modifiers) collect name)
+          'vector))
+
+(defun %report-modifiers (world seat-state)
+  (%send world (list :type "modifiers"
+                     :seat (ataxia.kernel:seat-name (stage-seat-seat seat-state))
+                     :modifiers (%modifier-names (stage-seat-modifiers seat-state)))))
 
 (defun %window-focused-p (world window)
   (some (lambda (seat-state) (eq window (stage-seat-focused seat-state)))
@@ -672,8 +691,11 @@ Anything releasing a resource that a display item draws must call this too."
     (ataxia.kernel:wayland-application
      (let ((window (gethash object (%windows world))))
        (when window
-         ;; New buffers replace the surface records display items draw.
-         (%invalidate-display world)
+         (let ((geometry (%surface-geometry object)))
+           (if (equalp geometry (stage-window-geometry window))
+               (%refresh-surface-items world window)
+               (progn (setf (stage-window-geometry window) geometry)
+                      (%invalidate-display world))))
          (note-window-changed world window)
          (%damage-content world window (ataxia.kernel:drawable-invalidation-damage invalidation))
          (%update-snapshot window)
@@ -686,6 +708,19 @@ Anything releasing a resource that a display item draws must call this too."
        (when (eq object (stage-seat-cursor seat-state))
          (%damage-cursor world seat-state)))))
   object)
+
+(defun %surface-geometry (application)
+  (cons (multiple-value-list (ataxia.kernel:drawable-local-bounds application))
+        (map 'list (lambda (surface)
+                     (list (ataxia.kernel:drawable-surface-local-x surface)
+                           (ataxia.kernel:drawable-surface-local-y surface)
+                           (ataxia.kernel:drawable-surface-width surface)
+                           (ataxia.kernel:drawable-surface-height surface)
+                           (ataxia.kernel:drawable-surface-texture-coordinates surface)
+                           (ataxia.kernel:render-source-has-alpha-p
+                            (ataxia.kernel:drawable-surface-render-source surface))
+                           (ataxia.kernel:drawable-surface-opaque-region surface)))
+             (ataxia.kernel:drawable-surfaces application))))
 
 (defun %layout-outputs (world)
   (let ((offset 0d0))

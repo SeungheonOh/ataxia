@@ -308,6 +308,11 @@
   (device :pointer))
 (defcfun ("ataxia_input_device_type" %input-device-type) :uint32
   (device :pointer))
+(defcfun ("ataxia_input_device_configure_touchpad" %input-device-configure-touchpad) :boolean
+  (device :pointer)
+  (tap :boolean)
+  (natural-scroll :boolean)
+  (disable-while-typing :boolean))
 (defcfun ("ataxia_input_device_pointer" %input-device-pointer) :pointer
   (device :pointer))
 

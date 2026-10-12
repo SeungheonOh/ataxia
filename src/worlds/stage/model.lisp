@@ -21,16 +21,21 @@
 (defparameter +prop-specs+
   (let ((table (make-hash-table :test #'equal)))
     (dolist (row
-             '(("x" :x :number 0d0 :animated-p t :tolerance 1d-2)
+             `(("x" :x :number 0d0 :animated-p t :tolerance 1d-2)
                ("y" :y :number 0d0 :animated-p t :tolerance 1d-2)
                ("width" :width :number nil :animated-p t :tolerance 1d-2)
                ("height" :height :number nil :animated-p t :tolerance 1d-2)
-               ("scale" :scale :number 1d0 :animated-p t)
+               ;; Transform functions, as CSS lists them; see TRANSFORM-LIST.
+               ("transform" :transform :transform ,+no-transform+ :animated-p t)
+               ;; A camera's turn.
                ("rotation" :rotation :number 0d0 :animated-p t)
                ("opacity" :opacity :number 1d0 :animated-p t)
                ("originX" :origin-x :number 0.5d0)
                ("originY" :origin-y :number 0.5d0)
                ("visible" :visible :boolean t)
+               ;; As CSS backface-visibility: hidden, a node turned away is not drawn.
+               ("backface" :backface :choice :visible
+                :choices (("visible" . :visible) ("hidden" . :hidden)))
                ("color" :color :color #(0d0 0d0 0d0 0d0) :animated-p t)
                ("radius" :radius :number 0d0 :animated-p t :tolerance 1d-2)
                ("borderWidth" :border-width :number 0d0 :animated-p t :tolerance 1d-2)
@@ -123,8 +128,7 @@
                      :default default options))))
     table))
 
-(defparameter +transform-props+
-  '(:x :y :scale :rotation :opacity :origin-x :origin-y :visible))
+(defparameter +transform-props+ '(:x :y :transform :opacity :origin-x :origin-y :visible :backface))
 
 (defparameter +effect-props+ '(:shader :amount :margin :local :time :backdrop :pointer :area)
   "What runs a visual node and its subtree through the director's GLSL.")
@@ -134,21 +138,24 @@
     :shadow-color :shadow-blur :shadow-spread :shadow-x :shadow-y :blur))
 
 (defparameter +node-kinds+
-  `(("group" :group (,@+transform-props+ ,@+effect-props+ :width :height :clip :draggable :cursor))
+  `(("group" :group (,@+transform-props+ ,@+effect-props+ :width :height :clip :draggable
+                     :interactive :cursor))
     ("rect" :rect (,@+transform-props+ ,@+box-props+ ,@+effect-props+ :color :color-end :fill-angle
-                   :clip :draggable :cursor))
+                   :clip :draggable :interactive :cursor))
     ("text" :text (,@+transform-props+ ,@+effect-props+ :width :text :markup :font :font-size
-                   :font-weight :italic :color :align :line-height :max-lines :draggable :cursor))
-    ("image" :image (,@+transform-props+ ,@+box-props+ ,@+effect-props+ :src :fit :draggable :cursor))
+                   :font-weight :italic :color :align :line-height :max-lines :draggable
+                   :interactive :cursor))
+    ("image" :image (,@+transform-props+ ,@+box-props+ ,@+effect-props+ :src :fit :draggable
+                     :interactive :cursor))
     ("web" :web (,@+transform-props+ ,@+box-props+ ,@+effect-props+ :src :data :revision :focusable
                  :interactive :auto-focus :cursor))
     ("window" :window (,@+transform-props+ ,@+box-props+ ,@+effect-props+ :window :fullscreen
                        :maximized :tiled :focusable :interactive :movable :resizable :dim))
     ("background" :background
-     (:x :y :scale :rotation :opacity :visible :color :grid :grid-color :grid-spacing :grid-size
+     (:x :y :transform :opacity :visible :color :grid :grid-color :grid-spacing :grid-size
       :pan :cursor))
     ("camera" :camera (:output :x :y :zoom :rotation :min-zoom :max-zoom))
-    ("screen" :screen (:output :x :y :scale :rotation :opacity :visible))
+    ("screen" :screen (:output :x :y :transform :opacity :visible))
     ("reserve" :reserve (:output :top :right :bottom :left))
     ("shortcut" :shortcut (:key :modifiers :repeat))
     ("pointer-binding" :pointer-binding (:button :modifiers :action))
@@ -220,6 +227,30 @@
     (protocol-error "Property ~A requires an array." name))
   (coerce value 'list))
 
+(defun %decode-transform (value name)
+  "A TRANSFORM-LIST from `[[function, number...], ...]`. Perspective arrives as the
+viewer's distance and a matrix column by column, as CSS writes them."
+  (let ((functions (%json-list value name))
+        (kinds nil)
+        (parameters nil))
+    (when (> (length functions) 32) (protocol-error "At most 32 transform functions."))
+    (dolist (raw functions)
+      (let* ((entry (%json-list raw name))
+             (row (find (first entry) +transform-functions+ :key #'first :test #'equal))
+             (numbers (mapcar (lambda (number) (%finite-number number name)) (rest entry))))
+        (unless (and row (= (length numbers) (third row)))
+          (protocol-error "~S is not a transform function with ~D numbers."
+                          (first entry) (length numbers)))
+        (push (second row) kinds)
+        (setf parameters
+              (revappend (case (second row)
+                           (:perspective (list (if (plusp (first numbers)) (/ (first numbers)) 0d0)))
+                           (:matrix (loop for index below 16
+                                          collect (nth (+ (* 4 (mod index 4)) (floor index 4)) numbers)))
+                           (t numbers))
+                         parameters))))
+    (make-transform-list (nreverse kinds) (coerce (nreverse parameters) 'simple-vector))))
+
 (defun decode-prop-value (spec value)
   (let ((name (prop-spec-name spec)))
     (if (null value)
@@ -237,6 +268,7 @@
              (map 'vector (lambda (component)
                             (max 0d0 (min 1d0 (%finite-number component name))))
                   components)))
+          (:transform (%decode-transform value name))
           (:boolean
            (cond ((eq value t) t)
                  ((eq value :false) nil)
@@ -321,8 +353,10 @@
   (children nil :type list)
   ;; Declared values by key, decoded. Absent keys use defaults.
   (props (make-hash-table :test #'eq) :read-only t)
-  ;; Animated keys map to one channel, or a vector of four for colors.
+  ;; Animated keys map to one channel, or a vector of them: four for colors, one
+  ;; per parameter of the transform functions TRANSFORM-KINDS.
   (channels (make-hash-table :test #'eq) :read-only t)
+  (transform-kinds nil :type list)
   ;; Transition per key; :DEFAULT applies to keys without their own entry.
   (motions (make-hash-table :test #'eq) :read-only t)
   (initial nil :type list)
@@ -337,6 +371,8 @@
   (held nil :type list)
   ;; Derived from props by the node's kind: a text layout, a shared image or a page.
   (cache nil)
+  ;; Counts declarations, so what is derived from them knows when it is current.
+  (prop-revision 0 :type fixnum)
   ;; :LIVE, :REMOVED during the commit that removes it, :EXITING, then :DEAD.
   (state :live :type keyword))
 
@@ -394,13 +430,15 @@
 
 ;;; Animation layers.
 
-(defstruct (layer (:constructor make-layer (id key track composite)))
+(defstruct (layer (:constructor make-layer (id key track composite &optional kinds)))
   "A keyframe TRACK on property KEY, replacing its value or (COMPOSITE :ADD) added to it.
-ID lets a later declaration of the same animation keep running instead of restarting."
+ID lets a later declaration of the same animation keep running instead of restarting.
+A transform's keyframes are the parameters of the functions KINDS."
   (id nil :read-only t)
   (key nil :type keyword :read-only t)
   (track nil :type track :read-only t)
   (composite :replace :type (member :replace :add) :read-only t)
+  (kinds nil :type list :read-only t)
   (start 0d0 :type double-float)
   ;; The value sampled for the current frame, or NIL while delayed or done.
   (current nil)
@@ -422,6 +460,35 @@ ID lets a later declaration of the same animation keep running instead of restar
                        (and base (%add-value base current))
                        current))))))
 
+(defun node-transform-list (node)
+  "NODE's displayed transform functions, its animations applied: one adding to the
+transform appends its functions, as Web Animations composite them."
+  (let* ((channels (gethash :transform (stage-node-channels node)))
+         (list (if channels
+                   (make-transform-list (stage-node-transform-kinds node)
+                                        (map 'vector #'channel-value channels))
+                   (node-prop node :transform))))
+    (dolist (layer (stage-node-layers node) list)
+      (let ((current (layer-current layer)))
+        (when (and current (eq (layer-key layer) :transform))
+          (let ((animated (make-transform-list (layer-kinds layer) current)))
+            (setf list (if (eq (layer-composite layer) :add)
+                           (transform-list-append list animated)
+                           animated))))))))
+
+(defun node-local-matrix (node width height
+                          &key (x (node-number node :x 0d0)) (y (node-number node :y 0d0)))
+  "Map NODE's local space to its parent's: transformed about its origin, a point in
+the WIDTH x HEIGHT box, then moved to (X, Y), by default its position."
+  (let ((list (node-transform-list node)))
+    (if (null (transform-list-kinds list))
+        (matrix-translation x y)
+        (let ((origin-x (* width (node-prop node :origin-x)))
+              (origin-y (* height (node-prop node :origin-y))))
+          (matrix-multiply (matrix-translation (+ x origin-x) (+ y origin-y))
+                           (matrix-multiply (transform-list-matrix list)
+                                            (matrix-translation (- origin-x) (- origin-y))))))))
+
 (defun %decode-layer (node object)
   "A LAYER from one entry of a node's `animate` list; its start is set by the scene."
   (unless (hash-table-p object) (protocol-error "Each animation must be an object."))
@@ -432,6 +499,15 @@ ID lets a later declaration of the same animation keep running instead of restar
                                    (when (null raw) (protocol-error "Keyframes need values."))
                                    (decode-prop-value spec raw))
                          (%decode-points (gethash "keyframes" object) "keyframes")))
+         (kinds (when (eq (prop-spec-type spec) :transform)
+                  (let ((shape nil))
+                    (loop for list across keyframes
+                          do (multiple-value-bind (kinds compatible-p)
+                                 (transform-lists-shape (make-transform-list shape #()) list)
+                               (unless compatible-p
+                                 (protocol-error "Transform keyframes must list the same functions."))
+                               (setf shape kinds)))
+                    shape)))
          (count (length keyframes))
          (offsets (let ((raw (gethash "offsets" object)))
                     (if raw
@@ -447,6 +523,10 @@ ID lets a later declaration of the same animation keep running instead of restar
     (unless (and (= 0d0 (svref offsets 0)) (= 1d0 (svref offsets (1- count)))
                  (every #'<= offsets (subseq offsets 1)))
       (protocol-error "Keyframe offsets must rise from 0 to 1."))
+    (when (eq (prop-spec-type spec) :transform)
+      (setf keyframes (map 'vector (lambda (list)
+                                     (transform-list-parameters (pad-transform-list list kinds)))
+                           keyframes)))
     (make-layer id (prop-spec-key spec)
                 (make-track keyframes offsets
                             :ease (%decode-ease (gethash "ease" object))
@@ -466,7 +546,8 @@ ID lets a later declaration of the same animation keep running instead of restar
                 (let ((composite (gethash "composite" object)))
                   (cond ((or (null composite) (equal composite "replace")) :replace)
                         ((equal composite "add") :add)
-                        (t (protocol-error "Unknown composite ~S." composite)))))))
+                        (t (protocol-error "Unknown composite ~S." composite))))
+                kinds)))
 
 (defun %uniform-name-p (name)
   "A GLSL identifier outside the prefixes the effect prelude reserves."

@@ -50,8 +50,14 @@ their start."
 (defun channel-active-p (channel)
   (not (null (channel-motion channel))))
 
+;; Sampled for every moving channel on every frame: inlined into CHANNEL-SAMPLE,
+;; the arithmetic stays unboxed and allocates nothing.
+(declaim (inline %spring-state %bezier %bezier-slope %eased-progress %curve-progress
+                 %tween-state %motion-state))
+
 (defun %spring-state (motion displacement velocity elapsed)
   "Displacement and velocity of a damped spring released ELAPSED seconds ago."
+  (declare (type double-float displacement velocity elapsed))
   (let* ((stiffness (motion-stiffness motion))
          (mass (motion-mass motion))
          (natural (sqrt (/ stiffness mass)))
@@ -84,12 +90,14 @@ their start."
                  (+ (* slow slow-term) (* fast fast-term))))))))
 
 (defun %bezier (first second parameter)
+  (declare (type double-float first second parameter))
   (let ((inverse (- 1d0 parameter)))
     (+ (* 3d0 inverse inverse parameter first)
        (* 3d0 inverse parameter parameter second)
        (* parameter parameter parameter))))
 
 (defun %bezier-slope (first second parameter)
+  (declare (type double-float first second parameter))
   (let ((inverse (- 1d0 parameter)))
     (+ (* 3d0 inverse inverse first)
        (* 6d0 inverse parameter (- second first))
@@ -97,12 +105,15 @@ their start."
 
 (defun %eased-progress (ease progress)
   "Return EASE applied to PROGRESS and its derivative with respect to PROGRESS."
+  (declare (type double-float progress))
   (if (null ease)
       (values progress 1d0)
       (destructuring-bind (x1 y1 x2 y2) ease
+        (declare (type double-float x1 y1 x2 y2))
         ;; Newton converges in a few steps for CSS curves; bisection covers
         ;; flat regions where the slope vanishes.
         (let ((parameter progress))
+          (declare (type double-float parameter))
           (loop repeat 8
                 for slope = (%bezier-slope x1 x2 parameter)
                 until (< (abs slope) 1d-6)
@@ -123,15 +134,18 @@ their start."
 
 (defun %curve-progress (points progress)
   "Value at PROGRESS of POINTS, sampled evenly over 0..1, and its slope."
+  (declare (type double-float progress))
   (let* ((last (1- (length points)))
          (position (* (max 0d0 (min 1d0 progress)) last))
          (index (min (1- last) (floor position)))
          (low (svref points index))
          (high (svref points (1+ index))))
+    (declare (type double-float low high))
     (values (+ low (* (- high low) (- position index))) (* (- high low) last))))
 
 (defun %tween-state (motion start target elapsed)
   "Value, velocity and completion of a possibly repeating tween or curve."
+  (declare (type double-float start target elapsed))
   (let* ((duration (motion-duration motion))
          (repeat (motion-repeat motion))
          (iteration (floor elapsed duration))
@@ -148,6 +162,7 @@ their start."
 
 (defun %motion-state (motion channel elapsed)
   "Value and velocity of CHANNEL's MOTION after ELAPSED seconds, or NIL once settled."
+  (declare (type double-float elapsed))
   (let ((target (channel-target channel))
         (start (channel-start-value channel))
         (tolerance (channel-tolerance channel)))
@@ -173,7 +188,7 @@ their start."
   "Advance CHANNEL to TIME. Return true while it is still moving."
   (let ((motion (channel-motion channel)))
     (when motion
-      (let ((elapsed (- time (channel-start-time channel) (motion-delay motion))))
+      (let ((elapsed (- (float time 1d0) (channel-start-time channel) (motion-delay motion))))
         (if (minusp elapsed)
             ;; A delayed motion holds its starting state until it begins.
             (setf (channel-value channel) (channel-start-value channel)

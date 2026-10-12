@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Screen, useClipboard, useOutputs, Web } from "@ataxia/stage";
+import { scale, Screen, useClipboard, useOutputs, Web } from "@ataxia/stage";
 import { useBattery } from "../../lib/system/battery.js";
 import { setBrightness, useBrightness } from "../../lib/system/brightness.js";
 import { mediaCommand, useMedia } from "../../lib/system/media.js";
@@ -118,7 +118,7 @@ export function BarMenu({ menu, onClose }: BarMenuHostProps) {
         border={glassBorder}
         shadow={{ color: "#0000002e", blur: 34, y: 12 }}
         opacity={menu ? 1 : 0}
-        scale={menu ? 1 : 0.94}
+        transform={scale(menu ? 1 : 0.94)}
         transition={motion.pop}
         onMessage={(name, value) => handleMessage({ name, value } as BarMenuMessage)}
       />

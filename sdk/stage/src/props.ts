@@ -14,6 +14,7 @@ import type { Dimension, FlexContainerProps, FlexItemProps, LayoutBox } from "./
 import { type Animation, wireAnimations } from "./animation.js";
 import { isMotion, type Motion } from "./motion.js";
 import type { WireProps, WireValue } from "./protocol.js";
+import { type Transform, wireTransform } from "./transform.js";
 
 /** A solid color, or a two-stop linear gradient; ANGLE is in degrees, 0 = left to right. */
 export type Paint = Color | { from: Color; to: Color; angle?: number };
@@ -52,14 +53,23 @@ export interface CursorProps {
 export interface TransformProps {
   x?: number;
   y?: number;
-  scale?: number;
-  /** Degrees, clockwise. */
-  rotation?: number;
+  /**
+   * Transform functions, applied about the origin as CSS applies them:
+   * `[perspective(800), rotateY(20), scale(1.1)]`. They compose in 3D through
+   * the scene, and input lands where the node shows however it is turned.
+   */
+  transform?: Transform;
   opacity?: number;
   /** Transform origin as a fraction of the node's size; defaults to the center. */
   originX?: number;
   originY?: number;
   visible?: boolean;
+  /**
+   * As CSS `backface-visibility`: `"hidden"` leaves the node, and what it holds,
+   * undrawn and untouchable while it is turned away from the viewer, as a face
+   * of a cube or the back of a card.
+   */
+  backface?: "visible" | "hidden";
 }
 
 /** Props shared through objects, merged under the element's own; later entries win. */
@@ -70,7 +80,7 @@ export type Style<P> = Partial<P> | false | null | undefined | readonly Style<P>
  * SHADER is GLSL ES 1.0 defining `vec4 effect(vec2 position)`, which returns the
  * premultiplied color at POSITION, in the node's local pixels. It can call
  * `content(p)` (the node as drawn) and, with `backdrop`, `backdrop(p)` (what is
- * behind it), and read `size`, `time` (seconds, with `time`), `pointer` (with
+ * behind it), and read `size`, `time` (seconds its clock has run), `pointer` (with
  * `pointer`), `amount`, `pixel` (local units per output pixel) and its own uniforms.
  */
 export interface Effect {
@@ -83,7 +93,10 @@ export interface Effect {
   margin?: number;
   /** The shader reads `content` only at its own position, so changes repaint only where they are. */
   local?: boolean;
-  /** Advance `time` every frame while shown; like a loop, it keeps the output repainting. */
+  /**
+   * Run the clock: `time` advances every frame while shown, which like a loop keeps
+   * the output repainting. Turned off, `time` holds where it was.
+   */
   time?: boolean;
   /** Provide `backdrop(p)`: what is drawn behind the node. */
   backdrop?: boolean;
@@ -130,8 +143,8 @@ export interface AnimatedValues {
   y?: number;
   width?: number;
   height?: number;
-  scale?: number;
-  rotation?: number;
+  /** Animates function by function between lists of the same functions; see `TransformProps`. */
+  transform?: Transform;
   opacity?: number;
   radius?: number;
   zoom?: number;
@@ -191,6 +204,11 @@ export interface PointerHandlers {
  * trip. Store the position from onDragEnd: until the next render declares a
  * different x/y, the node stays where the drag left it.
  */
+export interface PassThroughProps {
+  /** False lets the pointer pass through this node to what is below; its children still take it. */
+  interactive?: boolean;
+}
+
 export interface DragProps {
   draggable?: boolean;
   onDragStart?: (event: StageDragEvent) => void;
@@ -200,7 +218,7 @@ export interface DragProps {
 }
 
 export interface GroupProps extends TransformProps, MotionProps, PointerHandlers, DragProps,
-  CursorProps, EffectProps, ElementProps<GroupProps> {
+  PassThroughProps, CursorProps, EffectProps, ElementProps<GroupProps> {
   /**
    * Size of the group's box, for its transform origin and `clip`. A sized
    * group with pointer handlers catches the pointer anywhere inside it.
@@ -213,7 +231,7 @@ export interface GroupProps extends TransformProps, MotionProps, PointerHandlers
 }
 
 export interface RectProps extends ShapeProps, MotionProps, PointerHandlers, DragProps,
-  CursorProps, EffectProps, ElementProps<RectProps> {
+  PassThroughProps, CursorProps, EffectProps, ElementProps<RectProps> {
   fill?: Paint;
   /** Hide children outside the box (axis-aligned on screen). */
   clip?: boolean;
@@ -236,7 +254,7 @@ export type TextContent = string | number | readonly (string | number)[];
  * only `color`, `font`, `size`, `weight` and `italic` apply.
  */
 export interface TextProps extends TransformProps, MotionProps, PointerHandlers, DragProps,
-  CursorProps, EffectProps, ElementProps<TextProps> {
+  PassThroughProps, CursorProps, EffectProps, ElementProps<TextProps> {
   /** The text; string children are used when it is omitted. */
   text?: string;
   /** Read the text as Pango markup: <b>, <i>, <span foreground="#f80">, … */
@@ -244,7 +262,7 @@ export interface TextProps extends TransformProps, MotionProps, PointerHandlers,
   color?: Color;
   /** Family, or a comma-separated list of families. */
   font?: string;
-  /** Font size in pixels. Animate `scale` rather than this. */
+  /** Font size in pixels. Animate `transform` rather than this. */
   size?: number;
   weight?: number | "normal" | "bold";
   italic?: boolean;
@@ -266,7 +284,7 @@ export interface TextProps extends TransformProps, MotionProps, PointerHandlers,
  * natural size; with one of them it keeps its aspect ratio.
  */
 export interface ImageProps extends ShapeProps, MotionProps, PointerHandlers, DragProps,
-  CursorProps, EffectProps, ElementProps<ImageProps> {
+  PassThroughProps, CursorProps, EffectProps, ElementProps<ImageProps> {
   /** Absolute path, a path relative to the world file, or an imported image. */
   src: string;
   /** How the image fills the box; "fill" stretches it. */
@@ -312,6 +330,7 @@ export interface WindowProps extends ShapeProps, MotionProps, EffectProps, Eleme
    * opened from another application. Without a handler it is focused where it is.
    */
   onActivateRequest?: (event: StageRequestEvent) => void;
+  /** Drawn over the content, in the window's coordinates; one taking the pointer keeps it from the client. */
   children?: ReactNode;
 }
 
@@ -472,6 +491,7 @@ const grid = nested({
   kind: text("grid"), color: color("gridColor"), spacing: number("gridSpacing"), size: number("gridSize"),
 });
 const rotation: Writer = (value: number, out) => { out.rotation = value * degrees; };
+const transformFunctions: Writer = (value: Transform, out) => { out.transform = wireTransform(value); };
 
 const modifierNames: Record<string, string> = {
   super: "logo", logo: "logo", meta: "logo", shift: "shift", ctrl: "control", control: "control",
@@ -503,8 +523,8 @@ const buttons: Record<string, number> = { left: 272, right: 273, middle: 274 };
 
 // Background and screen nodes have no size, so they take no transform origin.
 const placement: Record<string, Writer> = {
-  x: number("x"), y: number("y"), scale: number("scale"), rotation, opacity: number("opacity"),
-  visible: flag("visible"),
+  x: number("x"), y: number("y"), transform: transformFunctions, opacity: number("opacity"),
+  visible: flag("visible"), backface: text("backface"),
 };
 const transform: Record<string, Writer> = {
   ...placement, originX: number("originX"), originY: number("originY"),
@@ -595,12 +615,15 @@ const effect = nested({
   uniforms: (value: Record<string, UniformValue>, out) => { out.uniforms = wireUniforms(value); },
 });
 
-const rect = { ...box, fill, clip: flag("clip"), draggable: flag("draggable"), cursor, effect };
+const rect = {
+  ...box, fill, clip: flag("clip"), draggable: flag("draggable"), interactive: flag("interactive"),
+  cursor, effect,
+};
 
 const fields: Record<HostType, Record<string, Writer>> = {
   group: {
     ...transform, width: size("width"), height: size("height"), clip: flag("clip"),
-    draggable: flag("draggable"), cursor, effect,
+    draggable: flag("draggable"), interactive: flag("interactive"), cursor, effect,
   },
   rect,
   box: rect,
@@ -610,10 +633,11 @@ const fields: Record<HostType, Record<string, Writer>> = {
     weight: (value: number | string, out) => { out.fontWeight = fontWeight(value); },
     italic: flag("italic"), width: size("width"), align: text("align"),
     lineHeight: number("lineHeight"), maxLines: number("maxLines"), draggable: flag("draggable"),
-    cursor, effect,
+    interactive: flag("interactive"), cursor, effect,
   },
   image: {
-    ...box, fit: text("fit"), draggable: flag("draggable"), cursor, effect,
+    ...box, fit: text("fit"), draggable: flag("draggable"), interactive: flag("interactive"),
+    cursor, effect,
     src: (value: string, out) => { out.src = resolveAsset(value); },
   },
   web: {
@@ -648,7 +672,7 @@ const fields: Record<HostType, Record<string, Writer>> = {
 
 /** Wire properties each animated prop expands to, for per-prop transitions. */
 const animatedWireNames: Record<keyof AnimatedValues, string[]> = {
-  x: ["x"], y: ["y"], width: ["width"], height: ["height"], scale: ["scale"], rotation: ["rotation"],
+  x: ["x"], y: ["y"], width: ["width"], height: ["height"], transform: ["transform"],
   opacity: ["opacity"], radius: ["radius"], zoom: ["zoom"],
   fill: ["color", "colorEnd", "fillAngle"], color: ["color"],
   border: ["borderWidth", "borderColor", "borderColorEnd", "borderAngle"],

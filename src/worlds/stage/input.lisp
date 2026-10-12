@@ -63,11 +63,11 @@
 ;;; Picking.
 
 (defun %hit-local (hit x y)
-  (affine-apply (hit-inverse hit) x y))
+  (transform-apply (hit-inverse hit) x y))
 
 (defun %hit-content (hit x y)
   (multiple-value-bind (local-x local-y) (%hit-local hit x y)
-    (affine-apply (hit-content hit) local-x local-y)))
+    (transform-apply (hit-content hit) local-x local-y)))
 
 (defun %hit-accepts-p (world hit x y)
   (let ((clip (hit-clip hit)))
@@ -76,7 +76,7 @@
       (return-from %hit-accepts-p nil)))
   (multiple-value-bind (local-x local-y) (%hit-local hit x y)
     (if (hit-client hit)
-        (multiple-value-bind (content-x content-y) (affine-apply (hit-content hit) local-x local-y)
+        (multiple-value-bind (content-x content-y) (transform-apply (hit-content hit) local-x local-y)
           (let ((bounds (hit-content-bounds hit)))
             (and bounds
                  (<= (ataxia.world:rectangle-x bounds) content-x (ataxia.world:rectangle-right bounds))
@@ -97,15 +97,12 @@
     (when stage-output
       (find-if (lambda (hit)
                  (and (or (hit-client hit) (funcall wants (hit-node hit)))
+                      ;; Hits may be a frame old: their node may be gone.
+                      (or (null (hit-node hit)) (eq (stage-node-state (hit-node hit)) :live))
                       (%hit-accepts-p world hit x y)))
                (output-hits world stage-output)))))
 
 ;;; Director events.
-
-(defun %modifier-names (seat-state)
-  (map 'vector (lambda (modifier) (car (rassoc modifier +modifier-names+)))
-       (remove-if-not (lambda (modifier) (rassoc modifier +modifier-names+))
-                      (stage-seat-modifiers seat-state))))
 
 (defun %pointer-payload (world seat-state &optional hit)
   "Event fields describing the pointer, in screen, world and HIT's spaces."
@@ -115,10 +112,10 @@
         (append
          (list :output (%output-name stage-output) :screen-x x :screen-y y
                :world-x world-x :world-y world-y
-               :modifiers (%modifier-names seat-state))
+               :modifiers (%modifier-names (stage-seat-modifiers seat-state)))
          (when hit
            (multiple-value-bind (local-x local-y) (%hit-local hit x y)
-             (multiple-value-bind (parent-x parent-y) (affine-apply (hit-parent-inverse hit) x y)
+             (multiple-value-bind (parent-x parent-y) (transform-apply (hit-parent-inverse hit) x y)
                (list :x parent-x :y parent-y :local-x local-x :local-y local-y)))))))))
 
 (defun %event-message (node name fields)
@@ -221,6 +218,24 @@ or entered."
               (apply #'%emit-event world (hit-node hit) :pointermove
                      (%pointer-payload world seat-state hit))))))))))
 
+(defun repick-pointers (world stage-output)
+  "After the scene moved under still pointers on STAGE-OUTPUT, tell nodes and clients
+what each pointer is over now. Only entering and leaving change; motion waits for
+the pointer to move."
+  (dolist (seat-state (%seat-states world))
+    (when (and (eq stage-output (%seat-output world seat-state))
+               (not (or (stage-seat-capture seat-state) (stage-seat-manipulation seat-state)
+                        (plusp (hash-table-count (stage-seat-buttons seat-state))))))
+      (let* ((hit (%pick world seat-state #'%input-target-p))
+             (client (and hit (hit-client hit)))
+             (hovered (stage-seat-hovered seat-state))
+             (entering-p (and client (not (eq client (and hovered (hit-client hovered)))))))
+        (%set-entered world seat-state (and hit (hit-node hit)))
+        (%set-hovered world seat-state (and client hit))
+        (when entering-p
+          (%deliver-to-client world seat-state hit #'ataxia.kernel:interactable-pointer-motion
+                              (ataxia.kernel:make-cursor-motion-input :time-msec 0)))))))
+
 (defun %revalidate-pointer (world seat-state)
   (unless (or (stage-seat-capture seat-state) (stage-seat-manipulation seat-state)
               (%client-grab seat-state))
@@ -271,6 +286,15 @@ or entered."
       (setf (%shortcuts-declared world) declared)
       (%replace-shortcuts world nodes))))
 
+(defun %shortcut-key (name)
+  "The key a shortcut binds. Digits bind by position, as Shift changes their keysym
+(Shift+2 is \"at\" on a US layout); every other key binds by keysym."
+  (let ((digit (and (= (length name) 1) (digit-char-p (char name 0)))))
+    (if digit
+        ;; Evdev numbers the top row KEY_1 = 2 through KEY_9 = 10, then KEY_0 = 11.
+        (list :physical (if (zerop digit) 11 (1+ digit)))
+        (list :keysym name))))
+
 (defun %replace-shortcuts (world nodes)
   (ataxia.world:replace-shortcuts
    (ataxia.world:world-shortcut-controller world)
@@ -280,7 +304,7 @@ or entered."
            collect (let ((node node))
                      (ataxia.world:make-shortcut-binding
                       :id (stage-node-id node)
-                      :key (list :keysym (node-prop node :key))
+                      :key (%shortcut-key (node-prop node :key))
                       :modifiers (node-prop node :modifiers)
                       ;; Later declarations win, so duplicates never tie.
                       :priority priority
@@ -514,10 +538,15 @@ or entered."
 (defmethod ataxia.kernel:world-key-event ((world stage-world) seat input)
   (let ((seat-state (gethash seat (%seats world))))
     (when seat-state
-      (setf (stage-seat-modifiers seat-state)
-            (etypecase input
-              (ataxia.kernel:key-input (ataxia.kernel:key-input-modifiers input))
-              (ataxia.kernel:modifiers-input (ataxia.kernel:modifiers-input-names input))))
+      (let ((held (%modifier-names (stage-seat-modifiers seat-state))))
+        (setf (stage-seat-modifiers seat-state)
+              (etypecase input
+                (ataxia.kernel:key-input (ataxia.kernel:key-input-modifiers input))
+                (ataxia.kernel:modifiers-input (ataxia.kernel:modifiers-input-names input))))
+        ;; The director hears when held modifiers change, e.g. to end a window
+        ;; switcher as they are let go.
+        (unless (equalp held (%modifier-names (stage-seat-modifiers seat-state)))
+          (%report-modifiers world seat-state)))
       (let* ((panel (stage-seat-focused-panel seat-state))
              (focused (stage-seat-focused seat-state))
              (client (cond (panel (%panel-client panel))

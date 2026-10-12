@@ -1,21 +1,24 @@
 ;;;; Direct GLES renderer for Stage display items.
 ;;;;
-;;;; All programs share one vertex layout: buffer position, node-local position
-;;;; and texture coordinates. Shapes are signed-distance fields evaluated in
-;;;; node-local units, so rotation and zoom keep corners and borders exact.
+;;;; All programs share one vertex layout: homogeneous buffer position, node-local
+;;;; position and texture coordinates. Shapes are signed-distance fields evaluated
+;;;; in node-local units, so rotation, zoom and perspective keep corners and
+;;;; borders exact.
 ;;;; Call only inside a Kernel graphics scope or frame lease.
 
 (in-package #:ataxia.stage-world)
 
 (defparameter +stage-vertex-shader+
-  "attribute vec2 a_position;
+  "attribute vec3 a_position;
 attribute vec2 a_local;
 attribute vec2 a_uv;
 uniform vec2 u_viewport;
 varying vec2 v_local;
 varying vec2 v_uv;
 void main() {
-  gl_Position = vec4(a_position / u_viewport * 2.0 - 1.0, 0.0, 1.0);
+  // Dividing by w gives the buffer pixel, and makes the local position and
+  // texture coordinates interpolate correctly under perspective.
+  gl_Position = vec4(a_position.xy / u_viewport * 2.0 - a_position.z, 0.0, a_position.z);
   v_local = a_local;
   v_uv = a_uv;
 }")
@@ -93,6 +96,12 @@ void main() {
   vec2 half_size = (u_box.zw - u_box.xy) * 0.5;
   vec2 point = v_local - (u_box.xy + u_box.zw) * 0.5;
   float corner = min(u_corner, min(half_size.x, half_size.y));
+  // Deep inside the box the Gaussian lies wholly within it: the shadow is full,
+  // as under a translucent window, where integrating would cost the most.
+  if (all(lessThan(abs(point), half_size - corner - 3.0 * u_sigma))) {
+    gl_FragColor = u_color;
+    return;
+  }
   float start = clamp(-3.0 * u_sigma, point.y - half_size.y, point.y + half_size.y);
   float end = clamp(3.0 * u_sigma, point.y - half_size.y, point.y + half_size.y);
   float step = (end - start) / 4.0;
@@ -166,10 +175,11 @@ uniform float u_lines;
 uniform float u_pixel;
 uniform vec4 u_row_x;
 uniform vec4 u_row_y;
+uniform vec4 u_row_w;
 uniform vec2 u_origin;
 void main() {
   vec3 point = vec3(gl_FragCoord.xy + u_origin, 1.0);
-  vec2 local = vec2(dot(u_row_x.xyz, point), dot(u_row_y.xyz, point));
+  vec2 local = vec2(dot(u_row_x.xyz, point), dot(u_row_y.xyz, point)) / dot(u_row_w.xyz, point);
   // Distance to the nearest grid point, per axis, in output pixels.
   vec2 cell = abs(fract(local / u_spacing + 0.5) - 0.5) * u_spacing / u_pixel;
   float distance = u_lines > 0.5 ? min(cell.x, cell.y) : length(cell);
@@ -241,7 +251,7 @@ uniform vec2 u_origin;
 (defstruct (stage-renderer (:constructor %make-stage-renderer))
   solid rect shadow texture external background blur-down blur-up backdrop
   (buffer 0 :type (unsigned-byte 32))
-  (vertices (make-array 36 :element-type 'single-float) :read-only t)
+  (vertices (make-array 42 :element-type 'single-float) :read-only t)
   (viewport-width 1d0 :type double-float)
   (viewport-height 1d0 :type double-float)
   ;; Buffer pixel of the bound target's first pixel: nonzero inside an effect's
@@ -258,7 +268,14 @@ uniform vec2 u_origin;
   (effects (make-hash-table :test #'equal) :read-only t)
   ;; (WIDTH HEIGHT DEPTH ROLE) -> (render target . when last used), for nested effects.
   (effect-targets (make-hash-table :test #'equal) :read-only t)
-  (effect-depth 0 :type fixnum))
+  (effect-depth 0 :type fixnum)
+  ;; Item key -> MIPMAP of the client surface it draws small.
+  (mipmaps (make-hash-table :test #'equal) :read-only t)
+  ;; Seconds this frame may still spend on text rasters and mipmaps that could
+  ;; also come later; see CALL-WITH-SPARE-TIME.
+  (spare 0d0 :type double-float)
+  ;; When drawing last handed its commands to the GPU; see SUBMIT-DRAWING.
+  (submitted-at 0d0 :type double-float))
 
 ;; A texture the World uploads itself, such as rendered text or a decoded image.
 (defstruct (raster (:constructor %make-raster))
@@ -269,6 +286,17 @@ uniform vec2 u_origin;
   (used 0d0 :type double-float)
   ;; Seconds the raster survives without being drawn.
   (lifetime 2d0 :type double-float))
+
+(defparameter +mipmap-minimum+ 64
+  "Pixels a surface's smaller side needs for drawing it small to be worth a mipmap.")
+
+;; A client surface's half-size copy with mip levels, for drawing it small.
+(defstruct (mipmap (:constructor %make-mipmap (target)))
+  target
+  ;; The render source and generation the copy was made from.
+  (source nil)
+  (generation nil)
+  (used 0d0 :type double-float))
 
 (defparameter +stage-attributes+ '(("a_position" . 0) ("a_local" . 1) ("a_uv" . 2)))
 
@@ -317,6 +345,9 @@ uniform vec2 u_origin;
     (loop for entry being the hash-values of (stage-renderer-effect-targets renderer)
           do (destroy-render-target (car entry)))
     (clrhash (stage-renderer-effect-targets renderer))
+    (loop for mipmap being the hash-values of (stage-renderer-mipmaps renderer)
+          do (destroy-render-target (mipmap-target mipmap)))
+    (clrhash (stage-renderer-mipmaps renderer))
     (loop for raster being the hash-values of (stage-renderer-rasters renderer)
           do (gl-delete-texture (raster-texture raster)))
     (clrhash (stage-renderer-rasters renderer))
@@ -324,7 +355,35 @@ uniform vec2 u_origin;
           (ataxia.world.gles:gles-destroy-buffer (stage-renderer-buffer renderer))))
   nil)
 
+(defparameter +spare-time+ 0.003d0
+  "Seconds a frame may spend on work it could leave to later frames.")
+
+(defun call-with-spare-time (renderer function)
+  "Call FUNCTION, work that could wait, charging its time to this frame's spare time."
+  (let ((start (%now)))
+    (multiple-value-prog1 (funcall function)
+      (decf (stage-renderer-spare renderer) (- (%now) start)))))
+
+(defun spare-time-p (renderer)
+  "Whether this frame has time left for work that could wait: a burst of it spreads
+over frames instead of making one miss its vblank."
+  (plusp (stage-renderer-spare renderer)))
+
+(defparameter +submit-interval+ 0.001d0
+  "Seconds of drawing after which commands recorded so far go to the GPU.")
+
+(defun submit-drawing (renderer)
+  "Hand the GPU the commands recorded so far, at most every +SUBMIT-INTERVAL+. The
+driver otherwise holds a frame's commands until it ends, leaving the GPU idle while
+the CPU records them and the CPU idle while the GPU draws."
+  (let ((now (%now)))
+    (when (> (- now (stage-renderer-submitted-at renderer)) +submit-interval+)
+      (ataxia.world.gles:gles-flush)
+      (setf (stage-renderer-submitted-at renderer) now))))
+
 (defun begin-stage-frame (renderer width height)
+  (setf (stage-renderer-spare renderer) +spare-time+
+        (stage-renderer-submitted-at renderer) (%now))
   (setf (stage-renderer-viewport-width renderer) (coerce width 'double-float)
         (stage-renderer-viewport-height renderer) (coerce height 'double-float)
         (stage-renderer-origin-x renderer) 0
@@ -354,33 +413,49 @@ uniform vec2 u_origin;
                                      (stage-renderer-origin-y renderer))
   program)
 
+(defun %enable-vertex-layout ()
+  (let ((stride (* 7 4)))
+    (ataxia.world.gles:gles-enable-attribute 0 3 stride 0)
+    (ataxia.world.gles:gles-enable-attribute 1 2 stride 12)
+    (ataxia.world.gles:gles-enable-attribute 2 2 stride 20)))
+
 (defun %draw-quad (renderer transform x y width height &optional uv)
   "Draw local rectangle (X, Y, WIDTH, HEIGHT) through TRANSFORM. UV holds the
 texture coordinates of its top-left, top-right, bottom-left and bottom-right corners."
   (let ((vertices (stage-renderer-vertices renderer))
-        (x (float x 1d0)) (y (float y 1d0)) (width (float width 1d0)) (height (float height 1d0))
-        (a (affine-a transform)) (b (affine-b transform)) (c (affine-c transform))
-        (d (affine-d transform)) (e (affine-e transform)) (f (affine-f transform)))
-    (declare (type (simple-array single-float (36)) vertices)
-             (double-float x y width height a b c d e f))
+        (x (float x 1d0)) (y (float y 1d0)) (width (float width 1d0)) (height (float height 1d0)))
+    (declare (type (simple-array single-float (42)) vertices)
+             (double-float x y width height))
     ;; Written in place: a quad is drawn for every item on every frame.
     (loop for corner of-type fixnum in '(0 1 2 1 3 2)
-          for index of-type fixnum from 0 by 6
+          for index of-type fixnum from 0 by 7
           for local-x of-type double-float = (if (oddp corner) (+ x width) x)
           for local-y of-type double-float = (if (>= corner 2) (+ y height) y)
-          do (setf (aref vertices index) (coerce (+ (* a local-x) (* c local-y) e) 'single-float)
-                   (aref vertices (+ index 1)) (coerce (+ (* b local-x) (* d local-y) f) 'single-float)
-                   (aref vertices (+ index 2)) (coerce local-x 'single-float)
-                   (aref vertices (+ index 3)) (coerce local-y 'single-float)
-                   (aref vertices (+ index 4)) (if uv (coerce (aref uv (* 2 corner)) 'single-float) 0f0)
-                   (aref vertices (+ index 5))
-                   (if uv (coerce (aref uv (1+ (* 2 corner))) 'single-float) 0f0)))
+          do (multiple-value-bind (buffer-x buffer-y w) (transform-homogeneous transform local-x local-y)
+               (setf (aref vertices index) (coerce buffer-x 'single-float)
+                     (aref vertices (+ index 1)) (coerce buffer-y 'single-float)
+                     (aref vertices (+ index 2)) (coerce w 'single-float)
+                     (aref vertices (+ index 3)) (coerce local-x 'single-float)
+                     (aref vertices (+ index 4)) (coerce local-y 'single-float)
+                     (aref vertices (+ index 5)) (if uv (coerce (aref uv (* 2 corner)) 'single-float) 0f0)
+                     (aref vertices (+ index 6))
+                     (if uv (coerce (aref uv (1+ (* 2 corner))) 'single-float) 0f0))))
     (ataxia.world.gles:gles-upload-floats (stage-renderer-buffer renderer) vertices)
-    (let ((stride (* 6 4)))
-      (ataxia.world.gles:gles-enable-attribute 0 2 stride 0)
-      (ataxia.world.gles:gles-enable-attribute 1 2 stride 8)
-      (ataxia.world.gles:gles-enable-attribute 2 2 stride 16))
+    (%enable-vertex-layout)
     (ataxia.world.gles:gles-draw-triangles 6)))
+
+(defun %pixel (transform x y)
+  "Local units per output pixel around local point (X, Y)."
+  (/ 1d0 (max 1d-9 (transform-scale-factor transform x y))))
+
+(defun %uniform-rows (program transform)
+  "Set TRANSFORM's rows in the vec4 uniforms u_row_x, u_row_y and u_row_w."
+  (ataxia.world.gles:gles-uniform-4f program "u_row_x" (transform-a transform) (transform-c transform)
+                                     (transform-e transform) 0d0)
+  (ataxia.world.gles:gles-uniform-4f program "u_row_y" (transform-b transform) (transform-d transform)
+                                     (transform-f transform) 0d0)
+  (ataxia.world.gles:gles-uniform-4f program "u_row_w" (transform-g transform) (transform-h transform)
+                                     (transform-i transform) 0d0))
 
 (defun %uniform-color (program name color)
   (ataxia.world.gles:gles-uniform-4f program name
@@ -403,7 +478,7 @@ texture coordinates of its top-left, top-right, bottom-left and bottom-right cor
 (defun draw-stage-rect (renderer transform width height radius border fill stroke)
   "Fill and inner border of a rounded rectangle, painted with FILL and STROKE paints."
   (let* ((program (%use renderer (stage-renderer-rect renderer)))
-         (pixel (/ 1d0 (max 1d-9 (affine-scale-factor transform))))
+         (pixel (%pixel transform (/ width 2) (/ height 2)))
          (margin pixel))
     (ataxia.world.gles:gles-uniform-2f program "u_size" width height)
     (ataxia.world.gles:gles-uniform-1f program "u_radius" radius)
@@ -421,7 +496,7 @@ texture coordinates of its top-left, top-right, bottom-left and bottom-right cor
 (defun draw-stage-shadow (renderer transform x y width height radius blur color)
   (let ((program (%use renderer (stage-renderer-shadow renderer)))
         (extent (shadow-extent blur))
-        (pixel (/ 1d0 (max 1d-9 (affine-scale-factor transform)))))
+        (pixel (%pixel transform (+ x (/ width 2)) (+ y (/ height 2)))))
     (ataxia.world.gles:gles-uniform-4f program "u_box" x y (+ x width) (+ y height))
     (ataxia.world.gles:gles-uniform-1f program "u_sigma" (max (/ blur 2d0) (* 0.5d0 pixel)))
     (ataxia.world.gles:gles-uniform-1f program "u_corner" radius)
@@ -436,16 +511,17 @@ texture coordinates of its top-left, top-right, bottom-left and bottom-right cor
   (let ((vertices (stage-renderer-vertices renderer)))
     (fill vertices 0f0)
     (loop for (x . y) in points
-          for index from 0 by 6
+          for index from 0 by 7
           do (setf (aref vertices index) (coerce x 'single-float)
-                   (aref vertices (1+ index)) (coerce y 'single-float)))
+                   (aref vertices (+ index 1)) (coerce y 'single-float)
+                   (aref vertices (+ index 2)) 1f0))
     (ataxia.world.gles:gles-upload-floats (stage-renderer-buffer renderer) vertices)
-    (ataxia.world.gles:gles-enable-attribute 0 2 24 0)
+    (%enable-vertex-layout)
     (ataxia.world.gles:gles-draw-triangles 3)))
 
 (defun draw-stage-background (renderer transform color grid grid-color spacing size)
   (let ((program (%use renderer (stage-renderer-background renderer)))
-        (inverse (or (affine-invert transform) +identity-affine+))
+        (inverse (or (transform-invert transform) +identity-transform+))
         (width (stage-renderer-viewport-width renderer))
         (height (stage-renderer-viewport-height renderer)))
     (%uniform-color program "u_color" color)
@@ -453,13 +529,11 @@ texture coordinates of its top-left, top-right, bottom-left and bottom-right cor
     (ataxia.world.gles:gles-uniform-1f program "u_spacing" (max spacing 1d-3))
     (ataxia.world.gles:gles-uniform-1f program "u_size" size)
     (ataxia.world.gles:gles-uniform-1f program "u_lines" (if (eq grid :lines) 1d0 0d0))
-    (ataxia.world.gles:gles-uniform-1f program "u_pixel"
-                                       (/ 1d0 (max 1d-9 (affine-scale-factor transform))))
-    (ataxia.world.gles:gles-uniform-4f program "u_row_x"
-                                       (affine-a inverse) (affine-c inverse) (affine-e inverse) 0d0)
-    (ataxia.world.gles:gles-uniform-4f program "u_row_y"
-                                       (affine-b inverse) (affine-d inverse) (affine-f inverse) 0d0)
-    (%draw-quad renderer +identity-affine+ 0d0 0d0 width height)))
+    (ataxia.world.gles:gles-uniform-1f program "u_pixel" (%pixel transform 0d0 0d0))
+    (%uniform-rows program inverse)
+    (%draw-quad renderer +identity-transform+ 0d0 0d0 width height)))
+
+(defparameter +full-texture-uv+ #(0d0 0d0 1d0 0d0 0d0 1d0 1d0 1d0))
 
 (defun %uv-filter (uv from to local-length pixels-per-unit texel-width texel-height)
   "UV offset spanning one output pixel along an edge, and the taps it needs."
@@ -472,80 +546,168 @@ texture coordinates of its top-left, top-right, bottom-left and bottom-right cor
             (if (> ratio 1.25d0) (min 6 (ceiling ratio)) 1))))
 
 (defun draw-stage-texture (renderer transform target name has-alpha-p texel-width texel-height uv
-                           x y width height mask-width mask-height radius opacity &optional (dim 0d0))
+                           x y width height mask-width mask-height radius opacity
+                           &optional (dim 0d0) mipmap)
   "Draw a texture at local (X, Y, WIDTH, HEIGHT) with corner UVs, rounding the box
-of size MASK-WIDTH by MASK-HEIGHT at the local origin."
-  (let ((program (if (= target ataxia.world.gles:+texture-external-oes+)
-                     (stage-renderer-external renderer)
-                     (stage-renderer-texture renderer)))
-        (scale (max 1d-9 (affine-scale-factor transform))))
-    (when program
-      (%use renderer program)
-      (multiple-value-bind (xu xv x-taps) (%uv-filter uv 0 1 width scale texel-width texel-height)
-        (multiple-value-bind (yu yv y-taps) (%uv-filter uv 0 2 height scale texel-width texel-height)
-          (ataxia.world.gles:gles-uniform-2f program "u_filter_x" xu xv)
-          (ataxia.world.gles:gles-uniform-2f program "u_filter_y" yu yv)
-          (ataxia.world.gles:gles-uniform-2f program "u_taps" x-taps y-taps)))
-      (ataxia.world.gles:gles-uniform-4f
-       program "u_uv_bounds"
-       (min (aref uv 0) (aref uv 2) (aref uv 4) (aref uv 6))
-       (min (aref uv 1) (aref uv 3) (aref uv 5) (aref uv 7))
-       (max (aref uv 0) (aref uv 2) (aref uv 4) (aref uv 6))
-       (max (aref uv 1) (aref uv 3) (aref uv 5) (aref uv 7)))
-      (ataxia.world.gles:gles-uniform-1i program "u_texture" 0)
-      (ataxia.world.gles:gles-uniform-1f program "u_opacity" opacity)
-      (ataxia.world.gles:gles-uniform-1f program "u_dim" dim)
-      (ataxia.world.gles:gles-uniform-1f program "u_has_alpha" (if has-alpha-p 1d0 0d0))
-      (ataxia.world.gles:gles-uniform-2f program "u_size" mask-width mask-height)
-      (ataxia.world.gles:gles-uniform-1f program "u_radius" radius)
-      (ataxia.world.gles:gles-uniform-1f program "u_pixel" (/ 1d0 scale))
-      (ataxia.world.gles:gles-bind-texture target name)
-      (ataxia.world.gles:call-with-gles-linear-filter
-       target (lambda () (%draw-quad renderer transform x y width height uv)))
-      t)))
+of size MASK-WIDTH by MASK-HEIGHT at the local origin. Drawn small, the texture is
+box filtered over each pixel's footprint; or with MIPMAP, a function returning a
+mipmapped copy of it or NIL for none yet, sampled once from that."
+  (let ((scale (max 1d-9 (transform-scale-factor transform (+ x (/ width 2)) (+ y (/ height 2)))))
+        (mipmapped-p nil))
+    (multiple-value-bind (xu xv x-taps) (%uv-filter uv 0 1 width scale texel-width texel-height)
+      (multiple-value-bind (yu yv y-taps) (%uv-filter uv 0 2 height scale texel-width texel-height)
+        (let ((copy (and mipmap (> (max x-taps y-taps) 1) (funcall mipmap))))
+          (when copy
+            (setf target +gl-texture-2d+ name copy x-taps 1 y-taps 1 mipmapped-p t)))
+        (let ((program (if (= target ataxia.world.gles:+texture-external-oes+)
+                           (stage-renderer-external renderer)
+                           (stage-renderer-texture renderer))))
+          (when program
+            (%use renderer program)
+            (ataxia.world.gles:gles-uniform-2f program "u_filter_x" xu xv)
+            (ataxia.world.gles:gles-uniform-2f program "u_filter_y" yu yv)
+            (ataxia.world.gles:gles-uniform-2f program "u_taps" x-taps y-taps)
+            (ataxia.world.gles:gles-uniform-4f
+             program "u_uv_bounds"
+             (min (aref uv 0) (aref uv 2) (aref uv 4) (aref uv 6))
+             (min (aref uv 1) (aref uv 3) (aref uv 5) (aref uv 7))
+             (max (aref uv 0) (aref uv 2) (aref uv 4) (aref uv 6))
+             (max (aref uv 1) (aref uv 3) (aref uv 5) (aref uv 7)))
+            (ataxia.world.gles:gles-uniform-1i program "u_texture" 0)
+            (ataxia.world.gles:gles-uniform-1f program "u_opacity" opacity)
+            (ataxia.world.gles:gles-uniform-1f program "u_dim" dim)
+            (ataxia.world.gles:gles-uniform-1f program "u_has_alpha" (if has-alpha-p 1d0 0d0))
+            (ataxia.world.gles:gles-uniform-2f program "u_size" mask-width mask-height)
+            (ataxia.world.gles:gles-uniform-1f program "u_radius" radius)
+            (ataxia.world.gles:gles-uniform-1f program "u_pixel" (/ 1d0 scale))
+            (ataxia.world.gles:gles-bind-texture target name)
+            (if mipmapped-p
+                (%draw-quad renderer transform x y width height uv)
+                (ataxia.world.gles:call-with-gles-linear-filter
+                 target (lambda () (%draw-quad renderer transform x y width height uv))))
+            t))))))
+
+;;; Mipmaps. A window drawn small, as a card or a thumbnail, needs dozens of
+;;; texels per pixel to stay smooth, which costs the GPU more than the rest of
+;;; the frame. Instead it gets a half-size copy with mip levels, made once per
+;;; commit and sampled once per pixel, as GNOME does for its overview.
+
+(defun %copy-into-mipmap (renderer source target)
+  "Draw SOURCE's whole texture into TARGET, then fill TARGET's smaller levels."
+  (let ((width (render-target-width target))
+        (height (render-target-height target))
+        (viewport-width (stage-renderer-viewport-width renderer))
+        (viewport-height (stage-renderer-viewport-height renderer)))
+    (ataxia.world.gles:gles-set-scissor-enabled nil)
+    (ataxia.world.gles:gles-set-blending-enabled nil)
+    (unwind-protect
+         (call-with-render-target
+          target
+          (lambda ()
+            (setf (stage-renderer-viewport-width renderer) (coerce width 'double-float)
+                  (stage-renderer-viewport-height renderer) (coerce height 'double-float))
+            ;; At half size the box filter averages each two by two texels.
+            (draw-stage-texture renderer +identity-transform+
+                                (ataxia.kernel:render-source-gles-target source)
+                                (ataxia.kernel:render-source-gles-name source)
+                                (ataxia.kernel:render-source-has-alpha-p source)
+                                (ataxia.kernel:render-source-width source)
+                                (ataxia.kernel:render-source-height source) +full-texture-uv+
+                                0d0 0d0 width height 0d0 0d0 0d0 1d0)))
+      (setf (stage-renderer-viewport-width renderer) viewport-width
+            (stage-renderer-viewport-height renderer) viewport-height)
+      (ataxia.world.gles:gles-set-blending-enabled t)
+      (ataxia.world.gles:gles-set-scissor-enabled t)
+      (apply #'set-stage-scissor renderer (stage-renderer-scissor renderer)))
+    (generate-render-target-mipmaps target)))
+
+(defun %surface-mipmap (renderer slot source)
+  "The texture of SLOT's mipmapped copy of render SOURCE, remade when SOURCE changes
+while the frame has spare time; NIL when there is none yet."
+  (let ((mipmap (gethash slot (stage-renderer-mipmaps renderer)))
+        (generation (ataxia.kernel:render-source-generation source))
+        (width (max 1 (ceiling (ataxia.kernel:render-source-width source) 2)))
+        (height (max 1 (ceiling (ataxia.kernel:render-source-height source) 2))))
+    (unless (and mipmap (eq (mipmap-source mipmap) source)
+                 (eql (mipmap-generation mipmap) generation))
+      (unless (spare-time-p renderer)
+        (return-from %surface-mipmap nil))
+      (call-with-spare-time
+       renderer
+       (lambda ()
+         (unless (and mipmap (= width (render-target-width (mipmap-target mipmap)))
+                      (= height (render-target-height (mipmap-target mipmap))))
+           (when mipmap (destroy-render-target (mipmap-target mipmap)))
+           (setf mipmap (%make-mipmap (make-render-target width height t))
+                 (gethash slot (stage-renderer-mipmaps renderer)) mipmap))
+         (%copy-into-mipmap renderer source (mipmap-target mipmap))
+         (setf (mipmap-source mipmap) source
+               (mipmap-generation mipmap) generation))))
+    (setf (mipmap-used mipmap) (%now))
+    (render-target-texture (mipmap-target mipmap))))
+
+(defun touch-mipmap (renderer slot)
+  "Keep SLOT's mipmap, if it has one, as a display showing its surface is built."
+  (let ((mipmap (and renderer (gethash slot (stage-renderer-mipmaps renderer)))))
+    (when mipmap
+      (setf (mipmap-used mipmap) (%now)))))
 
 (defun draw-stage-surface (renderer transform surface x y width height mask-width mask-height
-                           radius opacity &optional (dim 0d0))
-  "Draw a client surface at local (X, Y, WIDTH, HEIGHT); see DRAW-STAGE-TEXTURE."
-  (let ((source (ataxia.kernel:drawable-surface-render-source surface)))
+                           radius opacity &optional (dim 0d0) slot)
+  "Draw a client surface at local (X, Y, WIDTH, HEIGHT); see DRAW-STAGE-TEXTURE. Drawn
+small, it is sampled from a mipmapped copy kept under SLOT, if given; a surface a
+few pixels across, like a window's border, needs none."
+  (let* ((source (ataxia.kernel:drawable-surface-render-source surface))
+         (slot (and slot (>= (min (ataxia.kernel:render-source-width source)
+                                  (ataxia.kernel:render-source-height source))
+                             +mipmap-minimum+)
+                    slot)))
     (draw-stage-texture renderer transform (ataxia.kernel:render-source-gles-target source)
                         (ataxia.kernel:render-source-gles-name source)
                         (ataxia.kernel:render-source-has-alpha-p source)
                         (ataxia.kernel:render-source-width source)
                         (ataxia.kernel:render-source-height source)
                         (ataxia.kernel:drawable-surface-texture-coordinates surface)
-                        x y width height mask-width mask-height radius opacity dim)))
+                        x y width height mask-width mask-height radius opacity dim
+                        (and slot (lambda () (%surface-mipmap renderer slot source))))))
 
 ;;; Rasters: textures the World uploads itself.
 
-(defparameter +full-texture-uv+ #(0d0 0d0 1d0 0d0 0d0 1d0 1d0 1d0))
+(defun slot-raster (renderer slot)
+  "The raster SLOT holds, whatever its key."
+  (gethash slot (stage-renderer-rasters renderer)))
+
+(defun install-raster (renderer slot key pixels width height format)
+  "Upload PIXELS, WIDTH x HEIGHT in FORMAT, as SLOT's raster, now holding KEY."
+  (let ((raster (or (slot-raster renderer slot)
+                    (setf (gethash slot (stage-renderer-rasters renderer)) (%make-raster)))))
+    (setf (raster-texture raster)
+          (if (zerop (raster-texture raster))
+              (gl-create-texture width height pixels format)
+              (gl-upload-texture (raster-texture raster) width height pixels format))
+          (raster-width raster) width
+          (raster-height raster) height
+          (raster-key raster) key
+          (raster-used raster) (%now))
+    raster))
 
 (defun renderer-raster (renderer slot key lifetime producer)
   "The raster in SLOT holding KEY. When SLOT holds anything else, PRODUCER is
 called with an uploader taking (PIXELS WIDTH HEIGHT FORMAT); it may decline.
 Return the raster, or NIL while none holds KEY."
-  (let* ((rasters (stage-renderer-rasters renderer))
-         (raster (gethash slot rasters)))
+  (let ((raster (slot-raster renderer slot)))
     (unless (and raster (equalp key (raster-key raster)))
       (funcall producer
                (lambda (pixels width height format)
-                 (unless raster
-                   (setf raster (%make-raster) (gethash slot rasters) raster))
-                 (setf (raster-texture raster)
-                       (if (zerop (raster-texture raster))
-                           (gl-create-texture width height pixels format)
-                           (gl-upload-texture (raster-texture raster) width height pixels format))
-                       (raster-width raster) width
-                       (raster-height raster) height
-                       (raster-key raster) key))))
+                 (setf raster (install-raster renderer slot key pixels width height format)))))
     (when (and raster (equalp key (raster-key raster)))
       (setf (raster-used raster) (%now)
             (raster-lifetime raster) lifetime)
       raster)))
 
 (defun sweep-rasters (renderer now)
-  "Delete rasters unused for their lifetime before NOW, blur and effect targets unused
-for two seconds, and effect programs unused for a minute."
+  "Delete rasters unused for their lifetime before NOW, blur and effect targets and
+mipmaps unused for two seconds, and effect programs unused for a minute."
   (let ((chains (stage-renderer-blur-chains renderer)))
     (loop for key being the hash-keys of chains using (hash-value entry)
           when (> (- now (cdr entry)) 2d0)
@@ -556,6 +718,11 @@ for two seconds, and effect programs unused for a minute."
           when (> (- now (cdr entry)) 2d0)
             do (destroy-render-target (car entry))
                (remhash key targets)))
+  (let ((mipmaps (stage-renderer-mipmaps renderer)))
+    (loop for slot being the hash-keys of mipmaps using (hash-value mipmap)
+          when (> (- now (mipmap-used mipmap)) 2d0)
+            do (destroy-render-target (mipmap-target mipmap))
+               (remhash slot mipmaps)))
   (let ((effects (stage-renderer-effects renderer)))
     (loop for key being the hash-keys of effects using (hash-value entry)
           when (> (- now (cdr entry)) 60d0)
@@ -569,7 +736,7 @@ for two seconds, and effect programs unused for a minute."
 
 (defun draw-stage-raster (renderer transform raster x y width height uv radius opacity)
   "Draw RASTER over local (X, Y, WIDTH, HEIGHT), rounding that box by RADIUS."
-  (draw-stage-texture renderer (affine-multiply transform (affine-translation x y))
+  (draw-stage-texture renderer (transform-multiply transform (transform-translation x y))
                       +gl-texture-2d+ (raster-texture raster) t
                       (raster-width raster) (raster-height raster) uv
                       0d0 0d0 width height width height radius opacity))
@@ -623,7 +790,7 @@ the scale from target to source pixels: 2 when downsampling, 1/2 when upsampling
            (ataxia.world.gles:gles-bind-texture +gl-texture-2d+ (render-target-texture source))
            (let ((u0 (/ (* tx ratio) source-width)) (v0 (/ (* ty ratio) source-height))
                  (u1 (/ (* (+ tx tw) ratio) source-width)) (v1 (/ (* (+ ty th) ratio) source-height)))
-             (%draw-quad renderer +identity-affine+ tx ty tw th
+             (%draw-quad renderer +identity-transform+ tx ty tw th
                          (vector u0 v0 u1 v0 u0 v1 u1 v1)))))))))
 
 (defun draw-stage-blur (renderer transform width height radius blur opacity area)
@@ -658,7 +825,7 @@ inside the rounded local box WIDTH x HEIGHT through TRANSFORM."
               (ataxia.world.gles:gles-set-scissor-enabled t)
               (apply #'set-stage-scissor renderer (stage-renderer-scissor renderer)))
             (let ((program (%use renderer (stage-renderer-backdrop renderer)))
-                  (pixel (/ 1d0 (max 1d-9 (affine-scale-factor transform)))))
+                  (pixel (%pixel transform (/ width 2) (/ height 2))))
               (ataxia.world.gles:gles-uniform-4f program "u_bounds"
                                                  (/ (+ x 0.5d0) buffer-width) (/ (+ y 0.5d0) buffer-height)
                                                  (/ (- (+ x area-width) 0.5d0) buffer-width)

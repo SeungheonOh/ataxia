@@ -7,6 +7,8 @@
 // seconds. The compositor validates every field and never trusts it further.
 // docs/STAGE-PROTOCOL.md specifies every message in full.
 
+import type { Modifier } from "./events.js";
+
 export const PROTOCOL_VERSION = 1;
 
 export type WireColor = [number, number, number, number];
@@ -88,6 +90,8 @@ export type ServerMessage =
   | { type: "output"; output: WireOutput }
   | { type: "output-removed"; name: string }
   | ({ type: "focus" } & WireFocus)
+  /** The modifiers a seat holds, whenever they change. */
+  | { type: "modifiers"; seat: string; modifiers: Modifier[] }
   | ({ type: "camera" } & WireCamera)
   | { type: "clipboard"; text: string }
   | { type: "shares"; shares: WireShare[] }

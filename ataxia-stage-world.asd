@@ -14,7 +14,7 @@
     :components
     ((:file "packages")
      (:file "motion")
-     (:file "affine")
+     (:file "transform")
      (:file "model")
      (:file "scene")
      (:file "world")

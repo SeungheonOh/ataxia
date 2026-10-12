@@ -16,6 +16,7 @@
   (border :int32) (format :uint32) (type :uint32) (pixels :pointer))
 (cffi:defcfun ("glTexParameteri" %gl-tex-parameter) :void
   (target :uint32) (name :uint32) (value :int32))
+(cffi:defcfun ("glGenerateMipmap" %gl-generate-mipmap) :void (target :uint32))
 (cffi:defcfun ("glCopyTexSubImage2D" %gl-copy-tex-sub-image-2d) :void
   (target :uint32) (level :int32) (x-offset :int32) (y-offset :int32)
   (x :int32) (y :int32) (width :int32) (height :int32))
@@ -44,6 +45,7 @@
 (defconstant +gl-texture-wrap-s+ #x2802)
 (defconstant +gl-texture-wrap-t+ #x2803)
 (defconstant +gl-linear+ #x2601)
+(defconstant +gl-linear-mipmap-linear+ #x2703)
 (defconstant +gl-clamp-to-edge+ #x812f)
 (defconstant +gl-framebuffer+ #x8d40)
 (defconstant +gl-framebuffer-binding+ #x8ca6)
@@ -89,12 +91,18 @@
   (width 0 :type fixnum)
   (height 0 :type fixnum))
 
-(defun make-render-target (width height)
+(defun make-render-target (width height &optional mipmapped-p)
+  "A WIDTH x HEIGHT target; MIPMAPPED-P samples it trilinearly once its levels are
+generated with GENERATE-RENDER-TARGET-MIPMAPS."
   (let ((texture (gl-create-texture width height))
         (framebuffer 0)
         (previous (gl-framebuffer-binding)))
     (handler-case
         (progn
+          (when mipmapped-p
+            (%gl-bind-texture +gl-texture-2d+ texture)
+            (%gl-tex-parameter +gl-texture-2d+ +gl-texture-min-filter+ +gl-linear-mipmap-linear+)
+            (%gl-bind-texture +gl-texture-2d+ 0))
           (setf framebuffer (cffi:with-foreign-object (name :uint32)
                               (%gl-gen-framebuffers 1 name)
                               (cffi:mem-ref name :uint32)))
@@ -119,6 +127,12 @@
       (setf (render-target-framebuffer target) 0))
     (setf (render-target-texture target) (gl-delete-texture (render-target-texture target))))
   nil)
+
+(defun generate-render-target-mipmaps (target)
+  "Fill the smaller levels of TARGET's texture from what is drawn in it."
+  (%gl-bind-texture +gl-texture-2d+ (render-target-texture target))
+  (%gl-generate-mipmap +gl-texture-2d+)
+  (%gl-bind-texture +gl-texture-2d+ 0))
 
 (defun gl-framebuffer-binding ()
   (cffi:with-foreign-object (value :int32)

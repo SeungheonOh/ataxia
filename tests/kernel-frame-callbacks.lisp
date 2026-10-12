@@ -16,7 +16,12 @@
          (setf (symbol-function (first names)) (lambda (surface output) (assert (eq output :output)) (push surface textured))
                (symbol-function (second names)) (lambda (surface) (push surface callbacks)))
          (%validate-frame-result kernel lease result)
-         (%notify-presented-surfaces output result)
+         ;; Presentation is claimed before the output commit, callbacks follow it.
+         (multiple-value-bind (presented progressing) (%frame-surfaces result)
+           (%mark-presented-surfaces output presented)
+           (assert (and (equal textured '(1)) (null callbacks)))
+           (%send-frame-done presented)
+           (%send-frame-done progressing))
          (assert (equal textured '(1)))
          (assert (equal (sort callbacks #'<) '(1 2)))
          ;; Callback-only tokens obey exactly the same generation/owner contract.

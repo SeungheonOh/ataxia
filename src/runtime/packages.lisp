@@ -142,6 +142,7 @@
    #:%input-device-event-destroy
    #:%input-device-name
    #:%input-device-type
+   #:%input-device-configure-touchpad
    #:%input-device-pointer
    #:%pointer-event-motion
    #:%pointer-event-motion-absolute
@@ -457,6 +458,7 @@
    #:adopt-input-device
    #:set-keyboard-keymap-from-names
    #:set-keyboard-repeat-info
+   #:configure-touchpad
    #:keyboard-keysyms
    #:keysym-name
    #:keyboard-modifier-names

@@ -11,6 +11,14 @@ have been removed. The old window corner hover bar remains removed. Super + drag
 moves a window; Super + right-drag resizes it. Application right-click menus remain
 available. Apps and workspace navigation are accessible from the status bar.
 
+## Keyboards and touchpads
+
+Held keys repeat after 500 ms, 33 times a second, as in GNOME. On touchpads,
+tapping clicks, scrolling moves content with the fingers (natural scrolling) and
+the touchpad pauses while typing. Kernel applies
+both when a device arrives (`set-keyboard-repeat-info`, `configure-touchpad`);
+other pointers keep libinput's defaults.
+
 ## Monitors
 
 Every output has a separate camera (position, zoom and rotation) on the same world.

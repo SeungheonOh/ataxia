@@ -50,7 +50,8 @@ disabled and replaced without leaving callbacks tied to the old conversation.
 | Assistant protocol | One semaphore notification per mailbox batch, or the earliest RPC, voice-start, or task deadline. No periodic idle timeout. |
 | Voice playback | Queued audio or explicit shutdown. Each audio generation owns its wake semaphore. |
 | Launcher and state writer | Queued work. Both block while their queues are empty. |
-| Watchdog | An active owner operation and its deadline. It waits without a timeout when no operation is active. |
+| Watchdog | Calls starting after a quiet spell, then a check every half timeout while calls continue. It waits without a timeout once calls stop. |
+| Browser helper | Commands and visible pages. With no page shown for 3 seconds it is stopped (`SIGSTOP`) until the next command or shown page. |
 | Shell clock/battery | One shared minute deadline when closed; at most 30 seconds apart while power details are open. Opening the panel reads fresh battery data immediately. |
 | Computer-use sessions | Next input step, held-input limit, or session expiration. No timer when all sessions are closed. |
 
@@ -67,6 +68,35 @@ When another drawable requests a frame, unchanged HTML textures are reused
 without rendering. Service each shared engine once, then dispatch callbacks for
 every visible component before selecting outputs. A change on one output does
 not repaint another output's settled UI.
+
+## Frame pacing
+
+Kernel renders an output's frame when wlroots signals it. While frames follow one
+another, that signal comes as the previous frame reaches the screen; rendering then
+would leave anything clients commit during the rest of the refresh waiting an extra
+frame. On outputs that present on vblank, such a frame instead starts as late as it
+can and still meet the next vblank, predicted from the last presentation and the
+refresh period. A frame's cost is the decaying peak of recent CPU time plus GPU
+time measured with timestamp queries (`EXT_disjoint_timer_query`) and a 2 ms
+margin; a frame that misses its vblank raises it. A frame that may not fit before
+the next vblank starts at once rather than aim at the one after, which would
+halve the frame rate; so does a frame requested on a still screen, to catch the
+very next vblank, and the two after it, since an animation's first frames do more
+than the still frames whose cost the estimate knows. Presentation feedback is
+attached before each output commit, as wlroots requires, so clients learn exactly
+when their frames reached the screen.
+
+A Lisp garbage collection stops everything for 3-6 ms however little is
+allocated, enough to make a frame miss. When the heap has used three quarters of
+what triggers its next collection, the collection runs where the CPU would wait
+anyway: before a frame that waits at least 8 ms to start, or after a frame is
+committed while the GPU draws it and the next vblank is that far away. A frame too
+close to its vblank for either starts at once instead of late, which leaves the
+room after it.
+
+The integrated GPU's governor holds it at its efficient frequency, 300 of 1450
+MHz on the development laptop, under a compositor's short bursts of work, so
+frames are budgeted for that clock: it is also the cheapest one to run at.
 
 ## Damage and visibility
 

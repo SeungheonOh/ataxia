@@ -61,6 +61,8 @@ class App final:public CefApp,public CefRenderProcessHandler {
    line->AppendSwitch("disable-component-update");
    line->AppendSwitch("disable-sync");
    line->AppendSwitch("no-first-run");
+   // Pages keep no secrets, and asking the desktop keyring would prompt to unlock it.
+   line->AppendSwitchWithValue("password-store","basic");
  }
  void OnRegisterCustomSchemes(CefRawPtr<CefSchemeRegistrar> r) override {
    r->AddCustomScheme("ataxia",CEF_SCHEME_OPTION_STANDARD|CEF_SCHEME_OPTION_SECURE|

@@ -15,7 +15,10 @@ The result always covers the input and must never be used as opaque coverage."
   (let ((region nil)
         (bounds (and width height (make-rectangle 0 0 width height))))
     (labels ((cost (a b)
-               (- (rectangle-area (rectangle-union a b)) (rectangle-area a) (rectangle-area b)))
+               ;; The union's area, without making the union: this runs for every pair.
+               (- (* (- (max (rectangle-right a) (rectangle-right b)) (min (rectangle-x a) (rectangle-x b)))
+                     (- (max (rectangle-bottom a) (rectangle-bottom b)) (min (rectangle-y a) (rectangle-y b))))
+                  (rectangle-area a) (rectangle-area b)))
              (insert (rectangle)
                (loop
                  (let ((best nil) (best-cost nil))

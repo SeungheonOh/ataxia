@@ -38,28 +38,60 @@
       (remhash node (scene-active scene)))
   node)
 
+(defun %set-transform (node value motion time from)
+  "Retarget NODE's transform channels to VALUE. Between lists of the same functions,
+or where one begins the other, every parameter animates; otherwise VALUE shows at once."
+  (let* ((channels (gethash :transform (stage-node-channels node)))
+         (current (cond (channels (make-transform-list (stage-node-transform-kinds node)
+                                                       (map 'vector #'channel-value channels)))
+                        (from from)
+                        (t value))))
+    (multiple-value-bind (kinds compatible-p) (transform-lists-shape current value)
+      (let ((start (if compatible-p (pad-transform-list current kinds value) value))
+            (target (if compatible-p (pad-transform-list value kinds current) value)))
+        ;; Channels already running carry on; padding appends channels doing nothing yet.
+        (setf channels
+              (loop with kept = (if compatible-p channels #())
+                    for parameter across (transform-list-parameters start)
+                    for tolerance in (transform-parameter-tolerances (transform-list-kinds target))
+                    for index from 0
+                    collect (if (< index (length kept))
+                                (svref kept index)
+                                (make-channel parameter tolerance))
+                      into new
+                    finally (return (coerce new 'simple-vector)))
+              (gethash :transform (stage-node-channels node)) channels
+              (stage-node-transform-kinds node) (transform-list-kinds target))
+        (loop for channel across channels
+              for parameter across (transform-list-parameters target)
+              do (channel-retarget channel parameter motion time))))))
+
 (defun %set-animated (scene node spec value time from)
   "Retarget SPEC's channels to VALUE; FROM is the starting value for a new channel."
   (let* ((key (prop-spec-key spec))
          (motion (node-motion node key))
          (existing (gethash key (stage-node-channels node))))
-    (if (eq (prop-spec-type spec) :color)
-        (let ((channels (or existing
-                            (let ((start (or from value)))
-                              (map 'vector (lambda (component) (make-channel component))
-                                   start)))))
-          (setf (gethash key (stage-node-channels node)) channels)
-          (loop for channel across channels
-                for component across value
-                do (channel-retarget channel component motion time)))
-        (let ((channel (or existing
-                           (make-channel (to-channel spec (or from value)) (prop-spec-tolerance spec)))))
-          (setf (gethash key (stage-node-channels node)) channel)
-          (channel-retarget channel (to-channel spec value) motion time))))
+    (case (prop-spec-type spec)
+      (:transform (%set-transform node value motion time from))
+      (:color
+       (let ((channels (or existing
+                           (let ((start (or from value)))
+                             (map 'vector (lambda (component) (make-channel component))
+                                  start)))))
+         (setf (gethash key (stage-node-channels node)) channels)
+         (loop for channel across channels
+               for component across value
+               do (channel-retarget channel component motion time))))
+      (t
+       (let ((channel (or existing
+                          (make-channel (to-channel spec (or from value)) (prop-spec-tolerance spec)))))
+         (setf (gethash key (stage-node-channels node)) channel)
+         (channel-retarget channel (to-channel spec value) motion time)))))
   (%track-activity scene node))
 
 (defun %set-prop (scene node spec raw value time creating-p)
   "Declare SPEC's VALUE, decoded from RAW (NIL resets it), animating it when it animates."
+  (incf (stage-node-prop-revision node))
   (let* ((key (prop-spec-key spec))
          (animated-p (and (prop-spec-animated-p spec)
                           (node-kind-animates-p (stage-node-kind node))
@@ -74,17 +106,20 @@
              (%set-animated scene node spec value time nil)
              (remhash key (stage-node-channels node)))))
       (t
-       (setf (gethash key (stage-node-props node)) value)
-       (when animated-p
-         (%set-animated
-          scene node spec value time
-          (cond
-            (creating-p (getf (stage-node-initial node) key))
-            ((gethash key (stage-node-channels node)) nil)
-            ;; A gradient appearing on a solid paint starts from that paint.
-            ((assoc key +gradient-ends+)
-             (multiple-value-call #'vector (node-color node (cdr (assoc key +gradient-ends+)))))
-            (t (funcall (scene-natural-value scene) node key)))))))))
+       (let ((from (and animated-p
+                        (cond
+                          (creating-p (getf (stage-node-initial node) key))
+                          ((gethash key (stage-node-channels node)) nil)
+                          ;; A gradient appearing on a solid paint starts from that paint.
+                          ((assoc key +gradient-ends+)
+                           (multiple-value-call #'vector
+                             (node-color node (cdr (assoc key +gradient-ends+)))))
+                          ;; A transform first declared starts from what was shown.
+                          ((eq (prop-spec-type spec) :transform) (node-transform-list node))
+                          (t (funcall (scene-natural-value scene) node key))))))
+         (setf (gethash key (stage-node-props node)) value)
+         (when animated-p
+           (%set-animated scene node spec value time from)))))))
 
 (defun %decode-targets (node object)
   "Decode an initial/exit object into a plist of animated property values."
@@ -271,18 +306,59 @@ director may reuse the old node ids."
                (scene-remove scene 0 (stage-node-id child)))
         (%destroy-node scene child))))
 
-(defun %channel-snapshot (node)
+(defun %channel-snapshot (node heir)
+  "Displayed values and velocities of NODE's channels, for HEIR to carry on; a
+transform carries over only between lists of the same functions."
   (let ((snapshot nil))
     (maphash (lambda (key value)
-               (push (cons key (if (vectorp value)
-                                   (map 'vector (lambda (channel)
-                                                  (cons (channel-value channel)
-                                                        (channel-velocity channel)))
-                                        value)
-                                   (cons (channel-value value) (channel-velocity value))))
-                     snapshot))
+               (unless (and (eq key :transform)
+                            (not (equal (stage-node-transform-kinds node)
+                                        (stage-node-transform-kinds heir))))
+                 (push (cons key (if (vectorp value)
+                                     (map 'vector (lambda (channel)
+                                                    (cons (channel-value channel)
+                                                          (channel-velocity channel)))
+                                          value)
+                                     (cons (channel-value value) (channel-velocity value))))
+                       snapshot)))
              (stage-node-channels node))
     snapshot))
+
+(defun %parent-space (node)
+  "The transform from NODE's parent plane to the scene's, from what its ancestors
+show now, or NIL under a screen, whose space follows an output rather than the scene."
+  (let ((matrix +identity-matrix+))
+    (loop for ancestor = (stage-node-parent node) then (stage-node-parent ancestor)
+          while (and ancestor (stage-node-parent ancestor))
+          do (when (eq (stage-node-kind ancestor) :screen)
+               (return-from %parent-space nil))
+             (setf matrix (matrix-multiply (node-local-matrix ancestor (node-number ancestor :width 0d0)
+                                                              (node-number ancestor :height 0d0))
+                                           matrix)))
+    (matrix-plane matrix)))
+
+(defun %reparented-snapshot (previous node snapshot)
+  "SNAPSHOT of PREVIOUS's motion for NODE, which takes it over: under another parent,
+the position and its velocity move into NODE's parent space, so NODE continues
+from where PREVIOUS was shown."
+  (let* ((from (and (not (eq (stage-node-parent previous) (stage-node-parent node)))
+                    (%parent-space previous)))
+         (to (and from (%parent-space node)))
+         (inverse (and to (transform-invert to))))
+    (if (null inverse)
+        snapshot
+        (let ((map (transform-multiply inverse from))
+              (x (cdr (assoc :x snapshot)))
+              (y (cdr (assoc :y snapshot))))
+          (let ((old-x (if x (car x) (node-number previous :x 0d0)))
+                (old-y (if y (car y) (node-number previous :y 0d0)))
+                (velocity-x (if x (cdr x) 0d0))
+                (velocity-y (if y (cdr y) 0d0)))
+            (multiple-value-bind (new-x new-y) (transform-apply map old-x old-y)
+              (multiple-value-bind (dx-dx dy-dx dx-dy dy-dy) (transform-jacobian map old-x old-y)
+                (list* (cons :x (cons new-x (+ (* dx-dx velocity-x) (* dx-dy velocity-y))))
+                       (cons :y (cons new-y (+ (* dy-dx velocity-x) (* dy-dy velocity-y))))
+                       (remove-if (lambda (entry) (member (car entry) '(:x :y))) snapshot)))))))))
 
 (defun %inherit-motion (scene node snapshot time)
   (loop for (key . state) in snapshot
@@ -314,9 +390,10 @@ director may reuse the old node ids."
 
 (defun %displayed-value (scene node spec)
   (let ((key (prop-spec-key spec)))
-    (if (eq (prop-spec-type spec) :color)
-        (multiple-value-call #'vector (node-color node key))
-        (or (node-number node key) (funcall (scene-natural-value scene) node key) 0d0))))
+    (case (prop-spec-type spec)
+      (:color (multiple-value-call #'vector (node-color node key)))
+      (:transform (node-transform-list node))
+      (t (or (node-number node key) (funcall (scene-natural-value scene) node key) 0d0)))))
 
 (defun %begin-exit (scene node time)
   (setf (stage-node-state node) :exiting
@@ -355,7 +432,9 @@ director may reuse the old node ids."
         (when previous
           (remhash identity stash)
           (setf (gethash previous claimed) t)
-          (%inherit-motion scene node (%channel-snapshot previous) time))))
+          (%inherit-motion scene node
+                           (%reparented-snapshot previous node (%channel-snapshot previous node))
+                           time))))
     (dolist (removed (scene-removed scene))
       ;; A claimed node now lives on elsewhere; never draw it twice.
       (%walk-subtree removed (lambda (node)

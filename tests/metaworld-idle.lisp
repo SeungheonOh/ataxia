@@ -177,7 +177,8 @@
        (names '(ataxia.runtime:create-output-state ataxia.runtime:output-state-set-buffer
                 ataxia.runtime:output-state-set-damage ataxia.runtime:output-test-state
                 ataxia.runtime:output-commit-state ataxia.runtime:destroy-output-state
-                %refresh-output-object %notify-presented-surfaces %guard-kernel-operation))
+                %refresh-output-object %mark-presented-surfaces %send-frame-done
+                %guard-kernel-operation))
        (originals (mapcar #'symbol-function names)) (success t) (events nil))
   (unwind-protect
        (progn
@@ -191,15 +192,18 @@
                (lambda (out state) (assert (eq out :output)) (assert (eq state :state)) (push :commit events) success)
                (symbol-function 'ataxia.runtime:destroy-output-state)
                (lambda (state) (assert (eq state :state)) (push :destroy events))
-               (symbol-function '%notify-presented-surfaces)
+               (symbol-function '%mark-presented-surfaces)
                (lambda (&rest args) (declare (ignore args)) (push :presented events))
+               (symbol-function '%send-frame-done)
+               (lambda (&rest args) (declare (ignore args)) (pushnew :frame-done events))
                (symbol-function '%guard-kernel-operation)
                (lambda (k world operation thunk)
                  (declare (ignore world thunk)) (assert (eq k kernel)) (push operation events)))
          (assert (%commit-world-frame output :buffer result))
-         (assert (equal (reverse events) '(:commit world-frame-committed :presented :destroy)))
+         ;; Presentation feedback must attach to this commit, so it is claimed first.
+         (assert (equal (reverse events) '(:presented :commit world-frame-committed :frame-done :destroy)))
          (setf success nil events nil)
          (assert (null (%commit-world-frame output :buffer result)))
-         (assert (equal (reverse events) '(:commit world-frame-failed :destroy)))
+         (assert (equal (reverse events) '(:presented :commit world-frame-failed :destroy)))
          (format t "PASS: one native commit per frame; failure notification and native-state cleanup remain intact.~%"))
     (loop for name in names for original in originals do (setf (symbol-function name) original))))

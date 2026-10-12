@@ -16,6 +16,7 @@
  * the runtime reloads it and every window glides to its new place.
  */
 
+import { useCallback, useState } from "react";
 import {
   Background,
   Camera,
@@ -31,7 +32,7 @@ import {
   useWindowIds,
   WheelBinding,
 } from "@ataxia/stage";
-import { CanvasWindow } from "./canvas/CanvasWindow.js";
+import { CanvasWindow, type MoveWindow } from "./canvas/CanvasWindow.js";
 import { Minimap } from "./canvas/Minimap.js";
 import { useCameraActions } from "./canvas/useCameraActions.js";
 import { usePlaces } from "./canvas/usePlaces.js";
@@ -54,6 +55,16 @@ export default function Canvas() {
   const [places, place] = usePlaces();
   const stacked = useStackingOrder(windows, focused);
   const { flyTo, toggleOverview } = useCameraActions(places, output, focused);
+  // A window being dragged shows on the minimap where it is, not where it was.
+  const [moving, setMoving] = useState<{ window: number; x: number; y: number } | null>(null);
+  const onMove = useCallback<MoveWindow>((window, at) => setMoving(at && { window, ...at }), []);
+  const shown = moving
+    ? new Map(places).set(moving.window, {
+        ...places.get(moving.window)!,
+        x: moving.x,
+        y: moving.y,
+      })
+    : places;
 
   function focusToward(key: (typeof arrowKeys)[number]) {
     const next = focused === null ? windows[0] : neighbour(places, focused, directions[key]!);
@@ -79,10 +90,11 @@ export default function Canvas() {
           box={places.get(id)!}
           focused={id === focused}
           onPlace={place}
+          onMove={onMove}
         />
       ))}
 
-      {output && <Minimap output={output} places={places} focused={focused} />}
+      {output && <Minimap output={output} places={shown} focused={focused} />}
       <Desktop barStart={ZoomLabel} />
       <Launcher output={output} />
 

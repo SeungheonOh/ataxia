@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Box, Image, Rect } from "@ataxia/stage";
+import { Box, Image, Rect, scale } from "@ataxia/stage";
 import { useBattery } from "../../lib/system/battery.js";
 import { useMedia } from "../../lib/system/media.js";
 import { useVolume } from "../../lib/system/sound.js";
@@ -36,7 +36,7 @@ function SharingBadge() {
       paddingX={10}
       radius={11}
       fill="#e0443e1c"
-      initial={{ opacity: 0, scale: 0.8 }}
+      initial={{ opacity: 0, transform: scale(0.8) }}
       transition={motion.pop}
     >
       <Rect width={8} height={8} radius={4} fill={colors.danger} />

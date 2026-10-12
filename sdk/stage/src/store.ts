@@ -4,6 +4,7 @@
 
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import type { Modifier } from "./events.js";
 import type { ServerMessage, WireCamera, WireOutput, WireShare, WireWindow } from "./protocol.js";
 
 export interface WindowInfo {
@@ -64,11 +65,14 @@ function toOutput(output: WireOutput): OutputInfo {
   return Object.freeze({ ...rest, workArea: Object.freeze({ ...workArea }) });
 }
 
+const noModifiers: readonly Modifier[] = Object.freeze([]);
+
 export class Store {
   display = "";
   private windowMap = new Map<number, WindowInfo>();
   private outputMap = new Map<string, OutputInfo>();
   private focusMap = new Map<string, number | null>();
+  private modifierMap = new Map<string, readonly Modifier[]>();
   private cameraMap = new Map<string, CameraInfo>();
   private windowList: readonly WindowInfo[] = [];
   private outputList: readonly OutputInfo[] = [];
@@ -92,6 +96,8 @@ export class Store {
     output === undefined ? this.cameraMap.values().next().value : this.cameraMap.get(output);
   focus = (seat?: string): number | null =>
     seat === undefined ? this.focusMap.values().next().value ?? null : this.focusMap.get(seat) ?? null;
+  modifiers = (seat?: string): readonly Modifier[] =>
+    (seat === undefined ? this.modifierMap.values().next().value : this.modifierMap.get(seat)) ?? noModifiers;
   /** Screen-sharing requests and running shares. */
   shares = (): readonly ShareInfo[] => this.shareList;
   /** Text copied this session, newest first; kept in memory only. */
@@ -141,6 +147,9 @@ export class Store {
         break;
       case "focus":
         this.focusMap.set(message.seat, message.window);
+        break;
+      case "modifiers":
+        this.modifierMap.set(message.seat, Object.freeze(message.modifiers));
         break;
       case "clipboard":
         this.rememberClipboard(message.text);

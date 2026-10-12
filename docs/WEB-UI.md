@@ -172,7 +172,15 @@ browser background throttling. Visibility is updated from existing World events
 and frame hooks, with no visibility polling timer. Custom scenes must forward
 their own visibility changes. Occlusion behind another opaque object is not
 currently inferred. JavaScript that deliberately runs a busy loop or frequent
-timers still consumes browser CPU; hiding is not arbitrary-script suspension.
+timers still consumes browser CPU while any page is shown.
+
+Chromium wakes many times a second for its own housekeeping even with every page
+hidden. When no page has been shown for 3 seconds and no command was sent, the
+helper's process group is stopped with `SIGSTOP`; the next command or shown page
+continues it with `SIGCONT` before anything is sent, so pages answer as quickly as
+before while an idle desktop costs no browser CPU or wakeups. The helper also uses
+Chromium's basic password store, as pages keep no secrets and asking the desktop
+keyring would prompt to unlock it.
 
 DMA-BUF transport is the default when a Wayland display is available. The World
 adapter passes its Runtime's existing socket name to the helper; it does not

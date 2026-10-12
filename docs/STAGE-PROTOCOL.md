@@ -120,7 +120,8 @@ sequenceDiagram
    exists. That commit starts with `reset`, so the old top-level nodes are
    removed within the same transaction. Nodes with the same identity
    (`layoutId`, or `window:<id>` for windows) inherit their on-screen motion, so
-   a restarted director takes over without anything jumping.
+   a restarted director takes over without anything jumping. Under a different
+   parent, the inherited position is carried into the new parent's space.
 4. **Disconnect.**
    - *Compositor side:* the director's pointer captures are released. If its
      scene was active, the fallback layout returns, so unplaced windows cascade
@@ -257,13 +258,13 @@ other. The SDK's `<Box>` is sent as `rect`.
 
 | `type` | Properties |
 | --- | --- |
-| `group` | transform, effect, `width`, `height`, `clip`, `draggable`, `cursor` |
-| `rect` | transform, box, effect, `color`, `colorEnd`, `fillAngle`, `clip`, `draggable`, `cursor` |
-| `text` | transform, effect, `width`, `text`, `markup`, `font`, `fontSize`, `fontWeight`, `italic`, `color`, `align`, `lineHeight`, `maxLines`, `draggable`, `cursor` |
-| `image` | transform, box, effect, `src`, `fit`, `draggable`, `cursor` |
+| `group` | transform, effect, `width`, `height`, `clip`, `draggable`, `interactive`, `cursor` |
+| `rect` | transform, box, effect, `color`, `colorEnd`, `fillAngle`, `clip`, `draggable`, `interactive`, `cursor` |
+| `text` | transform, effect, `width`, `text`, `markup`, `font`, `fontSize`, `fontWeight`, `italic`, `color`, `align`, `lineHeight`, `maxLines`, `draggable`, `interactive`, `cursor` |
+| `image` | transform, box, effect, `src`, `fit`, `draggable`, `interactive`, `cursor` |
 | `web` | transform, box, effect, `src`, `data`, `revision`, `focusable`, `interactive`, `autoFocus`, `cursor` |
 | `window` | transform, box, effect, `window`, `fullscreen`, `maximized`, `tiled`, `focusable`, `interactive`, `movable`, `resizable`, `dim` |
-| `background` | `x`, `y`, `scale`, `rotation`, `opacity`, `visible`, `color`, `grid`, `gridColor`, `gridSpacing`, `gridSize`, `pan`, `cursor` |
+| `background` | `x`, `y`, `transform`, `opacity`, `visible`, `backface`, `color`, `grid`, `gridColor`, `gridSpacing`, `gridSize`, `pan`, `cursor` |
 | `camera` | `output`, `x`, `y`, `zoom`, `rotation`, `minZoom`, `maxZoom` |
 | `screen` | `output`, `x`, `y`, `scale`, `rotation`, `opacity`, `visible` |
 | `reserve` | `output`, `top`, `right`, `bottom`, `left` |
@@ -272,8 +273,8 @@ other. The SDK's `<Box>` is sent as `rect`.
 | `wheel-binding` | `modifiers`, `action` |
 | `gesture-binding` | `gesture`, `fingers`, `modifiers`, `action` |
 
-*transform* is `x`, `y`, `scale`, `rotation`, `opacity`, `originX`, `originY`
-and `visible`. *box* is `width`, `height`, `radius`, `borderWidth`,
+*transform* is `x`, `y`, `transform`, `opacity`, `originX`, `originY`,
+`visible` and `backface`. *box* is `width`, `height`, `radius`, `borderWidth`,
 `borderColor`, `borderColorEnd`, `borderAngle`, `shadowColor`, `shadowBlur`,
 `shadowSpread`, `shadowX`, `shadowY` and `blur`. *effect* is `shader`,
 `amount`, `margin`, `local`, `time`, `backdrop`, `pointer` and `area`, plus the
@@ -283,7 +284,8 @@ A node with a `shader` and an `amount` above 0 draws itself and its subtree
 into an offscreen target covering its area, then paints its box, grown by `margin` (or the whole
 output with `area: "output"`), through a program made of a prelude, a
 `uniform` declaration per uniform, and the shader, which must define
-`vec4 effect(vec2 position)`. The prelude declares `size`, `time`, `amount`,
+`vec4 effect(vec2 position)`. The prelude declares `size`, `time` (seconds the
+node's clock has run, which it does only while `time` is set), `amount`,
 `pixel` and `pointer` (the first seat's pointer in local units, far away unless
 `pointer` is set and it is on this output) and the functions `content(p)` and
 `backdrop(p)`. A shader that does
@@ -308,6 +310,7 @@ Every wire value is canonical, so the compositor only checks types and ranges:
 | id | An integer in 0..2^53. |
 | choice | One of the listed strings. |
 | modifiers | An array of `"shift"`, `"control"`, `"alt"`, `"logo"`. |
+| transform | An array of at most 32 functions, each an array of its name and numbers (below). |
 
 Animated properties move through spring or tween channels; zoom animates its
 logarithm. Non-animated ones apply at once. Camera nodes animate nothing: they
@@ -317,11 +320,12 @@ declare targets for cameras the compositor owns.
 | --- | --- | --- | --- |
 | `x`, `y` | number | 0 | yes |
 | `width`, `height` | number | natural size (none for text) | yes |
-| `scale` | number | 1 | yes |
-| `rotation` | number (radians) | 0 | yes |
+| `transform` | transform functions (below) | none | yes |
+| `rotation` (camera) | number (radians) | 0 | yes |
 | `opacity` | number | 1 | yes |
 | `originX`, `originY` | number (fraction of size) | 0.5 | |
 | `visible` | boolean | true | |
+| `backface` | `"visible"` or `"hidden"`: whether the node, and its subtree, draws and takes the pointer while turned away from the viewer | `"visible"` | |
 | `color` | color (fill, text or plane) | transparent | yes |
 | `colorEnd`, `fillAngle` | color, number | none (solid), 0 | yes |
 | `radius` | number | 0 | yes |
@@ -365,6 +369,30 @@ declare targets for cameras the compositor owns.
 | `margin` | number | 0 | |
 | `local`, `time`, `backdrop`, `pointer` | boolean | false | |
 | `area` | choice: `box`, `output` | `box` | |
+
+### Transform functions
+
+A `transform` lists functions as CSS writes them; the last applies to the node
+first, about its origin (`originX`, `originY`). Each composes as a 4x4 matrix
+with the node's position and its ancestors', keeping depth, and the node draws
+its z = 0 plane through the product. Positive y points down and z toward the
+viewer.
+
+| Function | Numbers |
+| --- | --- |
+| `["translate", x, y, z]` | Offsets. |
+| `["scale", x, y, z]` | Factors. |
+| `["rotate", x, y, z, angle]` | A turn of `angle` radians about the axis vector (CSS `rotate3d`); clockwise on screen about z. |
+| `["skew", ax, ay]` | Slants, in radians. |
+| `["perspective", distance]` | Views what follows from `distance` in front; 0 for none. |
+| `["matrix", ...16]` | Any matrix, column by column as CSS `matrix3d()`. |
+
+A change animates each number between lists of the same functions. When one
+list begins the other, the shorter is padded with functions that do nothing
+(rotations about the other list's axes), as CSS pads lists. Perspective moves
+through its strength, the inverse of the distance. Other changes apply at
+once. Keyframes of a transform track pad the same way, and an `add` track
+appends its functions to the node's own.
 
 ### Motions
 
@@ -423,7 +451,8 @@ into the flat wire form.
 
 | SDK prop | Wire |
 | --- | --- |
-| `rotation` (degrees) | `rotation` (radians) |
+| `rotation` (Camera, degrees) | `rotation` (radians) |
+| `transform` (helpers in degrees) | Transform functions with angles in radians |
 | `width`, `height` | The same when numbers. Percentages only affect `<Box>` layout. |
 | `fill` (Rect, Box) | A color becomes `color`. `{from, to, angle}` becomes `color`, `colorEnd` and `fillAngle` (radians). |
 | `border: {width, color}` | `borderWidth`, `borderColor` (+ `borderColorEnd`, `borderAngle` for a gradient) |
@@ -463,7 +492,7 @@ into the flat wire form.
 | `transition` | One motion becomes `{default}`. Per-prop motions are expanded to the wire properties they cover (`fill` → `color`, `colorEnd`, `fillAngle`). |
 | `initial`, `exit` | The same writers as the props, limited to animated values |
 | `layoutId` | `layoutId` |
-| `animate` | One track per animated prop, with wire properties and units (`rotation` in radians, `fill` → `color`, `effectAmount` → `amount`). Keyframe functions are sampled at 60 a second (8 to 256 samples) and easing functions are baked into the keyframes. The `id` is `<key>/<property>` with a `key`, else a hash of the track. |
+| `animate` | One track per animated prop, with wire properties and units (angles in radians, `fill` → `color`, `effectAmount` → `amount`). Keyframe functions are sampled at 60 a second (8 to 256 samples) and easing functions are baked into the keyframes. The `id` is `<key>/<property>` with a `key`, else a hash of the track. |
 | `effect: {shader, uniforms, amount, margin, local, time, backdrop, pointer, area}` | The same flat properties, and the `uniforms` key with colors as vec4s; `transition.effect` covers `amount` and `uniforms` |
 
 A removed prop is sent as `null`, which restores its default.
@@ -478,6 +507,7 @@ A removed prop is sent as `null`, which restores its default.
 | `output` | `output: {name, x, width, height, scale, "work-area": {x, y, width, height}}`. Outputs form one row, and `x` is the offset in it. `work-area` is the output-local area left after reservations such as a bar. |
 | `output-removed` | `name` |
 | `focus` | `seat`, `window` (id or `null`) |
+| `modifiers` | `seat`, `modifiers` (held `shift`, `control`, `alt`, `logo`). Sent when they change. |
 | `camera` | `output`, `x`, `y`, `zoom`, `rotation` (radians). Where the camera is headed; coalesced per output, and sent only when changed. |
 | `clipboard` | `text`, copied by a client. Selections that password managers mark secret are never read. |
 | `shares` | `shares: [{id, app, types, source, window, output}]`. `types` lists `"screen"` and/or `"window"`; `source` is `null` while the share waits for an answer. |

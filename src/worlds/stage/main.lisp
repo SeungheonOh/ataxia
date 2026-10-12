@@ -20,13 +20,13 @@
 
 (defun run-stage-compositor
     (&key (backend :auto) (width 1280) (height 720) run-for debug-p damage-debug-p
-          (sly-port 4005) (socket (default-director-socket))
-          (script (asdf:system-relative-pathname "ataxia-stage-world" "examples/stage/canvas.tsx"))
-          (director-p t) (xwayland-p t) (screen-sharing-p (not (eq backend :headless)))
+          (sly-port 4005) (socket (default-director-socket)) script
+          (xwayland-p t) (screen-sharing-p (not (eq backend :headless)))
           ;; Worlds draw their own bars; the shared web status bar is optional.
           status-bar-p
           (assistant-p (not (eq backend :headless))) assistant-project)
-  "Run a Stage compositor. With DIRECTOR-P, launch the TypeScript runtime on SCRIPT."
+  "Run a Stage compositor. With a SCRIPT, launch the TypeScript director on it; without
+one, the World shows its fallback layout until a director connects to SOCKET."
   (when status-bar-p (asdf:load-system "ataxia-web/status-bar"))
   (when assistant-p (asdf:load-system "ataxia-assistant"))
   (let* ((factory (lambda () (make-stage-world :socket-path socket :damage-debug-p damage-debug-p
@@ -63,7 +63,7 @@
                                :project (or assistant-project
                                             (namestring (asdf:system-source-directory
                                                          "ataxia-stage-world")))))
-           (when director-p
+           (when script
              (setf director (uiop:launch-program (%director-command script display socket)
                                                  :output :interactive :error-output :interactive)))
            (format t "[stage-world] WAYLAND_DISPLAY=~A ATAXIA_STAGE_SOCKET=~A~%" display socket)
@@ -76,7 +76,7 @@
       (ataxia.kernel:destroy-kernel kernel :stage-world-exit))))
 
 (defun %print-usage ()
-  (format t "Usage: run-stage-world [--script PATH | --no-director] [--socket PATH] ~
+  (format t "Usage: run-stage-world [--script PATH] [--socket PATH] ~
 [--status-bar|--no-status-bar] [--assistant|--no-assistant] [--assistant-project DIR] ~
 [--no-xwayland] [--screen-sharing|--no-screen-sharing] [--backend auto|headless] [--width N] [--height N] [--run-for SECONDS] ~
 [--debug] [--damage-debug] [--sly-port N|--no-sly]~%"))
@@ -93,8 +93,6 @@
                    ((string= option "--socket")
                     (setf (getf stage-options :socket)
                           (or (pop arguments) (error "Missing --socket path."))))
-                   ((string= option "--no-director")
-                    (setf (getf stage-options :director-p) nil))
                    ((string= option "--no-xwayland")
                     (setf (getf stage-options :xwayland-p) nil))
                    ((member option '("--screen-sharing" "--no-screen-sharing") :test #'string=)

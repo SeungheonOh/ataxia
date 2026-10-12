@@ -13,7 +13,7 @@ nodes. React DOM still has a place: a `<Web>` node shows a React DOM page,
 rendered by Chromium, inside the scene.
 
 ```tsx
-import { Background, Camera, Window, spring, useWindows } from "@ataxia/stage";
+import { Background, Camera, Window, scale, spring, useWindows } from "@ataxia/stage";
 
 export default function World() {
   const windows = useWindows();
@@ -24,7 +24,8 @@ export default function World() {
       {windows.map((window, index) => (
         <Window key={window.id} window={window.id} x={-600 + index * 640} y={-300}
                 width={600} height={420} radius={10} shadow={{ blur: 32, y: 12, color: "#0003" }}
-                movable resizable initial={{ opacity: 0, scale: 0.94 }} exit={{ opacity: 0, scale: 0.94 }}
+                movable resizable initial={{ opacity: 0, transform: scale(0.94) }}
+                exit={{ opacity: 0, transform: scale(0.94) }}
                 transition={spring({ duration: 0.4 })} />
       ))}
     </>
@@ -36,13 +37,13 @@ export default function World() {
 
 ```sh
 make stage                    # npm ci + build sdk/stage (Node 22+)
-sbcl --eval '(sb-int:set-floating-point-modes :traps nil)' --script scripts/run-stage-world.lisp
-sbcl ... --script scripts/run-stage-world.lisp --script examples/stage/hypr.tsx
+sbcl --eval '(sb-int:set-floating-point-modes :traps nil)' \
+  --script scripts/run-stage-world.lisp --script examples/stage/hypr.tsx
 ```
 
 The launcher starts the compositor, XWayland and the assistant (not on the
 headless backend), then the director on `--script`. Worlds draw their own bar
-in TSX; the shared web status bar is available with `--status-bar`. Two
+in TSX; the shared web status bar is available with `--status-bar`. Four
 examples ship with it, organized as ordinary React apps:
 
 - [`canvas.tsx`](../examples/stage/canvas.tsx): an infinite canvas with
@@ -56,16 +57,46 @@ examples ship with it, organized as ordinary React apps:
   to go, and workspaces in the bar. Its state is one reducer
   ([`hypr/state.ts`](../examples/stage/hypr/state.ts)) that
   [`HyprProvider`](../examples/stage/hypr/HyprProvider.tsx) shares through context.
+- [`meta.tsx`](../examples/stage/meta.tsx): Metaworld on Stage, an infinite
+  canvas of screen-sized rooms placed anywhere, each a Hyprland-style tiler.
+  The canvas pans and zooms freely, and windows on it take input in place.
+  Double-click empty canvas to make a room, click a room's title to fly in at
+  100%, drag the title to put the room anywhere (it follows the pointer in the
+  same frame), or Super-drag a window into another room (onto empty canvas, it
+  gets a room of its own). Inside, keyboard focus and moves carry on into the
+  nearest room past an edge, three-finger swipes slide between rooms, and
+  pinching out returns to where the canvas was left. Its state is one reducer
+  ([`meta/state.ts`](../examples/stage/meta/state.ts)).
+- [`deck.tsx`](../examples/stage/deck.tsx): windows as a hand of cards, after
+  Balatro. The window in play fills the table; the others fan out along the
+  bottom, and the card under the pointer rises, pops and leans toward it in 3D
+  while its foil catches the light. Super+Tab deals every window across a
+  swirling table as a switcher, most recently played first: Tab moves the
+  choice, letting go of Super plays it. Every window keeps the table's size, so
+  a card is the live window scaled and turned with `transform`, and clients never
+  resize. Closed windows burn away.
+- [`cube.tsx`](../examples/stage/cube.tsx): four workspaces on the sides of a
+  cube, after Compiz. Super+Left/Right (or Super+wheel, a three-finger swipe,
+  Super+1..4) turns it: the cube steps back, swings round in perspective with
+  every window live, and comes forward again, faces darkening as they turn away.
+  Faces have `backface="hidden"`, so at rest only the one in front is drawn and
+  the cube costs what a flat desktop does.
+- [`shelf.tsx`](../examples/stage/shelf.tsx): windows as books on a shelf. The
+  open window lies over the reading area; the rest stand spine out on a plank,
+  each a 3D box built round its live window: a cloth spine lettered with the
+  title, the back cover and the pages' top edge, with only faces turned toward
+  the eye drawn. Hovering a spine pulls the book out; clicking it, or letting go
+  of Super after Super+Tab, swings it open round its spine.
 
-Both are laid out like a small React app, formatted with Prettier:
+They are laid out like a small React app, formatted with Prettier:
 [`components/`](../examples/stage/components) holds what they share (the bar and
 its menus, media keys, screen sharing, screenshots on Print and Shift+Print, the
 application launcher), [`hooks/`](../examples/stage/hooks) and
 [`lib/`](../examples/stage/lib) the hooks, geometry, theme and settings, and
 [`pages/`](../examples/stage/pages) the React DOM pages they show.
 
-`--no-director` starts only the compositor; run a director yourself, e.g. under
-a debugger:
+Without `--script` only the compositor starts, showing every window in its
+fallback layout; run a director yourself, e.g. under a debugger:
 
 ```sh
 node sdk/stage/bin/ataxia-stage.mjs --socket "$ATAXIA_STAGE_SOCKET" my-world.tsx
@@ -111,7 +142,7 @@ only copied ids and values.
 | Module (`src/worlds/stage/`) | Responsibility |
 | --- | --- |
 | `motion.lisp` | Retargetable channels: closed-form springs, cubic-bezier tweens and sampled curves (delays, repeats, loops), momentum decay, and keyframe tracks. |
-| `affine.lisp` | 2D transforms shared by drawing, damage and picking. |
+| `transform.lisp` | 2D projective transforms shared by drawing, damage and picking. |
 | `model.lisp` | Node kinds and the property schema; decodes canonical wire values. |
 | `scene.lisp` | Commits, layout-identity hand-over, exit animations. |
 | `world.lisp` | Windows, outputs, focus, configure, last frames for exit animations, Kernel lifecycle. |
@@ -181,17 +212,40 @@ The module's default export is the root component. Host components:
 | `Background` | Infinite plane with `fill` and a `dots`/`lines` grid; `pan` makes dragging or scrolling it pan the camera, with momentum. |
 | `Screen` | Children in an output's logical pixels, unaffected by the camera: HUDs, bars, launchers. |
 | `Reserve` | Screen space the world keeps for UI it draws itself, such as a bar: `top`, `right`, `bottom`, `left`, optionally per `output`. Window work areas (`workArea`) leave it free. |
-| `Shortcut` | `keys="Super+Shift+Return"`, `onPress`/`onRelease`; consumed before the focused client. |
+| `Shortcut` | `keys="Super+Shift+Return"`, `onPress`/`onRelease`; consumed before the focused client. Digits bind by key position, so `Super+Shift+2` works although Shift turns 2 into another symbol. |
 | `PointerBinding` | Modifier+button anywhere. `action="move"`/`"resize"`/`"pan"` runs natively; or handle `onDown`/`onMove`/`onUp` (`event.window` is the window under the pointer). |
 | `WheelBinding` | Modifier+wheel anywhere; `action="zoom"`/`"pan"` or `onWheel`. |
 | `GestureBinding` | Touchpad `swipe`/`pinch`/`hold` with a finger count; `action="zoom"`/`"pan"` or handlers. |
 
-Every visual node accepts `x`, `y`, `scale`, `rotation` (degrees), `opacity`,
-`originX`/`originY` (fractions of its size; default center) and `visible`;
-compositor-drawn ones also take a `cursor`.
+Every visual node accepts `x`, `y`, `transform`, `opacity`, `originX`/`originY`
+(fractions of its size; default center), `visible` and `backface` (`"hidden"`,
+as CSS `backface-visibility`, skips the node and what it holds while it is turned
+away: the far faces of a cube, the back of a card); compositor-drawn ones also
+take a `cursor`.
 Children paint in order, later on top; reorder windows to raise them. Fills and
 border colors take a color or a two-stop gradient
 `{ from, to, angle }` (degrees).
+
+`transform` lists functions as CSS `transform` does, applied about the origin,
+the last first: `translate(x, y, z)`, `scale(x, y, z)`, `rotate(deg)`,
+`rotateX`, `rotateY`, `rotateZ`, `rotate3d(x, y, z, deg)` about any axis,
+`skew(x, y)`, `perspective(distance)` and `matrix3d(...)`. Positive `rotateX`
+turns the top edge away, positive `rotateY` the right; z points at the viewer.
+Transforms compose as 4x4 matrices down the tree, so a group's
+`perspective(800)` shows its children's turns and depths in true 3D, for
+example windows as the faces of a cube; nodes still paint in tree order, with
+no depth sorting.
+
+```tsx
+<Window window={id} transform={[perspective(900), rotateY(hover ? 12 : 0), scale(lifted ? 1.1 : 1)]} />
+```
+
+A transition animates a transform function by function, between lists of the
+same functions or where one list begins the other (the shorter is padded with
+functions doing nothing, as CSS pads); other changes apply at once.
+Transforms of any kind keep input exact, windows included: pointer events land
+on the client pixel shown under the pointer, and native resizes follow a
+window's own edges.
 
 Motion props:
 
@@ -205,7 +259,12 @@ Motion props:
 - `exit`: values a removed node animates to before it disappears.
 - `animate`: keyframe animations; see [Animation](#animation).
 - `layoutId`: nodes sharing it hand over their on-screen state when one replaces
-  the other in the same commit. Windows (`window:<id>`) have an identity implicitly.
+  the other in the same commit, even under another parent: the new node carries
+  on from where the old one was shown. Windows (`window:<id>`) have an identity
+  implicitly, so a window moved into another group glides there.
+- `interactive={false}` on a `Group`, `Rect`, `Text` or `Image`: the pointer passes
+  through the node to what is below, e.g. a backdrop inside a draggable group that
+  should still let the canvas pan. Its children still take the pointer.
 - `effect`: a GLSL shader the node is drawn through; see [Effects](#effects).
 
 Colors are CSS hex, `rgb()`/`rgba()`, `transparent`, `white`, `black` or
@@ -226,7 +285,7 @@ Hooks and actions:
 | API | Description |
 | --- | --- |
 | `useWindows()` | Mapped windows `{ id, title, appId, mapped, width, height }`, creation order. |
-| `useWindow(id)`, `useFocusedWindow(seat?)` | Compositor state; components re-render only when it changes. |
+| `useWindow(id)`, `useFocusedWindow(seat?)`, `useModifiers(seat?)` | Compositor state; components re-render only when it changes. `useModifiers` lists the modifiers held, e.g. to end a switcher when they are let go. |
 | `useOutputs()` | Outputs with their size, scale and `workArea` (what the status bar leaves). |
 | `useCamera(output?)`, `moveCamera(move, options?)` | Where a camera is headed; move it from code. |
 | `useClipboard()` | Text copied this session, newest first (memory only), and `copy(text)`. |
@@ -249,7 +308,7 @@ applications, each following change events while something reads it.
 
 ```tsx
 <Window window={id} animate={{ x: [0, -14, 8, 0], composite: "add", duration: 0.32, key: nudges }} />
-<Rect animate={{ scale: [1, 1.06, 1], iterations: Infinity, duration: 1.4, ease: "ease-in-out" }} />
+<Rect animate={{ transform: [scale(1), scale(1.06), scale(1)], iterations: Infinity, duration: 1.4, ease: "ease-in-out" }} />
 <Text animate={{ opacity: (t) => 0.5 + 0.5 * Math.cos(t * 2 * Math.PI), duration: 2 }} />
 ```
 
@@ -257,7 +316,8 @@ Keyframes are values at even points of an iteration (or at `offsets`), or any
 function of its progress. Timing comes from `duration` (seconds), `delay`,
 `ease`, `iterations` (or `Infinity`), `direction` (`alternate`, `reverse`, …)
 and `composite`: `"replace"` shows the keyframes instead of the prop's value,
-`"add"` adds them to it, so a shake works on a window wherever it is. An
+`"add"` adds them to it, so a shake works on a window wherever it is (an added
+transform appends its functions to the node's own). An
 animation keeps running across renders while it stays the same and starts over
 when it changes; a new `key` replays it. A finished animation leaves the prop at
 its own value.
@@ -290,7 +350,8 @@ the premultiplied color at `position`, in the node's local pixels. It can read:
 - `content(p)`: the node and its children as drawn;
 - `backdrop(p)`: with `backdrop`, what is drawn behind the node;
 - `size`, `amount`, and `pixel` (local units per output pixel);
-- `time`: seconds since the node appeared, when the effect has `time`;
+- `time`: seconds the effect's clock has run; it runs while the effect has
+  `time` and holds still otherwise;
 - `pointer`: where the pointer is, in the same units, when the effect has
   `pointer`; it follows the pointer with no message to the director;
 - its own `uniforms`, each a number, a vec2, a vec4 or a color.
@@ -305,7 +366,7 @@ and away with the same `exit`.
 | --- | --- |
 | `margin` | Room around the box the effect may draw into, e.g. for a shadow, a glow or a ripple. |
 | `local` | The shader reads `content` only at its own position. A change then repaints only where it happened; otherwise any change repaints the whole effect. |
-| `time` | Advance `time` every frame while shown; like an endless animation, it keeps that output repainting. |
+| `time` | Run the clock: `time` advances every frame while shown, which like an endless animation keeps that output repainting. Turned off, it holds where it was. |
 | `backdrop` | Provide `backdrop(p)`. |
 | `pointer` | Provide `pointer`. An output showing such an effect rebuilds its display as the pointer moves over it. |
 | `area: "output"` | Cover the whole output; `position` and `size` are then output pixels. |
@@ -371,7 +432,8 @@ presented, so clients never wait for the director:
    `event.target`, `event.currentTarget` and `event.stopPropagation()`.
    `onPointerEnter` and `onPointerLeave` behave like `mouseenter` and
    `mouseleave`: each node hears them once as the pointer crosses its box,
-   whichever of its children the pointer is over, with `relatedTarget`.
+   whichever of its children the pointer is over, with `relatedTarget`. They
+   also come when the scene moves under a still pointer, as do client enters.
 4. A node or binding that receives a press captures the pointer until every
    button is released, like DOM pointer capture.
 5. Pointer events carry the position in output pixels (`screenX/Y`), world space
@@ -520,7 +582,9 @@ event and error in full.
 Every frame flattens the scene into buffer-space draw items for each output.
 Comparing their signatures (transform, size, colors) with the previous frame
 yields exactly the damage from scene edits, animation and cursor motion; client
-and page damage is projected through the same transforms. An item appearing or
+and page damage is projected through the same transforms. A client commit that
+keeps its surfaces' geometry only damages what it drew: the display stays, and
+its items draw the newest buffers. An item appearing or
 leaving damages only itself, and when items change places only the fewest that
 moved are damaged (all but a longest run still in the old order). The shared
 damage tracker keeps that damage per buffer, so each frame repairs what changed
@@ -535,7 +599,8 @@ single pass once that is cheaper than the rectangles.
 - Rounded rectangles, gradients and borders are signed-distance fields in node
   space, antialiased at any zoom or rotation. A border alone damages only its
   ring, so a spinning gradient border does not repaint the window inside it.
-  Shadows use a Gaussian rounded-box integral.
+  Shadows use a Gaussian rounded-box integral, skipped deep inside the box,
+  where the shadow is simply full.
 - Backdrop blur is a dual Kawase blur over the pixels behind a node. It reads
   every pixel of its area, so damage reaching the area repaints all of it in
   one pass (merged with any area it overlaps), and the other passes leave it
@@ -543,14 +608,29 @@ single pass once that is cheaper than the rectangles.
 - A node with an effect draws its subtree into an offscreen target covering
   just its area, through a viewport offset so everything draws as it would on
   the output, then runs its shader over that area.
-  What it contains is diffed and damaged as usual; a non-local effect is
+  What it contains is diffed, damaged and culled as usual; a non-local effect is
   repaired like a backdrop blur, whole. Programs are compiled once per shader.
 - Text is laid out once per change and rasterized per output at the scale it is
   seen; while a zoom is under way rasters step in half octaves, and the first
-  still frame renders them exactly. Images decode off the owner thread and
-  release their textures a while after they were last on screen.
-- Minified client textures use a bounded box filter over each output pixel's
-  footprint, keeping zoomed-out windows legible.
+  still frame renders them exactly. Pango lays text out at its logical size and
+  Cairo scales the outlines, since Pango told the scale would look the font up
+  again for each one, at milliseconds a raster. Text whose scale changed is
+  rasterized on the media worker thread, which also decodes images, while the
+  raster at hand is drawn scaled; new or edited text is rasterized at once, up to
+  a few milliseconds a frame, and on the worker beyond that. Images release
+  their textures a while after they were last on screen.
+- A window drawn small, as a card, a thumbnail or zoomed out, is sampled from a
+  half-size copy with mip levels, made once per commit and kept while a display
+  shows it, so it stays smooth for one texture read per pixel. Other minified
+  textures use a bounded box filter over each output pixel's footprint.
+- An item under an opaque item painting all of a repair pass is not drawn; a
+  large one partly under opaque items, like a window's shadow or the canvas under
+  rooms, is drawn only in the bands around them.
+- Pointer input picks against the frame on screen while the next is on its way,
+  so moving the pointer during an animation never rebuilds the display between
+  frames.
+- Commands go to the GPU every millisecond of drawing rather than when the frame
+  ends, so the GPU draws while the CPU records the rest.
 - Offscreen items are culled; windows join only outputs where they are visible,
   visible clients receive frame callbacks even when their pixels were not
   repainted, and pages nobody sees stop painting.

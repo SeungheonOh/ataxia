@@ -41,13 +41,13 @@
   "Map world space to STAGE-OUTPUT's logical pixels."
   (let ((camera (stage-output-camera stage-output)))
     (multiple-value-bind (width height) (%camera-viewport stage-output)
-      (camera-affine (channel-value (stage-camera-x camera)) (channel-value (stage-camera-y camera))
-                     (camera-zoom camera) (channel-value (stage-camera-rotation camera))
-                     width height))))
+      (view-transform (channel-value (stage-camera-x camera)) (channel-value (stage-camera-y camera))
+                      (camera-zoom camera) (channel-value (stage-camera-rotation camera))
+                      width height))))
 
 (defun screen-to-world (stage-output x y)
-  (let ((inverse (affine-invert (camera-transform stage-output))))
-    (if inverse (affine-apply inverse x y) (values x y))))
+  (let ((inverse (transform-invert (camera-transform stage-output))))
+    (if inverse (transform-apply inverse x y) (values x y))))
 
 (defun %world-delta (camera dx dy zoom)
   "World-space displacement shown as the screen-space (DX, DY) at ZOOM."

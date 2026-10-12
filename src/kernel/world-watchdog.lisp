@@ -4,6 +4,10 @@
 ;;;; thread only times the bounded dynamic extent of a World protocol call. On
 ;;;; timeout it interrupts that extent, then recovery runs at a Wayland idle
 ;;;; safe point and replaces the revoked World without replacing the Runtime.
+;;;;
+;;;; Calls come at input and frame rates, so entering one only records it: the
+;;;; guardian is woken when calls start after a quiet spell, then checks twice a
+;;;; timeout while they continue, and sleeps untimed once they stop.
 
 (in-package #:ataxia.kernel)
 
@@ -33,6 +37,9 @@
    (owner-thread :initform nil :accessor %watchdog-owner-thread)
    (stopping-p :initform nil :accessor %watchdog-stopping-p)
    (active-call :initform nil :accessor %watchdog-active-call)
+   ;; Whether the guardian is checking on calls, and how many have started.
+   (armed-p :initform nil :accessor %watchdog-armed-p)
+   (calls :initform 0 :type fixnum :accessor %watchdog-calls)
    (recovery-pending :initform nil :accessor %watchdog-recovery-pending)
    (recovery-source :initform nil :accessor %watchdog-recovery-source))
   (:documentation
@@ -104,9 +111,9 @@
              (%world-timeout-seconds condition)))))
 
 (defstruct (%world-call (:constructor %make-world-call))
+  "A World protocol call in progress; it is also the catch tag a timeout throws to."
   operation
   world
-  tag
   deadline
   (interrupt-requested-p nil))
 
@@ -135,7 +142,7 @@
              (setf active-p
                    (eq call (%watchdog-active-call watchdog))))
            (when active-p
-             (throw (%world-call-tag call) :watchdog-timeout)))))))
+             (throw call :watchdog-timeout)))))))
   #-sb-thread
   (declare (ignore kernel call)))
 
@@ -148,24 +155,23 @@
           (loop
             (when (%watchdog-stopping-p watchdog)
               (return-from %world-watchdog-loop nil))
-            (let ((call (%watchdog-active-call watchdog)))
-              (cond
-                ((or (null call) (%world-call-interrupt-requested-p call))
-                 (sb-thread:condition-wait
-                  (%watchdog-waitqueue watchdog)
-                  (%watchdog-lock watchdog)))
-                (t
-                 (let ((remaining
-                         (- (%world-call-deadline call) (%monotonic-time))))
-                   (if (plusp remaining)
-                       (sb-thread:condition-wait
-                        (%watchdog-waitqueue watchdog)
-                        (%watchdog-lock watchdog)
-                        :timeout remaining)
-                       (progn
-                         (setf (%world-call-interrupt-requested-p call) t
-                               expired call)
-                         (return)))))))))
+            (if (not (%watchdog-armed-p watchdog))
+                (sb-thread:condition-wait (%watchdog-waitqueue watchdog) (%watchdog-lock watchdog))
+                (let ((calls (%watchdog-calls watchdog)))
+                  ;; A wait that times out returns without the lock.
+                  (unless (sb-thread:condition-wait (%watchdog-waitqueue watchdog) (%watchdog-lock watchdog)
+                                                    :timeout (/ (%watchdog-timeout watchdog) 2))
+                    (sb-thread:grab-mutex (%watchdog-lock watchdog)))
+                  (let ((call (%watchdog-active-call watchdog)))
+                    (cond
+                      ((and call (not (%world-call-interrupt-requested-p call))
+                            (>= (%monotonic-time) (%world-call-deadline call)))
+                       (setf (%world-call-interrupt-requested-p call) t
+                             expired call)
+                       (return))
+                      ;; No call ran through a whole check: sleep until the next one.
+                      ((and (null call) (= calls (%watchdog-calls watchdog)))
+                       (setf (%watchdog-armed-p watchdog) nil))))))))
         (when expired
           (%interrupt-world-call kernel expired)))))
   #-sb-thread
@@ -338,21 +344,22 @@
        (error "World operation ~A did not run on the Runtime owner thread."
               operation))
       (t
-       (let* ((tag (gensym "WORLD-CALL-"))
-              (call
+       (let* ((call
                 (%make-world-call
                  :operation operation
                  :world world
-                 :tag tag
                  :deadline (+ (%monotonic-time) seconds)))
               (outcome nil))
          (unwind-protect
               (progn
                 (sb-thread:with-mutex ((%watchdog-lock watchdog))
                   (setf (%watchdog-active-call watchdog) call)
-                  (%notify-watchdog kernel))
+                  (incf (%watchdog-calls watchdog))
+                  (unless (%watchdog-armed-p watchdog)
+                    (setf (%watchdog-armed-p watchdog) t)
+                    (%notify-watchdog kernel)))
                 (setf outcome
-                      (catch tag
+                      (catch call
                         (handler-case
                             (let ((*world-call-active-p* t))
                               (multiple-value-call
@@ -363,8 +370,7 @@
                             (list :failed cause))))))
            (sb-thread:with-mutex ((%watchdog-lock watchdog))
              (when (eq call (%watchdog-active-call watchdog))
-               (setf (%watchdog-active-call watchdog) nil))
-             (%notify-watchdog kernel)))
+               (setf (%watchdog-active-call watchdog) nil))))
          (cond
            ((and (consp outcome) (eq (first outcome) :returned))
             (values-list (second outcome)))

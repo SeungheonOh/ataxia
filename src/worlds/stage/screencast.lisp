@@ -167,7 +167,7 @@
   (let ((region (share-region share)))
     (when region
       (destructuring-bind (x y width height) region
-        (affine-rectangle-bounds (%buffer-transform (share-output share)) x y width height)))))
+        (transform-rectangle-bounds (%buffer-transform (share-output share)) x y width height)))))
 
 (defun note-output-presented (world stage-output damage)
   "STAGE-OUTPUT repainted the buffer rectangles DAMAGE; screen shares showing any of them change."

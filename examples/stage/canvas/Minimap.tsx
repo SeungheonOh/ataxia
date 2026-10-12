@@ -1,8 +1,10 @@
-import { Rect, Screen, useCamera, type OutputInfo, type Rectangle } from "@ataxia/stage";
+import { Rect, Screen, spring, useCamera, type OutputInfo, type Rectangle } from "@ataxia/stage";
 import { union } from "../lib/geometry.js";
 import { colors, motion } from "../lib/theme.js";
 
 const size = { width: 200, height: 128 };
+/** Quick and without bounce, so the map keeps up with drags and pans reported every frame. */
+const track = spring({ duration: 0.16 });
 const padding = 8;
 
 interface MinimapProps {
@@ -56,14 +58,14 @@ export function Minimap({ output, places, focused }: MinimapProps) {
           radius={1.5}
           fill={id === focused ? colors.accent : colors.ink}
           opacity={id === focused ? 0.9 : 0.35}
-          transition={motion.glide}
+          transition={track}
         />
       ))}
       <Rect
         {...toMap(view)}
         radius={2}
         border={{ width: 1.5, color: colors.accent }}
-        transition={motion.glide}
+        transition={track}
       />
     </Screen>
   );

@@ -8,6 +8,7 @@ import {
   acceptShare,
   Box,
   cancelShare,
+  scale,
   Screen,
   useOutputs,
   useShares,
@@ -98,7 +99,7 @@ export function ShareChooser() {
             border={glassBorder}
             shadow={{ color: "#00000040", blur: 48, y: 16 }}
             opacity={open ? 1 : 0}
-            scale={open ? 1 : 0.95}
+            transform={scale(open ? 1 : 0.95)}
             transition={motion.pop}
             onMessage={(name, value) => handleMessage({ name, value } as SharePickerMessage)}
           />

@@ -16,6 +16,12 @@
   (width :int32)
   (height :int32))
 
+(cffi:defcfun ("glGetString" %gl-get-string) :pointer
+  (name :uint32))
+
+(cffi:defcfun ("eglGetProcAddress" %egl-get-proc-address) :pointer
+  (name :string))
+
 (defconstant +gl-framebuffer+ #x8d40)
 (defconstant +output-state-buffer-configuration-fields+ #xbc)
 
@@ -121,6 +127,8 @@
     (let ((kernel (object-kernel output)))
       (%call-world kernel world-output-removing output)
       (%cancel-output-retry output)
+      (when (%output-render-timer output)
+        (ataxia.runtime:remove-event-loop-source (shiftf (%output-render-timer output) nil)))
       (%reset-output-swapchain output)
       (dolist (surface (%hash-values (%kernel-surface-table kernel)))
         (when (gethash output (%surface-output-membership surface))
@@ -133,6 +141,183 @@
       (%retire-object
        kernel output :runtime-object (output-runtime-object output))))
   output)
+
+;;; Frame pacing.
+;;;
+;;; While frames follow one another, each frame event comes as the previous one
+;;; reaches the screen. Rendering then would leave anything clients commit in the
+;;; rest of the refresh waiting a whole extra frame, so on outputs presenting on
+;;; vblank such a frame starts as late as it can and still meet the next vblank:
+;;; that is predicted from the last presentation and the refresh, and a frame's
+;;; cost is the decaying peak of recent frames, grown whenever one misses. A frame
+;;; that may not fit before the next vblank starts at once, as does one requested
+;;; on a still screen and the few after it: an animation's first frames do more
+;;; than the still frames before them, which their cost does not know yet.
+
+(defconstant +frame-margin+ 2000000
+  "Nanoseconds kept beyond a frame's measured cost, for the GPU and wakeup latency.")
+
+(defconstant +flip-window+ 2000000
+  "Nanoseconds from a vblank within which a frame event follows that frame's flip.")
+
+(defconstant +paced-after+ 3
+  "Frames in a row following flips before frames start late.")
+
+(defun %monotonic-nanoseconds ()
+  (multiple-value-bind (seconds nanoseconds) (sb-unix:clock-gettime sb-unix:clock-monotonic)
+    (+ (* seconds 1000000000) nanoseconds)))
+
+(defun %frame-delay (output)
+  "Milliseconds before OUTPUT's frame must start to meet the next vblank; 0 starts it
+now. Records the vblank a delayed frame aims for."
+  (let* ((vblank (%output-vblank output))
+         (refresh (%output-refresh output))
+         (now (%monotonic-nanoseconds))
+         (following-p (and vblank (plusp refresh) (<= (- now vblank) +flip-window+))))
+    (setf (%output-target-vblank output) nil
+          (%output-streak output) (if following-p (1+ (%output-streak output)) 0))
+    (if (< (%output-streak output) +paced-after+)
+        0
+        (let* ((lead (+ (%output-frame-cost output) (%output-gpu-cost output) +frame-margin+))
+               ;; Flip events report the vblank just presented a moment ahead of now.
+               (next (+ vblank refresh))
+               ;; Negative when the frame may miss NEXT; waiting for the vblank
+               ;; after it would halve the frame rate, so it starts at once.
+               (delay (floor (- next lead now) 1000000)))
+          (when (plusp delay)
+            (setf (%output-target-vblank output) next))
+          (max 0 delay)))))
+
+(defun %note-presentation (output nanoseconds refresh vsync-p)
+  "Learn OUTPUT's vblank timing from a presentation; a frame that came out after the
+vblank it aimed for makes later frames start earlier."
+  (let ((target (shiftf (%output-target-vblank output) nil)))
+    (when (and target (> nanoseconds (+ target (floor refresh 2))))
+      (incf (%output-frame-cost output) +frame-margin+)))
+  (setf (%output-vblank output) (and vsync-p nanoseconds)
+        (%output-refresh output) refresh))
+
+(defun %note-frame-cost (output nanoseconds)
+  "Fold one frame's cost into OUTPUT's estimate: the peak, decaying 1/16 a frame."
+  (setf (%output-frame-cost output)
+        (max nanoseconds (floor (* 15 (%output-frame-cost output)) 16) 1000000)))
+
+;;; GPU timing. A frame's cost is mostly the GPU's work, which runs after the
+;;; CPU has submitted it. Timestamp queries around the World's drawing measure
+;;; it without waiting; results are read a frame or two later.
+
+(defconstant +gl-extensions+ #x1f03)
+(defconstant +gl-timestamp+ #x8e28)
+(defconstant +gl-query-result+ #x8866)
+(defconstant +gl-query-result-available+ #x8867)
+
+(defvar *gpu-timer* :unknown
+  "Entry points of EXT_disjoint_timer_query: gen, counter, available and result; or
+NIL when the driver lacks it.")
+
+(defun %gpu-timer ()
+  "Call with a GL context current."
+  (when (eq *gpu-timer* :unknown)
+    (let ((extensions (%gl-get-string +gl-extensions+)))
+      (setf *gpu-timer*
+            (and (not (cffi:null-pointer-p extensions))
+                 (search "GL_EXT_disjoint_timer_query" (cffi:foreign-string-to-lisp extensions))
+                 (mapcar #'%egl-get-proc-address
+                         '("glGenQueriesEXT" "glQueryCounterEXT" "glGetQueryObjectivEXT"
+                           "glGetQueryObjectui64vEXT"))))))
+  *gpu-timer*)
+
+(defun %gpu-timestamp (query)
+  (cffi:foreign-funcall-pointer (second (%gpu-timer)) () :uint32 query :uint32 +gl-timestamp+ :void))
+
+(defun %collect-gpu-cost (output)
+  "Fold the GPU times of OUTPUT's finished frames into its estimate, as frame costs fold."
+  (destructuring-bind (gen counter available result) (%gpu-timer)
+    (declare (ignore gen counter))
+    (cffi:with-foreign-objects ((ready :int32) (start :uint64) (end :uint64))
+      (loop for pair in (reverse (%output-gpu-queries output))
+            do (cffi:foreign-funcall-pointer available () :uint32 (cdr pair)
+                                             :uint32 +gl-query-result-available+ :pointer ready :void)
+               (when (zerop (cffi:mem-ref ready :int32)) (return))
+               (cffi:foreign-funcall-pointer result () :uint32 (car pair) :uint32 +gl-query-result+
+                                             :pointer start :void)
+               (cffi:foreign-funcall-pointer result () :uint32 (cdr pair) :uint32 +gl-query-result+
+                                             :pointer end :void)
+               (setf (%output-gpu-cost output)
+                     (max (- (cffi:mem-ref end :uint64) (cffi:mem-ref start :uint64))
+                          (floor (* 15 (%output-gpu-cost output)) 16))
+                     (%output-gpu-queries output) (remove pair (%output-gpu-queries output)))
+               (push pair (%output-free-gpu-queries output))))))
+
+(defun %begin-gpu-timing (output)
+  "Start timing the GPU work of OUTPUT's frame; return the query pair, if any."
+  (when (%gpu-timer)
+    (%collect-gpu-cost output)
+    ;; Results arrive within a frame or two; a backlog means they stopped coming.
+    (when (< (length (%output-gpu-queries output)) 4)
+      (let ((pair (or (pop (%output-free-gpu-queries output))
+                      (cffi:with-foreign-object (ids :uint32 2)
+                        (cffi:foreign-funcall-pointer (first (%gpu-timer)) () :int32 2 :pointer ids :void)
+                        (cons (cffi:mem-aref ids :uint32 0) (cffi:mem-aref ids :uint32 1))))))
+        (%gpu-timestamp (car pair))
+        pair))))
+
+(defun %end-gpu-timing (output pair)
+  (when pair
+    (%gpu-timestamp (cdr pair))
+    (push pair (%output-gpu-queries output))))
+
+;;; Garbage collection. A collection stops everything for 3-6 ms, however little
+;;; is allocated; landing in a frame it makes that frame miss its vblank. When the
+;;; heap nears its next collection, it runs where the CPU would wait anyway: while
+;;; a frame waits to start, or after one is committed while the GPU draws it. A
+;;; frame too close to its vblank for either starts at once instead of late,
+;;; making room after it. Collections come at most a quarter of an allowance
+;;; early, so there are hardly more of them.
+
+(defconstant +collection-slack+ 8
+  "Milliseconds of waiting a collection needs to run in it.")
+
+(defun %collection-due-p ()
+  "Whether the heap has allocated three quarters of what triggers its next collection."
+  (< (- (sb-alien:extern-alien "auto_gc_trigger" sb-alien:unsigned) (sb-kernel:dynamic-usage))
+     (floor (sb-ext:bytes-consed-between-gcs) 4)))
+
+(defun %collect-before-vblank (output)
+  "After OUTPUT's frame is committed, collect if one is due and the next vblank,
+when the next frame starts, is far enough away."
+  (let ((vblank (%output-vblank output))
+        (refresh (%output-refresh output)))
+    (when (and vblank (plusp refresh) (%collection-due-p))
+      (let* ((now (%monotonic-nanoseconds))
+             (next (+ vblank (* refresh (max 1 (ceiling (- now vblank) refresh))))))
+        (when (>= (- next now) (* +collection-slack+ 1000000))
+          (sb-ext:gc))))))
+
+(defun start-output-frame (output)
+  "Render OUTPUT's requested frame now, or as late as still meets the next vblank."
+  (let ((delay (%frame-delay output)))
+    (when (and (plusp delay) (%collection-due-p))
+      (if (>= delay +collection-slack+)
+          (let ((start (%monotonic-nanoseconds)))
+            (sb-ext:gc)
+            (setf delay (max 0 (- delay (ceiling (- (%monotonic-nanoseconds) start) 1000000)))))
+          (setf delay 0)))
+    (if (zerop delay)
+        (%render-output-frame output)
+        (ataxia.runtime:update-event-loop-timer
+         (or (%output-render-timer output)
+             (setf (%output-render-timer output)
+                   (ataxia.runtime:add-event-loop-timer
+                    (kernel-runtime (object-kernel output))
+                    (lambda (source)
+                      (declare (ignore source))
+                      (when (and (eq (object-state output) :live)
+                                 (output-enabled-p output)
+                                 (%output-frame-requested-p output))
+                        (%render-output-frame output))
+                      0))))
+         delay))))
 
 (defun request-output-frame (output)
   "Request one frame; calls made during rendering latch one following frame."
@@ -229,26 +414,29 @@
       (frame-damage-rectangle-height rectangle)))
    rectangles))
 
-(defun %notify-presented-surfaces (output result)
-  (let ((runtime-output (output-runtime-object output))
-        (seen (make-hash-table :test #'eq)))
-    (map nil
-         (lambda (token)
-           (let ((surface (%protocol-token-surface token)))
-             (unless (gethash surface seen)
-               (setf (gethash surface seen) t)
-               (ataxia.runtime:mark-surface-textured-on-output
-                (surface-runtime-object surface) runtime-output)
-               (ataxia.runtime:surface-send-frame-done
-                (surface-runtime-object surface)))))
-         (frame-result-presentation-tokens result))
-    (map nil
-         (lambda (token)
-           (let ((surface (%protocol-token-surface token)))
-             (unless (gethash surface seen)
-               (setf (gethash surface seen) t)
-               (ataxia.runtime:surface-send-frame-done (surface-runtime-object surface)))))
-         (frame-result-callback-tokens result))))
+(defun %frame-surfaces (result)
+  "Surfaces RESULT shows, then those it only lets progress, each once."
+  ;; A frame shows a handful of surfaces: a list beats a hash table made per frame.
+  (let ((seen nil))
+    (flet ((surfaces (tokens)
+             (loop for token being the elements of tokens
+                   for surface = (%protocol-token-surface token)
+                   unless (member surface seen :test #'eq)
+                     do (push surface seen)
+                     and collect surface)))
+      (let ((presented (surfaces (frame-result-presentation-tokens result))))
+        (values presented (surfaces (frame-result-callback-tokens result)))))))
+
+(defun %mark-presented-surfaces (output presented)
+  "Attach the presentation feedback of PRESENTED surfaces to OUTPUT's next commit,
+which wlroots requires to happen before that commit."
+  (let ((runtime-output (output-runtime-object output)))
+    (dolist (surface presented)
+      (ataxia.runtime:mark-surface-textured-on-output (surface-runtime-object surface) runtime-output))))
+
+(defun %send-frame-done (surfaces)
+  (dolist (surface surfaces)
+    (ataxia.runtime:surface-send-frame-done (surface-runtime-object surface))))
 
 (defun %execute-world-frame
     (output framebuffer target-token buffer-width buffer-height)
@@ -272,9 +460,11 @@
           (lambda ()
             (%gl-bind-framebuffer +gl-framebuffer+ framebuffer)
             (%gl-viewport 0 0 buffer-width buffer-height)
-            (%validate-frame-result
-             kernel lease
-             (%call-world-on kernel world world-render lease))))
+            (let ((timing (%begin-gpu-timing output)))
+              (prog1 (%validate-frame-result
+                      kernel lease
+                      (%call-world-on kernel world world-render lease))
+                (%end-gpu-timing output timing)))))
       (setf (frame-lease-valid-p lease) nil))))
 
 (defun %commit-world-frame (output buffer result)
@@ -282,10 +472,11 @@
          (runtime-output (output-runtime-object output))
          (state (ataxia.runtime:create-output-state runtime-output)))
     (unwind-protect
-         (progn
+         (multiple-value-bind (presented progressing) (%frame-surfaces result)
            (ataxia.runtime:output-state-set-buffer state buffer)
            (ataxia.runtime:output-state-set-damage
             state (%runtime-damage (frame-result-damage result)))
+           (%mark-presented-surfaces output presented)
            ;; This state only changes the rendered buffer and damage. The
            ;; swapchain is already configured, and commit validates the state
            ;; itself. A separate test duplicates the DRM atomic submission on
@@ -298,7 +489,8 @@
            (%refresh-output-object output)
            (%call-world
             kernel world-frame-committed output result :committed)
-           (%notify-presented-surfaces output result)
+           (%send-frame-done presented)
+           (%send-frame-done progressing)
            t)
       (ataxia.runtime:destroy-output-state state))))
 
@@ -306,7 +498,8 @@
   (let ((kernel (object-kernel output))
         (buffer nil)
         (result nil)
-        (committed-p nil))
+        (committed-p nil)
+        (started (%monotonic-nanoseconds)))
     (setf (%output-frame-requested-p output) nil
           (%output-frame-active-p output) t)
     (unwind-protect
@@ -338,6 +531,8 @@
       (setf (%output-frame-active-p output) nil)
       (if committed-p
           (progn
+            (%note-frame-cost output (- (%monotonic-nanoseconds) started))
+            (%collect-before-vblank output)
             (setf (%output-consecutive-frame-failures output) 0)
             (%cancel-output-retry output)
             (when (%output-next-frame-requested-p output)

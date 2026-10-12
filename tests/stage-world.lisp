@@ -73,7 +73,23 @@
     (assert (handler-case (progn (funcall bad) nil) (stage-protocol-error () t))))
   ;; A rejected op changes nothing, not even the values it named before the bad one.
   (assert (= 300d0 (node-prop (scene-node scene 4) :x))))
-(format t "PASS: layout identity survives remounts, exits animate, invalid ops change nothing.~%")
+;; Under another parent, the new node continues from where the old one was shown.
+(let ((scene (make-scene))
+      (card (lambda (x) (object "layoutId" "card" "x" x "y" 20 "width" 10 "height" 10
+                                "transition" (object "default" (object "type" "spring"))))))
+  (scene-create scene 1 "group" (object "x" 500 "y" 40) 0d0)
+  (scene-insert scene 0 1 nil)
+  (scene-create scene 2 "rect" (funcall card 10) 0d0)
+  (scene-insert scene 1 2 nil)
+  (scene-finish-commit scene 0d0)
+  (scene-remove scene 1 2)
+  (scene-create scene 3 "rect" (funcall card 900) 0d0)
+  (scene-insert scene 0 3 nil)
+  (scene-finish-commit scene 0d0)
+  (near 510d0 (node-number (scene-node scene 3) :x))
+  (near 60d0 (node-number (scene-node scene 3) :y)))
+(format t "PASS: layout identity survives remounts, even under another parent; exits animate, ~
+invalid ops change nothing.~%")
 
 ;;; Keyframe layers compose over values; curves and effect uniforms animate like props.
 (let ((scene (make-scene))
@@ -99,13 +115,15 @@
     (near 100d0 (node-number (scene-node scene 1) :x))
     (near 1d0 (progress))
     ;; Declared again beside a new animation, the finished one does not replay.
-    (scene-update scene 1 (object "animate" (vector shake (object "id" "spin" "property" "rotation"
-                                                                  "keyframes" #(0 1) "duration" 1
-                                                                  "iterations" "forever")))
+    (scene-update scene 1 (object "animate"
+                                  (vector shake (object "id" "spin" "property" "transform"
+                                                        "keyframes" #(#(#("rotate" 0 0 1 0))
+                                                                      #(#("rotate" 0 0 1 1)))
+                                                        "duration" 1 "iterations" "forever")))
                   2d0)
     (scene-advance scene 2.5d0)
     (near 100d0 (node-number (scene-node scene 1) :x))
-    (near 0.5d0 (node-number (scene-node scene 1) :rotation))
+    (near 0.5d0 (svref (transform-list-parameters (node-transform-list (scene-node scene 1))) 3))
     (assert (not (scene-settling-p scene)))
     (let ((effect (scene-node scene 2)))
       (scene-remove scene 0 2)
@@ -116,6 +134,39 @@
   (assert (handler-case (scene-update scene 1 (object "uniforms" (object "x" 1)) 0d0)
             (stage-protocol-error () t))))
 (format t "PASS: keyframe layers, curve transitions and animated effect uniforms.~%")
+
+;;; Transforms animate function by function, CSS padding the shorter list with
+;;; functions doing nothing; other lists apply at once. They compose in 3D.
+(let ((scene (make-scene))
+      (tween (object "type" "tween" "duration" 1 "ease" #(0 0 1 1))))
+  (flet ((transform (&rest functions) (coerce functions 'vector))
+         (angle () (svref (transform-list-parameters (node-transform-list (scene-node scene 1))) 4)))
+    (scene-create scene 1 "rect" (object "width" 100 "height" 100 "transition" (object "default" tween))
+                  0d0)
+    (scene-insert scene 0 1 nil)
+    (scene-finish-commit scene 0d0)
+    (scene-update scene 1 (object "transform" (transform #("perspective" 500) #("rotate" 0 1 0 1)))
+                  0d0)
+    (scene-advance scene 0.5d0)
+    ;; Half way; a perspective moves through its strength, 1/1000, not its distance.
+    (near 0.5d0 (angle))
+    (near 0.001d0 (svref (transform-list-parameters (node-transform-list (scene-node scene 1))) 0))
+    (scene-update scene 1 (object "transform" (transform #("scale" 2 2 1))) 1d0)
+    (assert (equal '(:scale) (transform-list-kinds (node-transform-list (scene-node scene 1)))))
+    ;; Turned 69 degrees about y and seen from 500 away, the right edge recedes.
+    (scene-update scene 1 (object "transform" (transform #("perspective" 500) #("rotate" 0 1 0 1.2))
+                                  "transition" (object "default" (object "type" "instant")))
+                  2d0)
+    (multiple-value-bind (x) (transform-apply (matrix-plane (node-local-matrix (scene-node scene 1) 100 100))
+                                              100 50)
+      (assert (< 50d0 x 100d0)))
+    ;; Still facing the viewer; turned past a right angle it shows its back.
+    (assert (plusp (transform-determinant (matrix-plane (node-local-matrix (scene-node scene 1) 100 100)))))
+    (scene-update scene 1 (object "transform" (transform #("perspective" 500) #("rotate" 0 1 0 2.5))) 2d0)
+    (assert (minusp (transform-determinant (matrix-plane (node-local-matrix (scene-node scene 1) 100 100)))))
+    (assert (handler-case (scene-update scene 1 (object "transform" (transform #("spin" 1))) 3d0)
+              (stage-protocol-error () t)))))
+(format t "PASS: transforms animate function by function, compose in 3D and show their backs.~%")
 
 ;;; Damage: a reorder damages only what moved; a blur area is repainted whole, in one pass.
 (assert (equal '(:a) (%reordered (list (list 1 :b) (list 2 :c) (list 0 :a) (list 3 :d)))))
@@ -129,8 +180,14 @@
       (assert (= (+ (* 100 20) (* 10 20)) (reduce #'+ passes :key #'ataxia.world:rectangle-area))))
     (assert (equalp (list (rectangle 0 0 200 200))
                     (%blur-passes (list (rectangle 0 0 200 200)) items 200 200)))
-    (assert (equalp (list cursor) (%blur-passes (list cursor) nil 200 200)))))
-(format t "PASS: damage reorders and blur passes.~%")
+    (assert (equalp (list cursor) (%blur-passes (list cursor) nil 200 200))))
+  ;; Opaque items above cut bands out of a large one; one covering no whole pixel cuts nothing.
+  (assert (null (%covered-box (rectangle 10.2d0 10.2d0 0.5d0 0.5d0))))
+  (let ((parts (%visible-boxes '(0 0 100 100) (list (cons 1 (%covered-box (rectangle 20 30 50 40)))) 0)))
+    (assert (= (- (* 100 100) (* 50 40))
+               (reduce #'+ parts :key (lambda (part) (* (- (third part) (first part)) (- (fourth part) (second part)))))))
+    (assert (every (lambda (part) (and (< (first part) (third part)) (< (second part) (fourth part)))) parts))))
+(format t "PASS: damage reorders, blur passes and occlusion cuts.~%")
 
 ;;; A director session against real Wayland clients on the headless backend.
 (defclass stage-test-world (stage-world)
@@ -224,7 +281,9 @@
                   ;; The window's center in its 600x360 buffer, drawn at 480x300.
                   (pointer 340d0 250d0)
                   (button :pressed) (button :released))
-               (10 (assert (search "pointer-enter seat0 300.0 180.0" (uiop:read-file-string log)))
+               ;; The pointer may have been over the window as it appeared, entering it then.
+               (10 (assert (or (search "pointer-enter seat0 300.0 180.0" (uiop:read-file-string log))
+                               (search "motion seat0 300.0 180.0" (uiop:read-file-string log))))
                    (assert (received-p (format nil "\"type\":\"focus\",\"seat\":\"seat0\",\"window\":~D"
                                                (stage-window-id window))))
                    (pointer 900d0 650d0)
@@ -232,7 +291,6 @@
                (11 (assert (received-p "\"name\":\"pointerdown\",\"button\":272,\"output\":\"HEADLESS-1\""))
                    (assert (received-p "\"world-x\":900.000000"))
                    (assert (received-p "\"name\":\"pointerup\""))
-                   (setf frames (test-frames world))
                    (send :type "capture" :id 9 :region (object "x" 620 "y" 420 "width" 8 "height" 8)))
                ;; The effect turned its white content into its green uniform.
                (12 (let* ((start (+ (search "\"path\":\"" received) 8))
@@ -242,10 +300,28 @@
                                       (read-sequence octets in)
                                       octets))))
                      (delete-file path)
-                     (assert (equalp pixels #(0 255 0 255)) () "Effect pixel ~A" pixels)))
-               ((13))
+                     (assert (equalp pixels #(0 255 0 255)) () "Effect pixel ~A" pixels))
+                   ;; Tilted in perspective, the window still takes input where it shows.
+                   (send :type "commit"
+                         :ops (vector (object "op" "set" "id" 2
+                                              "props" (object "transform"
+                                                              #(#("perspective" 900)
+                                                                #("rotate" 0 1 0 0.5)
+                                                                #("rotate" 1 0 0 -0.3)
+                                                                #("rotate" 0 0 1 0.2))
+                                                              "originX" 0.5 "originY" 0.5)))))
+               (13 (let ((to-screen (first (gethash window (stage-output-window-transforms
+                                                            (first (%outputs world)))))))
+                     (assert (plusp (abs (transform-g to-screen))))
+                     (multiple-value-call #'pointer (transform-apply to-screen 450 90))
+                     (multiple-value-call #'pointer (transform-apply to-screen 120 300))))
+               (14 (let ((log (uiop:read-file-string log)))
+                     (assert (search "pointer-enter seat0 450.0 90.0" log))
+                     (assert (search "motion seat0 120.0 300.0" log)))
+                   (setf frames (test-frames world)))
+               ((15))
                ;; Settled scenes with static clients schedule no frames at all.
-               (14 (assert (= frames (test-frames world)) () "~D idle frames"
+               (16 (assert (= frames (test-frames world)) () "~D idle frames"
                            (- (test-frames world) frames))
                    (ataxia.kernel:request-kernel-stop kernel)))))
     (unwind-protect
@@ -270,10 +346,11 @@
                                    0))))
              (ataxia.runtime:update-event-loop-timer timer 200))
            (ataxia.kernel:run-kernel kernel :run-for 15)
-           (assert (= phase 14) () "The session stopped in phase ~D." phase))
+           (assert (= phase 16) () "The session stopped in phase ~D." phase))
       (when client (ignore-errors (uiop:terminate-process client)))
       (ignore-errors (sb-bsd-sockets:socket-close director))
       (ataxia.kernel:destroy-kernel kernel :test)
       (uiop:delete-directory-tree root :validate t :if-does-not-exist :ignore))))
-(format t "PASS: handshake, fallback placement, configure, picking through transforms and ~
-effects, effect shaders, director events, text measurement, reservations and an idle settled scene.~%")
+(format t "PASS: handshake, fallback placement, configure, picking through transforms, ~
+perspective and effects, effect shaders, director events, text measurement, reservations and an ~
+idle settled scene.~%")

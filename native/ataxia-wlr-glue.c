@@ -11,7 +11,9 @@
 
 #include <wayland-server-core.h>
 #include <xkbcommon/xkbcommon.h>
+#include <libinput.h>
 #include <wlr/backend.h>
+#include <wlr/backend/libinput.h>
 #include <wlr/render/allocator.h>
 #include <wlr/render/gles2.h>
 #include <wlr/render/wlr_renderer.h>
@@ -312,6 +314,28 @@ const char *ataxia_input_device_name(const struct wlr_input_device *device) {
 
 uint32_t ataxia_input_device_type(const struct wlr_input_device *device) {
 	return device == NULL ? UINT32_MAX : (uint32_t)device->type;
+}
+
+bool ataxia_input_device_configure_touchpad(struct wlr_input_device *device,
+		bool tap, bool natural_scroll, bool disable_while_typing) {
+	if (device == NULL || !wlr_input_device_is_libinput(device)) {
+		return false;
+	}
+	struct libinput_device *handle = wlr_libinput_get_device_handle(device);
+	if (libinput_device_config_tap_get_finger_count(handle) == 0) {
+		return false;
+	}
+	libinput_device_config_tap_set_enabled(handle,
+		tap ? LIBINPUT_CONFIG_TAP_ENABLED : LIBINPUT_CONFIG_TAP_DISABLED);
+	if (libinput_device_config_scroll_has_natural_scroll(handle)) {
+		libinput_device_config_scroll_set_natural_scroll_enabled(handle,
+			natural_scroll);
+	}
+	if (libinput_device_config_dwt_is_available(handle)) {
+		libinput_device_config_dwt_set_enabled(handle, disable_while_typing
+			? LIBINPUT_CONFIG_DWT_ENABLED : LIBINPUT_CONFIG_DWT_DISABLED);
+	}
+	return true;
 }
 
 struct wlr_pointer *ataxia_input_device_pointer(

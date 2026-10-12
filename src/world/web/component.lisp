@@ -5,7 +5,11 @@
    (world :initarg :world :reader %engine-world)
    (components :initform nil :accessor %engine-components)
    (sources :initform nil :accessor %engine-sources)
-   (stopped :initform nil :accessor %engine-stopped)))
+   (stopped :initform nil :accessor %engine-stopped)
+   ;; With no page shown, the browser's processes are stopped: Chromium's own
+   ;; timers would otherwise wake it many times a second for nothing.
+   (paused :initform nil :accessor %engine-paused)
+   (pause-timer :initform nil :accessor %engine-pause-timer)))
 (defclass web-component (ataxia.kernel:drawable ataxia.kernel:interactable)
   ((native :initarg :native :reader %native)
    (engine :initarg :engine :reader %engine)
@@ -27,7 +31,29 @@
   (when (or (%destroyed component) (%engine-stopped (%engine component)))
     (error "The web component is destroyed or its helper stopped."))
   (%native component))
+(defparameter +pause-delay+ 3000
+  "Milliseconds the browser runs on after its last command while no page is shown,
+for pages to finish loading and settle.")
+(defun %signal-engine (engine signal)
+  (sb-posix:kill (- (ataxia.world.web.raw::%engine-pid (%engine-native engine))) signal))
+(defun %pause (engine)
+  (unless (or (%engine-stopped engine) (%engine-paused engine) (some #'%visible (%engine-components engine)))
+    (%signal-engine engine sb-posix:sigstop)
+    (setf (%engine-paused engine) t)))
+(defun %wake (engine)
+  "Resume a paused browser for a command, and pause it again once it has been idle a while."
+  (when (%engine-paused engine)
+    (%signal-engine engine sb-posix:sigcont)
+    (setf (%engine-paused engine) nil))
+  (let ((timer (or (%engine-pause-timer engine)
+                   (let ((runtime (ataxia.kernel:kernel-runtime (ataxia.kernel:world-kernel (%engine-world engine)))))
+                     (car (push (setf (%engine-pause-timer engine)
+                                      (ataxia.runtime:add-event-loop-timer
+                                       runtime (lambda (source) (declare (ignore source)) (%pause engine) 0)))
+                                (%engine-sources engine)))))))
+    (ataxia.runtime:update-event-loop-timer timer +pause-delay+)))
 (defun %command (component op &key (a 0) (b 0) (c 0) (d 0) (scale 0d0) (text ""))
+  (%wake (%engine component))
   (unless (plusp (ataxia.world.web.raw::%command (%live component) op a b c d (coerce scale 'double-float) text))
     (error "Web UI: ~A" (ataxia.world.web.raw::%error)))
   component)
@@ -57,6 +83,8 @@
           (%dispatch-event component (car event) (cdr event)))))))
 (defun %stop-engine (engine)
   (unless (%engine-stopped engine)
+    ;; A stopped process cannot act on the request to exit.
+    (when (%engine-paused engine) (%signal-engine engine sb-posix:sigcont))
     (setf (%engine-stopped engine) t)
     (dolist (source (%engine-sources engine)) (ataxia.runtime:remove-event-loop-source source))
     (setf (%engine-sources engine) nil)

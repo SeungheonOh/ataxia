@@ -81,7 +81,7 @@
     (when (and output
                (output-enabled-p output)
                (%output-frame-requested-p output))
-      (%render-output-frame output))))
+      (start-output-frame output))))
 
 (defmethod ataxia.runtime:output-needs-frame
     ((kernel kernel) runtime-output)
@@ -106,6 +106,12 @@
   (let ((output
           (gethash (ataxia.runtime:output-present-output event)
                    (%kernel-output-table kernel))))
+    (when (and output (ataxia.runtime:output-present-presented-p event))
+      (%note-presentation output
+                          (+ (* (ataxia.runtime:output-present-seconds event) 1000000000)
+                             (ataxia.runtime:output-present-nanoseconds event))
+                          (ataxia.runtime:output-present-refresh-nanoseconds event)
+                          (logtest 1 (ataxia.runtime:output-present-flags event))))
     (when output
       (%call-world
        kernel world-output-presented output

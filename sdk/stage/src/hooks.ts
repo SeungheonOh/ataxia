@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useSyncExternalStore } from "react";
 import { currentSession } from "./session.js";
+import type { Modifier } from "./events.js";
 import type { CameraInfo, OutputInfo, ShareInfo, WindowInfo } from "./store.js";
 
 /** Mapped windows in creation order. */
@@ -56,6 +57,12 @@ export function useShares(): readonly ShareInfo[] {
 export function useFocusedWindow(seat?: string): number | null {
   const store = currentSession().store;
   return useSyncExternalStore(store.subscribe, () => store.focus(seat));
+}
+
+/** Modifiers held on SEAT, or on the first seat: e.g. to end a switcher when they are let go. */
+export function useModifiers(seat?: string): readonly Modifier[] {
+  const store = currentSession().store;
+  return useSyncExternalStore(store.subscribe, () => store.modifiers(seat));
 }
 
 type SetState<T> = (next: T | ((previous: T) => T)) => void;

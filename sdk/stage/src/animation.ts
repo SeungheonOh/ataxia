@@ -7,6 +7,7 @@
 import { type Color, toWireColor } from "./color.js";
 import { type Easing, resolveEasing, sampleCount } from "./motion.js";
 import type { WireValue } from "./protocol.js";
+import { type Transform, wireTransform } from "./transform.js";
 
 /** The props keyframes can drive, and the value each keyframe takes. */
 export interface AnimatableValues {
@@ -14,9 +15,8 @@ export interface AnimatableValues {
   y: number;
   width: number;
   height: number;
-  scale: number;
-  /** Degrees. */
-  rotation: number;
+  /** Transform functions; every keyframe lists the same ones. */
+  transform: Transform;
   opacity: number;
   radius: number;
   blur: number;
@@ -82,7 +82,7 @@ const color = (value: Color): WireValue => toWireColor(value);
 /** Wire property and keyframe conversion of each animatable prop. */
 const tracks: { [K in keyof AnimatableValues]: [string, (value: never) => WireValue] } = {
   x: ["x", number], y: ["y", number], width: ["width", number], height: ["height", number],
-  scale: ["scale", number], rotation: ["rotation", angle], opacity: ["opacity", number],
+  transform: ["transform", wireTransform], opacity: ["opacity", number],
   radius: ["radius", number], blur: ["blur", number], dim: ["dim", number],
   fill: ["color", color], color: ["color", color],
   borderWidth: ["borderWidth", number], borderColor: ["borderColor", color],
@@ -94,8 +94,11 @@ const tracks: { [K in keyof AnimatableValues]: [string, (value: never) => WireVa
 
 function lerp(from: WireValue, to: WireValue, fraction: number): WireValue {
   if (Array.isArray(from) && Array.isArray(to)) {
+    if (from.length !== to.length) throw new TypeError("Keyframes must have the same shape");
     return from.map((low, index) => lerp(low, to[index]!, fraction));
   }
+  // A transform function's name.
+  if (typeof from === "string") return from;
   return (from as number) + ((to as number) - (from as number)) * fraction;
 }
 

@@ -22,34 +22,34 @@
        (plusp (ataxia.world:overlay-opacity overlay))
        (eq (ataxia.world:overlay-output overlay) (stage-output-output stage-output))))
 
-(defun %overlay-affine (overlay)
+(defun %overlay-transform (overlay)
   "Map OVERLAY's component-local space to its output's logical pixels."
   (multiple-value-bind (x y width height)
       (ataxia.kernel:drawable-local-bounds (ataxia.world:overlay-component overlay))
     (let ((scale-x (/ (ataxia.world:overlay-width overlay) (max 1d-6 width)))
           (scale-y (/ (ataxia.world:overlay-height overlay) (max 1d-6 height))))
-      (make-affine scale-x 0 0 scale-y
-                   (- (ataxia.world:overlay-x overlay) (* scale-x x))
-                   (- (ataxia.world:overlay-y overlay) (* scale-y y))))))
+      (make-transform scale-x 0 0 scale-y
+                      (- (ataxia.world:overlay-x overlay) (* scale-x x))
+                      (- (ataxia.world:overlay-y overlay) (* scale-y y))))))
 
 (defun %damage-overlay-local (world overlay rectangles)
   "Damage component-local RECTANGLES of OVERLAY, or its whole box when NIL."
   (let ((stage-output (%overlay-stage-output world overlay)))
     (when stage-output
-      (let ((transform (affine-multiply (%buffer-transform stage-output) (%overlay-affine overlay))))
+      (let ((transform (transform-multiply (%buffer-transform stage-output) (%overlay-transform overlay))))
         (ataxia.world:damage-add-region
          (%damage world) (stage-output-output stage-output)
          (if rectangles
              (mapcar (lambda (rectangle)
-                       (affine-rectangle-bounds transform
-                                                          (ataxia.world:rectangle-x rectangle)
-                                                          (ataxia.world:rectangle-y rectangle)
-                                                          (ataxia.world:rectangle-width rectangle)
-                                                          (ataxia.world:rectangle-height rectangle) 1))
+                       (transform-rectangle-bounds transform
+                                                             (ataxia.world:rectangle-x rectangle)
+                                                             (ataxia.world:rectangle-y rectangle)
+                                                             (ataxia.world:rectangle-width rectangle)
+                                                             (ataxia.world:rectangle-height rectangle) 1))
                      rectangles)
              (multiple-value-bind (x y width height)
                  (ataxia.kernel:drawable-local-bounds (ataxia.world:overlay-component overlay))
-               (list (affine-rectangle-bounds transform x y width height 1)))))
+               (list (transform-rectangle-bounds transform x y width height 1)))))
         (%request-frames world (list stage-output))))))
 
 (defmethod ataxia.world:damage-overlay ((world stage-world) overlay)
@@ -212,8 +212,8 @@
     (dolist (overlay (ataxia.world:world-overlays (display-context-world context)))
       (when (%overlay-shown-p overlay stage-output)
         (let* ((component (ataxia.world:overlay-component overlay))
-               (affine (%overlay-affine overlay))
-               (transform (affine-multiply (display-context-screen context) affine))
+               (local (%overlay-transform overlay))
+               (transform (transform-multiply (display-context-screen context) local))
                (opacity (ataxia.world:overlay-opacity overlay)))
           (loop for surface across (ataxia.kernel:drawable-surfaces component)
                 for index from 0
@@ -223,7 +223,7 @@
                          (width (ataxia.kernel:drawable-surface-width surface))
                          (height (ataxia.kernel:drawable-surface-height surface)))
                      (%emit context (list overlay index)
-                            (affine-rectangle-bounds transform x y width height 1)
+                            (transform-rectangle-bounds transform x y width height 1)
                             (list transform x y width height opacity
                                   (ataxia.kernel:drawable-surface-texture-coordinates surface))
                             (lambda (renderer)
@@ -234,11 +234,11 @@
           (when (and (typep component 'ataxia.kernel:interactable)
                      (ataxia.world:overlay-input-enabled-p overlay))
             (multiple-value-bind (x y width height) (ataxia.kernel:drawable-local-bounds component)
-              (let ((inverse (affine-invert affine)))
+              (let ((inverse (transform-invert local)))
                 (when inverse
                   (push (%make-hit :inverse inverse :width width :height height
                                    :client component :overlay overlay
-                                   :content +identity-affine+
+                                   :content +identity-transform+
                                    :content-bounds (ataxia.world:make-rectangle x y width height))
                         (display-context-hits context)))))))))))
 
@@ -301,8 +301,8 @@
 (defun %window-logical-transform (window stage-output)
   "Map WINDOW's content to STAGE-OUTPUT's logical pixels as last presented, or NIL."
   (let ((transform (first (gethash window (stage-output-window-transforms stage-output))))
-        (to-logical (affine-invert (%buffer-transform stage-output))))
-    (and transform to-logical (affine-multiply to-logical transform))))
+        (to-logical (transform-invert (%buffer-transform stage-output))))
+    (and transform to-logical (transform-multiply to-logical transform))))
 
 (defun %require-placement (world window output)
   (let ((stage-output (%find-stage-output world output)))
@@ -322,16 +322,16 @@
 (defmethod ataxia.world:window-output-bounds ((world stage-world) window output)
   (let ((transform (%require-placement world window output)))
     (multiple-value-bind (x y width height) (%window-bounds window)
-      (let ((bounds (affine-rectangle-bounds transform x y width height)))
+      (let ((bounds (transform-rectangle-bounds transform x y width height)))
         (values (ataxia.world:rectangle-x bounds) (ataxia.world:rectangle-y bounds)
                 (ataxia.world:rectangle-width bounds) (ataxia.world:rectangle-height bounds))))))
 
 (defmethod ataxia.world:window-local-to-output ((world stage-world) window output x y)
-  (affine-apply (%require-placement world window output) x y))
+  (transform-apply (%require-placement world window output) x y))
 
 (defmethod ataxia.world:output-to-window-local ((world stage-world) window output x y)
-  (let ((inverse (affine-invert (%require-placement world window output))))
-    (if inverse (affine-apply inverse x y) (values x y))))
+  (let ((inverse (transform-invert (%require-placement world window output))))
+    (if inverse (transform-apply inverse x y) (values x y))))
 
 (defmethod ataxia.world:world-target-at ((world stage-world) output x y)
   (let ((stage-output (%find-stage-output world output)))
@@ -440,11 +440,11 @@
 (defun %window-world-bounds (window stage-output)
   "WINDOW's presented box in world coordinates through STAGE-OUTPUT's camera."
   (let* ((placement (%window-logical-transform window stage-output))
-         (to-world (affine-invert (camera-transform stage-output))))
+         (to-world (transform-invert (camera-transform stage-output))))
     (unless (and placement to-world)
       (error "The window is not shown on output ~A." (%output-name stage-output)))
     (multiple-value-bind (x y width height) (%window-bounds window)
-      (affine-rectangle-bounds (affine-multiply to-world placement) x y width height))))
+      (transform-rectangle-bounds (transform-multiply to-world placement) x y width height))))
 
 (defmethod ataxia.world:navigate-world-viewport
     ((world stage-world) output action &key x y dx dy zoom rotation width height window padding)

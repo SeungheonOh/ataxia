@@ -5,6 +5,7 @@ import { createElement as h } from "react";
 import { Background, Box, Group, Rect, Shortcut, Text, Window } from "../dist/components.js";
 import { Container, createRoot, reconciler } from "../dist/host.js";
 import { ease, spring, tween } from "../dist/motion.js";
+import { perspective, rotate, rotateY, scale } from "../dist/transform.js";
 
 function mount(measure) {
   const commits = [];
@@ -21,14 +22,15 @@ function mount(measure) {
 
 test("a first commit resets the scene and sends canonical props", () => {
   const { render } = mount();
-  const ops = render(h(Group, { x: 10, rotation: 90 },
+  const ops = render(h(Group, { x: 10, transform: [perspective(800), rotateY(90), scale(2)] },
     h(Rect, { width: 20, height: 10, fill: "#ff000080", shadow: { blur: 8, y: 2 },
               transition: { default: spring(), fill: { type: "instant" } },
               onPointerDown: () => {} })));
   assert.deepEqual(ops.map((op) => op.op), ["reset", "create", "create", "insert", "insert"]);
   const [, group, rect] = ops;
   assert.equal(group.type, "group");
-  assert.equal(group.props.rotation, Math.PI / 2);
+  assert.deepEqual(group.props.transform,
+    [["perspective", 800], ["rotate", 0, 1, 0, Math.PI / 2], ["scale", 2, 2, 1]]);
   assert.deepEqual(rect.props.color, [1, 0, 0, 128 / 255]);
   assert.equal(rect.props.shadowBlur, 8);
   assert.equal(rect.props.shadowY, 2);
@@ -149,7 +151,7 @@ test("keyframes, easing functions and effects reach the wire in canonical form",
               uniforms: { tint: "#ff000080", center: [1, 2] } },
     initial: { effect: { amount: 0, uniforms: { center: [0, 0] } } },
     transition: { effect: tween(0.5, ease.back()) },
-  }, h(Rect, { width: n, animate: [{ rotation: [0, 90], key: "spin" }, { x: (t) => t * 10, ease: ease.bounce }] }));
+  }, h(Rect, { width: n, animate: [{ transform: [rotate(0), rotate(90)], key: "spin" }, { x: (t) => t * 10, ease: ease.bounce }] }));
   const [, group, rect] = render(tree(10));
   assert.deepEqual(group.props.uniforms, { tint: [1, 0, 0, 128 / 255], center: [1, 2] });
   assert.equal(group.props.margin, 4);
@@ -157,7 +159,8 @@ test("keyframes, easing functions and effects reach the wire in canonical form",
   assert.equal(group.props.transition.amount.type, "curve");
   assert.equal(group.props.transition.uniforms.type, "curve");
   const [spin, slide] = rect.props.animate;
-  assert.deepEqual(spin, { property: "rotation", keyframes: [0, Math.PI / 2], duration: 0.5, id: "spin/rotation" });
+  assert.deepEqual(spin, { property: "transform", keyframes: [[["rotate", 0, 0, 1, 0]], [["rotate", 0, 0, 1, Math.PI / 2]]],
+                           duration: 0.5, id: "spin/transform" });
   assert.equal(slide.property, "x");
   assert.equal(slide.ease, undefined, "an easing function is baked into the keyframes");
   assert.equal(slide.keyframes.at(-1), 10);

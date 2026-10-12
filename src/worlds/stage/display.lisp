@@ -25,6 +25,9 @@
   (blur-area nil)
   ;; Buffer rectangles a change damages when tighter than BOUNDS, e.g. a border's ring.
   (damage nil)
+  ;; A buffer rectangle the item paints opaquely all over, or NIL: what lies
+  ;; beneath it there need not be drawn.
+  (opaque nil)
   ;; The effect item that draws this one into its content, or NIL for the frame itself.
   (owner nil)
   ;; For an effect: what it runs, and the items it owns in paint order.
@@ -115,11 +118,9 @@
         (push item (display-context-items context))
         item))))
 
-(defun %node-local-affine (world node)
+(defun %node-local-matrix (world node)
   (multiple-value-bind (width height) (%node-size world node)
-    (node-affine (node-number node :x 0d0) (node-number node :y 0d0)
-                 (node-number node :scale 1d0) (node-number node :rotation 0d0)
-                 (* width (node-prop node :origin-x)) (* height (node-prop node :origin-y)))))
+    (node-local-matrix node width height)))
 
 (defun %inflate (rectangle amount)
   (ataxia.world:make-rectangle (- (ataxia.world:rectangle-x rectangle) amount)
@@ -141,9 +142,9 @@
              (extent (shadow-extent blur)))
         (when (and (plusp box-width) (plusp box-height))
           (%emit context (list (stage-node-id node) :shadow)
-                 (affine-rectangle-bounds transform (- x extent) (- y extent)
-                                                    (+ box-width (* 2 extent))
-                                                    (+ box-height (* 2 extent)) 1)
+                 (transform-rectangle-bounds transform (- x extent) (- y extent)
+                                                       (+ box-width (* 2 extent))
+                                                       (+ box-height (* 2 extent)) 1)
                  (list transform x y box-width box-height corner blur color)
                  (lambda (renderer)
                    (draw-stage-shadow renderer transform x y box-width box-height
@@ -151,9 +152,10 @@
 
 (defun %emit-backdrop-blur (context node transform width height radius opacity)
   "Blur what is already drawn behind NODE's rounded box."
-  (let ((blur (* (max 0d0 (node-number node :blur 0d0)) (affine-scale-factor transform))))
+  (let ((blur (* (max 0d0 (node-number node :blur 0d0))
+                 (transform-scale-factor transform (/ width 2) (/ height 2)))))
     (when (and (>= blur 1d0) (plusp width) (plusp height))
-      (let* ((bounds (affine-rectangle-bounds transform 0 0 width height 1))
+      (let* ((bounds (transform-rectangle-bounds transform 0 0 width height 1))
              (margin (nth-value 2 (blur-parameters blur)))
              (screen (display-context-bounds context))
              (sampled (ataxia.world:rectangle-intersection (%inflate bounds margin) screen)))
@@ -172,29 +174,44 @@
 
 (defun %ring-damage (transform width height thickness)
   "Buffer strips covering a THICKNESS-wide ring inside an axis-aligned box, or NIL."
-  (when (and (zerop (affine-b transform)) (zerop (affine-c transform))
+  (when (and (zerop (transform-b transform)) (zerop (transform-c transform))
              (< (* 4 thickness) (min width height)))
     (mapcar (lambda (strip)
               (destructuring-bind (x y width height) strip
-                (affine-rectangle-bounds transform x y width height 2)))
+                (transform-rectangle-bounds transform x y width height 2)))
             (list (list 0 0 width thickness)
                   (list 0 (- height thickness) width thickness)
                   (list 0 thickness thickness (- height (* 2 thickness)))
                   (list (- width thickness) thickness thickness (- height (* 2 thickness)))))))
 
+(defun %opaque-rectangle (context transform x y width height inset)
+  "Buffer rectangle that local box (X, Y, WIDTH, HEIGHT), less INSET on every side,
+covers when TRANSFORM keeps it upright; NIL otherwise. Antialiased edges and
+clipped-away parts are left out."
+  (when (and (zerop (transform-b transform)) (zerop (transform-c transform))
+             (zerop (transform-g transform)) (zerop (transform-h transform))
+             (> width (+ (* 2 inset) 2)) (> height (+ (* 2 inset) 2)))
+    (let ((rectangle (%inflate (transform-rectangle-bounds transform (+ x inset) (+ y inset)
+                                                           (- width (* 2 inset)) (- height (* 2 inset)))
+                               -1))
+          (clip (display-context-clip context)))
+      (if clip (ataxia.world:rectangle-intersection rectangle clip) rectangle))))
+
 (defun %emit-box (context node part transform x y width height radius border fill stroke)
   (when (and (plusp width) (plusp height)
              (or (%paint-visible-p fill) (and (plusp border) (%paint-visible-p stroke))))
-    (let* ((local (affine-multiply transform (affine-translation x y)))
+    (let* ((local (transform-multiply transform (transform-translation x y)))
            (item (%emit context (list (stage-node-id node) part)
-                        (affine-rectangle-bounds local 0 0 width height 2)
+                        (transform-rectangle-bounds local 0 0 width height 2)
                         (list local width height radius border fill stroke)
                         (lambda (renderer)
                           (draw-stage-rect renderer local width height radius border fill stroke)))))
       ;; A border alone repaints only its ring, so an animated border leaves
       ;; the window inside it untouched.
       (when (and item (not (%paint-visible-p fill)))
-        (setf (item-damage item) (%ring-damage local width height (max border radius)))))))
+        (setf (item-damage item) (%ring-damage local width height (max border radius))))
+      (when (and item (>= (aref (paint-start fill) 3) 1d0) (>= (aref (paint-end fill) 3) 1d0))
+        (setf (item-opaque item) (%opaque-rectangle context local 0 0 width height (max border radius)))))))
 
 (defgeneric emit-content (kind context node transform opacity screen-inverse parent-inverse)
   (:documentation "Emit the draw items and pick targets of one node of KIND. TRANSFORM maps
@@ -233,10 +250,12 @@ space and PARENT-INVERSE to its parent's space.")
         (size (node-number node :grid-size 1d0)))
     (when (or (plusp (aref color 3)) (and (not (eq grid :none)) (plusp (aref grid-color 3))))
       ;; An infinite plane covers the whole output.
-      (%emit context (list (stage-node-id node) :background) (display-context-bounds context)
-             (list transform color grid grid-color spacing size)
-             (lambda (renderer)
-               (draw-stage-background renderer transform color grid grid-color spacing size))))
+      (let ((item (%emit context (list (stage-node-id node) :background) (display-context-bounds context)
+                         (list transform color grid grid-color spacing size)
+                         (lambda (renderer)
+                           (draw-stage-background renderer transform color grid grid-color spacing size)))))
+        (when (and item (>= (aref color 3) 1d0))
+          (setf (item-opaque item) (item-bounds item)))))
     (when (%hit-target-p context node)
       (%add-hit context node screen-inverse parent-inverse nil nil))))
 
@@ -247,13 +266,13 @@ space and PARENT-INVERSE to its parent's space.")
                  :width width :height height :clip (display-context-logical-clip context) options)
           (display-context-hits context))))
 
-(defun %window-content-affine (window width height)
+(defun %window-content-transform (window width height)
   "Map client content coordinates to the node's local WIDTH x HEIGHT box."
   (multiple-value-bind (x y natural-width natural-height)
       (%window-bounds window)
     (let ((scale-x (/ width (max 1d0 natural-width)))
           (scale-y (/ height (max 1d0 natural-height))))
-      (make-affine scale-x 0 0 scale-y (- (* scale-x x)) (- (* scale-y y))))))
+      (make-transform scale-x 0 0 scale-y (- (* scale-x x)) (- (* scale-y y))))))
 
 (defun %surface-bounds (surfaces)
   (let ((bounds nil))
@@ -266,27 +285,59 @@ space and PARENT-INVERSE to its parent's space.")
           do (setf bounds (if bounds (ataxia.world:rectangle-union bounds rectangle) rectangle)))
     bounds))
 
+(defun %surface-opaque-box (surface)
+  "The part of SURFACE, in its own coordinates, its client declared opaque: all of it
+without alpha, else a single declared rectangle; NIL when there is none."
+  (if (ataxia.kernel:render-source-has-alpha-p (ataxia.kernel:drawable-surface-render-source surface))
+      (let ((region (ataxia.kernel:drawable-surface-opaque-region surface)))
+        (when (and region (null (rest region)))
+          (let ((box (first region)))
+            (list (ataxia.kernel:frame-damage-rectangle-x box) (ataxia.kernel:frame-damage-rectangle-y box)
+                  (ataxia.kernel:frame-damage-rectangle-width box)
+                  (ataxia.kernel:frame-damage-rectangle-height box)))))
+      (list 0 0 (ataxia.kernel:drawable-surface-width surface) (ataxia.kernel:drawable-surface-height surface))))
+
 (defun %emit-window-surface (context node transform content surface index
-                             width height radius opacity dim &key (feedback-p t))
+                             width height radius opacity dim &key (feedback-p t) application)
   "Emit one client surface; CONTENT maps client coordinates to the node's local box.
-FEEDBACK-P sends the client presentation feedback and frame callbacks."
+FEEDBACK-P sends the client presentation feedback and frame callbacks. The item
+draws APPLICATION's surface at INDEX as it is when drawn: commits keeping the
+geometry replace the records without a new display."
   (let ((x (ataxia.kernel:drawable-surface-local-x surface))
         (y (ataxia.kernel:drawable-surface-local-y surface))
         (surface-width (ataxia.kernel:drawable-surface-width surface))
         (surface-height (ataxia.kernel:drawable-surface-height surface)))
-    (multiple-value-bind (local-x local-y) (affine-apply content x y)
-      (let ((local-width (* surface-width (affine-a content)))
-            (local-height (* surface-height (affine-d content))))
-        (%emit context (list (stage-node-id node) :surface index)
-               (affine-rectangle-bounds transform local-x local-y local-width local-height 1)
-               (list transform local-x local-y local-width local-height width height radius opacity
-                     dim (ataxia.kernel:drawable-surface-texture-coordinates surface))
-               (lambda (renderer)
-                 (draw-stage-surface renderer transform surface local-x local-y local-width
-                                     local-height width height radius opacity dim))
-               :token (and feedback-p (ataxia.kernel:drawable-surface-presentation-token surface))
-               :callback-p (and feedback-p
-                                (ataxia.kernel:drawable-surface-frame-callback-p surface)))))))
+    (multiple-value-bind (local-x local-y) (transform-apply content x y)
+      (let* ((local-width (* surface-width (transform-a content)))
+             (local-height (* surface-height (transform-d content)))
+             (key (list (stage-node-id node) :surface index))
+             (item (%emit context key
+                          (transform-rectangle-bounds transform local-x local-y local-width local-height 1)
+                          (list transform local-x local-y local-width local-height width height radius
+                                opacity dim (ataxia.kernel:drawable-surface-texture-coordinates surface))
+                          (lambda (renderer)
+                            (let ((surfaces (and application
+                                                 (ataxia.kernel:drawable-surfaces application))))
+                              (draw-stage-surface renderer transform
+                                                  (if (< index (length surfaces)) (aref surfaces index) surface)
+                                                  local-x local-y local-width local-height width height
+                                                  radius opacity dim key)))
+                          :token (and feedback-p
+                                      (ataxia.kernel:drawable-surface-presentation-token surface))
+                          :callback-p (and feedback-p
+                                           (ataxia.kernel:drawable-surface-frame-callback-p surface))))
+             (opaque (and item (>= opacity 1d0) (%surface-opaque-box surface))))
+        (when opaque
+          (destructuring-bind (box-x box-y box-width box-height) opaque
+            (multiple-value-bind (opaque-x opaque-y) (transform-apply content (+ x box-x) (+ y box-y))
+              (setf (item-opaque item)
+                    (%opaque-rectangle context transform opaque-x opaque-y
+                                       (* box-width (transform-a content)) (* box-height (transform-d content))
+                                       radius)))))
+        (when item
+          ;; A display may show the surface for long without drawing it again.
+          (touch-mipmap (%renderer (display-context-world context)) key))
+        item))))
 
 (defun %emit-decorations (context node transform width height opacity)
   "Emit the shadow, outset border and backdrop blur of a box holding client
@@ -315,25 +366,26 @@ content; return its corner radius."
         (when (and (plusp width) (plusp height))
           (let* ((radius (%emit-decorations context node transform width height opacity))
                  (dim (max 0d0 (min 1d0 (node-number node :dim 0d0))))
-                 (content (%window-content-affine window width height))
-                 (content-transform (affine-multiply transform content))
+                 (content (%window-content-transform window width height))
+                 (content-transform (transform-multiply transform content))
                  (stage-output (display-context-stage-output context)))
             ;; Offscreen windows neither enter the output nor wake it.
             (when (and (plusp (loop for surface across surfaces
                                     for index from 0
                                     count (%emit-window-surface context node transform content surface
                                                                 index width height radius opacity dim
-                                                                :feedback-p live-p)))
+                                                                :feedback-p live-p
+                                                                :application (and live-p application))))
                        live-p)
               (push content-transform (gethash window (stage-output-window-transforms stage-output)))
               (setf (gethash window (display-context-presented context)) t))
             (when (and live-p (node-prop node :interactive))
               (%add-hit context node screen-inverse parent-inverse width height
-                        :window window :client application :content (affine-invert content)
+                        :window window :client application :content (transform-invert content)
                         :content-bounds (%surface-bounds surfaces)))))))))
 
 (defun %pointer-handlers-p (node)
-  (intersection (stage-node-handlers node) +bubbling-events+))
+  (some (lambda (event) (member event +bubbling-events+)) (stage-node-handlers node)))
 
 (defun %claims-pointer-p (node)
   "Whether NODE's pointer handlers or cursor apply over it and its descendants."
@@ -348,37 +400,39 @@ content; return its corner radius."
 (defun %input-target-p (node)
   "True for compositor-drawn nodes that take pointer input instead of passing it
 through: nodes with pointer handlers or a cursor, their descendants, and nodes
-that drag or pan natively."
-  (or (%takes-pointer-p node)
-      (loop for current = (stage-node-parent node) then (stage-node-parent current)
-            while current thereis (%claims-pointer-p current))))
+that drag or pan natively. A node declared not interactive always lets it through."
+  (and (node-prop node :interactive)
+       (or (%takes-pointer-p node)
+           (loop for current = (stage-node-parent node) then (stage-node-parent current)
+                 while current thereis (%claims-pointer-p current)))))
 
 (defun %hit-target-p (context node)
   "%INPUT-TARGET-P while CONTEXT builds the display, which knows about the ancestors."
-  (or (display-context-pointer-parent-p context) (%takes-pointer-p node)))
+  (and (node-prop node :interactive)
+       (or (display-context-pointer-parent-p context) (%takes-pointer-p node))))
 
 (defun %child-clip (context node transform)
   "Buffer and logical clip rectangles for NODE's children, when NODE clips them."
   (if (node-prop node :clip)
       (multiple-value-bind (width height) (%node-size (display-context-world context) node)
-        (let* ((box (affine-rectangle-bounds transform 0 0 width height))
+        (let* ((box (transform-rectangle-bounds transform 0 0 width height))
                (clip (if (display-context-clip context)
                          (or (ataxia.world:rectangle-intersection box (display-context-clip context))
                              (ataxia.world:make-rectangle 0 0 0 0))
                          box))
-               (to-logical (affine-invert (display-context-screen context))))
+               (to-logical (transform-invert (display-context-screen context))))
           (values clip
                   (if to-logical
-                      (affine-rectangle-bounds to-logical (ataxia.world:rectangle-x clip)
-                                               (ataxia.world:rectangle-y clip)
-                                               (ataxia.world:rectangle-width clip)
-                                               (ataxia.world:rectangle-height clip))
+                      (transform-rectangle-bounds to-logical (ataxia.world:rectangle-x clip)
+                                                  (ataxia.world:rectangle-y clip)
+                                                  (ataxia.world:rectangle-width clip)
+                                                  (ataxia.world:rectangle-height clip))
                       (display-context-logical-clip context)))))
       (values (display-context-clip context) (display-context-logical-clip context))))
 
-(defun %emit-node (context node buffer-base screen-base opacity)
-  "Emit NODE and its subtree. BUFFER-BASE maps NODE's parent space to buffer
-pixels; SCREEN-BASE maps output-logical points into that parent space."
+(defun %emit-node (context node base base-inverse opacity)
+  "Emit NODE and its subtree. BASE maps NODE's parent space to output-logical
+space; BASE-INVERSE maps output-logical points back onto the parent's plane."
   (unless (or (eq (stage-node-state node) :dead) (not (node-prop node :visible)))
     (let ((kind (stage-node-kind node))
           (world (display-context-world context)))
@@ -387,27 +441,31 @@ pixels; SCREEN-BASE maps output-logical points into that parent space."
                   (and (eq kind :screen)
                        (node-prop node :output)
                        (not (equal (node-prop node :output) (display-context-output-name context)))))
-        (let* ((local (%node-local-affine world node))
-               ;; A screen node restarts from output pixels, ignoring the camera.
-               (transform (affine-multiply (if (eq kind :screen) (display-context-screen context) buffer-base)
-                                           local))
+        ;; A screen node restarts from output pixels, ignoring the camera.
+        (when (eq kind :screen)
+          (setf base +identity-matrix+ base-inverse +identity-transform+))
+        (let* ((chain (matrix-multiply base (%node-local-matrix world node)))
+               ;; The node draws on its z = 0 plane, and its hits map back onto it.
+               (plane (matrix-plane chain))
+               (transform (transform-multiply (display-context-screen context) plane))
                (opacity (* opacity (max 0d0 (min 1d0 (node-number node :opacity 1d0)))))
-               (local-inverse (affine-invert local))
-               (screen-inverse (and local-inverse
-                                    (if (eq kind :screen)
-                                        local-inverse
-                                        (and screen-base (affine-multiply local-inverse screen-base)))))
+               (screen-inverse (transform-invert plane))
                (moving-p (display-context-moving-p context)))
-          (when (plusp opacity)
+          ;; With its back hidden, a node turned away from the viewer is not
+          ;; drawn, nor is what it holds, and takes no pointer.
+          (when (and (plusp opacity)
+                     (not (and (eq (node-prop node :backface) :hidden)
+                               (<= (transform-determinant plane) 0d0))))
             (setf (display-context-moving-p context) (or moving-p (node-moving-p node)))
             (if (effect-shown-p node)
-                (emit-effect context kind node transform opacity screen-inverse screen-base)
-                (progn (emit-content kind context node transform opacity screen-inverse screen-base)
-                       (%emit-subtree context node transform screen-inverse opacity)))
+                (emit-effect context kind node transform chain opacity screen-inverse base-inverse)
+                (progn (emit-content kind context node transform opacity screen-inverse base-inverse)
+                       (%emit-subtree context node transform chain screen-inverse opacity)))
             (setf (display-context-moving-p context) moving-p)))))))
 
-(defun %emit-subtree (context node transform screen-inverse opacity)
-  "Emit NODE's children within the clip NODE gives them."
+(defun %emit-subtree (context node transform chain screen-inverse opacity)
+  "Emit NODE's children within the clip NODE gives them; CHAIN and SCREEN-INVERSE
+map NODE's space as %EMIT-NODE's BASE and BASE-INVERSE do for them."
   (let ((clip (display-context-clip context))
         (logical-clip (display-context-logical-clip context))
         (pointer-parent-p (display-context-pointer-parent-p context)))
@@ -416,35 +474,35 @@ pixels; SCREEN-BASE maps output-logical points into that parent space."
             (display-context-logical-clip context) child-logical-clip
             (display-context-pointer-parent-p context)
             (or pointer-parent-p (%claims-pointer-p node)))
-      (%emit-children context node transform screen-inverse opacity)
+      (%emit-children context node chain screen-inverse opacity)
       (setf (display-context-clip context) clip
             (display-context-logical-clip context) logical-clip
             (display-context-pointer-parent-p context) pointer-parent-p))))
 
-(defun %emit-children (context node buffer-base screen-base opacity)
+(defun %emit-children (context node base base-inverse opacity)
   (dolist (child (stage-node-children node))
-    (%emit-node context child buffer-base screen-base opacity)))
+    (%emit-node context child base base-inverse opacity)))
 
 (defun %buffer-transform (stage-output)
   (multiple-value-bind (width height)
       (ataxia.world:output-logical-size (stage-output-output stage-output))
-    (output-buffer-affine width height (stage-output-buffer-width stage-output)
-                          (stage-output-buffer-height stage-output)
-                          (stage-output-transform stage-output))))
+    (output-buffer-transform width height (stage-output-buffer-width stage-output)
+                             (stage-output-buffer-height stage-output)
+                             (stage-output-transform stage-output))))
 
 (defun %emit-surfaces-at (context key drawable x y transform)
   "Emit DRAWABLE's surfaces with their origin at logical point (X, Y)."
   (loop for surface across (ataxia.kernel:drawable-surfaces drawable)
         for index from 0
-        for local = (affine-multiply
+        for local = (transform-multiply
                      transform
-                     (affine-translation (+ x (ataxia.kernel:drawable-surface-local-x surface))
-                                         (+ y (ataxia.kernel:drawable-surface-local-y surface))))
+                     (transform-translation (+ x (ataxia.kernel:drawable-surface-local-x surface))
+                                            (+ y (ataxia.kernel:drawable-surface-local-y surface))))
         for width = (ataxia.kernel:drawable-surface-width surface)
         for height = (ataxia.kernel:drawable-surface-height surface)
         do (let ((local local) (surface surface))
              (%emit context (list key index)
-                    (affine-rectangle-bounds local 0 0 width height 1)
+                    (transform-rectangle-bounds local 0 0 width height 1)
                     (list local width height)
                     (lambda (renderer)
                       (draw-stage-surface renderer local surface 0 0 width height 0 0 0d0 1d0))
@@ -474,16 +532,16 @@ text needs a refining frame, and the text raster scales used."
   (let* ((context (%display-context world stage-output
                                     :presented (make-hash-table :test #'eq)
                                     :raster-scales (make-hash-table :test #'eql)))
-         (buffer (display-context-screen context)))
+         (camera (camera-transform stage-output)))
     (clrhash (stage-output-window-transforms stage-output))
     (setf (stage-output-pointer-effects-p stage-output) nil)
-    (let ((camera (camera-transform stage-output)))
-      (setf (display-context-tag context) :scene)
-      (%emit-children context (scene-root (%scene world)) (affine-multiply buffer camera)
-                      (affine-invert camera) 1d0)
-      (when (eq stage-output (first (%outputs world)))
-        (setf (display-context-tag context) :fallback)
-        (%emit-children context (scene-root (%fallback world)) buffer +identity-affine+ 1d0)))
+    (setf (display-context-tag context) :scene)
+    (%emit-children context (scene-root (%scene world)) (transform-matrix camera)
+                    (transform-invert camera) 1d0)
+    (when (eq stage-output (first (%outputs world)))
+      (setf (display-context-tag context) :fallback)
+      (%emit-children context (scene-root (%fallback world)) +identity-matrix+ +identity-transform+
+                      1d0))
     (setf (display-context-tag context) :overlay)
     (emit-overlays context)
     (values (nreverse (display-context-items context))
@@ -570,7 +628,7 @@ that moved."
          (loop for transform in transforms
                nconc (loop for rectangle in rectangles
                            collect (%inflate
-                                    (affine-rectangle-bounds
+                                    (transform-rectangle-bounds
                                      transform
                                      (ataxia.kernel:frame-damage-rectangle-x rectangle)
                                      (ataxia.kernel:frame-damage-rectangle-y rectangle)
@@ -578,6 +636,21 @@ that moved."
                                      (ataxia.kernel:frame-damage-rectangle-height rectangle))
                                     1))))
         (%request-frames world (list stage-output))))))
+
+(defun %refresh-surface-items (world window)
+  "Give WINDOW's display items the presentation tokens and frame callbacks of the
+surface records its latest commit made; they draw its current buffers already."
+  (let ((surfaces (ataxia.kernel:drawable-surfaces (stage-window-application window)))
+        (ids (mapcar #'stage-node-id (stage-window-nodes window))))
+    (dolist (stage-output (%outputs world))
+      (dolist (item (first (stage-output-display stage-output)))
+        (destructuring-bind (tag &optional id part index &rest rest) (item-key item)
+          (declare (ignore tag rest))
+          (when (and (eq part :surface) (member id ids) (< index (length surfaces)))
+            (let ((surface (aref surfaces index)))
+              (when (item-token item)
+                (setf (item-token item) (ataxia.kernel:drawable-surface-presentation-token surface)
+                      (item-callback-p item) (ataxia.kernel:drawable-surface-frame-callback-p surface))))))))))
 
 (defun %damage-cursor (world seat-state)
   "Repaint the output under the cursor and any output still showing a cursor; the
@@ -607,8 +680,11 @@ there are rebuilt too. Other outputs stay asleep."
       (when refine-p (%request-frames world (list stage-output))))))
 
 (defun output-hits (world stage-output)
-  "Pick targets for STAGE-OUTPUT, topmost first, as the scene presents now."
-  (%refresh-display world stage-output)
+  "Pick targets for STAGE-OUTPUT, topmost first, as the scene presents now. While a
+frame is on its way they stay those of the frame on screen, which is what the user
+points at, so input during an animation never rebuilds the display between frames."
+  (unless (and (stage-output-display stage-output) (stage-output-frame-pending-p stage-output))
+    (%refresh-display world stage-output))
   (stage-output-hits stage-output))
 
 ;;; Frames.
@@ -742,26 +818,110 @@ whole blur areas, or the whole buffer once that is cheaper."
        (< (max (ataxia.world:rectangle-y left) (ataxia.world:rectangle-y right))
           (min (ataxia.world:rectangle-bottom left) (ataxia.world:rectangle-bottom right)))))
 
+(defun %unoccluded (items rectangle &optional owner)
+  "ITEMS from the topmost one OWNER (NIL: the frame) paints opaquely all over
+RECTANGLE: those beneath it cannot show there."
+  (let ((start items))
+    (loop for rest on items
+          for opaque = (item-opaque (car rest))
+          when (and opaque (eq (item-owner (car rest)) owner) (%contains-p opaque rectangle))
+            do (setf start rest))
+    start))
+
+(defparameter +occlusion-cut-area+ 65536
+  "Pixels an item must cover in a pass before the opaque items above it are cut out
+of what it paints: a window's shadow, a room under windows, the canvas under rooms.
+Smaller items paint whole, which costs less than the extra draws.")
+
+(defun %pixel-box (rectangle width height)
+  "RECTANGLE's pixels within the WIDTH x HEIGHT buffer as (X0 Y0 X1 Y1), rounded out."
+  (multiple-value-bind (x y box-width box-height) (ataxia.world:rectangle-pixel-bounds rectangle width height)
+    (list x y (+ x box-width) (+ y box-height))))
+
+(defun %covered-box (rectangle)
+  "The whole pixels opaque RECTANGLE covers, as (X0 Y0 X1 Y1); NIL when none."
+  (let ((x0 (ceiling (ataxia.world:rectangle-x rectangle)))
+        (y0 (ceiling (ataxia.world:rectangle-y rectangle)))
+        (x1 (floor (ataxia.world:rectangle-right rectangle)))
+        (y1 (floor (ataxia.world:rectangle-bottom rectangle))))
+    (when (and (< x0 x1) (< y0 y1))
+      (list x0 y0 x1 y1))))
+
+(defun %box-difference (box hole)
+  "Boxes covering BOX less HOLE: at most four bands."
+  (destructuring-bind (x0 y0 x1 y1) box
+    (destructuring-bind (hx0 hy0 hx1 hy1) hole
+      (if (or (>= hx0 x1) (>= x0 hx1) (>= hy0 y1) (>= y0 hy1))
+          (list box)
+          (let ((top (max y0 hy0)) (bottom (min y1 hy1)))
+            (nconc (when (< y0 hy0) (list (list x0 y0 x1 hy0)))
+                   (when (< hy1 y1) (list (list x0 hy1 x1 y1)))
+                   (when (< x0 hx0) (list (list x0 top hx0 bottom)))
+                   (when (< hx1 x1) (list (list hx1 top x1 bottom)))))))))
+
+(defun %box-area (box)
+  (destructuring-bind (x0 y0 x1 y1) box
+    (* (- x1 x0) (- y1 y0))))
+
+(defun %visible-boxes (box occluders position)
+  "Parts of BOX that occluders above POSITION leave visible: the largest are cut out
+first, as long as the parts take only a few draws."
+  (let ((parts (list box)))
+    (dolist (hole (sort (loop for (above . hole) in occluders when (> above position) collect hole)
+                        #'> :key #'%box-area)
+                  parts)
+      (let ((cut (mapcan (lambda (part) (%box-difference part hole)) parts)))
+        (if (> (length cut) 8)
+            (return parts)
+            (setf parts cut))))))
+
 (defun draw-layer (renderer items rectangle width height &optional owner)
   "Paint the ITEMS OWNER draws (NIL: the frame) that overlap buffer RECTANGLE, whose
-scissor is set, bottom first; return the presentation tokens of surfaces drawn."
-  (let ((tokens nil))
+scissor is set, bottom first; return the presentation tokens of surfaces drawn. A
+large item paints only where no opaque item above it covers, in an effect's
+content as in the frame."
+  (let* ((tokens nil)
+         (items (%unoccluded items rectangle owner))
+         (occluders (loop for item in items
+                          for position from 0
+                          for opaque = (item-opaque item)
+                          for hole = (and opaque (eq (item-owner item) owner)
+                                          (%rectangles-overlap-p opaque rectangle)
+                                          (%covered-box opaque))
+                          when hole collect (cons position hole))))
     (multiple-value-bind (x y pixel-width pixel-height)
         (ataxia.world:rectangle-pixel-bounds rectangle width height)
-      (dolist (item items tokens)
-        (when (and (eq (item-owner item) owner) (%rectangles-overlap-p rectangle (item-bounds item)))
-          (when (item-clip item)
-            (let ((visible (ataxia.world:rectangle-intersection rectangle (item-bounds item))))
-              (multiple-value-call #'set-stage-scissor renderer
-                (ataxia.world:rectangle-pixel-bounds
-                 (or (ataxia.world:rectangle-intersection visible (item-clip item)) visible)
-                 width height))))
-          (if (item-effect item)
-              (setf tokens (union (draw-effect renderer item rectangle width height) tokens))
-              (when (and (funcall (item-draw item) renderer) (item-token item))
-                (pushnew (item-token item) tokens :test #'eq)))
-          (when (item-clip item)
-            (set-stage-scissor renderer x y pixel-width pixel-height)))))))
+      (loop for item in items
+            for position from 0
+            when (and (eq (item-owner item) owner) (%rectangles-overlap-p rectangle (item-bounds item)))
+              do (let* ((visible (ataxia.world:rectangle-intersection rectangle (item-bounds item)))
+                        (visible (if (item-clip item)
+                                     (or (ataxia.world:rectangle-intersection visible (item-clip item))
+                                         visible)
+                                     visible))
+                        (box (%pixel-box visible width height))
+                        (area (* (max 0 (- (third box) (first box))) (max 0 (- (fourth box) (second box)))))
+                        (parts (if (and occluders (not (item-effect item)) (> area +occlusion-cut-area+))
+                                   (%visible-boxes box occluders position)
+                                   (list box))))
+                   (if (item-effect item)
+                       (progn
+                         (when (item-clip item)
+                           (destructuring-bind (x0 y0 x1 y1) box
+                             (set-stage-scissor renderer x0 y0 (- x1 x0) (- y1 y0))))
+                         (setf tokens (union (draw-effect renderer item rectangle width height) tokens)))
+                       (let ((drawn nil))
+                         (dolist (part parts)
+                           (when (or (item-clip item) (rest parts) (not (eq part box)))
+                             (destructuring-bind (x0 y0 x1 y1) part
+                               (set-stage-scissor renderer x0 y0 (- x1 x0) (- y1 y0))))
+                           (setf drawn (or (funcall (item-draw item) renderer) drawn)))
+                         (when (and drawn (item-token item))
+                           (pushnew (item-token item) tokens :test #'eq))))
+                   (when (or (item-clip item) (rest parts) (not (eq (first parts) box)))
+                     (set-stage-scissor renderer x y pixel-width pixel-height))
+                   (unless owner (submit-drawing renderer))))
+      tokens)))
 
 (defun %draw-items (renderer layers region width height debug-p)
   "Paint the item lists in LAYERS, bottom first, within REGION; return presentation
@@ -790,6 +950,7 @@ tokens of surfaces drawn."
          (height (ataxia.kernel:frame-height lease)))
     (unless (and stage-output renderer)
       (error "Stage World cannot render an unattached output."))
+    (setf (stage-output-frame-pending-p stage-output) nil)
     (%sync-buffer-geometry stage-output lease)
     (%advance world (ataxia.kernel:frame-timestamp lease))
     (sweep-webs world)
@@ -807,7 +968,8 @@ tokens of surfaces drawn."
         (rotatef (stage-output-items stage-output) (stage-output-spare-items stage-output))
         (%diff-items world stage-output items (stage-output-spare-items stage-output)
                      (stage-output-items stage-output))
-        (setf (stage-output-diffed-p stage-output) t))
+        (setf (stage-output-diffed-p stage-output) t)
+        (repick-pointers world stage-output))
       (let ((seat-items (build-seat-items world stage-output)))
         (rotatef (stage-output-seat-items stage-output) (stage-output-spare-seat-items stage-output))
         (%diff-items world stage-output seat-items (stage-output-spare-seat-items stage-output)

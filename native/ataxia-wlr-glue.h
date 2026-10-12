@@ -166,6 +166,9 @@ ATAXIA_WLR_GLUE_API const char *ataxia_input_device_name(
 	const struct wlr_input_device *device);
 ATAXIA_WLR_GLUE_API uint32_t ataxia_input_device_type(
 	const struct wlr_input_device *device);
+ATAXIA_WLR_GLUE_API bool ataxia_input_device_configure_touchpad(
+	struct wlr_input_device *device, bool tap, bool natural_scroll,
+	bool disable_while_typing);
 
 ATAXIA_WLR_GLUE_API struct wlr_pointer *ataxia_input_device_pointer(
 	struct wlr_input_device *device);

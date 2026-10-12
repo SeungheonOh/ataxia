@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Box, Screen, useOutputs } from "@ataxia/stage";
+import { Box, scale, Screen, useOutputs } from "@ataxia/stage";
 import { glassBorder, motion } from "../lib/theme.js";
 
 const height = 48;
@@ -33,7 +33,7 @@ export function FloatingPill({ shown, children }: FloatingPillProps) {
           blur={22}
           border={glassBorder}
           shadow={{ color: "#00000029", blur: 28, y: 10 }}
-          scale={shown ? 1 : 0.92}
+          transform={scale(shown ? 1 : 0.92)}
           transition={motion.pop}
         >
           {children}

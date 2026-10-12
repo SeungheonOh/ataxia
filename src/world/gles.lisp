@@ -228,7 +228,7 @@
       ;; instead of allocating and converting every float on every frame.
       (cffi:with-pointer-to-vector-data (data values)
         (%gl-buffer-data +array-buffer+
-                         (* (length values) (cffi:foreign-type-size :float))
+                         (* (length values) #.(cffi:foreign-type-size :float))
                          data +stream-draw+))
       (let ((vector (coerce values 'vector)))
         (cffi:with-foreign-object (data :float (length vector))
@@ -237,7 +237,7 @@
                 do (setf (cffi:mem-aref data :float index)
                          (coerce value 'single-float)))
           (%gl-buffer-data +array-buffer+
-                           (* (length vector) (cffi:foreign-type-size :float))
+                           (* (length vector) #.(cffi:foreign-type-size :float))
                            data +stream-draw+)))))
 
 (defun gles-enable-attribute (index size stride offset)

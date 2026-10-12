@@ -192,7 +192,9 @@
       (destroy-xkb-context context)))
   keyboard)
 
-(defun set-keyboard-repeat-info (keyboard rate-hertz delay-milliseconds)
+(defun set-keyboard-repeat-info (keyboard &optional (rate-hertz 33) (delay-milliseconds 500))
+  "Repeat held keys after DELAY-MILLISECONDS, RATE-HERTZ times a second; by
+default as GNOME does."
   (check-type keyboard wlr-keyboard)
   (check-type rate-hertz (signed-byte 32))
   (check-type delay-milliseconds (signed-byte 32))
@@ -201,6 +203,14 @@
   (ataxia.runtime.raw::%wlr-keyboard-set-repeat-info
    (%object-pointer keyboard) rate-hertz delay-milliseconds)
   keyboard)
+
+(defun configure-touchpad (device &key (tap t) (natural-scroll t) (disable-while-typing t))
+  "Set up DEVICE if it is a touchpad: by default tapping clicks, content follows the
+fingers when scrolling, and it pauses while typing. Return true for a touchpad."
+  (check-type device wlr-pointer)
+  (%assert-runtime-live (%native-runtime device) :configure-touchpad)
+  (ataxia.runtime.raw:%input-device-configure-touchpad
+   (%object-pointer device) tap natural-scroll disable-while-typing))
 
 (defun destroy-xkb-keymap (keymap)
   (check-type keymap wlr-xkb-keymap)

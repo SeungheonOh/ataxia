@@ -19,8 +19,9 @@ varying vec2 v_local;
 uniform vec2 u_viewport;
 uniform sampler2D u_content;
 uniform sampler2D u_backdrop;
-uniform vec4 u_linear;
-uniform vec2 u_translation;
+uniform vec4 u_row_x;
+uniform vec4 u_row_y;
+uniform vec4 u_row_w;
 uniform vec2 u_offset;
 uniform vec2 u_texture_size;
 uniform vec4 u_area;
@@ -31,8 +32,8 @@ uniform float amount;
 uniform float pixel;
 uniform vec2 pointer;
 vec2 stage_uv(vec2 position) {
-  vec2 buffer = vec2(u_linear.x * position.x + u_linear.z * position.y,
-                     u_linear.y * position.x + u_linear.w * position.y) + u_translation;
+  vec3 point = vec3(position, 1.0);
+  vec2 buffer = vec2(dot(u_row_x.xyz, point), dot(u_row_y.xyz, point)) / dot(u_row_w.xyz, point);
   return clamp((buffer - u_offset) / u_texture_size, u_area.xy, u_area.zw);
 }
 vec4 content(vec2 position) { return texture2D(u_content, stage_uv(position)); }
@@ -49,10 +50,12 @@ local units; colors are premultiplied, as the effect must return them.")
 
 (defparameter +max-shader-length+ 65536)
 
-(defstruct (effect-state (:constructor %make-effect-state (start)))
-  "What an effect node keeps between frames: when its `time` began, and the
-source whose compile error was last reported."
-  (start 0d0 :type double-float)
+(defstruct (effect-state (:constructor %make-effect-state ()))
+  "What an effect node keeps between frames: how long its clock ran before it last
+started (SINCE, NIL while it holds still), and the source whose compile error was
+last reported."
+  (elapsed 0d0 :type double-float)
+  (since nil)
   (reported nil))
 
 (defstruct (effect-draw (:constructor %make-effect-draw))
@@ -62,34 +65,51 @@ source whose compile error was last reported."
 
 (defun %effect-state (world node)
   (or (gethash node (%effect-states world))
-      (setf (gethash node (%effect-states world)) (%make-effect-state (%now)))))
+      (setf (gethash node (%effect-states world)) (%make-effect-state))))
+
+(defun %effect-time (world node running-p)
+  "Seconds NODE's effect clock has run: it runs while the effect has `time` and holds
+still otherwise."
+  (let ((state (if running-p (%effect-state world node) (gethash node (%effect-states world))))
+        (now (%advanced-at world)))
+    (if (null state)
+        0d0
+        (progn
+          (cond ((and running-p (null (effect-state-since state)))
+                 (setf (effect-state-since state) now))
+                ((and (not running-p) (effect-state-since state))
+                 (incf (effect-state-elapsed state) (- now (effect-state-since state)))
+                 (setf (effect-state-since state) nil)))
+          (+ (effect-state-elapsed state)
+             (if (effect-state-since state) (- now (effect-state-since state)) 0d0))))))
 
 (defun %effect-pointer (context quad-transform)
   "The first seat's pointer in the local units of QUAD-TRANSFORM, when it is on this output."
   (let* ((world (display-context-world context))
          (seat-state (%default-seat-state world))
-         (inverse (affine-invert quad-transform)))
+         (inverse (transform-invert quad-transform)))
     (multiple-value-bind (stage-output x y) (and seat-state (%seat-screen-point world seat-state))
       (if (and inverse (eq stage-output (display-context-stage-output context)))
           (multiple-value-list
-           (affine-apply (affine-multiply inverse (display-context-screen context)) x y))
+           (transform-apply (transform-multiply inverse (display-context-screen context)) x y))
           +far-pointer+))))
 
 (defun %logical-rectangle (context rectangle)
   "Output-logical bounds of buffer RECTANGLE, for clipping hits."
-  (let ((to-logical (affine-invert (display-context-screen context))))
+  (let ((to-logical (transform-invert (display-context-screen context))))
     (if to-logical
-        (affine-rectangle-bounds to-logical (ataxia.world:rectangle-x rectangle)
-                                 (ataxia.world:rectangle-y rectangle)
-                                 (ataxia.world:rectangle-width rectangle)
-                                 (ataxia.world:rectangle-height rectangle))
+        (transform-rectangle-bounds to-logical (ataxia.world:rectangle-x rectangle)
+                                    (ataxia.world:rectangle-y rectangle)
+                                    (ataxia.world:rectangle-width rectangle)
+                                    (ataxia.world:rectangle-height rectangle))
         (display-context-logical-clip context))))
 
 (defun effect-shown-p (node)
   (and (node-prop node :shader) (plusp (node-number node :amount 1d0))))
 
-(defun emit-effect (context kind node transform opacity screen-inverse parent-inverse)
-  "Emit NODE's effect item, then NODE and its subtree into the effect's content."
+(defun emit-effect (context kind node transform chain opacity screen-inverse parent-inverse)
+  "Emit NODE's effect item, then NODE and its subtree into the effect's content; CHAIN
+maps NODE's space for its children."
   (let* ((world (display-context-world context))
          (output-p (eq (node-prop node :area) :output))
          ;; Over the whole output, positions are output-logical pixels.
@@ -102,9 +122,7 @@ source whose compile error was last reported."
          (margin (max 0d0 (node-number node :margin 0d0)))
          (quad (list (- margin) (- margin) (+ (first size) (* 2 margin)) (+ (second size) (* 2 margin))))
          (time-p (node-prop node :time))
-         (time (if time-p
-                   (max 0d0 (- (%advanced-at world) (effect-state-start (%effect-state world node))))
-                   0d0))
+         (time (%effect-time world node time-p))
          (uniforms (loop for (name . channels) in (stage-node-uniforms node)
                          collect (cons name (map 'vector #'channel-value channels))))
          (pointer-p (node-prop node :pointer))
@@ -116,7 +134,7 @@ source whose compile error was last reported."
                                   :backdrop-p (node-prop node :backdrop)))
          (item (%emit context (list (stage-node-id node) :effect)
                       (destructuring-bind (x y width height) quad
-                        (affine-rectangle-bounds quad-transform x y width height 1))
+                        (transform-rectangle-bounds quad-transform x y width height 1))
                       (list (effect-draw-source draw) uniforms quad-transform quad time pointer
                             (effect-draw-amount draw) opacity (effect-draw-backdrop-p draw))
                       nil)))
@@ -140,7 +158,7 @@ source whose compile error was last reported."
               (display-context-logical-clip context) (%logical-rectangle context (item-bounds item)))
         ;; The effect applies the node's opacity to its content as a whole.
         (emit-content kind context node transform 1d0 screen-inverse parent-inverse)
-        (%emit-subtree context node transform screen-inverse 1d0)
+        (%emit-subtree context node transform chain screen-inverse 1d0)
         (setf (item-children item)
               (loop for rest on (display-context-items context)
                     until (eq rest before)
@@ -254,9 +272,7 @@ sampling CONTENT and BACKDROP, whose first pixel is buffer pixel (LEFT, BOTTOM).
                (2 (ataxia.world.gles:gles-uniform-2f program name (aref values 0) (aref values 1)))
                (4 (ataxia.world.gles:gles-uniform-4f program name (aref values 0) (aref values 1)
                                                      (aref values 2) (aref values 3))))))
-      (ataxia.world.gles:gles-uniform-4f program "u_linear" (affine-a transform) (affine-b transform)
-                                         (affine-c transform) (affine-d transform))
-      (ataxia.world.gles:gles-uniform-2f program "u_translation" (affine-e transform) (affine-f transform))
+      (%uniform-rows program transform)
       (let ((texture-width (coerce (render-target-width content) 'double-float))
             (texture-height (coerce (render-target-height content) 'double-float)))
         (ataxia.world.gles:gles-uniform-2f program "u_offset" left bottom)
@@ -272,8 +288,9 @@ sampling CONTENT and BACKDROP, whose first pixel is buffer pixel (LEFT, BOTTOM).
       (ataxia.world.gles:gles-uniform-1f program "time" (effect-draw-time draw))
       (ataxia.world.gles:gles-uniform-1f program "amount" (effect-draw-amount draw))
       (uniform "pointer" (coerce (effect-draw-pointer draw) 'vector))
-      (ataxia.world.gles:gles-uniform-1f program "pixel"
-                                         (/ 1d0 (max 1d-9 (affine-scale-factor transform))))
+      (destructuring-bind (quad-x quad-y quad-width quad-height) (effect-draw-quad draw)
+        (ataxia.world.gles:gles-uniform-1f
+         program "pixel" (%pixel transform (+ quad-x (/ quad-width 2)) (+ quad-y (/ quad-height 2)))))
       (loop for (name . values) in (effect-draw-uniforms draw) do (uniform name values))
       (ataxia.world.gles:gles-uniform-1i program "u_content" 0)
       (ataxia.world.gles:gles-uniform-1i program "u_backdrop" 1)

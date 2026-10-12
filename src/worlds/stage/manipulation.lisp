@@ -24,9 +24,14 @@
   (edges 0 :type integer)
   ;; Node values when the manipulation began: :X :Y :WIDTH :HEIGHT.
   (origin nil :type list)
-  ;; Pointer at the start, in the node's parent space.
+  ;; Pointer at the start, in the node's parent space; on its own plane for resizes.
   (anchor-x 0d0 :type double-float)
   (anchor-y 0d0 :type double-float)
+  ;; For resizes: the node's local matrix at the start, and the map from output
+  ;; points onto its plane then, where its edges follow the pointer along its own
+  ;; axes however it is turned.
+  (frame nil)
+  (to-local nil)
   ;; Previous screen point for pans, or pinch scale for zooms.
   (last-x 0d0 :type double-float)
   (last-y 0d0 :type double-float)
@@ -43,20 +48,20 @@
         while parent
         finally (return current)))
 
-(defun node-parent-transform (world stage-output node)
+(defun node-parent-matrix (world stage-output node)
   "Map NODE's parent space to STAGE-OUTPUT's logical pixels."
-  (let ((transform (if (eq (%scene-root-of node) (scene-root (%scene world)))
-                       (camera-transform stage-output)
-                       +identity-affine+))
+  (let ((matrix (if (eq (%scene-root-of node) (scene-root (%scene world)))
+                    (transform-matrix (camera-transform stage-output))
+                    +identity-matrix+))
         (ancestors (loop for parent = (stage-node-parent node) then (stage-node-parent parent)
                          while (and parent (stage-node-parent parent))
                          collect parent)))
-    (dolist (ancestor (nreverse ancestors) transform)
-      (let ((local (%node-local-affine world ancestor)))
+    (dolist (ancestor (nreverse ancestors) matrix)
+      (let ((local (%node-local-matrix world ancestor)))
         ;; A screen node restarts from output pixels, ignoring the camera.
-        (setf transform (if (eq (stage-node-kind ancestor) :screen)
-                            local
-                            (affine-multiply transform local)))))))
+        (setf matrix (if (eq (stage-node-kind ancestor) :screen)
+                         local
+                         (matrix-multiply matrix local)))))))
 
 (defun %manipulation-point (seat-state manipulation)
   "The pointer relative to the manipulated output, even after leaving it."
@@ -65,8 +70,9 @@
           (stage-seat-y seat-state)))
 
 (defun %parent-point (world stage-output node x y)
-  (let ((inverse (affine-invert (node-parent-transform world stage-output node))))
-    (if inverse (affine-apply inverse x y) (values x y))))
+  "Output-logical point (X, Y) on NODE's parent plane."
+  (let ((inverse (transform-invert (matrix-plane (node-parent-matrix world stage-output node)))))
+    (if inverse (transform-apply inverse x y) (values x y))))
 
 (defun %record-sample (manipulation x y)
   (let ((now (%now)))
@@ -161,6 +167,20 @@ pointer; the director's values for those keys wait until it ends. Return it."
                                                    (list :x x :y y :width width :height height)
                                                    :window window :edges edges)))
       (when manipulation
+        (let ((frame (node-local-matrix node width height))
+              (stage-output (manipulation-stage-output manipulation)))
+          (setf (manipulation-frame manipulation) frame
+                (manipulation-to-local manipulation)
+                (or (transform-invert (matrix-plane (matrix-multiply
+                                                     (node-parent-matrix world stage-output node)
+                                                     frame)))
+                    +identity-transform+))
+          ;; The anchor moves onto the node's plane.
+          (multiple-value-bind (screen-x screen-y) (%manipulation-point seat-state manipulation)
+            (multiple-value-bind (local-x local-y)
+                (transform-apply (manipulation-to-local manipulation) screen-x screen-y)
+              (setf (manipulation-anchor-x manipulation) local-x
+                    (manipulation-anchor-y manipulation) local-y))))
         (ataxia.kernel:request-object-state (stage-window-application window) world :resizing t)
         (%emit-event world node :resizestart :x x :y y :width width :height height))
       manipulation)))
@@ -174,46 +194,55 @@ pointer; the director's values for those keys wait until it ends. Return it."
     (%record-sample manipulation x y)
     (%report-cameras world)))
 
-(defun %resized-box (manipulation dx dy)
-  "New x, y, width and height after dragging the manipulated edges by (DX, DY)."
-  (destructuring-bind (&key x y width height) (manipulation-origin manipulation)
+(defun %resized-box (manipulation node screen-x screen-y)
+  "New x, y, width and height of NODE with its edges dragged to output point
+(SCREEN-X, SCREEN-Y): edges follow the pointer along the node's own axes, and the
+corner opposite them stays where it was in its parent."
+  (destructuring-bind (&key width height &allow-other-keys) (manipulation-origin manipulation)
     (let ((edges (manipulation-edges manipulation)))
-      (flet ((edge (start size delta low-bit high-bit minimum)
-               (cond ((logtest edges high-bit)
-                      (values start (max minimum (+ size delta))))
-                     ((logtest edges low-bit)
-                      (let ((new-size (max minimum (- size delta))))
-                        (values (+ start (- size new-size)) new-size)))
-                     (t (values start size)))))
-        (multiple-value-bind (new-x new-width)
-            (edge x width dx 4 8 (car +minimum-window-size+))
-          (multiple-value-bind (new-y new-height)
-              (edge y height dy 1 2 (cdr +minimum-window-size+))
-            (values new-x new-y new-width new-height)))))))
+      (multiple-value-bind (local-x local-y)
+          (transform-apply (manipulation-to-local manipulation) screen-x screen-y)
+        (flet ((edge (size delta low-bit high-bit minimum)
+                 (cond ((logtest edges high-bit) (max minimum (+ size delta)))
+                       ((logtest edges low-bit) (max minimum (- size delta)))
+                       (t size)))
+               (fixed (size low-bit) (if (logtest edges low-bit) size 0d0)))
+          (let ((new-width (edge width (- local-x (manipulation-anchor-x manipulation)) 4 8
+                                 (car +minimum-window-size+)))
+                (new-height (edge height (- local-y (manipulation-anchor-y manipulation)) 1 2
+                                  (cdr +minimum-window-size+))))
+            ;; Placed at (0, 0), the node puts the fixed corner at OFFSET, so it
+            ;; moves by what that leaves.
+            (multiple-value-bind (fixed-x fixed-y)
+                (transform-apply (matrix-plane (manipulation-frame manipulation))
+                                 (fixed width 4) (fixed height 1))
+              (multiple-value-bind (offset-x offset-y)
+                  (transform-apply (matrix-plane (node-local-matrix node new-width new-height
+                                                                    :x 0d0 :y 0d0))
+                                   (fixed new-width 4) (fixed new-height 1))
+                (values (- fixed-x offset-x) (- fixed-y offset-y) new-width new-height)))))))))
 
 (defun %update-node-manipulation (world seat-state manipulation)
   (let ((node (manipulation-node manipulation))
         (scene (%scene world)))
     (multiple-value-bind (screen-x screen-y) (%manipulation-point seat-state manipulation)
-      (multiple-value-bind (px py)
-          (%parent-point world (manipulation-stage-output manipulation) node screen-x screen-y)
-        (let* ((scale (max 1d-6 (node-number node :scale 1d0)))
-               (dx (- px (manipulation-anchor-x manipulation)))
-               (dy (- py (manipulation-anchor-y manipulation))))
-          (if (eq (manipulation-kind manipulation) :move)
-              (let ((x (+ (getf (manipulation-origin manipulation) :x) dx))
-                    (y (+ (getf (manipulation-origin manipulation) :y) dy)))
-                (node-jump scene node :x x)
-                (node-jump scene node :y y)
-                (%emit-progress world node :drag :x x :y y))
-              (multiple-value-bind (x y width height)
-                  (%resized-box manipulation (/ dx scale) (/ dy scale))
-                (node-jump scene node :x x)
-                (node-jump scene node :y y)
-                (node-jump scene node :width width)
-                (node-jump scene node :height height)
-                (%configure-window world (manipulation-window manipulation))
-                (%emit-progress world node :resize :x x :y y :width width :height height))))))
+      (if (eq (manipulation-kind manipulation) :move)
+          (multiple-value-bind (px py)
+              (%parent-point world (manipulation-stage-output manipulation) node screen-x screen-y)
+            (let ((x (+ (getf (manipulation-origin manipulation) :x)
+                        (- px (manipulation-anchor-x manipulation))))
+                  (y (+ (getf (manipulation-origin manipulation) :y)
+                        (- py (manipulation-anchor-y manipulation)))))
+              (node-jump scene node :x x)
+              (node-jump scene node :y y)
+              (%emit-progress world node :drag :x x :y y)))
+          (multiple-value-bind (x y width height) (%resized-box manipulation node screen-x screen-y)
+            (node-jump scene node :x x)
+            (node-jump scene node :y y)
+            (node-jump scene node :width width)
+            (node-jump scene node :height height)
+            (%configure-window world (manipulation-window manipulation))
+            (%emit-progress world node :resize :x x :y y :width width :height height))))
     (%scene-changed world)))
 
 (defun update-manipulation (world seat-state)

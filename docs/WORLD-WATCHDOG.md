@@ -37,6 +37,13 @@ The guardian never calls wlroots, EGL, GLES, Kernel mechanisms, or World
 methods. It only interrupts the exact Lisp extent published by Kernel. Recovery
 then executes on the normal owner thread through a libwayland idle source.
 
+Calls arrive at input and frame rates, so publishing one only takes an
+uncontended lock; it does not wake the guardian. The guardian is woken when calls
+start after a quiet spell, then checks the published deadline every half timeout
+while calls continue, and waits without a timeout once a whole check passes with
+no call. A 1000 Hz pointer therefore costs no guardian context switches, and a
+stuck call is interrupted between one and one and a half timeouts after it began.
+
 The guard is outside CLOS dispatch at Kernel call sites. A World-specific
 primary, `:before`, `:after`, or `:around` method is therefore inside the same
 deadline. Putting the guard on a base-class `:around` method was rejected after
